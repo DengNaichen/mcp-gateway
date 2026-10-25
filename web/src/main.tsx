@@ -42,7 +42,9 @@ import {
 import "./style.css";
 import "./readability.css";
 import "./setup.css";
+import "./design.css";
 import { SetupPage } from "./SetupPage";
+import { GatewayLogo } from "./SetupVisual";
 
 type Page = "setup" | "playground" | "registry" | "activity" | "settings";
 const nav = [
@@ -334,7 +336,10 @@ function App() {
     mode === "model" ? state.settings.model || "模型未配置" : "本地关键词检索";
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell page-${page}`}>
+      <a className="skip-link" href="#workspace-main">
+        跳到工作区
+      </a>
       <aside className="sidebar">
         <a
           className="brand"
@@ -345,22 +350,31 @@ function App() {
           }}
         >
           <span className="brand-mark">
-            <Waypoints size={22} strokeWidth={2.2} />
+            <GatewayLogo size={27} />
           </span>
           <span>
             Gateway<span className="brand-light"> Lab</span>
-            <small>MCP ROUTING WORKSPACE</small>
+            <small>THE CAPABILITY LAYER</small>
           </span>
         </a>
-        <div className="workspace-label">
-          WORKSPACE <span>LOCAL</span>
+        <div className="workspace-switch">
+          <span className="workspace-avatar">
+            L<span />
+          </span>
+          <span>
+            <strong>本地工作区</strong>
+            <small>Personal workspace</small>
+          </span>
+          <span className="workspace-key">LOCAL</span>
         </div>
+        <div className="workspace-label">WORKSPACE</div>
         <nav aria-label="主导航">
           {nav.map((item) => (
             <button
               key={item.id}
               aria-label={item.label}
               title={item.label}
+              aria-current={page === item.id ? "page" : undefined}
               className={`nav-item ${page === item.id ? "active" : ""}`}
               onClick={() => {
                 if (item.id === "setup") setSetupStep(undefined);
@@ -372,21 +386,53 @@ function App() {
               <item.icon size={18} />
               <span>{item.label}</span>
               {item.id === "registry" && (
-                <span className="nav-count">{tools.length}</span>
+                <span className="nav-count">
+                  {
+                    tools.filter((t) =>
+                      servers.some((s) => s.id === t.server_id && !s.demo),
+                    ).length
+                  }
+                </span>
               )}
               {page === item.id && <span className="nav-active-dot" />}
             </button>
           ))}
         </nav>
         <div className="sidebar-note">
-          <div className="note-icon">
-            <Network size={18} />
+          <div className="sidebar-note-header">
+            <span>GETTING STARTED</span>
+            <strong>
+              {
+                [
+                  state.setup.tools_ready,
+                  state.setup.model_ready,
+                  !!(
+                    state.setup.tools_ready &&
+                    state.setup.model_ready &&
+                    state.setup.agent_last_request
+                  ),
+                ].filter(Boolean).length
+              }
+              <em>/ 3</em>
+            </strong>
           </div>
-          <strong>一个入口，连接所有工具</strong>
+          <div className="sidebar-progress" aria-hidden="true">
+            {[
+              state.setup.tools_ready,
+              state.setup.model_ready,
+              !!(
+                state.setup.tools_ready &&
+                state.setup.model_ready &&
+                state.setup.agent_last_request
+              ),
+            ].map((done, index) => (
+              <span key={index} className={done ? "done" : ""} />
+            ))}
+          </div>
+          <strong>准备好你的工作区</strong>
           <p>
-            让本地 Agent 描述需求，
-            <br />
-            由网关发现合适的能力。
+            接好工具与模型，
+            <br />让 Agent 的能力延伸一步。
           </p>
           <button onClick={() => openSetup()}>
             查看接入进度 <ArrowUpRight size={14} />
@@ -395,32 +441,32 @@ function App() {
         <div className="sidebar-bottom">
           <span className="online-dot" />
           <div>
-            <strong>Go gateway</strong>
-            <small>127.0.0.1:8788 · v0.1.0</small>
+            <strong>Gateway is running</strong>
+            <small>{new URL(state.mcp_url).host}</small>
           </div>
-          <span className="local-badge">本地</span>
+          <span className="local-badge">v0.1</span>
         </div>
       </aside>
 
       <div className="main-shell">
         <header className="topbar">
           <div className="breadcrumb">
-            <span>Workspace</span>
+            <span>本地工作区</span>
             <ChevronRight size={13} />
             <strong>{nav.find((n) => n.id === page)?.label}</strong>
           </div>
           <div className="topbar-right">
             <span className="prototype-badge">
-              <FlaskConical size={13} /> PROTOTYPE
+              <FlaskConical size={13} /> LOCAL PREVIEW
             </span>
             <span className="top-divider" />
             <span className="online-text">
               <span className="online-dot" />
-              Go 服务运行中
+              网关运行中
             </span>
           </div>
         </header>
-        <main>
+        <main id="workspace-main" tabIndex={-1}>
           {page === "setup" && (
             <SetupPage
               state={state}
@@ -1205,9 +1251,9 @@ function App() {
         </main>
         <footer className="app-footer">
           <span>
-            <Waypoints size={12} /> GATEWAY LAB
+            <GatewayLogo size={15} /> GATEWAY LAB
           </span>
-          <span>Go + React · Local prototype</span>
+          <span>LOCAL FIRST. ALWAYS YOURS.</span>
         </footer>
       </div>
 

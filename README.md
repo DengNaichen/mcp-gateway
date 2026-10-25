@@ -108,7 +108,7 @@ Flags 放在子命令之前。`-url` 可指定网关地址，`-actor observer` �
 
 ## 接入本地 stdio MCP
 
-首页切换「MCP · 本地 stdio 进程」，分别填写命令和 JSON 字符串数组参数。由 Go 进程直接启动，不经过 shell；命令必须在网关进程的 PATH 中，或使用绝对路径。`npx`、`uvx` 等命令需要在本机预先可用，首次安装依赖时可能需要先在终端运行。
+首页选择「本地进程（stdio）」，分别填写命令和 JSON 字符串数组参数。由 Go 进程直接启动，不经过 shell；命令必须在网关进程的 PATH 中，或使用绝对路径。`npx`、`uvx` 等命令需要在本机预先可用，首次安装依赖时可能需要先在终端运行。
 
 完整服务定义示例：
 
@@ -171,6 +171,8 @@ sqlite3 data/gateway.db 'SELECT time, kind, status, title FROM activity ORDER BY
 默认仅监听 `127.0.0.1`。「Developer / Observer」是方便实验的模拟身份，可以由请求参数指定；它不是登录认证。当前原型适用于可信本机使用。返回字段投影用于控制数据量，不是敏感信息脱敏或权限机制。
 
 ## 开发
+
+界面使用本地打包的 DM Sans 和 IBM Plex Mono 字体，运行时不依赖外部字体服务；OFL 许可证保存在 `web/public/fonts/`。界面动效遵循系统的减少动态效果偏好。
 
 ```sh
 # 终端 1：Go 后端，使用已有 web/dist

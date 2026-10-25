@@ -5,6 +5,7 @@ import {
   Check,
   ChevronRight,
   Copy,
+  Code2,
   FileJson,
   Loader2,
   Network,
@@ -25,6 +26,7 @@ import {
   type SetupStatus,
   type Tool,
 } from "./types";
+import { GatewayDiagram, SetupSidebar } from "./SetupVisual";
 
 type Props = {
   state: Bootstrap;
@@ -74,35 +76,57 @@ export function SetupPage({
 
   return (
     <div className="setup-page">
-      <div className="page-heading setup-heading">
-        <div>
+      <section className="setup-heading">
+        <div className="setup-intro">
           <div className="eyebrow">
-            <span /> CONNECT ONCE. USE IN YOUR AGENT.
+            <span /> YOUR TOOLS. YOUR AGENT.
           </div>
           <h1>
-            接好工具，回到你的 Agent 开始用<span>。</span>
+            把工具接好，
+            <br />让 Agent 去行动<span>。</span>
           </h1>
           <p>
-            先接入自己的工具和模型，再把网关添加到本地 Agent。日常任务继续在
-            Agent 中完成。
+            接入你的工具与模型，让网关选择合适的能力。
+            <br className="desktop-break" />
+            日常任务，继续交给你熟悉的本地 Agent。
           </p>
+          <div className="intro-meta">
+            <span>
+              <span className="online-dot" />
+              本地运行
+            </span>
+            <span>
+              配置一次，持续使用 <ArrowUpRight size={12} />
+            </span>
+          </div>
         </div>
-        <span className="setup-progress">
-          {done.filter(Boolean).length} / 3 已完成
+        <GatewayDiagram tools={status.enabled_tools} />
+      </section>
+      <div className="setup-section-label">
+        <span>LET’S GET CONNECTED</span>
+        <span>
+          <strong>
+            {String(done.filter(Boolean).length).padStart(2, "0")}
+          </strong>{" "}
+          / 03 已完成
         </span>
       </div>
       <nav className="setup-steps" aria-label="接入步骤">
         {labels.map((label, index) => (
           <button
             key={label}
+            aria-current={step === index + 1 ? "step" : undefined}
             className={`setup-step ${step === index + 1 ? "active" : ""} ${done[index] ? "done" : ""}`}
             onClick={() => setChosenStep(index + 1)}
           >
             <span className="setup-step-number">
-              {done[index] ? <Check size={17} /> : index + 1}
+              {done[index] ? <Check size={17} /> : `0${index + 1}`}
             </span>
             <span>
-              <strong>{label}</strong>
+              <strong>
+                {label}
+                <ArrowUpRight size={15} />
+              </strong>
               <small>
                 {index === 0
                   ? status.tools_ready
@@ -119,39 +143,52 @@ export function SetupPage({
                       : "复制接入配置，回到 Agent 使用"}
               </small>
             </span>
-            {index < 2 && <ChevronRight size={16} className="step-arrow" />}
           </button>
         ))}
       </nav>
-      {step === 1 && (
-        <SourceStep
+      <div className="setup-workspace">
+        <div className="setup-stage" key={step}>
+          {step === 1 && (
+            <SourceStep
+              state={state}
+              refresh={refresh}
+              next={() => setChosenStep(2)}
+              openRegistry={openRegistry}
+              notify={notify}
+            />
+          )}
+          {step === 2 && (
+            <ModelStep
+              state={state}
+              refresh={refresh}
+              next={() => setChosenStep(3)}
+              back={() => setChosenStep(1)}
+              notify={notify}
+            />
+          )}
+          {step === 3 && (
+            <AgentStep
+              state={state}
+              refresh={refresh}
+              back={() => setChosenStep(2)}
+              pollError={pollError}
+              notify={notify}
+            />
+          )}
+        </div>
+        <SetupSidebar
           state={state}
-          refresh={refresh}
-          next={() => setChosenStep(2)}
+          step={step}
+          goTo={setChosenStep}
+          openDebug={openDebug}
           openRegistry={openRegistry}
-          notify={notify}
         />
-      )}
-      {step === 2 && (
-        <ModelStep
-          state={state}
-          refresh={refresh}
-          next={() => setChosenStep(3)}
-          back={() => setChosenStep(1)}
-          notify={notify}
-        />
-      )}
-      {step === 3 && (
-        <AgentStep
-          state={state}
-          refresh={refresh}
-          back={() => setChosenStep(2)}
-          pollError={pollError}
-          notify={notify}
-        />
-      )}
+      </div>
       <div className="setup-bottom">
-        <span>特殊配置和问题排查可以继续使用完整开发者工具。</span>
+        <span>
+          <span className="setup-bottom-mark">↳</span> 你的 Agent
+          负责工作，Gateway Lab 负责连接。
+        </span>
         <button className="text-button" onClick={openRegistry}>
           <Settings2 size={13} />
           工具注册表
@@ -412,9 +449,14 @@ function SourceStep({
             <Network size={21} />
           </span>
           <div>
-            <h2>先接入一个自己的工具来源</h2>
+            <span className="card-overline">01 / TOOL SOURCE</span>
+            <h2>从一个工具来源开始</h2>
             <p>
-              MCP 服务可以自动读取工具；HTTP API 需要补充工具路径和参数定义。
+              {form.kind === "http"
+                ? "连接 API 基地址，再定义工具的方法、路径与参数。"
+                : form.transport === "stdio"
+                  ? "由网关启动本地 MCP 进程，读取可用工具。"
+                  : "填写 MCP 地址，读取并选择 Agent 可用的工具。"}
             </p>
           </div>
         </div>
@@ -460,33 +502,64 @@ function SourceStep({
           </div>
         )}
         <form onSubmit={connect} className="source-form">
+          <div className="transport-options" role="group" aria-label="接入方式">
+            {[
+              {
+                id: "http",
+                icon: Network,
+                title: "MCP 地址",
+                description: "Streamable HTTP",
+              },
+              {
+                id: "stdio",
+                icon: Terminal,
+                title: "本地进程",
+                description: "stdio",
+              },
+              {
+                id: "api",
+                icon: Code2,
+                title: "HTTP API",
+                description: "自定义接口",
+              },
+            ].map((option) => (
+              <button
+                type="button"
+                key={option.id}
+                aria-pressed={
+                  (form.kind === "http" ? "api" : form.transport || "http") ===
+                  option.id
+                }
+                className={`transport-option ${(form.kind === "http" ? "api" : form.transport || "http") === option.id ? "selected" : ""}`}
+                onClick={() =>
+                  update({
+                    kind: option.id === "api" ? "http" : "mcp",
+                    transport: option.id === "stdio" ? "stdio" : "http",
+                  })
+                }
+              >
+                <option.icon size={18} />
+                <span>
+                  <strong>{option.title}</strong>
+                  <small>{option.description}</small>
+                </span>
+                <span className="transport-radio">
+                  {(form.kind === "http" ? "api" : form.transport || "http") ===
+                    option.id && <span />}
+                </span>
+              </button>
+            ))}
+          </div>
           <div className="setup-form-row">
             <label className="form-field">
               <span>来源名称</span>
               <input
                 required
                 className="text-input"
-                placeholder="例如：内部知识库、GitHub 工具"
+                placeholder="例如：团队知识库"
                 value={form.name}
                 onChange={(e) => update({ name: e.target.value })}
               />
-            </label>
-            <label className="form-field">
-              <span>接入方式</span>
-              <select
-                className="text-input"
-                value={form.kind === "http" ? "api" : form.transport || "http"}
-                onChange={(e) =>
-                  update({
-                    kind: e.target.value === "api" ? "http" : "mcp",
-                    transport: e.target.value === "stdio" ? "stdio" : "http",
-                  })
-                }
-              >
-                <option value="http">MCP · Streamable HTTP</option>
-                <option value="stdio">MCP · 本地 stdio 进程</option>
-                <option value="api">普通 HTTP API</option>
-              </select>
             </label>
           </div>
           {form.kind === "mcp" && form.transport === "stdio" ? (
@@ -538,89 +611,91 @@ function SourceStep({
               </small>
             </label>
           )}
-          <details className="setup-advanced">
-            <summary>
-              <Settings2 size={13} />
-              高级配置：ID、认证与环境变量
-            </summary>
-            <label className="form-field">
-              <span>
-                来源 ID <em>留空自动生成</em>
-              </span>
-              <input
-                className="text-input mono"
-                value={form.id}
-                onChange={(e) => update({ id: e.target.value })}
-              />
-            </label>
-            {form.transport === "stdio" ? (
-              <>
+          <div className="source-advanced-grid">
+            <details className="setup-advanced">
+              <summary>
+                <Settings2 size={13} />
+                认证与高级配置
+              </summary>
+              <label className="form-field">
+                <span>
+                  来源 ID <em>留空自动生成</em>
+                </span>
+                <input
+                  className="text-input mono"
+                  value={form.id}
+                  onChange={(e) => update({ id: e.target.value })}
+                />
+              </label>
+              {form.transport === "stdio" ? (
+                <>
+                  <label className="form-field">
+                    <span>
+                      工作目录 <em>可选，建议绝对路径</em>
+                    </span>
+                    <input
+                      className="text-input mono"
+                      value={form.work_dir || ""}
+                      onChange={(e) => update({ work_dir: e.target.value })}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>环境变量映射</span>
+                    <textarea
+                      className="setup-json-input"
+                      value={envText}
+                      onChange={(e) => setEnvText(e.target.value)}
+                    />
+                    <small>
+                      {
+                        '例如 {"API_KEY":"${MY_API_KEY}"}。变量由启动网关的 shell 提供，修改后需重启网关。'
+                      }
+                    </small>
+                  </label>
+                </>
+              ) : (
                 <label className="form-field">
                   <span>
-                    工作目录 <em>可选，建议绝对路径</em>
+                    请求头 <em>JSON 对象</em>
                   </span>
-                  <input
-                    className="text-input mono"
-                    value={form.work_dir || ""}
-                    onChange={(e) => update({ work_dir: e.target.value })}
-                  />
-                </label>
-                <label className="form-field">
-                  <span>环境变量映射</span>
                   <textarea
                     className="setup-json-input"
-                    value={envText}
-                    onChange={(e) => setEnvText(e.target.value)}
+                    value={headersText}
+                    onChange={(e) => setHeadersText(e.target.value)}
                   />
                   <small>
                     {
-                      '例如 {"API_KEY":"${MY_API_KEY}"}。变量由启动网关的 shell 提供，修改后需重启网关。'
+                      '例如 {"Authorization":"Bearer ${SERVICE_TOKEN}"}。请先在启动网关的环境里 export SERVICE_TOKEN，再重启。'
                     }
                   </small>
                 </label>
-              </>
-            ) : (
-              <label className="form-field">
-                <span>
-                  请求头 <em>JSON 对象</em>
-                </span>
-                <textarea
-                  className="setup-json-input"
-                  value={headersText}
-                  onChange={(e) => setHeadersText(e.target.value)}
-                />
-                <small>
-                  {
-                    '例如 {"Authorization":"Bearer ${SERVICE_TOKEN}"}。请先在启动网关的环境里 export SERVICE_TOKEN，再重启。'
-                  }
-                </small>
-              </label>
-            )}
-          </details>
-          <details className="setup-advanced">
-            <summary>
-              <FileJson size={13} />
-              粘贴现有 MCP 配置
-            </summary>
-            <p>
-              支持单个 mcpServers 条目，或完整的 Gateway 服务
-              JSON。填入后仍需点击连接。
-            </p>
-            <textarea
-              aria-label="现有 MCP 配置"
-              className="setup-json-input"
-              placeholder='{"mcpServers":{"my-server":{"type":"http","url":"http://127.0.0.1:3000/mcp"}}}'
-              value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
-            />
-            <button
-              className="button secondary"
-              type="button"
-              onClick={loadPasted}
-            >
-              解析并填入表单
-            </button>
-          </details>
+              )}
+            </details>
+            <details className="setup-advanced">
+              <summary>
+                <FileJson size={13} />
+                粘贴现有 MCP 配置
+              </summary>
+              <p>
+                支持单个 mcpServers 条目，或完整的 Gateway 服务
+                JSON。填入后仍需点击连接。
+              </p>
+              <textarea
+                aria-label="现有 MCP 配置"
+                className="setup-json-input"
+                placeholder='{"mcpServers":{"my-server":{"type":"http","url":"http://127.0.0.1:3000/mcp"}}}'
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+              />
+              <button
+                className="button secondary"
+                type="button"
+                onClick={loadPasted}
+              >
+                解析并填入表单
+              </button>
+            </details>
+          </div>
           <Failure error={error} />
           <div className="setup-action-row">
             <button type="submit" className="button primary" disabled={busy}>
@@ -634,6 +709,7 @@ function SourceStep({
                 : form.kind === "mcp"
                   ? "保存并读取工具"
                   : "保存并检查地址"}
+              {!busy && <ArrowRight size={15} />}
             </button>
             <span>配置会保留，连接失败后可直接修改重试。</span>
           </div>
@@ -1138,6 +1214,12 @@ function AgentStep({
   notify: Props["notify"];
 }) {
   const [client, setClient] = useState("codex");
+  const [copied, setCopied] = useState("");
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(""), 2200);
+    return () => clearTimeout(timer);
+  }, [copied]);
   const last = state.setup.agent_last_request;
   const firstTool = state.registry.tools.find(
     (t) =>
@@ -1160,6 +1242,7 @@ function AgentStep({
   async function copy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
+      setCopied(text);
       notify("已复制，回到本地 Agent 粘贴使用。");
     } catch {
       notify("复制失败，请手动选择文本复制。");
@@ -1202,8 +1285,8 @@ function AgentStep({
             </label>
             <div className="setup-code">
               <button aria-label="复制接入配置" onClick={() => copy(command)}>
-                <Copy size={15} />
-                复制
+                {copied === command ? <Check size={15} /> : <Copy size={15} />}
+                {copied === command ? "已复制" : "复制"}
               </button>
               <pre>{command}</pre>
             </div>
@@ -1230,8 +1313,8 @@ function AgentStep({
             <div className="agent-task">
               <p>{prompt}</p>
               <button className="text-button" onClick={() => copy(prompt)}>
-                <Copy size={13} />
-                复制示例任务
+                {copied === prompt ? <Check size={13} /> : <Copy size={13} />}
+                {copied === prompt ? "已复制任务" : "复制示例任务"}
               </button>
             </div>
             <details className="setup-advanced">
