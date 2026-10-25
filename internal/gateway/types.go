@@ -16,6 +16,11 @@ type Server struct {
 	Headers     map[string]string `json:"headers,omitempty"`
 	Enabled     bool              `json:"enabled"`
 	Demo        bool              `json:"demo,omitempty"`
+	Transport   string            `json:"transport,omitempty"`
+	Command     string            `json:"command,omitempty"`
+	Args        []string          `json:"args,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+	WorkDir     string            `json:"work_dir,omitempty"`
 }
 
 type Tool struct {
@@ -49,10 +54,11 @@ type Registry struct {
 }
 
 type DiscoverRequest struct {
-	Intent  string `json:"intent" jsonschema:"Describe the capability needed for the current task, in natural language"`
-	Context string `json:"context,omitempty" jsonschema:"Relevant known information and actions already attempted; avoid secrets"`
-	Actor   string `json:"actor,omitempty" jsonschema:"Simulated local policy identity: developer or observer; this is not authentication"`
-	Mode    string `json:"mode,omitempty" jsonschema:"model for LLM selection, retrieval for keyword preview; defaults to gateway settings"`
+	Intent      string `json:"intent" jsonschema:"Describe the capability needed for the current task, in natural language"`
+	Context     string `json:"context,omitempty" jsonschema:"Relevant known information and actions already attempted; avoid secrets"`
+	Actor       string `json:"actor,omitempty" jsonschema:"Simulated local policy identity: developer or observer; this is not authentication"`
+	Mode        string `json:"mode,omitempty" jsonschema:"model for LLM selection, retrieval for keyword preview; defaults to gateway settings"`
+	IncludeDemo bool   `json:"include_demo,omitempty"`
 }
 
 type Candidate struct {

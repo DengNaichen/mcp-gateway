@@ -60,8 +60,9 @@ func retrieve(tools []Tool, query string) []Candidate {
 func (g *Gateway) Discover(ctx context.Context, req DiscoverRequest) (result DiscoverResult, retErr error) {
 	started := time.Now()
 	defer func() {
+		result.DurationMS = time.Since(started).Milliseconds()
 		if retErr != nil {
-			g.record("discover", req.Actor, "error", req.Intent, started, map[string]any{"error": retErr.Error()})
+			g.record("discover", req.Actor, "error", req.Intent, started, map[string]any{"error": g.errorDetail(retErr)})
 		} else {
 			g.record("discover", req.Actor, result.Status, req.Intent, started, result)
 		}
@@ -85,7 +86,7 @@ func (g *Gateway) Discover(ctx context.Context, req DiscoverRequest) (result Dis
 	r := g.Snapshot()
 	servers := map[string]Server{}
 	for _, server := range r.Servers {
-		if server.Enabled {
+		if server.Enabled && (!server.Demo || req.IncludeDemo) {
 			servers[server.ID] = server
 		}
 	}

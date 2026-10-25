@@ -63,6 +63,7 @@ func (g *Gateway) mcpServer() *mcp.Server {
 	s.AddTool(&mcp.Tool{Name: "discover_tools", Description: "Describe your current task to discover a small set of authorized tools. Returns real tool IDs, schemas and usage reasons. Use invoke_tool to execute them. Rediscover as the task changes.", InputSchema: objectSchema(map[string]any{
 		"intent": map[string]any{"type": "string", "description": "The capability needed now, in natural language"}, "context": map[string]any{"type": "string", "description": "Relevant known facts and previous attempts"}, "actor": map[string]any{"type": "string", "enum": []string{"developer", "observer"}, "description": "Simulated identity only"}, "mode": map[string]any{"type": "string", "enum": []string{"model", "retrieval"}},
 	}, "intent")}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		started := time.Now()
 		var in DiscoverRequest
 		if err := json.Unmarshal(req.Params.Arguments, &in); err != nil {
 			return nil, fmt.Errorf("decode discovery arguments: %w", err)
@@ -71,6 +72,7 @@ func (g *Gateway) mcpServer() *mcp.Server {
 			in.Actor = req.Extra.Header.Get("X-Gateway-Actor")
 		}
 		out, err := g.Discover(ctx, in)
+		g.recordAgentTool("discover_tools", in.Actor, started, err)
 		if err != nil {
 			return nil, err
 		}
@@ -80,6 +82,7 @@ func (g *Gateway) mcpServer() *mcp.Server {
 	s.AddTool(&mcp.Tool{Name: "invoke_tool", Description: "Execute a registered tool ID returned by discover_tools using arguments matching its input_schema. Authorization, enablement and schema are checked again. Optional fields projects nested response paths.", InputSchema: objectSchema(map[string]any{
 		"tool_id": map[string]any{"type": "string"}, "arguments": map[string]any{"type": "object"}, "fields": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "actor": map[string]any{"type": "string", "enum": []string{"developer", "observer"}},
 	}, "tool_id", "arguments")}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		started := time.Now()
 		var in InvokeRequest
 		if err := json.Unmarshal(req.Params.Arguments, &in); err != nil {
 			return nil, fmt.Errorf("decode invocation arguments: %w", err)
@@ -88,6 +91,7 @@ func (g *Gateway) mcpServer() *mcp.Server {
 			in.Actor = req.Extra.Header.Get("X-Gateway-Actor")
 		}
 		out, err := g.Invoke(ctx, in)
+		g.recordAgentTool("invoke_tool", in.Actor, started, err)
 		if err != nil {
 			return nil, err
 		}
@@ -98,8 +102,9 @@ func (g *Gateway) mcpServer() *mcp.Server {
 
 func (g *Gateway) Handler(assets fs.FS) http.Handler {
 	mux := http.NewServeMux()
+	g.registerSetup(mux)
 	mcpServer := g.mcpServer()
-	mux.Handle("/mcp", mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server { return mcpServer }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true}))
+	mux.Handle("/mcp", g.trackMCP(mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server { return mcpServer }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})))
 	demo := g.demoServer()
 	mux.Handle("/demo/mcp", mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server { return demo }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true}))
 	mux.HandleFunc("GET /demo/api/{name}", g.demoHTTP)
@@ -108,10 +113,15 @@ func (g *Gateway) Handler(assets fs.FS) http.Handler {
 	})
 	mux.HandleFunc("GET /api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
 		settings, key := g.Config()
+		setup, err := g.Setup()
+		if err != nil {
+			fail(w, err)
+			return
+		}
 		g.mu.RLock()
 		events := slices.Clone(g.events)
 		g.mu.RUnlock()
-		respond(w, 200, map[string]any{"registry": g.Snapshot(), "settings": settings, "key_configured": key, "events": events, "mcp_url": g.baseURL + "/mcp"})
+		respond(w, 200, map[string]any{"registry": g.Snapshot(), "settings": settings, "key_configured": key, "events": events, "mcp_url": g.baseURL + "/mcp", "setup": setup})
 	})
 	mux.HandleFunc("PUT /api/settings", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {

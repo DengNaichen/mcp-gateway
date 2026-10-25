@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"time"
@@ -30,8 +32,25 @@ func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(r)
 }
 
-func connectMCP(ctx context.Context, s Server) (*mcp.ClientSession, error) {
+func connectMCP(ctx, processContext context.Context, s Server) (*mcp.ClientSession, error) {
 	client := mcp.NewClient(&mcp.Implementation{Name: "gateway-lab", Version: "0.1.0"}, nil)
+	if err := checkEnvironment(s); err != nil {
+		return nil, err
+	}
+	if s.Transport == "stdio" {
+		command := exec.CommandContext(processContext, s.Command, s.Args...)
+		command.Dir = s.WorkDir
+		command.Env = os.Environ()
+		for key, value := range s.Env {
+			command.Env = append(command.Env, key+"="+os.ExpandEnv(value))
+		}
+		command.Stderr = os.Stderr
+		session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
+		if err != nil {
+			return nil, fmt.Errorf("start stdio mcp server: %w", err)
+		}
+		return session, nil
+	}
 	httpClient := &http.Client{Transport: headerTransport{headers: s.Headers, base: http.DefaultTransport}, CheckRedirect: noRedirect}
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: s.Endpoint, HTTPClient: httpClient, DisableStandaloneSSE: true, MaxRetries: -1}, nil)
 	if err != nil {
@@ -46,6 +65,76 @@ func closeSession(session *mcp.ClientSession) {
 	}
 }
 
+type stdioSession struct {
+	fingerprint string
+	session     *mcp.ClientSession
+	cancel      context.CancelFunc
+}
+
+// Keep a local process alive across discovery and calls so stateful tools can
+// preserve their session. Reconfiguration or gateway shutdown closes it.
+func (g *Gateway) mcpSession(ctx context.Context, s Server) (*mcp.ClientSession, func(), error) {
+	if s.Transport != "stdio" {
+		session, err := connectMCP(ctx, ctx, s)
+		if err != nil {
+			return nil, nil, err
+		}
+		return session, func() { closeSession(session) }, nil
+	}
+	fingerprint, err := sourceFingerprint(s)
+	if err != nil {
+		return nil, nil, err
+	}
+	g.sessionMu.Lock()
+	defer g.sessionMu.Unlock()
+	if g.sessions == nil {
+		g.sessions = map[string]stdioSession{}
+	}
+	if current, ok := g.sessions[s.ID]; ok {
+		if current.fingerprint == fingerprint {
+			return current.session, func() {}, nil
+		}
+		closeSession(current.session)
+		current.cancel()
+		delete(g.sessions, s.ID)
+	}
+	processContext, cancel := context.WithCancel(context.Background())
+	session, err := connectMCP(ctx, processContext, s)
+	if err != nil {
+		cancel()
+		return nil, nil, err
+	}
+	g.sessions[s.ID] = stdioSession{fingerprint, session, cancel}
+	return session, func() {}, nil
+}
+
+func (g *Gateway) forgetClosedSession(id string, session *mcp.ClientSession, err error) {
+	if !errors.Is(err, mcp.ErrConnectionClosed) {
+		return
+	}
+	g.sessionMu.Lock()
+	defer g.sessionMu.Unlock()
+	if current, ok := g.sessions[id]; ok && current.session == session {
+		closeSession(current.session)
+		current.cancel()
+		delete(g.sessions, id)
+	}
+}
+
+func (g *Gateway) closeDownstreams() error {
+	g.sessionMu.Lock()
+	defer g.sessionMu.Unlock()
+	var result error
+	for id, current := range g.sessions {
+		if err := current.session.Close(); err != nil {
+			result = errors.Join(result, fmt.Errorf("close stdio server %s: %w", id, err))
+		}
+		current.cancel()
+		delete(g.sessions, id)
+	}
+	return result
+}
+
 func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
 	r := g.Snapshot()
 	i := slices.IndexFunc(r.Servers, func(s Server) bool { return s.ID == id })
@@ -54,14 +143,15 @@ func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	session, err := connectMCP(ctx, r.Servers[i])
+	session, release, err := g.mcpSession(ctx, r.Servers[i])
 	if err != nil {
 		return 0, problem(502, "连接 MCP 服务失败", err)
 	}
-	defer closeSession(session)
+	defer release()
 	imported := []Tool{}
 	for t, err := range session.Tools(ctx, nil) {
 		if err != nil {
+			g.forgetClosedSession(id, session, err)
 			return 0, problem(502, "读取下游 tools/list 失败", err)
 		}
 		b, err := json.Marshal(t.InputSchema)
@@ -89,6 +179,11 @@ func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	updated := Registry{Servers: g.registry.Servers, Tools: slices.Clone(g.registry.Tools)}
+	for i, t := range updated.Tools {
+		if t.ServerID == id && !slices.ContainsFunc(imported, func(found Tool) bool { return found.ID == t.ID }) {
+			updated.Tools[i].Enabled = false
+		}
+	}
 	for _, t := range imported {
 		i := slices.IndexFunc(updated.Tools, func(old Tool) bool { return old.ID == t.ID })
 		if i >= 0 {
@@ -122,7 +217,7 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 		detail := map[string]any{"tool_id": req.ToolID, "fields": req.Fields}
 		if retErr != nil {
 			status = "error"
-			detail["error"] = retErr.Error()
+			detail["error"] = g.errorDetail(retErr)
 		}
 		g.record("invoke", req.Actor, status, req.ToolID, started, detail)
 	}()
@@ -151,7 +246,7 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	defer cancel()
 	var data any
 	if s.Kind == "mcp" {
-		data, err = callMCP(ctx, s, t, req.Arguments)
+		data, err = g.callMCP(ctx, s, t, req.Arguments)
 	} else {
 		data, err = callHTTP(ctx, s, t, req.Arguments)
 	}
@@ -165,6 +260,9 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 }
 
 func callHTTP(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
+	if err := checkEnvironment(s); err != nil {
+		return nil, err
+	}
 	endpoint := strings.TrimRight(s.Endpoint, "/") + "/" + strings.TrimLeft(t.Path, "/")
 	method := t.Method
 	if method == "" {
@@ -227,18 +325,29 @@ func callHTTP(ctx context.Context, s Server, t Tool, args map[string]any) (any, 
 	return data, nil
 }
 
-func callMCP(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
-	session, err := connectMCP(ctx, s)
+func (g *Gateway) callMCP(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
+	session, release, err := g.mcpSession(ctx, s)
 	if err != nil {
 		return nil, err
 	}
-	defer closeSession(session)
+	defer release()
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: t.Name, Arguments: args})
 	if err != nil {
+		g.forgetClosedSession(s.ID, session, err)
 		return nil, fmt.Errorf("call native mcp tool: %w", err)
 	}
 	if result.IsError {
-		return nil, fmt.Errorf("native mcp tool returned an execution error")
+		messages := []string{}
+		for _, content := range result.Content {
+			if text, ok := content.(*mcp.TextContent); ok {
+				messages = append(messages, text.Text)
+			}
+		}
+		message := strings.Join(messages, "\n")
+		if len(message) > 4000 {
+			message = message[:4000]
+		}
+		return nil, fmt.Errorf("native mcp tool returned an execution error: %s", message)
 	}
 	if result.StructuredContent != nil {
 		return result.StructuredContent, nil

@@ -19,6 +19,7 @@ func run() error {
 	args := flag.String("args", "{}", "Tool arguments as JSON")
 	fields := flag.String("fields", "", "Comma-separated response projection paths")
 	contextText := flag.String("context", "", "Context for discovery")
+	includeDemo := flag.Bool("demo", false, "Include built-in demo tools in discovery")
 	flag.Parse()
 	if flag.NArg() < 1 {
 		return fmt.Errorf("usage: gatewayctl [flags] list | search <intent> | call <tool_id>")
@@ -32,7 +33,7 @@ func run() error {
 			return fmt.Errorf("search requires an intent")
 		}
 		method, path = http.MethodPost, "/api/discover"
-		payload = map[string]any{"intent": strings.Join(flag.Args()[1:], " "), "actor": *actor, "mode": *mode, "context": *contextText}
+		payload = map[string]any{"intent": strings.Join(flag.Args()[1:], " "), "actor": *actor, "mode": *mode, "context": *contextText, "include_demo": *includeDemo}
 	case "call":
 		if flag.NArg() != 2 {
 			return fmt.Errorf("call requires one tool id")

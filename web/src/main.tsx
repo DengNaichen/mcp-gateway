@@ -41,14 +41,16 @@ import {
 } from "./types";
 import "./style.css";
 import "./readability.css";
+import "./setup.css";
+import { SetupPage } from "./SetupPage";
 
-type Page = "playground" | "registry" | "activity" | "connect" | "settings";
+type Page = "setup" | "playground" | "registry" | "activity" | "settings";
 const nav = [
-  { id: "playground", label: "路由工作台", icon: Waypoints },
+  { id: "setup", label: "开始接入", icon: Network },
   { id: "registry", label: "工具注册表", icon: Layers },
+  { id: "playground", label: "调试", icon: Waypoints },
   { id: "activity", label: "调用记录", icon: Activity },
-  { id: "connect", label: "连接 Agent", icon: Terminal },
-  { id: "settings", label: "模型设置", icon: Settings2 },
+  { id: "settings", label: "高级设置", icon: Settings2 },
 ] as const;
 const examples = [
   "排查 billing 服务最近频繁报错的原因",
@@ -57,7 +59,13 @@ const examples = [
 ];
 
 function App() {
-  const [page, setPage] = useState<Page>("playground");
+  const [page, setPage] = useState<Page>("setup");
+  const [setupStep, setSetupStep] = useState<number | undefined>();
+  const [includeDemo, setIncludeDemo] = useState(false);
+  function openSetup(step?: number) {
+    setSetupStep(step);
+    setPage("setup");
+  }
   const [state, setState] = useState<Bootstrap | null>(null);
   const [bootError, setBootError] = useState("");
   const [toast, setToast] = useState("");
@@ -132,9 +140,15 @@ function App() {
     try {
       const data = await api<Discovery>("/discover?debug=1", {
         method: "POST",
-        body: pretty({ intent, context, actor, mode }),
+        body: pretty({
+          intent,
+          context,
+          actor,
+          mode,
+          include_demo: includeDemo,
+        }),
       });
-      setResult(data);
+      setResult({ ...data, candidates: data.candidates || [] });
       if (data.tools.length) inspect(data.tools[0]);
       await refresh();
     } catch (e: any) {
@@ -304,8 +318,10 @@ function App() {
     );
   const tools = state.registry.tools;
   const servers = state.registry.servers;
+  const debugServers = servers.filter((s) => includeDemo || !s.demo);
   const enabled = tools.filter(
-    (t) => t.enabled && servers.some((s) => s.id === t.server_id && s.enabled),
+    (t) =>
+      t.enabled && debugServers.some((s) => s.id === t.server_id && s.enabled),
   ).length;
   const filtered = tools.filter(
     (t) =>
@@ -325,7 +341,7 @@ function App() {
           href="#"
           onClick={(e) => {
             e.preventDefault();
-            setPage("playground");
+            openSetup();
           }}
         >
           <span className="brand-mark">
@@ -343,8 +359,11 @@ function App() {
           {nav.map((item) => (
             <button
               key={item.id}
+              aria-label={item.label}
+              title={item.label}
               className={`nav-item ${page === item.id ? "active" : ""}`}
               onClick={() => {
+                if (item.id === "setup") setSetupStep(undefined);
                 setPage(item.id);
                 if (item.id === "activity")
                   refresh().catch((e) => setToast(e.message));
@@ -369,8 +388,8 @@ function App() {
             <br />
             由网关发现合适的能力。
           </p>
-          <button onClick={() => setPage("connect")}>
-            连接你的 Agent <ArrowUpRight size={14} />
+          <button onClick={() => openSetup()}>
+            查看接入进度 <ArrowUpRight size={14} />
           </button>
         </div>
         <div className="sidebar-bottom">
@@ -397,11 +416,21 @@ function App() {
             <span className="top-divider" />
             <span className="online-text">
               <span className="online-dot" />
-              Gateway 在线
+              Go 服务运行中
             </span>
           </div>
         </header>
         <main>
+          {page === "setup" && (
+            <SetupPage
+              state={state}
+              refresh={refresh}
+              initialStep={setupStep}
+              openRegistry={() => setPage("registry")}
+              openDebug={() => setPage("playground")}
+              notify={setToast}
+            />
+          )}
           {page === "playground" && (
             <>
               <div className="page-heading">
@@ -410,13 +439,16 @@ function App() {
                     <span /> INTENT-DRIVEN TOOL DISCOVERY
                   </div>
                   <h1>
-                    从意图，到合适的工具<span>。</span>
+                    路由调试<span>。</span>
                   </h1>
-                  <p>描述当前任务，让网关为你的 Agent 找到需要的能力。</p>
+                  <p>
+                    手动检查工具发现和执行过程。日常任务请直接交给已接入的本地
+                    Agent。
+                  </p>
                 </div>
                 <button
                   className="button secondary"
-                  onClick={() => setPage("connect")}
+                  onClick={() => openSetup(3)}
                 >
                   <Terminal size={15} /> 连接 Agent <ArrowUpRight size={14} />
                 </button>
@@ -430,7 +462,7 @@ function App() {
                 <span className="strip-divider" />
                 <div>
                   <Network size={16} />
-                  <strong>{servers.length}</strong>
+                  <strong>{debugServers.length}</strong>
                   <span>已注册服务</span>
                 </div>
                 <span className="strip-divider" />
@@ -483,12 +515,18 @@ function App() {
                       />
                     )}
                     <div className="example-row">
-                      <span>试一试</span>
+                      <span>内置演示 · 仅调试</span>
                       {examples.map((ex, i) => (
                         <button
                           key={ex}
                           title={ex}
-                          onClick={() => setIntent(ex)}
+                          onClick={() => {
+                            setIntent(ex);
+                            setIncludeDemo(true);
+                            setMode("retrieval");
+                            setResult(null);
+                            setSelected(null);
+                          }}
                         >
                           {
                             ["排查服务错误", "查找服务负责人", "查询近期发布"][
@@ -529,6 +567,18 @@ function App() {
                             <option value="model">模型决策</option>
                           </select>
                         </label>
+                        <label className="checkbox-row debug-demo-toggle">
+                          <input
+                            type="checkbox"
+                            checked={includeDemo}
+                            onChange={(e) => {
+                              setIncludeDemo(e.target.checked);
+                              setResult(null);
+                              setSelected(null);
+                            }}
+                          />
+                          包含演示工具
+                        </label>
                       </div>
                       <button
                         className="button primary"
@@ -547,7 +597,7 @@ function App() {
                     {mode === "model" && !state.settings.model && (
                       <div className="inline-note">
                         模型尚未配置。
-                        <button onClick={() => setPage("settings")}>
+                        <button onClick={() => openSetup(2)}>
                           前往设置 <ArrowUpRight size={12} />
                         </button>
                       </div>
@@ -925,7 +975,17 @@ function App() {
                       {s.demo && <span className="demo-label">DEMO</span>}
                     </h3>
                     <p>{s.description}</p>
-                    <code title={s.endpoint}>{s.endpoint}</code>
+                    <code
+                      title={
+                        s.transport === "stdio"
+                          ? `${s.command} ${(s.args || []).join(" ")}`
+                          : s.endpoint
+                      }
+                    >
+                      {s.transport === "stdio"
+                        ? `${s.command} ${(s.args || []).join(" ")}`
+                        : s.endpoint}
+                    </code>
                     <div className="server-card-bottom">
                       <span>
                         {tools.filter((t) => t.server_id === s.id).length}{" "}
@@ -1098,7 +1158,11 @@ function App() {
                       <div className="event-body">
                         <div>
                           <span className="event-kind">
-                            {ev.kind === "discover" ? "工具发现" : "工具调用"}
+                            {ev.kind === "agent"
+                              ? "Agent 请求"
+                              : ev.kind === "discover"
+                                ? "工具发现"
+                                : "工具调用"}
                           </span>
                           <span
                             className={`status-badge ${ev.status === "error" ? "error" : ""}`}
@@ -1119,128 +1183,6 @@ function App() {
                     </button>
                   ))
                 )}
-              </section>
-            </>
-          )}
-
-          {page === "connect" && (
-            <>
-              <PageHeading
-                eyebrow="ONE ENDPOINT, ALL CAPABILITIES"
-                title="连接你的 Agent"
-                subtitle="本地 Agent 只需要连接一个 MCP 服务，并理解两个入口工具。"
-              />
-              <div className="connect-grid">
-                <section className="panel connect-panel">
-                  <div className="connect-symbol">
-                    <Terminal size={27} />
-                  </div>
-                  <h2>接入 MCP 客户端</h2>
-                  <p>使用支持 Streamable HTTP 的客户端连接网关。</p>
-                  <div className="endpoint-box">
-                    <span className="online-dot" />
-                    <code>{state.mcp_url}</code>
-                    <button
-                      aria-label="复制 MCP 地址"
-                      onClick={() => copy(state.mcp_url)}
-                    >
-                      <Copy size={15} />
-                    </button>
-                  </div>
-                  <div className="code-toolbar">
-                    <span>MCP 配置示例 · 字段依客户端而定</span>
-                    <button
-                      aria-label="复制客户端配置"
-                      onClick={() =>
-                        copy(
-                          pretty({
-                            mcpServers: {
-                              "gateway-lab": {
-                                type: "http",
-                                url: state.mcp_url,
-                              },
-                            },
-                          }),
-                        )
-                      }
-                    >
-                      <Copy size={13} />
-                    </button>
-                  </div>
-                  <pre className="code-block">
-                    {pretty({
-                      mcpServers: {
-                        "gateway-lab": { type: "http", url: state.mcp_url },
-                      },
-                    })}
-                  </pre>
-                  <p className="field-help">
-                    默认模拟身份为 developer。可通过工具参数 actor 或请求头
-                    X-Gateway-Actor 切换。
-                  </p>
-                </section>
-                <section className="panel connect-panel">
-                  <div className="connect-symbol lime">
-                    <Code2 size={27} />
-                  </div>
-                  <h2>两个固定入口</h2>
-                  <p>发现工具后，通过网关统一调用。</p>
-                  <div className="meta-tool">
-                    <span className="step-number">01</span>
-                    <div>
-                      <code>discover_tools</code>
-                      <p>
-                        输入 intent 和可选 context，获得真实工具 ID、schema
-                        和推荐理由。
-                      </p>
-                    </div>
-                  </div>
-                  <div className="meta-tool">
-                    <span className="step-number">02</span>
-                    <div>
-                      <code>invoke_tool</code>
-                      <p>
-                        传入 tool_id、arguments 和可选
-                        fields，执行调用并返回结果。
-                      </p>
-                    </div>
-                  </div>
-                  <div className="agent-instruction">
-                    <strong>推荐给本地 Agent 的指引</strong>
-                    <p>
-                      需要外部能力时，先描述当前任务调用
-                      discover_tools。根据返回的 schema 构造参数，再用
-                      invoke_tool 执行。任务变化时重新发现。
-                    </p>
-                    <button
-                      className="text-button"
-                      onClick={() =>
-                        copy(
-                          "需要外部能力时，先描述当前任务调用 discover_tools，可附带已知信息与已尝试的操作。根据返回的真实工具 ID 和 input_schema 构造参数，再通过 invoke_tool 执行。任务变化时重新发现。",
-                        )
-                      }
-                    >
-                      复制指引 <Copy size={12} />
-                    </button>
-                  </div>
-                </section>
-              </div>
-              <section className="panel cli-panel">
-                <div>
-                  <Terminal size={19} />
-                  <h2>也可以从命令行调用</h2>
-                  <span className="muted-label">CODE MODE</span>
-                </div>
-                <pre className="code-block">{`./bin/gatewayctl search "排查 billing 最近的报错"\n\n./bin/gatewayctl -args '{"service":"billing","minutes":10}' \\\n  -fields 'logs.timestamp,logs.message' \\\n  call observability.search_error_logs > result.json`}</pre>
-                <button
-                  className="copy-cli"
-                  aria-label="复制 CLI 命令"
-                  onClick={() =>
-                    copy('./bin/gatewayctl search "排查 billing 最近的报错"')
-                  }
-                >
-                  <Copy size={14} />
-                </button>
               </section>
             </>
           )}

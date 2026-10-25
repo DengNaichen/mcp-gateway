@@ -1,6 +1,6 @@
 # Gateway Lab
 
-一个可以直接运行的 MCP Gateway 原型。Go 后端、React + TypeScript 工作台、SQLite 持久化；网关中的模型负责从候选工具里做选择，本地 Agent 继续负责规划和执行。
+一个可以直接运行的 MCP Gateway 原型。Go 后端、React + TypeScript 管理界面、SQLite 持久化；网关中的模型负责从候选工具里做选择，本地 Agent 继续负责规划和执行。
 
 ## 启动
 
@@ -25,14 +25,17 @@ make build
 
 ## 使用流程
 
-1. 打开「路由工作台」。默认「检索预览」只运行本地关键词检索，不会调用任何模型。
-2. 在「模型设置」填写兼容 Chat Completions 的 Base URL、模型 ID 和可选 API Key。配置默认模式为「模型决策」，然后保存。
-3. 在工作台描述当前任务，按「发现工具」。可以查看候选召回、模型推荐理由和返回的真实 schema。
-4. 选择工具，进入检查器的「试运行」，填写参数并执行。可选字段如 `logs.timestamp,logs.message` 会裁剪结果。
-5. 在「工具注册表」添加自己的服务和工具。原生 MCP 服务可通过「同步工具」读取下游 tools/list；新工具默认禁用，需手动启用。
-6. 在「调用记录」查看发现和调用详情。页面显示最近 100 条记录，SQLite 保存全部记录。
+首页「开始接入」按三个步骤引导：
 
-内置的 Service Catalog 是 HTTP API，Observability 是使用官方 Go SDK 实现的原生 MCP 服务。示例调用实际经过对应适配器和本机 HTTP 请求，响应明确带有 `demo: true`。它们用于让原型开箱可操作。
+1. **接入工具**：填写 MCP 地址或本地 stdio 启动命令，点击「保存并读取工具」。也可以粘贴单个现有 `mcpServers` 配置。检查工具描述和读写属性，勾选后点击「保存工具选择」。新导入工具默认禁用，表单中的勾选只是待保存的选择。普通 HTTP API 则先检查地址，再填写具体工具的方法、路径和参数 schema。
+2. **配置模型**：填写兼容 Chat Completions 的 Base URL、模型 ID 和可选 API Key。「仅保存配置」不发起请求；「保存并测试路由」会用自己的工具定义发起一次真实模型请求，校验决策 JSON 和工具 ID，不执行下游工具。需要先启用至少一个自己的工具。更换配置、Key 或工具后，上次检查会显示需要重新测试。
+3. **连接 Agent**：选择 Codex、Claude Code 或通用 JSON，复制命令或配置，在本地客户端应用。重新打开客户端会话后，直接在 Agent 里提出任务。页面只读取状态，在网关收到 MCP 初始化、工具列表或工具调用请求后显示记录；不会通过网页自测模拟完成接入。
+
+三个步骤都可以先查看，未接入时进度保持未完成。连接失败会保留配置，显示错误详情，方便修改重试。HTTP 地址可达、工具已启用、模型已响应和 Agent 已发来请求分别显示，不代表下游任务一定成功。
+
+原来的工作台位于「调试」：查看关键词候选召回、模型推荐理由、真实 schema，或手动试调用工具。可选字段如 `logs.timestamp,logs.message` 会裁剪结果。「工具注册表」保留完整 JSON 编辑器和同步入口，「高级设置」保留路由参数。「调用记录」显示最近 100 条记录，SQLite 保存全部记录。
+
+内置的 Service Catalog 是 HTTP API，Observability 是使用官方 Go SDK 实现的原生 MCP 服务。示例调用实际经过对应适配器和本机 HTTP 请求，响应明确带有 `demo: true`。演示工具不计入接入进度，默认不参与发现。调试页选择内置示例会开启「包含演示工具」并切到无需模型的检索预览。
 
 ## 模型配置
 
@@ -85,7 +88,7 @@ http://127.0.0.1:8788/mcp
 
 ```sh
 ./bin/gatewayctl list
-./bin/gatewayctl -mode retrieval search '排查 billing 最近报错的原因'
+./bin/gatewayctl -demo -mode retrieval search '排查 billing 最近报错的原因'
 ./bin/gatewayctl -mode model -context '已知服务名为 billing' search '查错误日志'
 ./bin/gatewayctl -args '{"service":"billing","minutes":10}' \
   -fields 'logs.timestamp,logs.message' \
@@ -103,7 +106,29 @@ Flags 放在子命令之前。`-url` 可指定网关地址，`-actor observer` �
 - 当前没有自动导入 OpenAPI、路径参数模板或 OAuth；这些可以后续扩展。
 - `headers` 只接受环境变量引用，例如 `{"Authorization":"Bearer ${SERVICE_TOKEN}"}`，实际密钥从 Go 进程环境读取。
 
-原生 MCP 下游支持 Streamable HTTP，使用官方 MCP Go SDK 处理协议、初始化、session 与响应。当前不支持 stdio 下游、旧 HTTP+SSE transport 或交互式 OAuth。
+## 接入本地 stdio MCP
+
+首页切换「MCP · 本地 stdio 进程」，分别填写命令和 JSON 字符串数组参数。由 Go 进程直接启动，不经过 shell；命令必须在网关进程的 PATH 中，或使用绝对路径。`npx`、`uvx` 等命令需要在本机预先可用，首次安装依赖时可能需要先在终端运行。
+
+完整服务定义示例：
+
+```json
+{
+  "id": "local-tools",
+  "name": "本地工具",
+  "kind": "mcp",
+  "transport": "stdio",
+  "command": "/absolute/path/to/mcp-server",
+  "args": ["--workspace", "/absolute/path/to/workspace"],
+  "work_dir": "/absolute/path/to/workspace",
+  "env": {"API_KEY": "${MY_SERVICE_KEY}"},
+  "enabled": true
+}
+```
+
+`env` 的值和 HTTP `headers` 一样使用 `${ENV_VAR}` 引用；密钥由启动网关的 shell 提供，修改后需重启网关。stdio 进程会在导入和连续调用之间保留，配置改变后下次连接会重新启动，网关退出时关闭。进程断线后不自动重试工具调用，以免重复执行；可以重新读取工具后再试。
+
+原生 MCP 下游支持 Streamable HTTP 和 stdio，使用官方 MCP Go SDK 处理协议、初始化、session 与响应。当前不支持旧 HTTP+SSE transport 或交互式 OAuth。
 
 ## SQLite
 
@@ -115,6 +140,7 @@ Flags 放在子命令之前。`-url` 可指定网关地址，`-actor observer` �
 | tools | 工具 ID、所属服务和 JSON 定义 |
 | settings | 不含 API Key 的模型和路由配置 |
 | activity | 请求时间、模拟身份、状态、耗时及 JSON 详情 |
+| connection_checks | 来源及模型的最近检查结果、时间和配置指纹，不保存凭据 |
 
 ```sh
 sqlite3 data/gateway.db '.tables'
@@ -130,10 +156,14 @@ sqlite3 data/gateway.db 'SELECT time, kind, status, title FROM activity ORDER BY
 | --- | --- | --- |
 | GET | /api/health | 运行状态 |
 | GET | /api/bootstrap | Registry、脱敏配置、最近记录和 MCP 地址 |
+| GET | /api/setup/status | 三步接入状态、检查结果和最近 MCP 客户端请求 |
+| POST | /api/setup/source | 保存来源并检查连接；MCP 同时读取工具 |
+| POST | /api/setup/model | 保存模型配置并发起真实路由检查 |
 | PUT | /api/settings | 保存模型配置；api_key 只更新内存 |
 | PUT | /api/servers | 添加或更新完整服务定义 |
 | PUT | /api/tools | 添加或更新完整工具定义 |
 | POST | /api/servers/{id}/sync | 同步原生 MCP 工具 |
+| POST | /api/servers/{id}/tools | 批量保存当前服务的启用工具 ID：`{"ids":[...]}` |
 | POST | /api/discover | 工具发现 |
 | POST | /api/invoke | 工具调用 |
 | GET | /api/events | 最近 100 条记录 |

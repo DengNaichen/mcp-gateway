@@ -18,14 +18,16 @@ import (
 )
 
 type Gateway struct {
-	mu       sync.RWMutex
-	registry Registry
-	settings Settings
-	apiKey   string
-	events   []Event
-	dir      string
-	baseURL  string
-	db       *sql.DB
+	mu        sync.RWMutex
+	registry  Registry
+	settings  Settings
+	apiKey    string
+	events    []Event
+	dir       string
+	baseURL   string
+	db        *sql.DB
+	sessionMu sync.Mutex
+	sessions  map[string]stdioSession
 }
 
 func New(dir, baseURL string) (*Gateway, error) {
@@ -183,12 +185,26 @@ func (g *Gateway) SaveServer(s Server) error {
 	if !validID(s.ID) || s.Name == "" || (s.Kind != "http" && s.Kind != "mcp") {
 		return invalid("请提供合法 ID、名称及协议类型 http/mcp")
 	}
-	if err := validateURL(s.Endpoint); err != nil {
-		return err
+	if s.Kind == "mcp" && s.Transport == "stdio" {
+		if strings.TrimSpace(s.Command) == "" {
+			return invalid("stdio 服务需要填写启动命令")
+		}
+	} else {
+		if s.Transport != "" && s.Transport != "http" {
+			return invalid("支持的 MCP 传输为 http 或 stdio")
+		}
+		if err := validateURL(s.Endpoint); err != nil {
+			return err
+		}
 	}
 	for _, value := range s.Headers {
 		if !strings.Contains(value, "${") || !strings.Contains(value, "}") {
 			return invalid("请求头的凭据请使用 ${ENV_VAR} 环境变量引用")
+		}
+	}
+	for _, value := range s.Env {
+		if !strings.Contains(value, "${") || !strings.Contains(value, "}") {
+			return invalid("环境变量值请使用 ${ENV_VAR} 引用，由网关启动环境提供")
 		}
 	}
 	g.mu.Lock()

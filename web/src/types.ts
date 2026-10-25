@@ -7,6 +7,11 @@ export type Server = {
   enabled: boolean;
   demo?: boolean;
   headers?: Record<string, string>;
+  transport?: "http" | "stdio";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  work_dir?: string;
 };
 export type Tool = {
   id: string;
@@ -47,6 +52,25 @@ export type Bootstrap = {
   key_configured: boolean;
   events: Event[];
   mcp_url: string;
+  setup: SetupStatus;
+};
+export type ConnectionCheck = {
+  status: string;
+  message: string;
+  detail?: string;
+  checked_at: string;
+  tool_count?: number;
+  stale: boolean;
+};
+export type SetupStatus = {
+  sources: number;
+  enabled_tools: number;
+  tools_ready: boolean;
+  model_configured: boolean;
+  model_ready: boolean;
+  model_check: ConnectionCheck | null;
+  source_checks: Record<string, ConnectionCheck>;
+  agent_last_request: Event | null;
 };
 export type Selection = Tool & { reason: string };
 export type Discovery = {
@@ -77,7 +101,10 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  if (!response.ok)
+    throw Object.assign(new Error(data.error || `HTTP ${response.status}`), {
+      detail: data.detail,
+    });
   return data;
 }
 export const pretty = (value: unknown) => JSON.stringify(value, null, 2);

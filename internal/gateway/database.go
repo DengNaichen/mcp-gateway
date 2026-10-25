@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -33,7 +34,8 @@ CREATE TABLE IF NOT EXISTS tools (id TEXT PRIMARY KEY, server_id TEXT NOT NULL R
 CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), definition TEXT NOT NULL CHECK(json_valid(definition)));
 CREATE TABLE IF NOT EXISTS activity (id TEXT PRIMARY KEY, time TEXT NOT NULL, kind TEXT NOT NULL, actor TEXT NOT NULL, status TEXT NOT NULL, title TEXT NOT NULL, duration_ms INTEGER NOT NULL, detail TEXT NOT NULL CHECK(json_valid(detail)));
 CREATE INDEX IF NOT EXISTS activity_by_time ON activity(time DESC);
-PRAGMA user_version=1;`); err != nil {
+CREATE TABLE IF NOT EXISTS connection_checks (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, definition TEXT NOT NULL CHECK(json_valid(definition)));
+PRAGMA user_version=2;`); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
 			slog.Warn("close failed database", "error", closeErr)
 		}
@@ -49,10 +51,11 @@ PRAGMA user_version=1;`); err != nil {
 }
 
 func (g *Gateway) Close() error {
+	result := g.closeDownstreams()
 	if err := g.db.Close(); err != nil {
-		return fmt.Errorf("close sqlite: %w", err)
+		result = errors.Join(result, fmt.Errorf("close sqlite: %w", err))
 	}
-	return nil
+	return result
 }
 
 func (g *Gateway) loadRegistry() error {
