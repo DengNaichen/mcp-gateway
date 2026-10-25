@@ -1,0 +1,9 @@
+/bin/
+/data/*.json
+/data/*.jsonl
+/data/*.db
+/data/*.db-*
+/web/node_modules/
+.env
+.DS_Store
+*.log

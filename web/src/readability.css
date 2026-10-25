@@ -1,0 +1,305 @@
+/* Comfortable density for a technical workbench. */
+.nav-item {
+  font-size: 13px;
+}
+.sidebar-note strong,
+.sidebar-note p {
+  font-size: 11px;
+}
+.sidebar-bottom strong {
+  font-size: 11px;
+}
+.sidebar-bottom small {
+  font-size: 10px;
+}
+.breadcrumb,
+.breadcrumb strong,
+.online-text {
+  font-size: 11px;
+}
+.page-heading p {
+  font-size: 13px;
+  color: #7e8a72;
+}
+.page-heading .eyebrow {
+  font-size: 9px;
+}
+.panel-label h2 {
+  font-size: 13px;
+}
+.button {
+  font-size: 12px;
+}
+.overview-strip > div {
+  font-size: 11px;
+  color: #78886b;
+}
+.overview-strip .mode-indicator {
+  font-size: 10px;
+}
+.prompt-box textarea {
+  font-size: 13px;
+  color: #4c5f3f;
+}
+.prompt-box textarea::placeholder {
+  color: #9ba88c;
+}
+.prompt-bottom > span,
+.context-toggle,
+.example-row,
+.example-row button {
+  font-size: 10px;
+}
+.example-row button {
+  color: #879a75;
+}
+.input-controls label {
+  font-size: 10px;
+  color: #8b9e78;
+}
+.input-controls select {
+  font-size: 11px;
+}
+.empty-state h3 {
+  font-size: 13px;
+  color: #82966e;
+}
+.empty-state p {
+  font-size: 11px;
+  color: #99aa87;
+}
+.empty-flow {
+  font-size: 10px;
+}
+.decision-summary strong,
+.decision-summary p {
+  font-size: 11px;
+}
+.decision-summary p {
+  color: #81956a;
+}
+.tool-card-title strong {
+  font-size: 12px;
+}
+.tool-card-body > p {
+  font-size: 11px;
+  color: #83966f;
+}
+.tool-card-meta {
+  font-size: 10px;
+  color: #9aab87;
+}
+.protocol-tag,
+.result-count {
+  font-size: 8px;
+}
+.candidate-details,
+.candidate-details summary > span,
+.candidate-list > div {
+  font-size: 10px;
+}
+.inspector-tool > span {
+  font-size: 10px;
+}
+.inspector-tool h3 {
+  font-size: 13px;
+}
+.inspector-tool p {
+  font-size: 11px;
+  color: #899c75;
+}
+.tabs button {
+  font-size: 11px;
+}
+.code-toolbar {
+  font-size: 9px;
+}
+.code-block {
+  font-size: 10px;
+  color: #738d5d;
+}
+.inspector-empty strong {
+  font-size: 12px;
+  color: #8da176;
+}
+.inspector-empty p {
+  font-size: 11px;
+  color: #9eae8d;
+}
+.routing-info-title strong,
+.routing-info .text-button {
+  font-size: 11px;
+}
+.routing-info dl > div {
+  font-size: 11px;
+}
+.routing-info dt {
+  color: #94a581;
+}
+.routing-info dd {
+  color: #7c9464;
+}
+.bottom-caption {
+  font-size: 10px;
+  color: #9caa8d;
+}
+.field-label,
+.field-label > span,
+.field-help,
+.text-button {
+  font-size: 10px;
+}
+.invoke-form .code-input {
+  font-size: 11px;
+}
+.invoke-form .text-input,
+.invoke-result .code-block {
+  font-size: 10px;
+}
+.server-card h3 {
+  font-size: 15px;
+}
+.server-card > p,
+.server-card > code,
+.server-card-bottom,
+.server-card-bottom .text-button {
+  font-size: 11px;
+}
+.table-toolbar h2 {
+  font-size: 14px;
+}
+.search-field input,
+.table-filters select {
+  font-size: 11px;
+}
+th {
+  font-size: 10px;
+}
+td,
+td strong,
+td p,
+.server-cell {
+  font-size: 11px;
+}
+.actor-tags > span,
+.access-tag {
+  font-size: 9px;
+}
+.event-kind,
+.event-body > small,
+.event-duration {
+  font-size: 10px;
+}
+.event-body > strong {
+  font-size: 12px;
+}
+.status-badge {
+  font-size: 9px;
+}
+.connect-panel > p,
+.meta-tool p,
+.agent-instruction p {
+  font-size: 12px;
+}
+.endpoint-box code,
+.meta-tool code {
+  font-size: 12px;
+}
+.agent-instruction strong,
+.agent-instruction .text-button {
+  font-size: 11px;
+}
+.settings-section-title h2 {
+  font-size: 15px;
+}
+.settings-section-title p,
+.form-field > span,
+.setting-toggle strong {
+  font-size: 12px;
+}
+.form-field small,
+.setting-toggle p,
+.settings-footnote,
+.checkbox-row {
+  font-size: 11px;
+}
+.form-field em,
+.config-flow > span,
+.config-flow > strong {
+  font-size: 11px;
+}
+.text-input {
+  font-size: 12px;
+}
+.settings-footnote,
+.form-field small,
+.setting-toggle p {
+  color: #95aa81;
+}
+.error-box,
+.toast {
+  font-size: 12px;
+}
+.modal-description {
+  font-size: 12px;
+}
+.json-editor {
+  font-size: 12px;
+}
+
+@media (max-width: 1180px) {
+  .playground-grid {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  .example-row {
+    gap: 6px;
+  }
+  .example-row > span {
+    display: none;
+  }
+  .example-row button {
+    font-size: 9px;
+  }
+  .tool-card-title {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 1000px) {
+  .playground-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .nav-item {
+    font-size: 11px;
+  }
+  .overview-strip > div {
+    font-size: 10px;
+  }
+  .overview-strip .mode-indicator {
+    font-size: 8px;
+  }
+  .page-heading p {
+    font-size: 12px;
+  }
+  .page-heading h1 {
+    font-size: 23px;
+  }
+  .prompt-box textarea {
+    font-size: 12px;
+  }
+  .prompt-bottom > span {
+    display: none;
+  }
+  .bottom-caption {
+    font-size: 9px;
+  }
+  .table-filters {
+    width: 100%;
+  }
+  .tool-card-title strong {
+    font-size: 11px;
+  }
+}
