@@ -1,7 +1,6 @@
 import {
   ArrowRight,
   ArrowUpRight,
-  Braces,
   Check,
   Circle,
   Network,
@@ -141,7 +140,7 @@ export function GatewayDiagram({ tools }: { tools: number }) {
         ))}
       </svg>
       <div className="signal-map-caption">
-        <span>一个入口，按需发现能力</span>
+        <span>按需路由</span>
         <code>{String(tools).padStart(2, "0")} TOOLS</code>
       </div>
     </div>
@@ -179,7 +178,7 @@ export function SetupSidebar({
       value: setup.model_ready
         ? state.settings.model
         : setup.model_configured
-          ? "已保存，等待试通"
+          ? "已保存，待测试"
           : "等待配置",
       done: setup.model_ready,
     },
@@ -191,13 +190,9 @@ export function SetupSidebar({
     },
   ];
   return (
-    <aside className="setup-context" aria-label="接入状态与帮助">
+    <aside className="setup-context" aria-label="接入状态">
       <section className="context-checklist">
-        <div className="context-heading">
-          <span>YOUR WORKSPACE</span>
-          <span className="context-tag">接入清单</span>
-        </div>
-        <h2>离开始使用，再近一步。</h2>
+        <h2>接入状态</h2>
         <div className="context-items">
           {items.map((item, index) => (
             <button
@@ -220,31 +215,15 @@ export function SetupSidebar({
             </button>
           ))}
         </div>
-        <p className="context-footnote">
-          状态来自实际配置和请求。
-          <br />
-          内置演示不计入接入进度。
-        </p>
       </section>
-      <section className="context-note">
-        <span className="context-note-icon">
-          <Braces size={19} />
-        </span>
-        <h3>你的工具，你来掌控。</h3>
-        <p>
-          认证、环境变量、完整 JSON 和错误详情都保留，复杂接入也能继续调试。
-        </p>
+      <div className="context-shortcuts">
         <button className="text-button" onClick={openRegistry}>
-          打开工具注册表 <ArrowUpRight size={14} />
+          工具注册表 <ArrowUpRight size={14} />
         </button>
-      </section>
-      <button className="context-debug" onClick={openDebug}>
-        <span>
-          <span className="context-debug-label">INSPECT & EXPLORE</span>
-          <strong>进入路由调试</strong>
-        </span>
-        <ArrowRight size={18} />
-      </button>
+        <button className="text-button" onClick={openDebug}>
+          路由调试 <ArrowRight size={14} />
+        </button>
+      </div>
     </aside>
   );
 }

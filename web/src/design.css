@@ -289,7 +289,7 @@ input[type="checkbox"] {
 .sidebar-progress {
   display: flex;
   gap: 4px;
-  margin: 12px 0 19px;
+  margin: 12px 0 0;
 }
 .sidebar-progress > span {
   flex: 1;
@@ -967,7 +967,10 @@ main:focus {
   }
 }
 @media (max-width: 370px) {
-  .sidebar .nav-item { padding-left: 1px; padding-right: 1px; }
+  .sidebar .nav-item {
+    padding-left: 1px;
+    padding-right: 1px;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   *,

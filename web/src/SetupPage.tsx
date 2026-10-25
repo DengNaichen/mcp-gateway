@@ -78,32 +78,16 @@ export function SetupPage({
     <div className="setup-page">
       <section className="setup-heading">
         <div className="setup-intro">
-          <div className="eyebrow">
-            <span /> YOUR TOOLS. YOUR AGENT.
-          </div>
           <h1>
             把工具接好，
             <br />让 Agent 去行动<span>。</span>
           </h1>
-          <p>
-            接入你的工具与模型，让网关选择合适的能力。
-            <br className="desktop-break" />
-            日常任务，继续交给你熟悉的本地 Agent。
-          </p>
-          <div className="intro-meta">
-            <span>
-              <span className="online-dot" />
-              本地运行
-            </span>
-            <span>
-              配置一次，持续使用 <ArrowUpRight size={12} />
-            </span>
-          </div>
+          <p>为本地 Agent 按需提供工具。</p>
         </div>
         <GatewayDiagram tools={status.enabled_tools} />
       </section>
       <div className="setup-section-label">
-        <span>LET’S GET CONNECTED</span>
+        <span>开始接入</span>
         <span>
           <strong>
             {String(done.filter(Boolean).length).padStart(2, "0")}
@@ -127,21 +111,6 @@ export function SetupPage({
                 {label}
                 <ArrowUpRight size={15} />
               </strong>
-              <small>
-                {index === 0
-                  ? status.tools_ready
-                    ? `${status.enabled_tools} 个自己的工具已启用`
-                    : "添加来源，选择开放的工具"
-                  : index === 1
-                    ? status.model_ready
-                      ? "当前配置已试通"
-                      : status.model_configured
-                        ? "已保存，等待试通"
-                        : "填写地址和模型，试一次路由"
-                    : status.agent_last_request
-                      ? "已收到 MCP 客户端请求"
-                      : "复制接入配置，回到 Agent 使用"}
-              </small>
             </span>
           </button>
         ))}
@@ -183,19 +152,6 @@ export function SetupPage({
           openDebug={openDebug}
           openRegistry={openRegistry}
         />
-      </div>
-      <div className="setup-bottom">
-        <span>
-          <span className="setup-bottom-mark">↳</span> 你的 Agent
-          负责工作，Gateway Lab 负责连接。
-        </span>
-        <button className="text-button" onClick={openRegistry}>
-          <Settings2 size={13} />
-          工具注册表
-        </button>
-        <button className="text-button" onClick={openDebug}>
-          路由调试 <ArrowUpRight size={12} />
-        </button>
       </div>
     </div>
   );
@@ -449,15 +405,7 @@ function SourceStep({
             <Network size={21} />
           </span>
           <div>
-            <span className="card-overline">01 / TOOL SOURCE</span>
-            <h2>从一个工具来源开始</h2>
-            <p>
-              {form.kind === "http"
-                ? "连接 API 基地址，再定义工具的方法、路径与参数。"
-                : form.transport === "stdio"
-                  ? "由网关启动本地 MCP 进程，读取可用工具。"
-                  : "填写 MCP 地址，读取并选择 Agent 可用的工具。"}
-            </p>
+            <h2>添加工具来源</h2>
           </div>
         </div>
         {sources.length > 0 && (
@@ -573,9 +521,6 @@ function SourceStep({
                   value={form.command || ""}
                   onChange={(e) => update({ command: e.target.value })}
                 />
-                <small>
-                  由 Go 进程直接启动，不通过 shell；命令需要已安装在本机。
-                </small>
               </label>
               <label className="form-field">
                 <span>
@@ -604,19 +549,21 @@ function SourceStep({
                 value={form.endpoint}
                 onChange={(e) => update({ endpoint: e.target.value })}
               />
-              <small>
-                {form.kind === "mcp"
-                  ? "填写完整的 Streamable HTTP endpoint。旧版 SSE 和交互式 OAuth 暂不支持。"
-                  : "后续工具路径会拼接到这个地址。连通性检查仅发送 HEAD 请求。"}
-              </small>
             </label>
           )}
           <div className="source-advanced-grid">
             <details className="setup-advanced">
               <summary>
                 <Settings2 size={13} />
-                认证与高级配置
+                认证与连接选项
               </summary>
+              <p>
+                {form.kind === "http"
+                  ? "工具路径会拼接到 API 基地址。连接检查仅发送 HEAD 请求，工具需手动定义。"
+                  : form.transport === "stdio"
+                    ? "命令需已安装在本机，由网关直接启动，不经过 shell。"
+                    : "填写完整的 Streamable HTTP endpoint。暂不支持旧版 SSE 和交互式 OAuth。"}
+              </p>
               <label className="form-field">
                 <span>
                   来源 ID <em>留空自动生成</em>
@@ -674,12 +621,9 @@ function SourceStep({
             <details className="setup-advanced">
               <summary>
                 <FileJson size={13} />
-                粘贴现有 MCP 配置
+                导入 MCP 配置
               </summary>
-              <p>
-                支持单个 mcpServers 条目，或完整的 Gateway 服务
-                JSON。填入后仍需点击连接。
-              </p>
+              <p>粘贴 mcpServers 条目或 Gateway 服务 JSON，填入后连接。</p>
               <textarea
                 aria-label="现有 MCP 配置"
                 className="setup-json-input"
@@ -692,7 +636,7 @@ function SourceStep({
                 type="button"
                 onClick={loadPasted}
               >
-                解析并填入表单
+                填入表单
               </button>
             </details>
           </div>
@@ -711,7 +655,6 @@ function SourceStep({
                   : "保存并检查地址"}
               {!busy && <ArrowRight size={15} />}
             </button>
-            <span>配置会保留，连接失败后可直接修改重试。</span>
           </div>
         </form>
       </section>
@@ -724,8 +667,7 @@ function SourceStep({
             <div>
               <h2>选择向 Agent 开放的工具</h2>
               <p>
-                {current.name} · {sourceTools.length}{" "}
-                个工具。先检查描述和读写属性，再确认启用。
+                {current.name} · {sourceTools.length} 个工具
               </p>
             </div>
           </div>
@@ -747,7 +689,7 @@ function SourceStep({
                     )
                   }
                 >
-                  只选声明为只读的工具
+                  只选只读
                 </button>
                 <button
                   className="text-button"
@@ -799,9 +741,7 @@ function SourceStep({
             </>
           )}
           {current.kind === "mcp" && !sourceTools.length && (
-            <p className="setup-help">
-              还没有读取到工具。检查上方连接结果，修正配置后重新读取。
-            </p>
+            <p className="setup-help">未读取到工具，请检查连接。</p>
           )}
           {current.kind === "http" && (
             <form onSubmit={addHTTPTool} className="http-tool-form">
@@ -883,22 +823,22 @@ function SourceStep({
           )}
           <Failure error={toolError} />
           <button className="text-button registry-link" onClick={openRegistry}>
-            使用完整 JSON 编辑器 <ArrowUpRight size={12} />
+            编辑完整 JSON <ArrowUpRight size={12} />
           </button>
         </section>
       )}
       <div className="step-next-row">
         <p>
           {state.setup.tools_ready
-            ? `${state.setup.enabled_tools} 个自己的工具已启用，可以继续。`
-            : "启用至少一个自己的工具后，继续配置模型。内置演示不计入进度。"}
+            ? `已启用 ${state.setup.enabled_tools} 个工具`
+            : "先接入并启用至少一个工具"}
         </p>
         <button
           className="button primary"
           disabled={!state.setup.tools_ready}
           onClick={next}
         >
-          下一步：配置模型 <ArrowRight size={14} />
+          配置模型 <ArrowRight size={14} />
         </button>
       </div>
     </div>
@@ -978,18 +918,15 @@ function ModelStep({
             <Sparkles size={21} />
           </span>
           <div>
-            <h2>配置网关用于选择工具的模型</h2>
-            <p>
-              支持兼容 Chat Completions 的服务。这个模型选择工具，本地 Agent
-              继续负责执行任务。
-            </p>
+            <h2>配置路由模型</h2>
+            <p>兼容 Chat Completions 的模型服务。</p>
           </div>
         </div>
         {!state.setup.tools_ready && (
           <div className="setup-notice">
-            可以先保存模型配置。路由试调用需要至少一个已启用的自己的工具。
+            先启用一个工具，再测试路由。
             <button onClick={back}>
-              返回接入工具 <ArrowRight size={12} />
+              接入工具 <ArrowRight size={12} />
             </button>
           </div>
         )}
@@ -1009,7 +946,6 @@ function ModelStep({
                 value={config.base_url}
                 onChange={(e) => update({ base_url: e.target.value })}
               />
-              <small>自动补全 /chat/completions，也可填写完整 endpoint。</small>
             </label>
             <label className="form-field">
               <span>模型名称</span>
@@ -1025,20 +961,14 @@ function ModelStep({
           <label className="form-field">
             <span>
               API Key{" "}
-              <em>
-                {state.key_configured
-                  ? "当前进程已载入 Key"
-                  : "本地无认证服务可以留空"}
-              </em>
+              <em>{state.key_configured ? "已载入" : "无认证服务可留空"}</em>
             </span>
             <input
               type="password"
               autoComplete="new-password"
               className="text-input mono"
               placeholder={
-                state.key_configured
-                  ? "留空保留当前 Key；换供应商时请同时更新"
-                  : "填写后仅保留在后端内存"
+                state.key_configured ? "留空保留当前 Key" : "输入 API Key"
               }
               value={key}
               onChange={(e) => {
@@ -1047,10 +977,7 @@ function ModelStep({
                 setResult(null);
               }}
             />
-            <small>
-              地址和模型会保存到 SQLite。Key
-              仅本次进程有效；长期使用可在启动环境中设置 GATEWAY_MODEL_API_KEY。
-            </small>
+            <small>Key 仅本次运行有效。</small>
           </label>
           {state.key_configured && (
             <label className="checkbox-row">
@@ -1062,25 +989,30 @@ function ModelStep({
                   setKey("");
                 }}
               />
-              清除已载入的 Key，改用无认证服务
+              清除当前 Key
             </label>
           )}
-          <label className="form-field">
-            <span>
-              用于试通的需求 <em>可选</em>
-            </span>
-            <input
-              className="text-input"
-              placeholder="留空时根据一个已启用工具的描述发起真实路由请求"
-              value={intent}
-              onChange={(e) => setIntent(e.target.value)}
-            />
-          </label>
           <details className="setup-advanced">
             <summary>
               <Settings2 size={13} />
               高级路由配置
             </summary>
+            <p>
+              Base URL 自动补全 /chat/completions，也可填完整 endpoint。
+              长期使用可在启动环境中设置 GATEWAY_MODEL_API_KEY；切换服务时请更新
+              Key。
+            </p>
+            <label className="form-field">
+              <span>
+                测试需求 <em>可选</em>
+              </span>
+              <input
+                className="text-input"
+                placeholder="留空时根据已启用工具生成"
+                value={intent}
+                onChange={(e) => setIntent(e.target.value)}
+              />
+            </label>
             <label className="checkbox-row">
               <input
                 type="checkbox"
@@ -1137,7 +1069,7 @@ function ModelStep({
               ) : (
                 <Sparkles size={15} />
               )}
-              {busy === "test" ? "正在试调用…" : "保存并测试路由"}
+              {busy === "test" ? "正在测试…" : "保存并测试"}
             </button>
             <button
               type="button"
@@ -1146,17 +1078,13 @@ function ModelStep({
               onClick={() => save(false)}
             >
               {busy === "save" && <Loader2 size={14} className="spin" />}
-              仅保存配置
+              仅保存
             </button>
           </div>
-          <p className="setup-help">
-            测试会调用所配置的模型服务，并发送这次需求和候选工具定义；不会执行下游工具。
-          </p>
+          <p className="setup-help">仅测试工具选择，不执行工具。</p>
         </form>
         {dirty && state.setup.model_check ? (
-          <div className="setup-notice">
-            表单有未保存的修改。保存并重新测试后，才能确认这份配置可用。
-          </div>
+          <div className="setup-notice">配置已修改，请重新测试。</div>
         ) : (
           <CheckNote check={state.setup.model_check} />
         )}
@@ -1186,14 +1114,14 @@ function ModelStep({
       </section>
       <div className="step-next-row">
         <button className="button secondary" onClick={back}>
-          上一步：接入工具
+          上一步
         </button>
         <button
           className="button primary"
           disabled={!state.setup.model_ready || !!busy || dirty}
           onClick={next}
         >
-          下一步：连接 Agent <ArrowRight size={14} />
+          连接 Agent <ArrowRight size={14} />
         </button>
       </div>
     </div>
@@ -1256,21 +1184,16 @@ function AgentStep({
             <Terminal size={21} />
           </span>
           <div>
-            <h2>把这个网关添加到本地 Agent</h2>
-            <p>
-              常规任务以后直接交给 Agent。网页用来管理接入、观察请求和调试问题。
-            </p>
+            <h2>连接本地 Agent</h2>
           </div>
         </div>
         {(!state.setup.tools_ready || !state.setup.model_ready) && (
-          <div className="setup-notice">
-            可以先查看接入方式。自己的工具和模型尚未全部就绪，完成前两步后再发起任务。
-          </div>
+          <div className="setup-notice">工具和模型尚未就绪，可先复制配置。</div>
         )}
         <div className="connection-instruction">
           <span className="instruction-number">1</span>
           <div>
-            <h3>选择客户端，复制并应用配置</h3>
+            <h3>添加网关</h3>
             <label className="form-field client-choice">
               <span>本地 Agent</span>
               <select
@@ -1292,24 +1215,17 @@ function AgentStep({
             </div>
             <p className="setup-help">
               {client === "codex"
-                ? "在本机终端执行命令，再重新打开对应的 Codex 会话，确认 gateway-lab 出现在 MCP 服务列表。"
+                ? "在终端执行，然后重新打开 Codex 会话。"
                 : client === "claude"
-                  ? "在本机终端执行命令，再在 Claude Code 中用 /mcp 查看 gateway-lab。"
-                  : "把条目加入客户端的 MCP 配置文件。具体字段按客户端调整；配置后重新连接。"}
+                  ? "在终端执行，再用 /mcp 查看连接。"
+                  : "加入客户端 MCP 配置后重新连接。"}
             </p>
-            <div className="endpoint-line">
-              <strong>MCP endpoint</strong>
-              <code>{state.mcp_url}</code>
-            </div>
           </div>
         </div>
         <div className="connection-instruction">
           <span className="instruction-number">2</span>
           <div>
-            <h3>回到 Agent，发起一条自己的任务</h3>
-            <p>
-              可以改写下面的示例。Agent 会负责发现工具、填写参数和执行调用。
-            </p>
+            <h3>回到 Agent，发起任务</h3>
             <div className="agent-task">
               <p>{prompt}</p>
               <button className="text-button" onClick={() => copy(prompt)}>
@@ -1318,7 +1234,7 @@ function AgentStep({
               </button>
             </div>
             <details className="setup-advanced">
-              <summary>需要放进 Agent 长期指令时</summary>
+              <summary>Agent 长期指令</summary>
               <p>
                 需要外部能力时，先向 discover_tools
                 描述当前任务和必要上下文，再根据真实工具定义用 invoke_tool
@@ -1340,21 +1256,21 @@ function AgentStep({
         <div className="connection-instruction">
           <span className="instruction-number">3</span>
           <div>
-            <h3>在这里确认网关收到请求</h3>
+            <h3>连接状态</h3>
             <div className={`agent-detection ${last ? "seen" : ""}`}>
               <span className="detection-dot" />
               <div>
                 <strong>
                   {last
                     ? last.title === "invoke_tool" && last.status === "success"
-                      ? "已收到 Agent 的成功工具调用"
-                      : "已收到 MCP 客户端请求"
-                    : "等待本地 Agent 发来请求"}
+                      ? "工具调用成功"
+                      : "已收到 MCP 请求"
+                    : "等待 Agent 请求"}
                 </strong>
                 <p>
                   {last
                     ? `${last.detail?.client || "MCP client"} · ${last.title} · ${new Date(last.time).toLocaleString("zh-CN")}`
-                    : "本页只读取状态，不会模拟 Agent 请求或替你完成接入。每 4 秒刷新。"}
+                    : "每 4 秒更新"}
                 </p>
                 {last?.status === "error" && (
                   <p className="agent-call-error">
@@ -1368,13 +1284,13 @@ function AgentStep({
               onClick={() => refresh().catch((e) => notify(e.message))}
             >
               <RefreshCw size={13} />
-              立即刷新请求状态
+              刷新
             </button>
             <Failure error={pollError} />
           </div>
         </div>
         <details className="setup-advanced">
-          <summary>连接不成功时，按这个顺序检查</summary>
+          <summary>连接排查</summary>
           <ol>
             <li>
               网关进程是否运行，客户端访问的端口是否是{" "}
@@ -1395,9 +1311,8 @@ function AgentStep({
       </section>
       <div className="step-next-row">
         <button className="button secondary" onClick={back}>
-          上一步：配置模型
+          上一步
         </button>
-        <p>连接后，日常使用回到你的本地 Agent。</p>
       </div>
     </div>
   );

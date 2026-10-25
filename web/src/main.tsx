@@ -363,7 +363,6 @@ function App() {
           </span>
           <span>
             <strong>本地工作区</strong>
-            <small>Personal workspace</small>
           </span>
           <span className="workspace-key">LOCAL</span>
         </div>
@@ -429,13 +428,8 @@ function App() {
               <span key={index} className={done ? "done" : ""} />
             ))}
           </div>
-          <strong>准备好你的工作区</strong>
-          <p>
-            接好工具与模型，
-            <br />让 Agent 的能力延伸一步。
-          </p>
           <button onClick={() => openSetup()}>
-            查看接入进度 <ArrowUpRight size={14} />
+            继续接入 <ArrowUpRight size={14} />
           </button>
         </div>
         <div className="sidebar-bottom">
@@ -1253,7 +1247,6 @@ function App() {
           <span>
             <GatewayLogo size={15} /> GATEWAY LAB
           </span>
-          <span>LOCAL FIRST. ALWAYS YOURS.</span>
         </footer>
       </div>
 
