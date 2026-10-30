@@ -40,7 +40,6 @@ export type Config = {
   candidate_limit: number;
   max_tools: number;
   timeout_seconds: number;
-  json_mode: boolean;
 };
 export type Event = {
   id: string;

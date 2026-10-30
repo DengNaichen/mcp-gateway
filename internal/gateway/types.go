@@ -91,7 +91,6 @@ type Settings struct {
 	CandidateLimit int    `json:"candidate_limit"`
 	MaxTools       int    `json:"max_tools"`
 	TimeoutSeconds int    `json:"timeout_seconds"`
-	JSONMode       bool   `json:"json_mode"`
 }
 
 type Registry struct {

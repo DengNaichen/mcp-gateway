@@ -59,7 +59,7 @@ func (g *Gateway) modelFingerprint() (string, error) {
 	g.mu.RLock()
 	settings, key := g.settings, g.apiKey
 	g.mu.RUnlock()
-	return digest([]any{settings, key, g.realTools()})
+	return digest([]any{routingProtocol, settings, key, g.realTools()})
 }
 
 func (g *Gateway) realTools() []Tool {
@@ -260,7 +260,7 @@ func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult,
 		return DiscoverResult{}, err
 	}
 	result, routeErr := g.Discover(ctx, DiscoverRequest{Intent: intent, Mode: "model", Actor: "developer"})
-	check := ConnectionCheck{Status: "success", Message: "模型已响应，决策 JSON 和工具 ID 校验通过", CheckedAt: time.Now()}
+	check := ConnectionCheck{Status: "success", Message: "Decisions 已响应，回答格式、概率和候选映射校验通过", CheckedAt: time.Now()}
 	if routeErr != nil {
 		check.Status = "error"
 		check.Message = "模型路由未试通"

@@ -377,9 +377,7 @@ func TestMaintenanceUpdatesModelCandidates(t *testing.T) {
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		var payload struct {
-			Messages []struct {
-				Content string `json:"content"`
-			} `json:"messages"`
+			Input string `json:"input"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Error(err)
@@ -389,12 +387,7 @@ func TestMaintenanceUpdatesModelCandidates(t *testing.T) {
 		var input struct {
 			Candidates []Candidate `json:"candidates"`
 		}
-		if len(payload.Messages) != 2 {
-			t.Error("missing routing context")
-			w.WriteHeader(400)
-			return
-		}
-		if err := json.Unmarshal([]byte(payload.Messages[1].Content), &input); err != nil {
+		if err := json.Unmarshal([]byte(payload.Input), &input); err != nil {
 			t.Error(err)
 			w.WriteHeader(400)
 			return
@@ -402,8 +395,7 @@ func TestMaintenanceUpdatesModelCandidates(t *testing.T) {
 		if len(input.Candidates) != 1 || input.Candidates[0].ID != "service.logs" {
 			t.Errorf("wrong model candidates: %+v", input.Candidates)
 		}
-		content := `{"status":"selected","summary":"logs","tools":[{"id":"service.logs","reason":"matches"}]}`
-		respond(w, 200, map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}}}})
+		respond(w, 200, decisionFixture("selected", 0.9))
 	}))
 	defer model.Close()
 	settings, _ := g.Config()

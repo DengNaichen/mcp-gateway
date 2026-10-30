@@ -10,6 +10,7 @@ frontend:
 backend:
 	go build -o bin/gateway ./cmd/gateway
 	go build -o bin/gatewayctl ./cmd/gatewayctl
+	go build -o bin/gateway-sshlogs ./cmd/sshlogs
 
 build: frontend backend
 

@@ -919,7 +919,7 @@ function ModelStep({
           </span>
           <div>
             <h2>配置路由模型</h2>
-            <p>兼容 Chat Completions 的模型服务。</p>
+            <p>使用 OpenAI Decisions API 选择工具，当前支持 gpt-6-luna。</p>
           </div>
         </div>
         {!state.setup.tools_ready && (
@@ -952,7 +952,7 @@ function ModelStep({
               <input
                 required
                 className="text-input mono"
-                placeholder="填写服务实际支持的模型 ID"
+                placeholder="gpt-6-luna"
                 value={config.model}
                 onChange={(e) => update({ model: e.target.value })}
               />
@@ -961,7 +961,7 @@ function ModelStep({
           <label className="form-field">
             <span>
               API Key{" "}
-              <em>{state.key_configured ? "已载入" : "无认证服务可留空"}</em>
+              <em>{state.key_configured ? "已载入" : "OpenAI API Key"}</em>
             </span>
             <input
               type="password"
@@ -998,7 +998,7 @@ function ModelStep({
               高级路由配置
             </summary>
             <p>
-              Base URL 自动补全 /chat/completions，也可填完整 endpoint。
+              Base URL 自动补全 /decisions，也可填完整 endpoint。
               长期使用可在启动环境中设置 GATEWAY_MODEL_API_KEY；切换服务时请更新
               Key。
             </p>
@@ -1012,14 +1012,6 @@ function ModelStep({
                 value={intent}
                 onChange={(e) => setIntent(e.target.value)}
               />
-            </label>
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={config.json_mode}
-                onChange={(e) => update({ json_mode: e.target.checked })}
-              />
-              发送 response_format: json_object（服务不支持时取消）
             </label>
             <div className="setup-form-row three">
               <label className="form-field">

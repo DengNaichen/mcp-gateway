@@ -58,7 +58,7 @@ func New(dir, baseURL string) (*Gateway, error) {
 		}
 	}()
 	g := &Gateway{execution: execution, access: access, dir: dir, baseURL: baseURL, events: []Event{}, settings: Settings{
-		BaseURL: "https://api.openai.com/v1", Mode: "retrieval", CandidateLimit: 16, MaxTools: 4, TimeoutSeconds: 45, JSONMode: true,
+		BaseURL: "https://api.openai.com/v1", Model: "gpt-6-luna", Mode: "retrieval", CandidateLimit: 16, MaxTools: 4, TimeoutSeconds: 45,
 	}, db: db}
 	if err := g.loadRegistry(); err != nil {
 		return nil, err

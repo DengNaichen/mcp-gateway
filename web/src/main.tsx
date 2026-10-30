@@ -1474,7 +1474,7 @@ function SettingsPage({
       <PageHeading
         eyebrow="MODEL & ROUTING"
         title="模型设置"
-        subtitle="为工具选择配置一个模型，地址和模型 ID 都可以自由替换。"
+        subtitle="配置 OpenAI Decisions API，为当前任务选择工具。"
       />
       <form onSubmit={submit} className="settings-grid">
         <section className="panel settings-panel">
@@ -1484,7 +1484,7 @@ function SettingsPage({
             </span>
             <div>
               <h2>Decision model</h2>
-              <p>通过兼容 Chat Completions 的 HTTP 接口调用。</p>
+              <p>通过 OpenAI Decisions API 判断工具相关性。</p>
             </div>
           </div>
           <label className="form-field">
@@ -1497,15 +1497,14 @@ function SettingsPage({
               onChange={(e) => update({ base_url: e.target.value })}
             />
             <small>
-              例如 https://api.openai.com/v1 或本地兼容服务地址。自动补全
-              /chat/completions。
+              例如 https://api.openai.com/v1，自动补全 /decisions。
             </small>
           </label>
           <label className="form-field">
-            <span>模型名称</span>
+            <span>模型名称（Decisions 当前支持 gpt-6-luna）</span>
             <input
               className="text-input mono"
-              placeholder="填写服务实际支持的模型 ID"
+              placeholder="gpt-6-luna"
               value={config.model}
               onChange={(e) => update({ model: e.target.value })}
             />
@@ -1513,7 +1512,7 @@ function SettingsPage({
           <label className="form-field">
             <span>
               API Key{" "}
-              <em>{keyConfigured ? "已配置" : "可选，本地模型可留空"}</em>
+              <em>{keyConfigured ? "已配置" : "OpenAI API Key"}</em>
             </span>
             <input
               type="password"
@@ -1549,17 +1548,6 @@ function SettingsPage({
               清除当前 Key
             </label>
           )}
-          <div className="setting-toggle">
-            <div>
-              <strong>JSON Mode</strong>
-              <p>发送 response_format: json_object。不支持时可以关闭。</p>
-            </div>
-            <Toggle
-              checked={config.json_mode}
-              onChange={() => update({ json_mode: !config.json_mode })}
-              label="JSON Mode"
-            />
-          </div>
         </section>
         <section className="panel settings-panel">
           <div className="settings-section-title">

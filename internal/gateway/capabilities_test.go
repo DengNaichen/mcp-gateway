@@ -20,19 +20,17 @@ func TestRoutingModelReceivesSummariesOnly(t *testing.T) {
 	t.Logf("candidate payload: %d -> %d bytes", len(full), len(small))
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Messages []struct {
-				Content string `json:"content"`
-			} `json:"messages"`
+			Input string `json:"input"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
 			w.WriteHeader(400)
 			return
 		}
-		if len(body.Messages) != 2 || strings.Contains(body.Messages[1].Content, "input_schema") || strings.Contains(body.Messages[1].Content, "private.mjs") {
+		if body.Input == "" || strings.Contains(body.Input, "input_schema") || strings.Contains(body.Input, "private.mjs") {
 			t.Error("schema or execution details reached model")
 		}
-		respond(w, 200, map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": `{"status":"selected","tools":[{"id":"s.large","reason":"match"}]}`}}}})
+		respond(w, 200, decisionFixture("selected", 0.9))
 	}))
 	defer model.Close()
 	_, _, err := selectWithModel(context.Background(), Settings{BaseURL: model.URL, Model: "fixture", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "payload"}, candidates)
