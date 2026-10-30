@@ -1,0 +1,21 @@
+{
+  "principals": [
+    {
+      "id": "gateway-admin",
+      "groups": ["developer", "observer"],
+      "servers": ["*"],
+      "allow_write": true,
+      "admin": true,
+      "token_env": "GATEWAY_ADMIN_TOKEN"
+    },
+    {
+      "id": "ci-reader",
+      "groups": ["developer"],
+      "servers": ["gitlab"],
+      "tools": ["gitlab.pipelines", "gitlab.jobs", "gitlab.job_trace"],
+      "allow_write": false,
+      "admin": false,
+      "token_env": "GATEWAY_READER_TOKEN"
+    }
+  ]
+}

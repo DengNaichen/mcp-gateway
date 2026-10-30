@@ -8,34 +8,80 @@ import (
 )
 
 type Server struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Kind        string            `json:"kind"`
-	Endpoint    string            `json:"endpoint"`
-	Headers     map[string]string `json:"headers,omitempty"`
-	Enabled     bool              `json:"enabled"`
-	Demo        bool              `json:"demo,omitempty"`
-	Transport   string            `json:"transport,omitempty"`
-	Command     string            `json:"command,omitempty"`
-	Args        []string          `json:"args,omitempty"`
-	Env         map[string]string `json:"env,omitempty"`
-	WorkDir     string            `json:"work_dir,omitempty"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Description  string            `json:"description"`
+	Kind         string            `json:"kind"`
+	Endpoint     string            `json:"endpoint"`
+	Headers      map[string]string `json:"headers,omitempty"`
+	Enabled      bool              `json:"enabled"`
+	Demo         bool              `json:"demo,omitempty"`
+	Transport    string            `json:"transport,omitempty"`
+	Command      string            `json:"command,omitempty"`
+	Args         []string          `json:"args,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+	WorkDir      string            `json:"work_dir,omitempty"`
+	RedactFields []string          `json:"redact_fields,omitempty"`
+	RedactEmails bool              `json:"redact_emails,omitempty"`
 }
 
 type Tool struct {
-	ID          string         `json:"id"`
-	ServerID    string         `json:"server_id"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Tags        []string       `json:"tags"`
-	InputSchema map[string]any `json:"input_schema"`
-	Enabled     bool           `json:"enabled"`
-	ReadOnly    bool           `json:"read_only"`
-	Actors      []string       `json:"actors"`
-	Method      string         `json:"method,omitempty"`
-	Path        string         `json:"path,omitempty"`
-	Example     map[string]any `json:"example,omitempty"`
+	ID           string         `json:"id"`
+	ServerID     string         `json:"server_id"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description"`
+	Tags         []string       `json:"tags"`
+	InputSchema  map[string]any `json:"input_schema"`
+	Enabled      bool           `json:"enabled"`
+	ReadOnly     bool           `json:"read_only"`
+	Actors       []string       `json:"actors"`
+	Method       string         `json:"method,omitempty"`
+	Path         string         `json:"path,omitempty"`
+	Example      map[string]any `json:"example,omitempty"`
+	Adapter      string         `json:"adapter,omitempty"`
+	Revision     string         `json:"revision,omitempty"`
+	HTTP         *HTTPMapping   `json:"http,omitempty"`
+	OutputSchema map[string]any `json:"output_schema,omitempty"`
+}
+
+// HTTPMapping is the deterministic wire contract imported from OpenAPI.
+// Argument groups keep identically named path/query/body parameters distinct.
+type HTTPMapping struct {
+	Parameters []HTTPParameter         `json:"parameters"`
+	Body       bool                    `json:"body,omitempty"`
+	Responses  map[string]HTTPResponse `json:"responses,omitempty"`
+}
+type HTTPParameter struct {
+	Name    string `json:"name"`
+	In      string `json:"in"`
+	Style   string `json:"style"`
+	Explode bool   `json:"explode"`
+}
+type HTTPResponse struct {
+	MediaType string         `json:"media_type"`
+	Schema    map[string]any `json:"schema,omitempty"`
+}
+
+type RepositorySource struct {
+	URL              string   `json:"url"`
+	Ref              string   `json:"ref"`
+	Files            []string `json:"files"`
+	Project          string   `json:"project,omitempty"`
+	EventsEnabled    bool     `json:"events_enabled"`
+	WebhookSecretEnv string   `json:"webhook_secret_env,omitempty"`
+}
+type MaintenanceTrigger struct {
+	Kind       string `json:"kind"`
+	Provider   string `json:"provider,omitempty"`
+	DeliveryID string `json:"delivery_id,omitempty"`
+	Commit     string `json:"commit,omitempty"`
+	Ref        string `json:"ref,omitempty"`
+}
+type SourceProvenance struct {
+	Repository string            `json:"repository,omitempty"`
+	Ref        string            `json:"ref,omitempty"`
+	Commit     string            `json:"commit,omitempty"`
+	Documents  map[string]string `json:"documents"`
 }
 
 type Settings struct {
@@ -56,9 +102,10 @@ type Registry struct {
 type DiscoverRequest struct {
 	Intent      string `json:"intent" jsonschema:"Describe the capability needed for the current task, in natural language"`
 	Context     string `json:"context,omitempty" jsonschema:"Relevant known information and actions already attempted; avoid secrets"`
-	Actor       string `json:"actor,omitempty" jsonschema:"Simulated local policy identity: developer or observer; this is not authentication"`
+	Actor       string `json:"actor,omitempty" jsonschema:"Local simulation only: developer or observer; ignored when authenticated; this is not authentication"`
 	Mode        string `json:"mode,omitempty" jsonschema:"model for LLM selection, retrieval for keyword preview; defaults to gateway settings"`
 	IncludeDemo bool   `json:"include_demo,omitempty"`
+	SummaryOnly bool   `json:"summary_only,omitempty"`
 }
 
 type Candidate struct {
@@ -90,7 +137,7 @@ type InvokeRequest struct {
 	ToolID    string         `json:"tool_id" jsonschema:"Registered tool ID returned by discover_tools"`
 	Arguments map[string]any `json:"arguments" jsonschema:"Arguments conforming to the selected tool input_schema"`
 	Fields    []string       `json:"fields,omitempty" jsonschema:"Optional dot-separated response fields to retain; arrays are traversed automatically"`
-	Actor     string         `json:"actor,omitempty" jsonschema:"Simulated local policy identity: developer or observer"`
+	Actor     string         `json:"actor,omitempty" jsonschema:"Local simulation only: developer or observer; ignored when authenticated"`
 }
 
 type InvokeResult struct {

@@ -18,19 +18,30 @@ import (
 )
 
 type Gateway struct {
-	mu        sync.RWMutex
-	registry  Registry
-	settings  Settings
-	apiKey    string
-	events    []Event
-	dir       string
-	baseURL   string
-	db        *sql.DB
-	sessionMu sync.Mutex
-	sessions  map[string]stdioSession
+	mu          sync.RWMutex
+	registry    Registry
+	settings    Settings
+	apiKey      string
+	events      []Event
+	dir         string
+	baseURL     string
+	db          *sql.DB
+	sessionMu   sync.Mutex
+	sessions    map[string]stdioSession
+	access      *accessPolicy
+	execution   executionPolicy
+	maintenance *Maintainer
 }
 
 func New(dir, baseURL string) (*Gateway, error) {
+	execution, err := loadExecutionPolicy()
+	if err != nil {
+		return nil, err
+	}
+	access, err := loadAccessPolicy(baseURL)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
@@ -46,7 +57,7 @@ func New(dir, baseURL string) (*Gateway, error) {
 			}
 		}
 	}()
-	g := &Gateway{dir: dir, baseURL: baseURL, events: []Event{}, settings: Settings{
+	g := &Gateway{execution: execution, access: access, dir: dir, baseURL: baseURL, events: []Event{}, settings: Settings{
 		BaseURL: "https://api.openai.com/v1", Mode: "retrieval", CandidateLimit: 16, MaxTools: 4, TimeoutSeconds: 45, JSONMode: true,
 	}, db: db}
 	if err := g.loadRegistry(); err != nil {
@@ -95,6 +106,10 @@ func New(dir, baseURL string) (*Gateway, error) {
 	g.apiKey = os.Getenv("GATEWAY_MODEL_API_KEY")
 	if err := validateSettings(g.settings); err != nil {
 		return nil, fmt.Errorf("invalid model settings: %w", err)
+	}
+	g.maintenance, err = newMaintainer(g)
+	if err != nil {
+		return nil, err
 	}
 	ready = true
 	return g, nil
@@ -161,8 +176,18 @@ func compileSchema(schema map[string]any) (*jsonschema.Schema, error) {
 	if schema == nil {
 		return nil, invalid("工具需要 input_schema")
 	}
+	// The validator accepts JSON-native []any, not typed Go slices (e.g. the
+	// []string required lists built by deterministic importers and demo tools).
+	b, err := json.Marshal(schema)
+	if err != nil {
+		return nil, fmt.Errorf("encode input schema: %w", err)
+	}
+	var normalized map[string]any
+	if err := json.Unmarshal(b, &normalized); err != nil {
+		return nil, fmt.Errorf("normalize input schema: %w", err)
+	}
 	c := jsonschema.NewCompiler()
-	if err := c.AddResource("urn:gateway:input", schema); err != nil {
+	if err := c.AddResource("urn:gateway:input", normalized); err != nil {
 		return nil, fmt.Errorf("register input schema: %w", err)
 	}
 	s, err := c.Compile("urn:gateway:input")
@@ -225,6 +250,9 @@ func (g *Gateway) SaveServer(s Server) error {
 }
 
 func (g *Gateway) SaveTool(t Tool) error {
+	if err := validateMapping(t); err != nil {
+		return err
+	}
 	if !validID(t.ID) || t.Name == "" || t.Description == "" || len(t.Actors) == 0 {
 		return invalid("工具需要合法 ID、名称、描述及至少一个模拟身份")
 	}

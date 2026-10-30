@@ -12,6 +12,8 @@ export type Server = {
   args?: string[];
   env?: Record<string, string>;
   work_dir?: string;
+ redact_fields?: string[];
+ redact_emails?: boolean;
 };
 export type Tool = {
   id: string;
@@ -26,6 +28,10 @@ export type Tool = {
   method?: string;
   path?: string;
   example?: Record<string, any>;
+  adapter?: string;
+  revision?: string;
+  http?: Record<string, any>;
+  output_schema?: Record<string, any>;
 };
 export type Config = {
   base_url: string;
@@ -47,6 +53,7 @@ export type Event = {
   detail?: any;
 };
 export type Bootstrap = {
+ access: { shared: boolean; actor: string };
   registry: { servers: Server[]; tools: Tool[] };
   settings: Config;
   key_configured: boolean;
@@ -101,9 +108,11 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
   const data = await response.json();
-  if (!response.ok)
+  if (response.status === 401 && path !== "/auth/login") window.dispatchEvent(new Event("gateway:unauthorized"));
+ if (!response.ok)
     throw Object.assign(new Error(data.error || `HTTP ${response.status}`), {
       detail: data.detail,
+ status: response.status,
     });
   return data;
 }

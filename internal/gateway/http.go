@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -61,7 +62,8 @@ func toolResult(data any) (*mcp.CallToolResult, error) {
 func (g *Gateway) mcpServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "gateway-lab", Version: "0.1.0"}, nil)
 	s.AddTool(&mcp.Tool{Name: "discover_tools", Description: "Describe your current task to discover a small set of authorized tools. Returns real tool IDs, schemas and usage reasons. Use invoke_tool to execute them. Rediscover as the task changes.", InputSchema: objectSchema(map[string]any{
-		"intent": map[string]any{"type": "string", "description": "The capability needed now, in natural language"}, "context": map[string]any{"type": "string", "description": "Relevant known facts and previous attempts"}, "actor": map[string]any{"type": "string", "enum": []string{"developer", "observer"}, "description": "Simulated identity only"}, "mode": map[string]any{"type": "string", "enum": []string{"model", "retrieval"}},
+		"summary_only": map[string]any{"type": "boolean", "description": "Return capability summaries; use get_tool_schema for the selected tool"},
+		"intent":       map[string]any{"type": "string", "description": "The capability needed now, in natural language"}, "context": map[string]any{"type": "string", "description": "Relevant known facts and previous attempts"}, "actor": map[string]any{"type": "string", "enum": []string{"developer", "observer"}, "description": "Simulated identity only"}, "mode": map[string]any{"type": "string", "enum": []string{"model", "retrieval"}},
 	}, "intent")}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		started := time.Now()
 		var in DiscoverRequest
@@ -72,12 +74,26 @@ func (g *Gateway) mcpServer() *mcp.Server {
 			in.Actor = req.Extra.Header.Get("X-Gateway-Actor")
 		}
 		out, err := g.Discover(ctx, in)
-		g.recordAgentTool("discover_tools", in.Actor, started, err)
+		g.recordAgentTool("discover_tools", requestActor(ctx, in.Actor), started, err)
 		if err != nil {
 			return nil, err
 		}
 		out.Candidates = nil // Keep retrieval diagnostics out of the local agent context.
-		return toolResult(out)
+		return toolResult(discoveryPresentation(out, in.SummaryOnly))
+	})
+	s.AddTool(&mcp.Tool{Name: "get_tool_schema", Description: "Read the current schema of an enabled authorized tool after summary discovery.", InputSchema: objectSchema(map[string]any{"tool_id": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}}, "tool_id")}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var in struct {
+			ToolID string `json:"tool_id"`
+			Actor  string `json:"actor"`
+		}
+		if err := json.Unmarshal(req.Params.Arguments, &in); err != nil {
+			return nil, invalid("schema 请求参数无效")
+		}
+		tool, err := g.ToolSchema(ctx, in.ToolID, in.Actor)
+		if err != nil {
+			return nil, err
+		}
+		return toolResult(tool)
 	})
 	s.AddTool(&mcp.Tool{Name: "invoke_tool", Description: "Execute a registered tool ID returned by discover_tools using arguments matching its input_schema. Authorization, enablement and schema are checked again. Optional fields projects nested response paths.", InputSchema: objectSchema(map[string]any{
 		"tool_id": map[string]any{"type": "string"}, "arguments": map[string]any{"type": "object"}, "fields": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "actor": map[string]any{"type": "string", "enum": []string{"developer", "observer"}},
@@ -91,7 +107,7 @@ func (g *Gateway) mcpServer() *mcp.Server {
 			in.Actor = req.Extra.Header.Get("X-Gateway-Actor")
 		}
 		out, err := g.Invoke(ctx, in)
-		g.recordAgentTool("invoke_tool", in.Actor, started, err)
+		g.recordAgentTool("invoke_tool", requestActor(ctx, in.Actor), started, err)
 		if err != nil {
 			return nil, err
 		}
@@ -103,6 +119,10 @@ func (g *Gateway) mcpServer() *mcp.Server {
 func (g *Gateway) Handler(assets fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	g.registerSetup(mux)
+	g.registerMaintenance(mux)
+	g.registerCapabilities(mux)
+	g.registerSourceEvents(mux)
+	g.registerAccess(mux)
 	mcpServer := g.mcpServer()
 	mux.Handle("/mcp", g.trackMCP(mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server { return mcpServer }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})))
 	demo := g.demoServer()
@@ -121,7 +141,7 @@ func (g *Gateway) Handler(assets fs.FS) http.Handler {
 		g.mu.RLock()
 		events := slices.Clone(g.events)
 		g.mu.RUnlock()
-		respond(w, 200, map[string]any{"registry": g.Snapshot(), "settings": settings, "key_configured": key, "events": events, "mcp_url": g.baseURL + "/mcp", "setup": setup})
+		respond(w, 200, map[string]any{"registry": g.Snapshot(), "settings": settings, "key_configured": key, "events": events, "mcp_url": g.baseURL + "/mcp", "setup": setup, "access": map[string]any{"shared": g.access != nil, "actor": requestActor(r.Context(), "")}})
 	})
 	mux.HandleFunc("PUT /api/settings", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
@@ -185,7 +205,7 @@ func (g *Gateway) Handler(assets fs.FS) http.Handler {
 		if r.URL.Query().Get("debug") != "1" {
 			out.Candidates = nil
 		}
-		respond(w, 200, out)
+		respond(w, 200, discoveryPresentation(out, in.SummaryOnly))
 	})
 	mux.HandleFunc("POST /api/invoke", func(w http.ResponseWriter, r *http.Request) {
 		var in InvokeRequest
@@ -228,16 +248,23 @@ func (g *Gateway) Handler(assets fs.FS) http.Handler {
 		files.ServeHTTP(w, r)
 	})
 	protection := http.NewCrossOriginProtection()
-	for _, origin := range []string{"http://127.0.0.1:5173", "http://localhost:5173"} {
+	origins := []string{}
+	if g.access == nil {
+		origins = append(origins, "http://127.0.0.1:5173", "http://localhost:5173")
+	}
+	if configured := os.Getenv("GATEWAY_TRUSTED_ORIGINS"); configured != "" {
+		origins = append(origins, strings.Split(configured, ",")...)
+	}
+	for _, origin := range origins {
 		if err := protection.AddTrustedOrigin(origin); err != nil {
 			slog.Error("configure local development origin", "error", err)
 		}
 	}
-	return protection.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return protection.Handler(g.protectAccess(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		mux.ServeHTTP(w, r)
 		if !strings.HasPrefix(r.URL.Path, "/assets/") {
 			slog.Info("http request", "method", r.Method, "path", r.URL.Path, "duration_ms", time.Since(start).Milliseconds())
 		}
-	}))
+	})))
 }

@@ -43,12 +43,15 @@ import "./style.css";
 import "./readability.css";
 import "./setup.css";
 import "./design.css";
+import { LoginPage } from "./LoginPage";
+import { MaintenancePage } from "./MaintenancePage";
 import { SetupPage } from "./SetupPage";
 import { GatewayLogo } from "./SetupVisual";
 
-type Page = "setup" | "playground" | "registry" | "activity" | "settings";
+type Page = "maintenance" | "setup" | "playground" | "registry" | "activity" | "settings";
 const nav = [
   { id: "setup", label: "开始接入", icon: Network },
+  { id: "maintenance", label: "自动维护", icon: Sparkles },
   { id: "registry", label: "工具注册表", icon: Layers },
   { id: "playground", label: "调试", icon: Waypoints },
   { id: "activity", label: "调用记录", icon: Activity },
@@ -70,6 +73,7 @@ function App() {
   }
   const [state, setState] = useState<Bootstrap | null>(null);
   const [bootError, setBootError] = useState("");
+ const [needsLogin, setNeedsLogin] = useState(false);
   const [toast, setToast] = useState("");
   const [actor, setActor] = useState("developer");
   const [mode, setMode] = useState("retrieval");
@@ -100,9 +104,16 @@ function App() {
   async function refresh() {
     const data = await api<Bootstrap>("/bootstrap");
     setState(data);
-    return data;
+ setNeedsLogin(false); setBootError("");
+ if (data.access?.shared) setActor(data.access.actor);
+ return data;
   }
   useEffect(() => {
+ const unauthorized = () => { setState(null); setNeedsLogin(true); };
+ window.addEventListener("gateway:unauthorized", unauthorized);
+ return () => window.removeEventListener("gateway:unauthorized", unauthorized);
+ }, []);
+ useEffect(() => {
     refresh()
       .then((data) => setMode(data.settings.mode))
       .catch((e) => setBootError(e.message));
@@ -293,7 +304,8 @@ function App() {
     }
   }
 
-  if (!state)
+  if (needsLogin) return <LoginPage onLogin={refresh} />;
+ if (!state)
     return (
       <div className="loading-screen">
         <div className="brand-mark">
@@ -362,9 +374,9 @@ function App() {
             L<span />
           </span>
           <span>
-            <strong>本地工作区</strong>
+            <strong>{state.access?.shared ? "共享工作区" : "本地工作区"}</strong>
           </span>
-          <span className="workspace-key">LOCAL</span>
+          <span className="workspace-key">{state.access?.shared ? "SHARED" : "LOCAL"}</span>
         </div>
         <div className="workspace-label">WORKSPACE</div>
         <nav aria-label="主导航">
@@ -445,15 +457,16 @@ function App() {
       <div className="main-shell">
         <header className="topbar">
           <div className="breadcrumb">
-            <span>本地工作区</span>
+            <span>{state.access?.shared ? "共享工作区" : "本地工作区"}</span>
             <ChevronRight size={13} />
             <strong>{nav.find((n) => n.id === page)?.label}</strong>
           </div>
           <div className="topbar-right">
             <span className="prototype-badge">
-              <FlaskConical size={13} /> LOCAL PREVIEW
+              <FlaskConical size={13} /> {state.access?.shared ? state.access.actor : "LOCAL PREVIEW"}
             </span>
-            <span className="top-divider" />
+            {state.access?.shared && <button className="button" onClick={async () => { try { await api("/auth/logout", {method: "POST", body: "{}"}); setState(null); setNeedsLogin(true); setResult(null); setSelected(null); setInvocation(null); } catch(e: any) { setToast(e.message); } }}>退出登录</button>}
+ <span className="top-divider" />
             <span className="online-text">
               <span className="online-dot" />
               网关运行中
@@ -471,6 +484,7 @@ function App() {
               notify={setToast}
             />
           )}
+          {page === "maintenance" && <MaintenancePage servers={state.registry.servers} refreshRegistry={refresh} />}
           {page === "playground" && (
             <>
               <div className="page-heading">
@@ -580,16 +594,18 @@ function App() {
                     <div className="composer-footer">
                       <div className="input-controls">
                         <label>
-                          <span>模拟身份</span>
+                          <span>{state.access?.shared ? "当前身份" : "模拟身份"}</span>
                           <select
                             value={actor}
+ disabled={state.access?.shared}
                             onChange={(e) => {
                               setActor(e.target.value);
                               setResult(null);
                               setSelected(null);
                             }}
                           >
-                            <option value="developer">Developer</option>
+                            {state.access?.shared && <option value={state.access.actor}>{state.access.actor}</option>}
+ <option value="developer">Developer</option>
                             <option value="observer">Observer</option>
                           </select>
                         </label>

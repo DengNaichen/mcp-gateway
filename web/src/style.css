@@ -2468,3 +2468,8 @@ td p {
     margin-right: 14px;
   }
 }
+
+.login-card { width:min(420px,calc(100vw - 40px)); display:grid; gap:16px; text-align:left; padding:32px; background:var(--surface,#fff); border:1px solid var(--border,#ddd); border-radius:16px; }
+.login-card h1,.login-card p { margin:0; }
+.login-card input { padding:12px; width:100%; box-sizing:border-box; border:1px solid var(--border,#ddd); border-radius:8px; }
+.login-card .muted { font-size:12px; color:#64748b; line-height:1.7; }

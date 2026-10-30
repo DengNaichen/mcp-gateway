@@ -3,6 +3,7 @@
 /data/*.jsonl
 /data/*.db
 /data/*.db-*
+/data/maintenance/
 /web/node_modules/
 .env
 .DS_Store

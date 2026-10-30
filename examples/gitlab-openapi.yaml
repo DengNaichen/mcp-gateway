@@ -1,0 +1,42 @@
+# Curated read-only GitLab API subset, maintained by the gateway owner.
+# Endpoint: https://your-gitlab.example/api/v4 (do not include /api/v4 here).
+openapi: 3.0.3
+info: {title: GitLab CI and logs, version: '1'}
+paths:
+  /projects/{project}/pipelines:
+    parameters:
+      - {$ref: '#/components/parameters/Project'}
+    get:
+      operationId: pipelines
+      summary: List CI pipeline statuses for a project
+      tags: [ci, pipeline, status]
+      parameters:
+        - {name: per_page, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+        - {name: ref, in: query, schema: {type: string}}
+      responses:
+        '200': {description: Pipeline list, content: {application/json: {schema: {type: array, items: {type: object, required: [id, status], properties: {id: {type: integer}, status: {type: string}}}}}}}
+  /projects/{project}/pipelines/{pipeline_id}/jobs:
+    parameters:
+      - {$ref: '#/components/parameters/Project'}
+      - {name: pipeline_id, in: path, required: true, schema: {type: integer}}
+    get:
+      operationId: jobs
+      summary: List CI jobs in a pipeline
+      tags: [ci, jobs, pipeline]
+      parameters:
+        - {name: per_page, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+      responses:
+        '200': {description: Job list, content: {application/json: {schema: {type: array, items: {type: object, required: [id, status], properties: {id: {type: integer}, status: {type: string}}}}}}}
+  /projects/{project}/jobs/{job_id}/trace:
+    parameters:
+      - {$ref: '#/components/parameters/Project'}
+      - {name: job_id, in: path, required: true, schema: {type: integer}}
+    get:
+      operationId: job_trace
+      summary: Read the text log trace of a CI job
+      tags: [ci, logs, trace]
+      responses:
+        '200': {description: Job log, content: {text/plain: {schema: {type: string}}}}
+components:
+  parameters:
+    Project: {name: project, in: path, required: true, description: Numeric project ID or namespace/project, schema: {type: string}}

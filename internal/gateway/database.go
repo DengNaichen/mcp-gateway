@@ -35,7 +35,12 @@ CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), definit
 CREATE TABLE IF NOT EXISTS activity (id TEXT PRIMARY KEY, time TEXT NOT NULL, kind TEXT NOT NULL, actor TEXT NOT NULL, status TEXT NOT NULL, title TEXT NOT NULL, duration_ms INTEGER NOT NULL, detail TEXT NOT NULL CHECK(json_valid(detail)));
 CREATE INDEX IF NOT EXISTS activity_by_time ON activity(time DESC);
 CREATE TABLE IF NOT EXISTS connection_checks (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, definition TEXT NOT NULL CHECK(json_valid(definition)));
-PRAGMA user_version=2;`); err != nil {
+CREATE TABLE IF NOT EXISTS maintenance_sources (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
+CREATE TABLE IF NOT EXISTS maintenance_runs (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
+CREATE TABLE IF NOT EXISTS maintenance_acceptance (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
+CREATE TABLE IF NOT EXISTS maintenance_deliveries (server_id TEXT NOT NULL, provider TEXT NOT NULL, delivery_id TEXT NOT NULL, received_at TEXT NOT NULL, run_id TEXT NOT NULL, definition TEXT NOT NULL CHECK(json_valid(definition)), PRIMARY KEY(server_id,provider,delivery_id));
+CREATE INDEX IF NOT EXISTS maintenance_pending_deliveries ON maintenance_deliveries(run_id,received_at);
+PRAGMA user_version=5;`); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
 			slog.Warn("close failed database", "error", closeErr)
 		}
@@ -51,6 +56,9 @@ PRAGMA user_version=2;`); err != nil {
 }
 
 func (g *Gateway) Close() error {
+	if g.maintenance != nil {
+		g.maintenance.Close()
+	}
 	result := g.closeDownstreams()
 	if err := g.db.Close(); err != nil {
 		result = errors.Join(result, fmt.Errorf("close sqlite: %w", err))
@@ -115,6 +123,17 @@ func (g *Gateway) persistRegistry(reg Registry) error {
 			}
 		}
 	}()
+	if err := writeRegistry(tx, reg); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit registry: %w", err)
+	}
+	committed = true
+	return nil
+}
+
+func writeRegistry(tx *sql.Tx, reg Registry) error {
 	for _, query := range []string{"DELETE FROM tools", "DELETE FROM servers"} {
 		if _, err := tx.Exec(query); err != nil {
 			return fmt.Errorf("replace registry: %w", err)
@@ -138,10 +157,6 @@ func (g *Gateway) persistRegistry(reg Registry) error {
 			return fmt.Errorf("persist tool: %w", err)
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit registry: %w", err)
-	}
-	committed = true
 	return nil
 }
 

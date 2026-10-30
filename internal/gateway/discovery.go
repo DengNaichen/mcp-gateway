@@ -57,10 +57,18 @@ func retrieve(tools []Tool, query string) []Candidate {
 	return out
 }
 
-func (g *Gateway) Discover(ctx context.Context, req DiscoverRequest) (result DiscoverResult, retErr error) {
+func (g *Gateway) Discover(ctx context.Context, req DiscoverRequest) (DiscoverResult, error) {
+	return g.discoverRegistry(ctx, req, g.Snapshot(), true)
+}
+
+func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, registry Registry, record bool) (result DiscoverResult, retErr error) {
+	req.Actor = requestActor(ctx, req.Actor)
 	started := time.Now()
 	defer func() {
 		result.DurationMS = time.Since(started).Milliseconds()
+		if !record {
+			return
+		}
 		if retErr != nil {
 			g.record("discover", req.Actor, "error", req.Intent, started, map[string]any{"error": g.errorDetail(retErr)})
 		} else {
@@ -83,7 +91,7 @@ func (g *Gateway) Discover(ctx context.Context, req DiscoverRequest) (result Dis
 	if mode != "model" && mode != "retrieval" {
 		return result, invalid("mode 必须为 model 或 retrieval")
 	}
-	r := g.Snapshot()
+	r := registry
 	servers := map[string]Server{}
 	for _, server := range r.Servers {
 		if server.Enabled && (!server.Demo || req.IncludeDemo) {
@@ -92,7 +100,7 @@ func (g *Gateway) Discover(ctx context.Context, req DiscoverRequest) (result Dis
 	}
 	eligible := []Tool{}
 	for _, t := range r.Tools {
-		if _, ok := servers[t.ServerID]; ok && allowed(t, req.Actor) {
+		if _, ok := servers[t.ServerID]; ok && g.authorizedTool(ctx, t, req.Actor) {
 			eligible = append(eligible, t)
 		}
 	}
@@ -183,7 +191,7 @@ Use needs_context only when a clarification is necessary to choose tools; a miss
 If no tools can serve the task, return no_match. If selected, tools must be non-empty. Otherwise tools must be empty.
 Return a JSON object ONLY, with this exact structure:
 {"status":"selected|no_match|needs_context","summary":"short explanation in the task language","question":"clarification or empty string","tools":[{"id":"exact candidate ID","reason":"short reason in the task language"}]}`, s.MaxTools)
-	input, err := json.Marshal(map[string]any{"intent": req.Intent, "context": req.Context, "candidates": candidates})
+	input, err := json.Marshal(map[string]any{"intent": req.Intent, "context": req.Context, "candidates": summarizeCandidates(candidates)})
 	if err != nil {
 		return decision, usage, fmt.Errorf("encode routing context: %w", err)
 	}

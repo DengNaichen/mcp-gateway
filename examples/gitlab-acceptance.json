@@ -1,0 +1,38 @@
+{
+  "server_id": "gitlab",
+  "contracts": [
+    {
+      "name": "pipeline list encodes project path",
+      "tool_id": "gitlab.pipelines",
+      "arguments": {"path": {"project": "team/api"}, "query": {"per_page": 1}},
+      "exchanges": [{"method": "GET", "path": "/projects/team%2Fapi/pipelines", "query": {"per_page": ["1"]}, "headers": {"Private-Token": "acceptance-test"}, "status": 200, "response": [{"id": 10, "status": "success"}]}],
+      "expected": [{"id": 10, "status": "success"}]
+    },
+    {
+      "name": "pipeline jobs",
+      "tool_id": "gitlab.jobs",
+      "arguments": {"path": {"project": "team/api", "pipeline_id": 10}},
+      "exchanges": [{"method": "GET", "path": "/projects/team%2Fapi/pipelines/10/jobs", "status": 200, "response": [{"id": 11, "status": "success"}]}],
+      "expected": [{"id": 11, "status": "success"}]
+    },
+    {
+      "name": "job text log",
+      "tool_id": "gitlab.job_trace",
+      "arguments": {"path": {"project": "team/api", "job_id": 11}},
+      "exchanges": [{"method": "GET", "path": "/projects/team%2Fapi/jobs/11/trace", "status": 200, "text": "build completed\n"}],
+      "expected": {"text": "build completed\n"}
+    },
+    {
+      "name": "missing job fails",
+      "tool_id": "gitlab.job_trace",
+      "arguments": {"path": {"project": "team/api", "job_id": 404}},
+      "exchanges": [{"method": "GET", "path": "/projects/team%2Fapi/jobs/404/trace", "status": 404, "response": {"message": "404 Job Not Found"}}],
+      "expect_error": true
+    }
+  ],
+  "routing": [
+    {"name": "find pipelines", "intent": "CI pipeline status", "mode": "retrieval", "expected": ["gitlab.pipelines"]},
+    {"name": "find jobs", "intent": "CI jobs in a pipeline", "mode": "retrieval", "expected": ["gitlab.jobs"]},
+    {"name": "find log", "intent": "CI job log trace", "mode": "retrieval", "expected": ["gitlab.job_trace"]}
+  ]
+}

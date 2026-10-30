@@ -40,7 +40,7 @@ func connectMCP(ctx, processContext context.Context, s Server) (*mcp.ClientSessi
 	if s.Transport == "stdio" {
 		command := exec.CommandContext(processContext, s.Command, s.Args...)
 		command.Dir = s.WorkDir
-		command.Env = os.Environ()
+		command.Env = processEnvironment(nil)
 		for key, value := range s.Env {
 			command.Env = append(command.Env, key+"="+os.ExpandEnv(value))
 		}
@@ -211,6 +211,7 @@ func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
 }
 
 func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeResult, retErr error) {
+	req.Actor = requestActor(ctx, req.Actor)
 	started := time.Now()
 	defer func() {
 		status := "success"
@@ -228,8 +229,8 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	}
 	t := r.Tools[i]
 	j := slices.IndexFunc(r.Servers, func(s Server) bool { return s.ID == t.ServerID })
-	if j < 0 || !r.Servers[j].Enabled || !allowed(t, req.Actor) {
-		return result, problem(403, "工具已禁用，或当前模拟身份没有调用权限", nil)
+	if j < 0 || !r.Servers[j].Enabled || !g.authorizedTool(ctx, t, req.Actor) {
+		return result, problem(403, "工具已禁用，或当前身份没有调用权限", nil)
 	}
 	s := r.Servers[j]
 	if req.Arguments == nil {
@@ -245,7 +246,9 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	var data any
-	if s.Kind == "mcp" {
+	if t.Adapter != "" {
+		data, err = g.callAdapter(ctx, s, t, req.Arguments)
+	} else if s.Kind == "mcp" {
 		data, err = g.callMCP(ctx, s, t, req.Arguments)
 	} else {
 		data, err = callHTTP(ctx, s, t, req.Arguments)
@@ -253,6 +256,7 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	if err != nil {
 		return result, problem(502, "下游工具调用失败", err)
 	}
+	data = redactResponse(data, s)
 	if len(req.Fields) > 0 {
 		data = project(data, req.Fields)
 	}
@@ -260,6 +264,9 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 }
 
 func callHTTP(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
+	if t.HTTP != nil {
+		return callMappedHTTP(ctx, s, t, args)
+	}
 	if err := checkEnvironment(s); err != nil {
 		return nil, err
 	}
