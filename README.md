@@ -313,6 +313,17 @@ make build
 
 GitLab 测试使用临时数据目录：导入示例规格 → 负责人契约与路由验收 → 确认首次发布 → 查询真实流水线、任务和日志 → 修改描述 → 自动发布兼容变更 → 验证路由 → 回退。不修改实际项目、流水线或用户网关数据。默认测试另覆盖签名事件去重/重启恢复、配置漂移、发布竞争、身份伪造、脱敏、取消和失败路径。
 
+## 路由评测
+
+`evals/routing/github.json` 是一组固定的路由题：正例要求返回全部 `expected` 工具，`acceptable` 是可以接受的额外工具，其余返回的工具记为噪声；`no_match` 用例要求什么都不返回。对着正在运行、已配置模型的网关执行：
+
+```sh
+go run ./cmd/routingeval                      # 默认读 evals/routing/github.json
+go run ./cmd/routingeval -url http://127.0.0.1:8788 -cases evals/routing/github.json
+```
+
+输出逐题结果，以及召回、无噪声占比、负例正确率、精度和平均耗时/输入 token。它不是通过/失败的门槛，而是调阈值、改提示词或换模型前后用来对比的基线；题目由人标注，`acceptable` 的划分带主观性。
+
 ## 开发
 
 界面使用本地打包的 DM Sans 和 IBM Plex Mono 字体，运行时不依赖外部字体服务；OFL 许可证保存在 `web/public/fonts/`。界面动效遵循系统的减少动态效果偏好。
