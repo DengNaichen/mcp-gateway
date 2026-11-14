@@ -31,8 +31,8 @@
     }
   ],
   "routing": [
-    {"name": "find pipelines", "intent": "CI pipeline status", "mode": "retrieval", "expected": ["gitlab.pipelines"]},
-    {"name": "find jobs", "intent": "CI jobs in a pipeline", "mode": "retrieval", "expected": ["gitlab.jobs"]},
-    {"name": "find log", "intent": "CI job log trace", "mode": "retrieval", "expected": ["gitlab.job_trace"]}
+    {"name": "find pipelines", "intent": "CI pipeline status", "expected": ["gitlab.pipelines"]},
+    {"name": "find jobs", "intent": "CI jobs in a pipeline", "expected": ["gitlab.jobs"]},
+    {"name": "find log", "intent": "CI job log trace", "expected": ["gitlab.job_trace"]}
   ]
 }

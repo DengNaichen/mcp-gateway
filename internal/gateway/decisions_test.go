@@ -20,7 +20,7 @@ func decisionFixture(status string, probabilities ...float64) map[string]any {
 }
 
 func TestDecisionsRouting(t *testing.T) {
-	candidates := []Candidate{{Tool: Tool{ID: "s.a"}}, {Tool: Tool{ID: "s.b"}}, {Tool: Tool{ID: "s.c"}}}
+	candidates := []Tool{{ID: "s.a"}, {ID: "s.b"}, {ID: "s.c"}}
 	for _, tc := range []struct {
 		name, status  string
 		probabilities []float64
@@ -31,8 +31,10 @@ func TestDecisionsRouting(t *testing.T) {
 		{"stable ties", "selected", []float64{0.8, 0.8, 0.1}, []string{"s.a", "s.b"}, "selected"},
 		{"threshold", "selected", []float64{0.49, 0.5, 0.1}, []string{"s.b"}, "selected"},
 		{"below threshold", "selected", []float64{0.1, 0.2, 0.3}, nil, "no_match"},
-		{"no match", "no_match", []float64{0.9, 0.9, 0.9}, nil, "no_match"},
-		{"clarification", "needs_context", []float64{0.9, 0.9, 0.9}, nil, "needs_context"},
+		{"no match", "no_match", []float64{0.1, 0.2, 0.3}, nil, "no_match"},
+		{"clarification", "needs_context", []float64{0.1, 0.2, 0.3}, nil, "needs_context"},
+		{"status cannot veto a confident tool", "needs_context", []float64{0.94, 0.1, 0.2}, []string{"s.a"}, "selected"},
+		{"no_match status cannot veto either", "no_match", []float64{0.1, 0.9, 0.2}, []string{"s.b"}, "selected"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +53,7 @@ func TestDecisionsRouting(t *testing.T) {
 					w.WriteHeader(400)
 					return
 				}
-				if payload.Model != "gpt-6-luna" || !strings.Contains(payload.Input, "inspect") || len(payload.Questions) != 4 || payload.Questions[0].Type != "choice" || payload.Questions[1].Name != "tool_0" || payload.Messages != nil || payload.ResponseFormat != nil {
+				if payload.Model != "gpt-6-luna" || !strings.Contains(payload.Input, "inspect") || len(payload.Questions) != 4 || payload.Questions[0].Type != "choice" || payload.Questions[1].Name != "tool_0" || !strings.Contains(payload.Questions[1].Instructions, `"s.a"`) || strings.Contains(payload.Questions[1].Instructions, "candidates[") || payload.Messages != nil || payload.ResponseFormat != nil {
 					t.Errorf("unexpected Decisions payload: %+v", payload)
 				}
 				respond(w, 200, decisionFixture(tc.status, tc.probabilities...))
@@ -93,7 +95,7 @@ func TestDecisionsRejectsInvalidAnswers(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			_, _, err := selectWithModel(context.Background(), Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{}, []Candidate{{Tool: Tool{ID: "s.a"}}})
+			_, _, err := selectWithModel(context.Background(), Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{}, []Tool{{ID: "s.a"}})
 			if err == nil {
 				t.Fatal("invalid answer accepted")
 			}
@@ -107,7 +109,7 @@ func TestDecisionsErrorsAndCancellation(t *testing.T) {
 	}))
 	defer server.Close()
 	s := Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}
-	candidates := []Candidate{{Tool: Tool{ID: "s.a"}}}
+	candidates := []Tool{{ID: "s.a"}}
 	_, _, err := selectWithModel(context.Background(), s, "secret-test-key", DiscoverRequest{}, candidates)
 	if err == nil || strings.Contains(err.Error(), "secret-test-key") || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("error did not redact key: %v", err)
@@ -120,5 +122,55 @@ func TestDecisionsErrorsAndCancellation(t *testing.T) {
 	s.BaseURL += "/chat/completions"
 	if _, _, err := selectWithModel(context.Background(), s, "", DiscoverRequest{}, candidates); err == nil {
 		t.Fatal("legacy endpoint accepted")
+	}
+}
+
+// The task must come before the tool list in the model input; see selectWithModel.
+func TestRoutingInputPutsIntentBeforeCandidates(t *testing.T) {
+	var input string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Input string `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		input = payload.Input
+		respond(w, 200, decisionFixture("selected", 0.9))
+	}))
+	defer server.Close()
+	tools := []Tool{{ID: "s.a", Name: "a", Description: "first"}}
+	if _, _, err := selectWithModel(context.Background(), Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "find it", Context: "known"}, tools); err != nil {
+		t.Fatal(err)
+	}
+	intentAt, contextAt, candidatesAt := strings.Index(input, `"intent"`), strings.Index(input, `"context"`), strings.Index(input, `"candidates"`)
+	if intentAt < 0 || !(intentAt < contextAt && contextAt < candidatesAt) {
+		t.Fatalf("model input must list intent, context, then candidates: %s", input)
+	}
+}
+
+// The per-request tool limit is per provider: OpenAI keeps its original 100, Gemini allows more.
+func TestRoutingToolLimitIsPerProvider(t *testing.T) {
+	tools := make([]Tool, openAIMaxTools+1)
+	for i := range tools {
+		tools[i] = Tool{ID: fmt.Sprintf("s.t%03d", i)}
+	}
+	probabilities := make([]float64, len(tools))
+	var openAICalls int
+	openAI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		openAICalls++
+		respond(w, 200, decisionFixture("no_match", probabilities...))
+	}))
+	defer openAI.Close()
+	_, _, err := selectWithModel(context.Background(), Settings{BaseURL: openAI.URL, Model: "gpt-6-luna", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "x"}, tools)
+	if err == nil || !strings.Contains(err.Error(), "100") || openAICalls != 0 {
+		t.Fatalf("OpenAI path must reject %d tools before calling the model: err=%v calls=%d", len(tools), err, openAICalls)
+	}
+	gemini := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respond(w, 200, geminiFixture("no_match", probabilities...))
+	}))
+	defer gemini.Close()
+	if _, _, err := selectWithModel(context.Background(), Settings{BaseURL: gemini.URL, Model: "gemini-decision-1", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "x"}, tools); err != nil {
+		t.Fatalf("Gemini path must accept %d tools: %v", len(tools), err)
 	}
 }

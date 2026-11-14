@@ -87,8 +87,6 @@ type SourceProvenance struct {
 type Settings struct {
 	BaseURL        string `json:"base_url"`
 	Model          string `json:"model"`
-	Mode           string `json:"mode"`
-	CandidateLimit int    `json:"candidate_limit"`
 	MaxTools       int    `json:"max_tools"`
 	TimeoutSeconds int    `json:"timeout_seconds"`
 }
@@ -99,17 +97,12 @@ type Registry struct {
 }
 
 type DiscoverRequest struct {
-	Intent      string `json:"intent" jsonschema:"Describe the capability needed for the current task, in natural language"`
-	Context     string `json:"context,omitempty" jsonschema:"Relevant known information and actions already attempted; avoid secrets"`
-	Actor       string `json:"actor,omitempty" jsonschema:"Local simulation only: developer or observer; ignored when authenticated; this is not authentication"`
-	Mode        string `json:"mode,omitempty" jsonschema:"model for LLM selection, retrieval for keyword preview; defaults to gateway settings"`
-	IncludeDemo bool   `json:"include_demo,omitempty"`
-	SummaryOnly bool   `json:"summary_only,omitempty"`
-}
-
-type Candidate struct {
-	Tool
-	Score float64 `json:"score"`
+	Intent      string   `json:"intent" jsonschema:"Describe the capability needed for the current task, in natural language"`
+	Context     string   `json:"context,omitempty" jsonschema:"Relevant known information and actions already attempted; avoid secrets"`
+	Services    []string `json:"services,omitempty" jsonschema:"Optional service IDs to search within when the task names a service; leave empty to search every service"`
+	Actor       string   `json:"actor,omitempty" jsonschema:"Local simulation only: developer or observer; ignored when authenticated; this is not authentication"`
+	IncludeDemo bool     `json:"include_demo,omitempty"`
+	SummaryOnly bool     `json:"summary_only,omitempty"`
 }
 
 type Selection struct {
@@ -120,12 +113,11 @@ type Selection struct {
 type DiscoverResult struct {
 	ID           string      `json:"id"`
 	Status       string      `json:"status"`
-	Mode         string      `json:"mode"`
 	Model        string      `json:"model,omitempty"`
 	Summary      string      `json:"summary"`
 	Question     string      `json:"question,omitempty"`
 	Tools        []Selection `json:"tools"`
-	Candidates   []Candidate `json:"candidates,omitempty"`
+	Servers      []string    `json:"servers,omitempty"` // services chosen by hierarchical routing
 	Eligible     int         `json:"eligible"`
 	DurationMS   int64       `json:"duration_ms"`
 	PromptTokens int         `json:"prompt_tokens"`

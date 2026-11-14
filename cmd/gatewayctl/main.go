@@ -16,7 +16,6 @@ import (
 func run() error {
 	endpoint := flag.String("url", "http://127.0.0.1:8788", "Gateway URL")
 	actor := flag.String("actor", "developer", "Simulated policy identity")
-	mode := flag.String("mode", "", "model or retrieval; empty uses saved gateway setting")
 	args := flag.String("args", "{}", "Tool arguments as JSON")
 	fields := flag.String("fields", "", "Comma-separated response projection paths")
 	contextText := flag.String("context", "", "Context for discovery")
@@ -35,7 +34,7 @@ func run() error {
 			return fmt.Errorf("search requires an intent")
 		}
 		method, path = http.MethodPost, "/api/discover"
-		payload = map[string]any{"intent": strings.Join(flag.Args()[1:], " "), "actor": *actor, "mode": *mode, "context": *contextText, "include_demo": *includeDemo, "summary_only": *summary}
+		payload = map[string]any{"intent": strings.Join(flag.Args()[1:], " "), "actor": *actor, "context": *contextText, "include_demo": *includeDemo, "summary_only": *summary}
 	case "schema":
 		if flag.NArg() != 2 {
 			return fmt.Errorf("schema requires one tool id")

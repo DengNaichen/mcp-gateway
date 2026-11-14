@@ -63,7 +63,8 @@ func (g *Gateway) mcpServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "gateway-lab", Version: "0.1.0"}, nil)
 	s.AddTool(&mcp.Tool{Name: "discover_tools", Description: "Describe your current task to discover a small set of authorized tools. Returns real tool IDs, schemas and usage reasons. Use invoke_tool to execute them. Rediscover as the task changes.", InputSchema: objectSchema(map[string]any{
 		"summary_only": map[string]any{"type": "boolean", "description": "Return capability summaries; use get_tool_schema for the selected tool"},
-		"intent":       map[string]any{"type": "string", "description": "The capability needed now, in natural language"}, "context": map[string]any{"type": "string", "description": "Relevant known facts and previous attempts"}, "actor": map[string]any{"type": "string", "enum": []string{"developer", "observer"}, "description": "Simulated identity only"}, "mode": map[string]any{"type": "string", "enum": []string{"model", "retrieval"}},
+		"intent":       map[string]any{"type": "string", "description": "The capability needed now, in natural language"}, "context": map[string]any{"type": "string", "description": "Relevant known facts and previous attempts"}, "actor": map[string]any{"type": "string", "enum": []string{"developer", "observer"}, "description": "Simulated identity only"},
+		"services": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Service IDs to search within when the task names a service (for example [\"github\"]); omit to search every service"},
 	}, "intent")}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		started := time.Now()
 		var in DiscoverRequest
@@ -78,7 +79,6 @@ func (g *Gateway) mcpServer() *mcp.Server {
 		if err != nil {
 			return nil, err
 		}
-		out.Candidates = nil // Keep retrieval diagnostics out of the local agent context.
 		return toolResult(discoveryPresentation(out, in.SummaryOnly))
 	})
 	s.AddTool(&mcp.Tool{Name: "get_tool_schema", Description: "Read the current schema of an enabled authorized tool after summary discovery.", InputSchema: objectSchema(map[string]any{"tool_id": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}}, "tool_id")}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -201,9 +201,6 @@ func (g *Gateway) Handler(assets fs.FS) http.Handler {
 		if err != nil {
 			fail(w, err)
 			return
-		}
-		if r.URL.Query().Get("debug") != "1" {
-			out.Candidates = nil
 		}
 		respond(w, 200, discoveryPresentation(out, in.SummaryOnly))
 	})

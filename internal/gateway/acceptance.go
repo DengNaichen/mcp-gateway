@@ -50,7 +50,6 @@ type RoutingCase struct {
 	Intent    string   `json:"intent"`
 	Context   string   `json:"context,omitempty"`
 	Actor     string   `json:"actor,omitempty"`
-	Mode      string   `json:"mode"`
 	Expected  []string `json:"expected"`
 	Forbidden []string `json:"forbidden,omitempty"`
 	NoMatch   bool     `json:"no_match,omitempty"`
@@ -94,8 +93,8 @@ func (m *Maintainer) SaveAcceptance(s AcceptanceSuite) error {
 		}
 	}
 	for _, c := range s.Routing {
-		if c.Name == "" || names[c.Name] || strings.TrimSpace(c.Intent) == "" || !slices.Contains([]string{"retrieval", "model"}, c.Mode) {
-			return invalid("路由用例需要唯一名称、intent 和 retrieval/model 模式")
+		if c.Name == "" || names[c.Name] || strings.TrimSpace(c.Intent) == "" {
+			return invalid("路由用例需要唯一名称和 intent")
 		}
 		names[c.Name] = true
 		if !c.NoMatch && len(c.Expected) == 0 {
@@ -191,7 +190,7 @@ func (m *Maintainer) evaluateAcceptance(ctx context.Context, r MaintenanceRun, d
 		var result DiscoverResult
 		err := actorErr
 		if err == nil {
-			result, err = m.g.discoverRegistry(routingCtx, DiscoverRequest{Intent: c.Intent, Context: c.Context, Actor: c.Actor, Mode: c.Mode}, candidate, false)
+			result, err = m.g.discoverRegistry(routingCtx, DiscoverRequest{Intent: c.Intent, Context: c.Context, Actor: c.Actor}, candidate, false)
 		}
 		if err == nil {
 			if c.NoMatch && result.Status != "no_match" {

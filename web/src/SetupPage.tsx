@@ -858,10 +858,7 @@ function ModelStep({
   back: () => void;
   notify: Props["notify"];
 }) {
-  const [config, setConfig] = useState<Config>({
-    ...state.settings,
-    mode: "model",
-  });
+  const [config, setConfig] = useState<Config>({ ...state.settings });
   const [key, setKey] = useState("");
   const [clearKey, setClearKey] = useState(false);
   const [intent, setIntent] = useState("");
@@ -869,7 +866,7 @@ function ModelStep({
   const [error, setError] = useState<any>(null);
   const [result, setResult] = useState<Discovery | null>(null);
   const dirty =
-    pretty(config) !== pretty({ ...state.settings, mode: "model" }) ||
+    pretty(config) !== pretty(state.settings) ||
     !!key ||
     clearKey;
   const update = (patch: Partial<Config>) => {
@@ -883,7 +880,6 @@ function ModelStep({
     try {
       const payload = {
         ...config,
-        mode: "model",
         api_key: key,
         clear_key: clearKey,
         intent,
@@ -1013,18 +1009,7 @@ function ModelStep({
                 onChange={(e) => setIntent(e.target.value)}
               />
             </label>
-            <div className="setup-form-row three">
-              <label className="form-field">
-                <span>候选工具上限</span>
-                <input
-                  className="text-input"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={config.candidate_limit}
-                  onChange={(e) => update({ candidate_limit: +e.target.value })}
-                />
-              </label>
+            <div className="setup-form-row">
               <label className="form-field">
                 <span>返回工具上限</span>
                 <input
