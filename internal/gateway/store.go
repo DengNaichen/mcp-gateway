@@ -58,7 +58,7 @@ func New(dir, baseURL string) (*Gateway, error) {
 		}
 	}()
 	g := &Gateway{execution: execution, access: access, dir: dir, baseURL: baseURL, events: []Event{}, settings: Settings{
-		BaseURL: "https://api.openai.com/v1", Model: "gpt-6-luna", Mode: "retrieval", CandidateLimit: 16, MaxTools: 4, TimeoutSeconds: 45,
+		BaseURL: "https://api.openai.com/v1", Model: "gpt-6-luna", MaxTools: 4, TimeoutSeconds: 45,
 	}, db: db}
 	if err := g.loadRegistry(); err != nil {
 		return nil, err
@@ -101,7 +101,6 @@ func New(dir, baseURL string) (*Gateway, error) {
 	}
 	if v := os.Getenv("GATEWAY_MODEL"); v != "" {
 		g.settings.Model = v
-		g.settings.Mode = "model"
 	}
 	g.apiKey = os.Getenv("GATEWAY_MODEL_API_KEY")
 	if err := validateSettings(g.settings); err != nil {
@@ -142,11 +141,8 @@ func validateSettings(s Settings) error {
 	if err := validateURL(s.BaseURL); err != nil {
 		return err
 	}
-	if s.Mode != "model" && s.Mode != "retrieval" {
-		return invalid("mode 必须为 model 或 retrieval")
-	}
-	if s.CandidateLimit < 1 || s.CandidateLimit > 100 || s.MaxTools < 1 || s.MaxTools > 12 || s.MaxTools > s.CandidateLimit {
-		return invalid("候选数需为 1–100，返回工具数需为 1–12 且不大于候选数")
+	if s.MaxTools < 1 || s.MaxTools > 12 {
+		return invalid("返回工具数需为 1–12")
 	}
 	if s.TimeoutSeconds < 5 || s.TimeoutSeconds > 180 {
 		return invalid("超时需为 5–180 秒")

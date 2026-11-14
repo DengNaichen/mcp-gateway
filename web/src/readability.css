@@ -34,9 +34,6 @@
   font-size: 11px;
   color: #78886b;
 }
-.overview-strip .mode-indicator {
-  font-size: 10px;
-}
 .prompt-box textarea {
   font-size: 13px;
   color: #4c5f3f;
@@ -92,11 +89,6 @@
 .protocol-tag,
 .result-count {
   font-size: 8px;
-}
-.candidate-details,
-.candidate-details summary > span,
-.candidate-list > div {
-  font-size: 10px;
 }
 .inspector-tool > span {
   font-size: 10px;
@@ -277,9 +269,6 @@ td p,
   }
   .overview-strip > div {
     font-size: 10px;
-  }
-  .overview-strip .mode-indicator {
-    font-size: 8px;
   }
   .page-heading p {
     font-size: 12px;

@@ -25,7 +25,7 @@ export function AcceptanceEditor({ serverID, native }: { serverID: string; nativ
         }),
         expected: { status: "ok" },
       }],
-      routing: [{ name: "状态查询路由", intent: "查询服务状态 status", mode: "retrieval", expected: [id] }],
+      routing: [{ name: "状态查询路由", intent: "查询服务状态 status", expected: [id] }],
     }));
     setSaved(false);
   }
@@ -42,7 +42,7 @@ export function AcceptanceEditor({ serverID, native }: { serverID: string; nativ
   return <details className="maintenance-acceptance-editor">
     <summary>独立验收用例</summary>
     <p className="maintenance-help">用例由你维护，不会发送给 Pi。每个工具需要成功调用的契约用例；启用的工具还需要路由用例。保存后重新检查来源，新的验收结果通过后才能发布。</p>
-    <p className="maintenance-help">HTTP 用例验证实际方法、编码后的路径、query、请求体和返回值；使用本地模拟响应，不调用真实写接口。路由模式可选 retrieval 或 model，后者使用当前配置的路由模型。</p>
+    <p className="maintenance-help">HTTP 用例验证实际方法、编码后的路径、query、请求体和返回值；使用本地模拟响应，不调用真实写接口。路由用例使用当前配置的路由模型。</p>
     <textarea aria-label="独立验收用例 JSON" className="text-input mono" rows={15} value={value} onChange={event => { setValue(event.target.value); setSaved(false); }} spellCheck={false} />
     {error && <p className="maintenance-message error" role="alert">{error}</p>}
     {saved && <p className="maintenance-help" role="status">验收用例已保存。重新检查来源后生效。</p>}

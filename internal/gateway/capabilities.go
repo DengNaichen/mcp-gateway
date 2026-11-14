@@ -15,19 +15,16 @@ type Capability struct {
 	Description string   `json:"description"`
 	Tags        []string `json:"tags"`
 	ReadOnly    bool     `json:"read_only"`
-	Score       float64  `json:"score,omitempty"`
 	Reason      string   `json:"reason,omitempty"`
 }
 
 func capability(t Tool) Capability {
 	return Capability{ID: t.ID, ServerID: t.ServerID, Name: t.Name, Description: t.Description, Tags: t.Tags, ReadOnly: t.ReadOnly}
 }
-func summarizeCandidates(candidates []Candidate) []Capability {
-	result := make([]Capability, 0, len(candidates))
-	for _, c := range candidates {
-		summary := capability(c.Tool)
-		summary.Score = c.Score
-		result = append(result, summary)
+func summarizeTools(tools []Tool) []Capability {
+	result := make([]Capability, 0, len(tools))
+	for _, t := range tools {
+		result = append(result, capability(t))
 	}
 	return result
 }
@@ -35,7 +32,6 @@ func discoveryPresentation(result DiscoverResult, summary bool) any {
 	if !summary {
 		return result
 	}
-	result.Candidates = nil
 	out := struct {
 		DiscoverResult
 		Tools []Capability `json:"tools"`

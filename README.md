@@ -1,6 +1,6 @@
 # Gateway Lab
 
-一个可以直接运行的 MCP Gateway 原型。Go 后端、React + TypeScript 管理界面、SQLite 持久化；网关中的模型负责从候选工具里做选择，本地 Agent 继续负责规划和执行。新增的 Pi coding agent 在后台维护接入定义和适配代码，使服务变化能持续同步到路由模型的候选工具集合。
+一个可以直接运行的 MCP Gateway 原型。Go 后端、React + TypeScript 管理界面、SQLite 持久化；网关中的模型负责从可用工具里做选择，本地 Agent 继续负责规划和执行。新增的 Pi coding agent 在后台维护接入定义和适配代码，使服务变化能持续同步到路由模型可选的工具集合。
 
 ## 启动
 
@@ -28,14 +28,14 @@ make build
 首页「开始接入」按三个步骤引导：
 
 1. **接入工具**：填写 MCP 地址或本地 stdio 启动命令，点击「保存并读取工具」。也可以粘贴单个现有 `mcpServers` 配置。检查工具描述和读写属性，勾选后点击「保存工具选择」。新导入工具默认禁用，表单中的勾选只是待保存的选择。普通 HTTP API 则先检查地址，再填写具体工具的方法、路径和参数 schema。
-2. **配置模型**：填写 OpenAI Decisions API 的 Base URL、模型 ID（当前支持 `gpt-6-luna`）和 API Key。「仅保存配置」不发起请求；「保存并测试路由」会用自己的工具定义发起一次真实模型请求，校验回答类型、相关性概率和候选映射，不执行下游工具。需要先启用至少一个自己的工具。更换配置、Key 或工具后，上次检查会显示需要重新测试。
+2. **配置模型**：填写 Decisions API 的 Base URL、模型 ID（当前支持 `gpt-6-luna`）和 API Key。「仅保存配置」不发起请求；「保存并测试路由」会用自己的工具定义发起一次真实模型请求，校验回答类型、相关性概率和工具映射，不执行下游工具。需要先启用至少一个自己的工具。更换配置、Key 或工具后，上次检查会显示需要重新测试。
 3. **连接 Agent**：选择 Codex、Claude Code 或通用 JSON，复制命令或配置，在本地客户端应用。重新打开客户端会话后，直接在 Agent 里提出任务。页面只读取状态，在网关收到 MCP 初始化、工具列表或工具调用请求后显示记录；不会通过网页自测模拟完成接入。
 
 三个步骤都可以先查看，未接入时进度保持未完成。连接失败会保留配置，显示错误详情，方便修改重试。HTTP 地址可达、工具已启用、模型已响应和 Agent 已发来请求分别显示，不代表下游任务一定成功。
 
-原来的工作台位于「调试」：查看关键词候选召回、Decisions 相关性概率、真实 schema，或手动试调用工具。可选字段如 `logs.timestamp,logs.message` 会裁剪结果。「工具注册表」保留完整 JSON 编辑器和同步入口，「高级设置」保留路由参数。「调用记录」显示最近 100 条记录，SQLite 保存全部记录。
+原来的工作台位于「调试」：查看 Decisions 相关性概率、真实 schema，或手动试调用工具。可选字段如 `logs.timestamp,logs.message` 会裁剪结果。「工具注册表」保留完整 JSON 编辑器和同步入口，「高级设置」保留路由参数。「调用记录」显示最近 100 条记录，SQLite 保存全部记录。
 
-内置的 Service Catalog 是 HTTP API，Observability 是使用官方 Go SDK 实现的原生 MCP 服务。示例调用实际经过对应适配器和本机 HTTP 请求，响应明确带有 `demo: true`。演示工具不计入接入进度，默认不参与发现。调试页选择内置示例会开启「包含演示工具」并切到无需模型的检索预览。
+内置的 Service Catalog 是 HTTP API，Observability 是使用官方 Go SDK 实现的原生 MCP 服务。示例调用实际经过对应适配器和本机 HTTP 请求，响应明确带有 `demo: true`。演示工具不计入接入进度，默认不参与发现。演示工具同样需要先配置模型；调试页选择内置示例会开启「包含演示工具」。
 
 ## 模型配置
 
@@ -48,15 +48,15 @@ export GATEWAY_MODEL_API_KEY='你的 OpenAI API Key'
 ./start.sh
 ```
 
-Base URL 自动补全 `/decisions`；也可直接填写完整 endpoint。Key 只保存在内存，不写数据库或浏览器存储，重启后重新填写或使用环境变量。路由只调用 OpenAI Decisions API，不再调用 Chat Completions，也不使用 JSON Mode。已有配置若使用旧模型或 `/chat/completions` 地址，需要重新填写模型和地址，再测试路由。切换服务时请同时更新或清除旧 Key。
+模型 ID 以 `gemini-` 开头时使用 Google Gemini Decisions API（如 Base URL `https://generativelanguage.googleapis.com/v1beta`、模型 `gemini-decision-1`），其他模型使用 OpenAI 风格的 Decisions API。Base URL 自动补全 `/decisions`；也可直接填写完整 endpoint。Key 只保存在内存，不写数据库或浏览器存储，重启后重新填写或使用环境变量。路由只调用 Decisions API，不调用 Chat Completions，也不使用 JSON Mode。已有配置若使用旧模型或 `/chat/completions` 地址，需要重新填写模型和地址，再测试路由。切换服务时请同时更新或清除旧 Key。
 
-每次请求包含一个路由状态 choice 问题，以及每个候选工具一个相关性 predicate 问题。网关校验回答数量、名称、顺序、类型和概率范围；相关性概率至少 0.5 的工具按概率降序选取，最多返回配置数量。该阈值是当前固定策略，仍需用实际项目验收路由质量。`needs_context` 使用网关提供的补充上下文提示；推荐理由展示概率，不由模型生成自由文本。任一问题拒答或响应不完整均报错，不执行工具或退回其他模型接口。
+每次请求包含一个路由状态 choice 问题，以及每个可用工具一个相关性 predicate 问题。网关校验回答数量、名称、顺序、类型和概率范围；相关性概率至少 0.5 的工具按概率降序选取，最多返回配置数量。该阈值是当前固定策略，仍需用实际项目验收路由质量。路由状态问题不否决高相关性的工具：只要有工具过阈值就返回它们，状态仅在没有工具过阈值时区分 `no_match` 与 `needs_context`（后者使用网关提供的补充上下文提示）；推荐理由展示概率，不由模型生成自由文本。任一问题拒答或响应不完整均报错，不执行工具或退回其他模型接口。
 
-路由过程是：按启用状态和身份权限筛选 → 关键词候选检索 → 用紧凑能力摘要供 Decisions 判断 → 校验回答并映射候选 ID → 从注册表按需返回真实 schema。检索器采用英文词和中文双字切分；模型选择器与检索器独立，便于以后替换为向量检索。
+路由过程是：按启用状态和身份权限筛选 → 把所有可用工具的紧凑能力摘要连同任务意图发给 Decisions 模型 → 校验回答并映射为工具 ID → 从注册表按需返回真实 schema。没有本地预筛选，必须先配置模型和 Key。每个工具对应一个问题，成本和延迟随工具数量增长，工具很多时需要关注规模。
 
 模型可返回 `selected`、`no_match`、`needs_context`，不会自行执行工具。任务和工具描述作为不可信数据传入，模型不决定授权。
 
-MCP 和 CLI 只收到选中的工具定义；完整候选诊断留在工作台、调用记录，以及显式使用 `?debug=1` 的 HTTP 发现请求中。
+MCP 和 CLI 只收到选中的工具定义；完整诊断留在工作台、调用记录，以及显式使用 `?debug=1` 的 HTTP 发现请求中。
 
 ## 持续维护：确定性导入与 Pi
 
@@ -67,7 +67,7 @@ Go 负责来源快照、调度、验收、发布和回退；Pi 负责需要编�
 3. 选择指定本地文件、直接文档 URL，或 Git 仓库的 ref 和相对文件路径。OpenAPI 使用第一个文档，不合并多份规格。Git 在网关自己的 bare 缓存内 fetch，不修改用户 checkout；凭据由本机 Git credential helper / SSH 配置提供。URL 文档不跟随重定向。
 4. 配置**独立验收**。负责人提供请求/响应契约和路由案例；用例存在独立表中，不发送给 Pi。每个工具需要成功契约覆盖，每个启用或新增工具需要路由覆盖。`examples/gitlab-acceptance.json` 是可复用示例；共享模式的 routing.actor 必须指定配置中的真实身份 ID。
 5. 点击「保存并检查」。通过验收后：新增/删除能力、扩大读写或权限、破坏参数/结果契约、改变请求目标、执行方式或适配器代码，进入待确认；兼容变更在开启自动发布时直接发布。**新工具在草稿阶段禁用，只在负责人确认发布后启用。** 已有工具保留原来的开关和 ACL。
-6. 发布同时原子更新注册表和任务记录。路由模型从这一个注册表获得候选工具集合，不另维护 decision 选项。用例、路由模型/配置、权限、其他候选集合或当前服务发生变化后，旧验收不能用于新发布。
+6. 发布同时原子更新注册表和任务记录。路由模型从这一个注册表获得可用工具集合，不另维护 decision 选项。用例、路由模型/配置、权限、其他可用工具集合或当前服务发生变化后，旧验收不能用于新发布。
 
 ### Pi 与代码隔离
 
@@ -160,7 +160,7 @@ http://127.0.0.1:8788/mcp
 
 网关固定暴露三个 MCP 工具：
 
-- `discover_tools({intent, context?, actor?, mode?, summary_only?})`：根据当前任务返回小范围真实工具定义。`mode` 可为 `model` 或 `retrieval`，省略时使用保存的配置。
+- `discover_tools({intent, context?, actor?, summary_only?})`：根据当前任务返回小范围真实工具定义，由配置的模型从全部可用工具中选择。
 - `invoke_tool({tool_id, arguments, fields?, actor?})`：再次检查工具开关、真实身份权限及 JSON Schema，然后执行调用。
 
 - `get_tool_schema({tool_id, actor?})`：按权限获取单个工具完整 schema。`discover_tools` 传 `summary_only:true` 可先只拿摘要，降低上下文占用。
@@ -171,10 +171,10 @@ http://127.0.0.1:8788/mcp
 
 ```sh
 ./bin/gatewayctl list
-./bin/gatewayctl -summary -mode retrieval search 'CI job log trace'
+./bin/gatewayctl -summary search 'CI job log trace'
 ./bin/gatewayctl schema gitlab.job_trace
-./bin/gatewayctl -demo -mode retrieval search '排查 billing 最近报错的原因'
-./bin/gatewayctl -mode model -context '已知服务名为 billing' search '查错误日志'
+./bin/gatewayctl -demo search '排查 billing 最近报错的原因'
+./bin/gatewayctl -context '已知服务名为 billing' search '查错误日志'
 ./bin/gatewayctl -args '{"service":"billing","minutes":10}' \
   -fields 'logs.timestamp,logs.message' \
   call observability.search_error_logs > result.json
@@ -329,7 +329,7 @@ make build
 ```text
 cmd/gateway        Go 网关入口
 cmd/gatewayctl     CLI
-internal/gateway  SQLite、Registry、检索、模型选择、协议适配与 API
+internal/gateway  SQLite、Registry、模型选择、协议适配与 API
 web/src           React 工作台
 web/dist          可直接内嵌的前端构建产物
 ```

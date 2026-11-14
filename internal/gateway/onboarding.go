@@ -149,7 +149,7 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 	if err != nil {
 		return out, err
 	}
-	out.ModelReady = out.ModelCheck != nil && out.ModelCheck.Status == "success" && !out.ModelCheck.Stale && out.ToolsReady && settings.Mode == "model"
+	out.ModelReady = out.ModelCheck != nil && out.ModelCheck.Status == "success" && !out.ModelCheck.Stale && out.ToolsReady
 	var ev Event
 	var stamp, detail string
 	err = g.db.QueryRow("SELECT id,time,kind,actor,status,title,duration_ms,detail FROM activity WHERE kind='agent' ORDER BY time DESC LIMIT 1").Scan(&ev.ID, &stamp, &ev.Kind, &ev.Actor, &ev.Status, &ev.Title, &ev.DurationMS, &detail)
@@ -259,7 +259,7 @@ func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult,
 	if err != nil {
 		return DiscoverResult{}, err
 	}
-	result, routeErr := g.Discover(ctx, DiscoverRequest{Intent: intent, Mode: "model", Actor: "developer"})
+	result, routeErr := g.Discover(ctx, DiscoverRequest{Intent: intent, Actor: "developer"})
 	check := ConnectionCheck{Status: "success", Message: "Decisions 已响应，回答格式、概率和候选映射校验通过", CheckedAt: time.Now()}
 	if routeErr != nil {
 		check.Status = "error"
@@ -269,7 +269,6 @@ func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult,
 	if err := g.saveCheck("model", fingerprint, check); err != nil {
 		return result, errors.Join(routeErr, err)
 	}
-	result.Candidates = nil
 	return result, routeErr
 }
 
@@ -410,7 +409,6 @@ func (g *Gateway) registerSetup(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		input.Settings.Mode = "model"
 		if err := g.SaveSettings(input.Settings, input.APIKey, input.ClearKey); err != nil {
 			fail(w, err)
 			return

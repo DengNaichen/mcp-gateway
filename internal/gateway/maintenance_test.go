@@ -29,6 +29,7 @@ func testGateway(t *testing.T) (*Gateway, string) {
 			t.Error(err)
 		}
 	})
+	useKeywordModel(t, g)
 	fixture, err := os.ReadFile("testdata/pi-worker.mjs")
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +95,7 @@ func TestMaintenanceLifecycleAndRollback(t *testing.T) {
 	if len(first.Tools) != 1 || !first.Tools[0].Enabled {
 		t.Fatalf("bad published tools: %+v", first.Tools)
 	}
-	discovery, err := g.Discover(context.Background(), DiscoverRequest{Intent: "logs", Mode: "retrieval"})
+	discovery, err := g.Discover(context.Background(), DiscoverRequest{Intent: "logs"})
 	if err != nil || len(discovery.Tools) != 1 {
 		t.Fatalf("discovery %v: %+v", err, discovery)
 	}
@@ -385,7 +386,7 @@ func TestMaintenanceUpdatesModelCandidates(t *testing.T) {
 			return
 		}
 		var input struct {
-			Candidates []Candidate `json:"candidates"`
+			Candidates []Tool `json:"candidates"`
 		}
 		if err := json.Unmarshal([]byte(payload.Input), &input); err != nil {
 			t.Error(err)
@@ -401,7 +402,6 @@ func TestMaintenanceUpdatesModelCandidates(t *testing.T) {
 	settings, _ := g.Config()
 	settings.BaseURL = model.URL
 	settings.Model = "fixture"
-	settings.Mode = "model"
 	if err := g.SaveSettings(settings, "", false); err != nil {
 		t.Fatal(err)
 	}

@@ -11,9 +11,9 @@ import (
 
 func TestRoutingModelReceivesSummariesOnly(t *testing.T) {
 	schema := objectSchema(map[string]any{"payload": map[string]any{"type": "string", "description": strings.Repeat("large schema ", 5000)}})
-	candidates := []Candidate{{Tool: Tool{ID: "s.large", ServerID: "s", Name: "large", Description: "Inspect payload", InputSchema: schema, Adapter: "private.mjs", Revision: "private"}, Score: 1}}
+	candidates := []Tool{{ID: "s.large", ServerID: "s", Name: "large", Description: "Inspect payload", InputSchema: schema, Adapter: "private.mjs", Revision: "private"}}
 	full := mustJSON(t, candidates)
-	small := mustJSON(t, summarizeCandidates(candidates))
+	small := mustJSON(t, summarizeTools(candidates))
 	if len(small)*20 >= len(full) {
 		t.Fatal("summary did not materially reduce payload")
 	}
@@ -42,7 +42,7 @@ func TestSummaryDiscoveryAndSchemaAuthorization(t *testing.T) {
 	g, _ := testGateway(t)
 	g.StartMaintenance(context.Background())
 	approveRun(t, g.maintenance, enqueueTest(t, g.maintenance, false).ID)
-	result, err := g.Discover(context.Background(), DiscoverRequest{Intent: "logs", Mode: "retrieval"})
+	result, err := g.Discover(context.Background(), DiscoverRequest{Intent: "logs"})
 	if err != nil {
 		t.Fatal(err)
 	}

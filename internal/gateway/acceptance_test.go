@@ -10,9 +10,9 @@ import (
 )
 
 func logsAcceptance(version, mode string) AcceptanceSuite {
-	suite := AcceptanceSuite{ServerID: "service", Contracts: []ContractCase{}, Routing: []RoutingCase{{Name: "find-logs", Intent: "logs", Mode: "retrieval", Expected: []string{"service.logs"}}}}
+	suite := AcceptanceSuite{ServerID: "service", Contracts: []ContractCase{}, Routing: []RoutingCase{{Name: "find-logs", Intent: "logs", Expected: []string{"service.logs"}}}}
 	if mode == "empty" {
-		suite.Routing = []RoutingCase{{Name: "removed-logs", Intent: "logs", Mode: "retrieval", NoMatch: true, Forbidden: []string{"service.logs"}}}
+		suite.Routing = []RoutingCase{{Name: "removed-logs", Intent: "logs", NoMatch: true, Forbidden: []string{"service.logs"}}}
 		return suite
 	}
 	args := map[string]any{"service": "billing"}

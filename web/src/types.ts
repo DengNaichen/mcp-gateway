@@ -36,8 +36,6 @@ export type Tool = {
 export type Config = {
   base_url: string;
   model: string;
-  mode: string;
-  candidate_limit: number;
   max_tools: number;
   timeout_seconds: number;
 };
@@ -82,12 +80,10 @@ export type Selection = Tool & { reason: string };
 export type Discovery = {
   id: string;
   status: string;
-  mode: string;
   model?: string;
   summary: string;
   question?: string;
   tools: Selection[];
-  candidates: (Tool & { score: number })[];
   eligible: number;
   duration_ms: number;
   prompt_tokens: number;

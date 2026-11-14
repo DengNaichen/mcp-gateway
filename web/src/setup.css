@@ -309,9 +309,6 @@
 .source-form > .setup-form-row {
   grid-template-columns: 1fr;
 }
-.setup-form-row.three {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
 .transport-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1365,8 +1362,7 @@
   .setup-action-row .button {
     min-height: 43px;
   }
-  .setup-form-row,
-  .setup-form-row.three {
+  .setup-form-row {
     grid-template-columns: 1fr;
     gap: 0;
   }

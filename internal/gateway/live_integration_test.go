@@ -103,7 +103,7 @@ func TestLiveGitLabMaintenanceChangeAndRollback(t *testing.T) {
 	if updated.Fingerprint == first.Fingerprint || updated.Review.Required {
 		t.Fatal("compatible source change was not detected and automatically released")
 	}
-	route, err := g.Discover(context.Background(), DiscoverRequest{Intent: "latest CI pipeline status", Mode: "retrieval"})
+	route, err := g.Discover(context.Background(), DiscoverRequest{Intent: "latest CI pipeline status"})
 	if err != nil {
 		t.Fatal(err)
 	}

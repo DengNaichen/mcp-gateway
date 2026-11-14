@@ -76,7 +76,6 @@ function App() {
  const [needsLogin, setNeedsLogin] = useState(false);
   const [toast, setToast] = useState("");
   const [actor, setActor] = useState("developer");
-  const [mode, setMode] = useState("retrieval");
   const [intent, setIntent] = useState("");
   const [context, setContext] = useState("");
   const [showContext, setShowContext] = useState(false);
@@ -115,7 +114,6 @@ function App() {
  }, []);
  useEffect(() => {
     refresh()
-      .then((data) => setMode(data.settings.mode))
       .catch((e) => setBootError(e.message));
   }, []);
   useEffect(() => {
@@ -157,11 +155,10 @@ function App() {
           intent,
           context,
           actor,
-          mode,
           include_demo: includeDemo,
         }),
       });
-      setResult({ ...data, candidates: data.candidates || [] });
+      setResult(data);
       if (data.tools.length) inspect(data.tools[0]);
       await refresh();
     } catch (e: any) {
@@ -344,8 +341,7 @@ function App() {
         .toLowerCase()
         .includes(filter.toLowerCase()),
   );
-  const modelLabel =
-    mode === "model" ? state.settings.model || "模型未配置" : "本地关键词检索";
+  const modelLabel = state.settings.model || "模型未配置";
 
   return (
     <div className={`app-shell page-${page}`}>
@@ -524,10 +520,6 @@ function App() {
                   <ShieldCheck size={16} />
                   <span>按身份筛选</span>
                 </div>
-                <div className={`mode-indicator ${mode}`}>
-                  <span className="small-dot" />
-                  {mode === "model" ? "模型决策模式" : "检索预览模式"}
-                </div>
               </div>
               <div className="playground-grid">
                 <div className="work-column">
@@ -577,7 +569,6 @@ function App() {
                           onClick={() => {
                             setIntent(ex);
                             setIncludeDemo(true);
-                            setMode("retrieval");
                             setResult(null);
                             setSelected(null);
                           }}
@@ -609,20 +600,6 @@ function App() {
                             <option value="observer">Observer</option>
                           </select>
                         </label>
-                        <label>
-                          <span>选择方式</span>
-                          <select
-                            value={mode}
-                            onChange={(e) => {
-                              setMode(e.target.value);
-                              setResult(null);
-                              setSelected(null);
-                            }}
-                          >
-                            <option value="retrieval">检索预览</option>
-                            <option value="model">模型决策</option>
-                          </select>
-                        </label>
                         <label className="checkbox-row debug-demo-toggle">
                           <input
                             type="checkbox"
@@ -650,7 +627,7 @@ function App() {
                         {!routing && <ArrowRight size={15} />}
                       </button>
                     </div>
-                    {mode === "model" && !state.settings.model && (
+                    {!state.settings.model && (
                       <div className="inline-note">
                         模型尚未配置。
                         <button onClick={() => openSetup(2)}>
@@ -681,11 +658,9 @@ function App() {
                           <Sparkles size={25} />
                         </div>
                         <h3>
-                          {mode === "model"
-                            ? "模型正在选择合适的工具"
-                            : "正在检索工具注册表"}
+                          模型正在选择合适的工具
                         </h3>
-                        <p>筛选可用工具 · 检索候选 · 返回真实定义</p>
+                        <p>筛选可用工具 · 模型选择 · 返回真实定义</p>
                         <div className="loading-bar" />
                       </div>
                     ) : result ? (
@@ -755,24 +730,6 @@ function App() {
                             </button>
                           ))}
                         </div>
-                        <details className="candidate-details">
-                          <summary>
-                            <Search size={13} />
-                            查看候选召回{" "}
-                            <span>
-                              {result.candidates.length} 个候选 /{" "}
-                              {result.eligible} 个可用工具
-                            </span>
-                          </summary>
-                          <div className="candidate-list">
-                            {result.candidates.map((c) => (
-                              <div key={c.id}>
-                                <code>{c.id}</code>
-                                <span>{c.score.toFixed(3)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </details>
                       </>
                     ) : (
                       !routeError && (
@@ -945,12 +902,8 @@ function App() {
                     </div>
                     <dl>
                       <div>
-                        <dt>Selector</dt>
+                        <dt>模型</dt>
                         <dd title={modelLabel}>{modelLabel}</dd>
-                      </div>
-                      <div>
-                        <dt>候选上限</dt>
-                        <dd>{state.settings.candidate_limit} 个工具</dd>
                       </div>
                       <div>
                         <dt>返回上限</dt>
@@ -1253,7 +1206,6 @@ function App() {
                   body: pretty({ ...config, api_key: key, clear_key: clear }),
                 });
                 await refresh();
-                setMode(config.mode);
                 setToast("配置已保存");
               }}
             />
@@ -1556,46 +1508,20 @@ function SettingsPage({
             </span>
             <div>
               <h2>路由行为</h2>
-              <p>调整召回范围和返回给 Agent 的工具数量。</p>
+              <p>调整返回给 Agent 的工具数量和模型超时。</p>
             </div>
           </div>
           <label className="form-field">
-            <span>默认选择方式</span>
-            <select
+            <span>返回工具上限</span>
+            <input
               className="text-input"
-              value={config.mode}
-              onChange={(e) => update({ mode: e.target.value })}
-            >
-              <option value="retrieval">检索预览 · 不调用模型</option>
-              <option value="model">模型决策 · 检索后由模型选择</option>
-            </select>
+              type="number"
+              min="1"
+              max="12"
+              value={config.max_tools}
+              onChange={(e) => update({ max_tools: Number(e.target.value) })}
+            />
           </label>
-          <div className="form-columns">
-            <label className="form-field">
-              <span>候选上限</span>
-              <input
-                className="text-input"
-                type="number"
-                min="1"
-                max="100"
-                value={config.candidate_limit}
-                onChange={(e) =>
-                  update({ candidate_limit: Number(e.target.value) })
-                }
-              />
-            </label>
-            <label className="form-field">
-              <span>返回工具上限</span>
-              <input
-                className="text-input"
-                type="number"
-                min="1"
-                max="12"
-                value={config.max_tools}
-                onChange={(e) => update({ max_tools: Number(e.target.value) })}
-              />
-            </label>
-          </div>
           <label className="form-field">
             <span>
               模型超时 <em>秒</em>
@@ -1614,15 +1540,13 @@ function SettingsPage({
           <div className="config-flow">
             <span>权限筛选</span>
             <ArrowDown size={13} />
-            <span>候选检索</span>
-            <ArrowDown size={13} />
             <strong>模型选择</strong>
             <ArrowDown size={13} />
             <span>返回真实工具定义</span>
           </div>
           <p className="settings-footnote">
             <ShieldCheck size={14} />
-            模型只能选择候选集内的 ID。参数校验和权限判断由 Go 后端执行。
+            模型只能选择可用工具的 ID。参数校验和权限判断由 Go 后端执行。
           </p>
         </section>
         <div className="settings-save">
