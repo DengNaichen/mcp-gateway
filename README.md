@@ -50,6 +50,14 @@ export GATEWAY_MODEL_API_KEY='你的 OpenAI API Key'
 
 模型 ID 以 `gemini-` 开头时使用 Google Gemini Decisions API（如 Base URL `https://generativelanguage.googleapis.com/v1beta`、模型 `gemini-decision-1`），其他模型使用 OpenAI 风格的 Decisions API。Base URL 自动补全 `/decisions`；也可直接填写完整 endpoint。Key 只保存在内存，不写数据库或浏览器存储，重启后重新填写或使用环境变量。路由只调用 Decisions API，不调用 Chat Completions，也不使用 JSON Mode。已有配置若使用旧模型或 `/chat/completions` 地址，需要重新填写模型和地址，再测试路由。切换服务时请同时更新或清除旧 Key。
 
+路由分三步，默认全开；`GATEWAY_ROUTING=flat` 退回只有第二步的平铺路由，`GATEWAY_ROUTING=hierarchical` 或 `refine` 只开其中一步：
+
+1. **按服务收窄**（`hierarchical`）：把每个服务的描述和工具名列表交给模型，按服务提问，只有被选中的服务（概率 ≥ 0.5，最多 3 个；都不够就取最高的一个）的工具进入下一步。单次请求的候选数由最大的服务决定，而不是全部工具之和；返回结果多一个 `servers` 字段。只有一个服务时不多发请求。
+2. **逐工具是非题**：每个候选一道独立的问题，概率 ≥ 0.5 的过线。
+3. **精选**（`refine`）：过线的候选（最多 8 个）再问一道 choice 题「哪一个最直接完成任务」，附带「都不是」选项。返回胜出的工具，以及分布占比不低于胜者一半的其他候选，所以两个同样直接的工具会一起返回，相邻但次要的（trace 对 errors、schema 对 query）不会。「都不是」胜出时：若第二步已有 ≥ 0.9 的候选（任务需要两个工具、或几个服务各有一个同样对的工具时常见），仍按分布返回；若过线候选来自多个服务，返回 `needs_context` 并在 `question` 里列出这些服务；否则 no_match。
+
+`discover_tools` 的 `services` 参数可以限定在哪些服务里找；给了它就跳过第一步。策略全文见 `docs/routing.md`，评测数据见 `evals/routing/NOTES.md`。
+
 每次请求包含一个路由状态 choice 问题，以及每个可用工具一个相关性 predicate 问题。网关校验回答数量、名称、顺序、类型和概率范围；相关性概率至少 0.5 的工具按概率降序选取，最多返回配置数量。该阈值是当前固定策略，仍需用实际项目验收路由质量。路由状态问题不否决高相关性的工具：只要有工具过阈值就返回它们，状态仅在没有工具过阈值时区分 `no_match` 与 `needs_context`（后者使用网关提供的补充上下文提示）；推荐理由展示概率，不由模型生成自由文本。任一问题拒答或响应不完整均报错，不执行工具或退回其他模型接口。
 
 路由过程是：按启用状态和身份权限筛选 → 把所有可用工具的紧凑能力摘要连同任务意图发给 Decisions 模型 → 校验回答并映射为工具 ID → 从注册表按需返回真实 schema。没有本地预筛选，必须先配置模型和 Key。每个工具对应一个问题，成本和延迟随工具数量增长，工具很多时需要关注规模。
@@ -322,7 +330,7 @@ go run ./cmd/routingeval                      # 默认读 evals/routing/github.j
 go run ./cmd/routingeval -url http://127.0.0.1:8788 -cases evals/routing/github.json
 ```
 
-`evals/routing/vercel.json` 是只针对 Vercel 的另一组题，运行前先在网关里停用其他服务，让候选只有 Vercel 的工具。题目可带 `tag` 分组统计，`any_of` 表示返回其中任意一个即算对。每次调用约数万 input token，而模型服务按每分钟 token 限速（Gemini Tier 1 为 100 万/分钟），连续跑多组时评测脚本会在遇到错误后等待重试。
+`evals/routing/vercel.json` 是只针对 Vercel 的另一组题，运行前先在网关里停用其他服务，让候选只有 Vercel 的工具（默认的按服务收窄开着时不必停用）。`evals/routing/multi.json` 是 14 个服务、61 题的跨服务题，含用词在多个服务间通用的 `cross` 题和写操作 `no_match` 题。题目可标 `needs_context: true`，表示意图在几个服务间同样成立，网关要求补充上下文也算对；`no_match` 题可带 `acceptable`，表示启用了某些工具（如网页搜索）时返回它们不算错。题目可带 `tag` 分组统计，`any_of` 表示返回其中任意一个即算对。每次调用约数万 input token，而模型服务按每分钟 token 限速（Gemini Tier 1 为 100 万/分钟），连续跑多组时评测脚本会在遇到错误后等待重试。
 
 输出逐题结果，以及召回、无噪声占比、负例正确率、精度和平均耗时/输入 token。它不是通过/失败的门槛，而是调阈值、改提示词或换模型前后用来对比的基线；题目由人标注，`acceptable` 的划分带主观性。
 
