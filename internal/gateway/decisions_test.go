@@ -148,3 +148,29 @@ func TestRoutingInputPutsIntentBeforeCandidates(t *testing.T) {
 		t.Fatalf("model input must list intent, context, then candidates: %s", input)
 	}
 }
+
+// The per-request tool limit is per provider: OpenAI keeps its original 100, Gemini allows more.
+func TestRoutingToolLimitIsPerProvider(t *testing.T) {
+	tools := make([]Tool, openAIMaxTools+1)
+	for i := range tools {
+		tools[i] = Tool{ID: fmt.Sprintf("s.t%03d", i)}
+	}
+	probabilities := make([]float64, len(tools))
+	var openAICalls int
+	openAI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		openAICalls++
+		respond(w, 200, decisionFixture("no_match", probabilities...))
+	}))
+	defer openAI.Close()
+	_, _, err := selectWithModel(context.Background(), Settings{BaseURL: openAI.URL, Model: "gpt-6-luna", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "x"}, tools)
+	if err == nil || !strings.Contains(err.Error(), "100") || openAICalls != 0 {
+		t.Fatalf("OpenAI path must reject %d tools before calling the model: err=%v calls=%d", len(tools), err, openAICalls)
+	}
+	gemini := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respond(w, 200, geminiFixture("no_match", probabilities...))
+	}))
+	defer gemini.Close()
+	if _, _, err := selectWithModel(context.Background(), Settings{BaseURL: gemini.URL, Model: "gemini-decision-1", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "x"}, tools); err != nil {
+		t.Fatalf("Gemini path must accept %d tools: %v", len(tools), err)
+	}
+}

@@ -39,7 +39,7 @@ func geminiCall(s Settings, input string, tools []Tool) (decisionsCall, error) {
 	if err != nil {
 		return decisionsCall{}, fmt.Errorf("encode decisions request: %w", err)
 	}
-	return decisionsCall{endpoint: endpoint, keyHeader: "x-goog-api-key", body: body, parse: parseGeminiAnswers}, nil
+	return decisionsCall{endpoint: endpoint, keyHeader: "x-goog-api-key", maxTools: geminiMaxTools, body: body, parse: parseGeminiAnswers}, nil
 }
 
 func parseGeminiAnswers(b []byte, n int) (routeAnswers, error) {
