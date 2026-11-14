@@ -19,6 +19,7 @@ type Props = {
   refresh: () => Promise<Bootstrap>;
   selectedServerId: string | null;
   onSelectServer: (id: string | null) => void;
+  onOpenCatalog?: (serverId: string) => void;
   openAddOnMount?: boolean;
   onConsumedAdd?: () => void;
   notify: (msg: string) => void;
@@ -29,6 +30,7 @@ export function ServicesPage({
   refresh,
   selectedServerId,
   onSelectServer,
+  onOpenCatalog,
   openAddOnMount,
   onConsumedAdd,
   notify,
@@ -41,13 +43,6 @@ export function ServicesPage({
     null,
   );
   const [syncingId, setSyncingId] = useState("");
-  const [globalQuery, setGlobalQuery] = useState("");
-  const [globalServerFilter, setGlobalServerFilter] = useState("all");
-  const [globalStatus, setGlobalStatus] = useState<"all" | "on" | "off">("all");
-  const [globalAccess, setGlobalAccess] = useState<"all" | "ro" | "rw">("all");
-  const [showDemoInExplorer, setShowDemoInExplorer] = useState(false);
-  const [explorerPage, setExplorerPage] = useState(1);
-  const PAGE_SIZE = 40;
 
   useEffect(() => {
     if (openAddOnMount) {
@@ -104,43 +99,6 @@ export function ServicesPage({
     }
   }
 
-  const explorerTools = tools.filter((t) => {
-    const srv = servers.find((s) => s.id === t.server_id);
-    if (!showDemoInExplorer && srv?.demo) return false;
-    if (globalServerFilter !== "all" && t.server_id !== globalServerFilter)
-      return false;
-    if (globalStatus === "on" && !t.enabled) return false;
-    if (globalStatus === "off" && t.enabled) return false;
-    if (globalAccess === "ro" && !t.read_only) return false;
-    if (globalAccess === "rw" && t.read_only) return false;
-    if (!globalQuery.trim()) return true;
-    const q = globalQuery.toLowerCase();
-    return `${t.name} ${t.description} ${t.id} ${t.server_id}`
-      .toLowerCase()
-      .includes(q);
-  });
-
-  useEffect(() => {
-    setExplorerPage(1);
-  }, [
-    globalQuery,
-    globalServerFilter,
-    globalStatus,
-    globalAccess,
-    showDemoInExplorer,
-  ]);
-
-  const explorerTotalPages = Math.max(
-    1,
-    Math.ceil(explorerTools.length / PAGE_SIZE),
-  );
-  const safeExplorerPage = Math.min(explorerPage, explorerTotalPages);
-  const explorerStart = (safeExplorerPage - 1) * PAGE_SIZE;
-  const pagedExplorerTools = explorerTools.slice(
-    explorerStart,
-    explorerStart + PAGE_SIZE,
-  );
-
   return (
     <div>
       {selectedServer ? (
@@ -163,9 +121,9 @@ export function ServicesPage({
         <>
           <div className="page-header">
             <div className="page-header-main">
-              <h1>服务与工具</h1>
+              <h1>上游服务</h1>
               <p>
-                集中管理上游 MCP 与 HTTP 服务、筛选开放给 Agent 的工具，并配置每个服务的自动维护策略。
+                管理下游 MCP 与 HTTP 服务连接、工具开放白名单、契约自动维护与连接认证凭据。
               </p>
             </div>
             <div className="page-header-actions">
@@ -181,7 +139,7 @@ export function ServicesPage({
                 className="btn btn-primary"
                 onClick={() => setAddModalMode("form")}
               >
-                添加服务
+                添加上游服务
               </button>
             </div>
           </div>
@@ -190,14 +148,14 @@ export function ServicesPage({
           <section className="card" style={{ marginBottom: 20 }}>
             <div className="card-header">
               <div className="card-header-title">
-                <h2>已接入服务</h2>
-                <p>点击任一服务进入详情页管理其工具列表、自动维护与连接认证。</p>
+                <h2>已接入上游服务</h2>
+                <p>点击任一服务管理其下游契约、自动维护策略与鉴权配置；跨服务治理请前往「工具目录」。</p>
               </div>
               <span
                 className="tnum"
                 style={{ fontSize: 12.5, color: "var(--ink-muted)" }}
               >
-                {realServers.length} 个服务
+                {realServers.filter((s) => s.enabled).length} / {realServers.length} 在线启用
               </span>
             </div>
 
@@ -233,15 +191,19 @@ export function ServicesPage({
                       <th>服务名称</th>
                       <th>协议</th>
                       <th>连接目标</th>
-                      <th>工具启用</th>
-                      <th>启用</th>
+                      <th>开放工具</th>
+                      <th>读写构成</th>
+                      <th>状态</th>
                       <th style={{ textAlign: "right" }}>操作</th>
                     </tr>
                   </thead>
                   <tbody>
                     {realServers.map((s) => {
                       const srvTools = tools.filter((t) => t.server_id === s.id);
-                      const onCount = srvTools.filter((t) => t.enabled).length;
+                      const enabledSrvTools = srvTools.filter((t) => t.enabled);
+                      const onCount = enabledSrvTools.length;
+                      const roCount = enabledSrvTools.filter((t) => t.read_only).length;
+                      const rwCount = onCount - roCount;
                       const check = state.setup.source_checks[s.id];
                       return (
                         <tr
@@ -266,7 +228,7 @@ export function ServicesPage({
                               <span className="cell-sub">{s.description}</span>
                             )}
                           </td>
-                          <td style={{ width: 130 }}>
+                          <td style={{ width: 120 }}>
                             <span
                               className="mono"
                               style={{ fontSize: 12, color: "var(--ink-muted)" }}
@@ -274,7 +236,7 @@ export function ServicesPage({
                               {serverProtocolLabel(s)}
                             </span>
                           </td>
-                          <td style={{ maxWidth: 320 }}>
+                          <td style={{ maxWidth: 280 }}>
                             <code
                               style={{
                                 fontSize: 12,
@@ -289,7 +251,7 @@ export function ServicesPage({
                               {serverTargetText(s)}
                             </code>
                           </td>
-                          <td className="tnum" style={{ width: 130 }}>
+                          <td className="tnum" style={{ width: 115 }}>
                             <strong style={{ color: "var(--ink-strong)" }}>
                               {onCount}
                             </strong>{" "}
@@ -297,7 +259,20 @@ export function ServicesPage({
                               / {srvTools.length}
                             </span>
                           </td>
-                          <td style={{ width: 110 }}>
+                          <td className="tnum" style={{ width: 145 }}>
+                            <span style={{ fontSize: 12.5, color: "var(--ink-muted)" }}>
+                              {roCount} 只读 ·{" "}
+                              <span
+                                style={{
+                                  color: rwCount > 0 ? "var(--ink-strong)" : "var(--ink-muted)",
+                                  fontWeight: rwCount > 0 ? 500 : 400,
+                                }}
+                              >
+                                {rwCount} 写
+                              </span>
+                            </span>
+                          </td>
+                          <td style={{ width: 115 }}>
                             <div
                               style={{
                                 display: "inline-flex",
@@ -323,7 +298,7 @@ export function ServicesPage({
                             </div>
                           </td>
                           <td
-                            style={{ width: 170, textAlign: "right" }}
+                            style={{ width: 210, textAlign: "right" }}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <div
@@ -333,6 +308,15 @@ export function ServicesPage({
                                 justifyContent: "flex-end",
                               }}
                             >
+                              {onOpenCatalog && (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm"
+                                  onClick={() => onOpenCatalog(s.id)}
+                                >
+                                  工具目录
+                                </button>
+                              )}
                               {s.kind === "mcp" && (
                                 <button
                                   type="button"
@@ -351,7 +335,7 @@ export function ServicesPage({
                                 className="btn btn-sm"
                                 onClick={() => onSelectServer(s.id)}
                               >
-                                管理
+                                配置
                               </button>
                             </div>
                           </td>
@@ -364,247 +348,11 @@ export function ServicesPage({
             )}
           </section>
 
-          {/* Global Tool Explorer */}
-          <section className="card" style={{ marginBottom: 20 }}>
-            <div className="card-header">
-              <div className="card-header-title">
-                <h2>全局工具检索</h2>
-                <p>跨服务搜索工具定义、快速切换启用状态或审查输入 Schema。</p>
-              </div>
-              <span
-                className="tnum"
-                style={{ fontSize: 12.5, color: "var(--ink-muted)" }}
-              >
-                {explorerTools.length} 个匹配工具
-              </span>
-            </div>
-
-            <div className="toolbar">
-              <div className="toolbar-group">
-                <div className="search-box">
-                  <Search size={14} />
-                  <input
-                    aria-label="搜索工具"
-                    className="input"
-                    placeholder="搜索工具名、描述或来源…"
-                    value={globalQuery}
-                    onChange={(e) => setGlobalQuery(e.target.value)}
-                  />
-                </div>
-                <select
-                  aria-label="按所属服务筛选"
-                  className="select"
-                  style={{ height: 30, width: 150, fontSize: 12.5 }}
-                  value={globalServerFilter}
-                  onChange={(e) => setGlobalServerFilter(e.target.value)}
-                >
-                  <option value="all">所有服务</option>
-                  {(showDemoInExplorer ? servers : realServers).map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="segmented" role="group" aria-label="启用状态筛选">
-                  {(
-                    [
-                      ["all", "全部"],
-                      ["on", "已启用"],
-                      ["off", "未启用"],
-                    ] as const
-                  ).map(([val, label]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className={globalStatus === val ? "active" : ""}
-                      onClick={() => setGlobalStatus(val)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="segmented" role="group" aria-label="读写属性筛选">
-                  {(
-                    [
-                      ["all", "全部操作"],
-                      ["ro", "仅只读"],
-                      ["rw", "写操作"],
-                    ] as const
-                  ).map(([val, label]) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className={globalAccess === val ? "active" : ""}
-                      onClick={() => setGlobalAccess(val)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <label className="checkbox-field" style={{ fontSize: 12.5 }}>
-                <input
-                  type="checkbox"
-                  checked={showDemoInExplorer}
-                  onChange={(e) => {
-                    const next = e.target.checked;
-                    setShowDemoInExplorer(next);
-                    if (
-                      !next &&
-                      demoServers.some((s) => s.id === globalServerFilter)
-                    ) {
-                      setGlobalServerFilter("all");
-                    }
-                  }}
-                />
-                包含内置演示工具
-              </label>
-            </div>
-
-            {explorerTools.length === 0 ? (
-              <div className="empty-box">
-                <p>没有符合当前筛选条件的工具。</p>
-              </div>
-            ) : (
-              <>
-                <div className="table-wrap">
-                  <table className="sail-table">
-                    <thead>
-                      <tr>
-                        <th>工具</th>
-                        <th>所属服务</th>
-                        <th>操作类型</th>
-                        <th>允许身份</th>
-                        <th>开放给路由</th>
-                        <th style={{ textAlign: "right" }}>详情</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pagedExplorerTools.map((t) => {
-                        const srv = servers.find((s) => s.id === t.server_id);
-                        return (
-                          <tr key={t.id}>
-                            <td>
-                              <span className="cell-primary mono">{t.name}</span>
-                              <span className="cell-sub">
-                                {t.description || "未提供描述，点击右侧编辑补充。"}
-                              </span>
-                            </td>
-                            <td style={{ width: 150 }}>
-                              <button
-                                type="button"
-                                className="btn-link"
-                                onClick={() => onSelectServer(t.server_id)}
-                              >
-                                {srv?.name || t.server_id}
-                              </button>
-                              {srv?.demo && (
-                                <span style={{ marginLeft: 6 }}>
-                                  <Badge>DEMO</Badge>
-                                </span>
-                              )}
-                            </td>
-                            <td style={{ width: 110 }}>
-                              <span
-                                style={{
-                                  fontSize: 12.5,
-                                  color: t.read_only
-                                    ? "var(--ink-muted)"
-                                    : "var(--ink-body)",
-                                  fontWeight: t.read_only ? 400 : 500,
-                                }}
-                              >
-                                {t.read_only ? "只读" : "写操作"}
-                              </span>
-                            </td>
-                            <td style={{ width: 150 }}>
-                              <code
-                                style={{ fontSize: 12, color: "var(--ink-muted)" }}
-                              >
-                                {t.actors.join(", ")}
-                              </code>
-                            </td>
-                            <td style={{ width: 110 }}>
-                              <Switch
-                                checked={t.enabled}
-                                label={`${t.name} 启用状态`}
-                                onChange={() => toggleTool(t)}
-                              />
-                            </td>
-                            <td style={{ width: 90, textAlign: "right" }}>
-                              <button
-                                type="button"
-                                className="btn btn-sm"
-                                onClick={() => setEditingTool(t)}
-                              >
-                                查看 / 编辑
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                {explorerTools.length > PAGE_SIZE && (
-                  <div className="card-footer">
-                    <span
-                      className="tnum"
-                      style={{ fontSize: 12.5, color: "var(--ink-muted)" }}
-                    >
-                      显示{" "}
-                      <strong style={{ color: "var(--ink-strong)" }}>
-                        {explorerStart + 1}–
-                        {Math.min(
-                          explorerStart + PAGE_SIZE,
-                          explorerTools.length,
-                        )}
-                      </strong>{" "}
-                      / 共 {explorerTools.length} 个工具
-                    </span>
-                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      <span
-                        className="tnum"
-                        style={{ fontSize: 12, color: "var(--ink-muted)" }}
-                      >
-                        第 {safeExplorerPage} / {explorerTotalPages} 页
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={safeExplorerPage <= 1}
-                        onClick={() =>
-                          setExplorerPage(Math.max(1, safeExplorerPage - 1))
-                        }
-                      >
-                        上一页
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={safeExplorerPage >= explorerTotalPages}
-                        onClick={() =>
-                          setExplorerPage(
-                            Math.min(explorerTotalPages, safeExplorerPage + 1),
-                          )
-                        }
-                      >
-                        下一页
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </section>
-
           {/* Built-in Demo Services tucked cleanly into a collapsible */}
           {demoServers.length > 0 && (
             <details className="sail-details">
               <summary>
-                内置演示服务（{demoServers.length} 个 · 仅在「路由调试」勾选包含演示工具时参与路由）
+                内置演示服务（{demoServers.length} 个 · 仅在「路由沙盒」勾选包含演示工具时参与路由）
               </summary>
               <div className="table-wrap" style={{ background: "#fff", borderRadius: 6, border: "1px solid var(--border)" }}>
                 <table className="sail-table">
@@ -792,7 +540,7 @@ function ServiceDetailView({
   return (
     <div>
       <button type="button" className="back-link" onClick={onBack}>
-        ← 返回服务与工具
+        ← 返回上游服务
       </button>
 
       <div className="page-header" style={{ marginBottom: 16 }}>
@@ -1931,7 +1679,7 @@ function AddHttpToolModal({
 /* ==========================================================================
    Structured Tool Inspector & Edit Slide-Over Drawer
    ========================================================================== */
-function ToolEditDrawer({
+export function ToolEditDrawer({
   tool,
   onClose,
   onSaved,

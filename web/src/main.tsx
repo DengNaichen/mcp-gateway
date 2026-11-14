@@ -5,21 +5,30 @@ import {
   Home,
   Layers,
   Loader2,
-  Settings2,
+  Server as ServerIcon,
+  Shield,
   Waypoints,
   X,
 } from "lucide-react";
 import "./sail.css";
 import { api, type Bootstrap, type Event } from "./types";
 import { CopyButton, GatewayLogo } from "./ui";
+import { ConnectClientModal } from "./ConnectClientModal";
 import { LoginPage } from "./LoginPage";
 import { OverviewPage } from "./OverviewPage";
 import { ServicesPage } from "./ServicesPage";
-import { PlaygroundPage } from "./PlaygroundPage";
+import { CatalogPage } from "./CatalogPage";
+import { PlaygroundPage, type ReplayDraft } from "./PlaygroundPage";
 import { LogsPage } from "./LogsPage";
 import { SettingsPage } from "./SettingsPage";
 
-type ViewId = "overview" | "services" | "playground" | "logs" | "settings";
+type ViewId =
+  | "overview"
+  | "upstreams"
+  | "catalog"
+  | "policies"
+  | "logs"
+  | "playground";
 
 type RouteState = {
   view: ViewId;
@@ -31,12 +40,15 @@ function parseHash(): RouteState {
   if (!raw) return { view: "overview", subId: null };
   const [first, ...rest] = raw.split("/");
   const subId = rest.length ? decodeURIComponent(rest.join("/")) : null;
+  if (first === "services") return { view: "upstreams", subId };
+  if (first === "settings") return { view: "policies", subId };
   if (
     first === "overview" ||
-    first === "services" ||
-    first === "playground" ||
+    first === "upstreams" ||
+    first === "catalog" ||
+    first === "policies" ||
     first === "logs" ||
-    first === "settings"
+    first === "playground"
   ) {
     return { view: first, subId };
   }
@@ -53,16 +65,23 @@ function writeHash(view: ViewId, subId?: string | null) {
 }
 
 const viewLabels: Record<ViewId, string> = {
-  overview: "概览",
-  services: "服务与工具",
-  playground: "路由调试",
-  logs: "调用日志",
-  settings: "路由设置",
+  overview: "运行大盘",
+  upstreams: "上游服务",
+  catalog: "工具目录",
+  policies: "访问与路由",
+  logs: "请求日志",
+  playground: "路由沙盒",
 };
 
 function App() {
   const [route, setRoute] = useState<RouteState>(() => parseHash());
   const [openAddService, setOpenAddService] = useState(false);
+  const [connectModalOpen, setConnectModalOpen] = useState(false);
+  const [catalogInit, setCatalogInit] = useState<{
+    serverId?: string | null;
+    access?: "all" | "ro" | "rw" | null;
+  } | null>(null);
+  const [replayDraft, setReplayDraft] = useState<ReplayDraft | null>(null);
   const [state, setState] = useState<Bootstrap | null>(null);
   const [bootError, setBootError] = useState("");
   const [needsLogin, setNeedsLogin] = useState(false);
@@ -71,6 +90,17 @@ function App() {
   function navigate(view: ViewId, subId: string | null = null) {
     setRoute({ view, subId });
     writeHash(view, subId);
+  }
+
+  function openSandboxReplay(payload?: { intent: string; actor?: string }) {
+    if (payload && payload.intent) {
+      setReplayDraft((prev) => ({
+        intent: payload.intent,
+        actor: payload.actor,
+        seq: (prev?.seq || 0) + 1,
+      }));
+    }
+    navigate("playground");
   }
 
   useEffect(() => {
@@ -111,13 +141,15 @@ function App() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // Poll events when viewing Logs or Overview waiting for first Agent request
+  // Poll events when viewing Logs or Overview
   useEffect(() => {
     if (route.view !== "logs" && route.view !== "overview") return;
     const timer = setInterval(() => {
       if (route.view === "logs") {
         api<Event[]>("/events")
-          .then((events) => setState((prev) => (prev ? { ...prev, events } : prev)))
+          .then((events) =>
+            setState((prev) => (prev ? { ...prev, events } : prev)),
+          )
           .catch(() => {});
       } else {
         refresh().catch(() => {});
@@ -131,14 +163,17 @@ function App() {
   if (!state) {
     return (
       <div className="center-screen">
-        <div className="auth-card" style={{ alignItems: "center", textAlign: "center" }}>
+        <div
+          className="auth-card"
+          style={{ alignItems: "center", textAlign: "center" }}
+        >
           <span className="sail-brand-mark">
             <GatewayLogo size={18} />
           </span>
           {bootError ? (
             <>
               <h2 style={{ fontSize: 16, color: "var(--ink-strong)" }}>
-                无法连接网关后端
+                无法连接网关控制面
               </h2>
               <p className="field-hint">{bootError}</p>
               <button
@@ -152,7 +187,7 @@ function App() {
           ) : (
             <>
               <Loader2 size={20} className="spin" />
-              <p className="field-hint">正在加载本地网关配置…</p>
+              <p className="field-hint">正在加载网关控制面…</p>
             </>
           )}
         </div>
@@ -161,11 +196,12 @@ function App() {
   }
 
   const realServers = state.registry.servers.filter((s) => !s.demo);
+  const activeRealServers = realServers.filter((s) => s.enabled);
   const realTools = state.registry.tools.filter((t) =>
     realServers.some((s) => s.id === t.server_id),
   );
   const activeService =
-    route.view === "services" && route.subId
+    route.view === "upstreams" && route.subId
       ? state.registry.servers.find((s) => s.id === route.subId)
       : null;
 
@@ -178,7 +214,7 @@ function App() {
         跳到主工作区
       </a>
 
-      {/* Light Stripe Sail Sidebar */}
+      {/* Light Stripe Sail Enterprise Control Plane Sidebar */}
       <aside className="sail-sidebar">
         <a
           href="#overview"
@@ -192,67 +228,76 @@ function App() {
             <GatewayLogo size={17} />
           </span>
           <span className="sail-brand-text">
-            <span className="sail-brand-title">Gateway Lab</span>
+            <span className="sail-brand-title">MCP Gateway</span>
             <span className="sail-brand-sub">
-              {state.access?.shared ? "共享 MCP 网关" : "本地 MCP 网关"}
+              {state.access?.shared ? "共享网关控制面" : "本地网关控制面"}
             </span>
           </span>
         </a>
 
         <div className="sail-nav-section">
-          <div className="sail-nav-heading">核心管理</div>
-          <nav className="sail-nav-list" aria-label="核心导航">
+          <div className="sail-nav-heading">控制面</div>
+          <nav className="sail-nav-list" aria-label="控制面导航">
             <button
               type="button"
               className={`sail-nav-item ${route.view === "overview" ? "active" : ""}`}
               onClick={() => navigate("overview")}
             >
               <Home size={15} strokeWidth={1.65} />
-              <span>概览</span>
+              <span>运行大盘</span>
             </button>
             <button
               type="button"
-              className={`sail-nav-item ${route.view === "services" ? "active" : ""}`}
-              onClick={() => navigate("services")}
+              className={`sail-nav-item ${route.view === "upstreams" ? "active" : ""}`}
+              onClick={() => navigate("upstreams")}
+            >
+              <ServerIcon size={15} strokeWidth={1.65} />
+              <span>上游服务</span>
+              <span className="sail-nav-badge">{activeRealServers.length}</span>
+            </button>
+            <button
+              type="button"
+              className={`sail-nav-item ${route.view === "catalog" ? "active" : ""}`}
+              onClick={() => navigate("catalog")}
             >
               <Layers size={15} strokeWidth={1.65} />
-              <span>服务与工具</span>
+              <span>工具目录</span>
               <span className="sail-nav-badge">
                 {state.setup.enabled_tools}/{realTools.length}
               </span>
+            </button>
+            <button
+              type="button"
+              className={`sail-nav-item ${route.view === "policies" ? "active" : ""}`}
+              onClick={() => navigate("policies")}
+            >
+              <Shield size={15} strokeWidth={1.65} />
+              <span>访问与路由</span>
             </button>
           </nav>
         </div>
 
         <div className="sail-nav-section">
-          <div className="sail-nav-heading">开发者工作台</div>
-          <nav className="sail-nav-list" aria-label="开发者导航">
-            <button
-              type="button"
-              className={`sail-nav-item ${route.view === "playground" ? "active" : ""}`}
-              onClick={() => navigate("playground")}
-            >
-              <Waypoints size={15} strokeWidth={1.65} />
-              <span>路由调试</span>
-            </button>
+          <div className="sail-nav-heading">观测与诊断</div>
+          <nav className="sail-nav-list" aria-label="观测导航">
             <button
               type="button"
               className={`sail-nav-item ${route.view === "logs" ? "active" : ""}`}
               onClick={() => navigate("logs")}
             >
               <Activity size={15} strokeWidth={1.65} />
-              <span>调用日志</span>
+              <span>请求日志</span>
               {state.events.length > 0 && (
                 <span className="sail-nav-badge">{state.events.length}</span>
               )}
             </button>
             <button
               type="button"
-              className={`sail-nav-item ${route.view === "settings" ? "active" : ""}`}
-              onClick={() => navigate("settings")}
+              className={`sail-nav-item ${route.view === "playground" ? "active" : ""}`}
+              onClick={() => navigate("playground")}
             >
-              <Settings2 size={15} strokeWidth={1.65} />
-              <span>路由设置</span>
+              <Waypoints size={15} strokeWidth={1.65} />
+              <span>路由沙盒</span>
             </button>
           </nav>
         </div>
@@ -260,15 +305,17 @@ function App() {
         <div className="sail-sidebar-footer">
           <div className="sail-endpoint-mini">
             <div className="sail-endpoint-mini-top">
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <span
+                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+              >
                 <span className="sail-status-dot" />
-                MCP 监听中
+                数据面监听中
               </span>
               <CopyButton
                 value={state.mcp_url}
                 label="复制"
                 variant="ghost"
-                onCopied={() => setToast("已复制 MCP 接入地址")}
+                onCopied={() => setToast("已复制 MCP 接入端点")}
               />
             </div>
             <code title={state.mcp_url}>{state.mcp_url}</code>
@@ -281,13 +328,13 @@ function App() {
         <header className="sail-topbar">
           <div className="sail-breadcrumbs">
             <button type="button" onClick={() => navigate("overview")}>
-              Gateway
+              控制面
             </button>
             <span style={{ color: "var(--ink-faint)" }}>/</span>
             {activeService ? (
               <>
-                <button type="button" onClick={() => navigate("services")}>
-                  服务与工具
+                <button type="button" onClick={() => navigate("upstreams")}>
+                  上游服务
                 </button>
                 <span style={{ color: "var(--ink-faint)" }}>/</span>
                 <strong>{activeService.name}</strong>
@@ -301,7 +348,7 @@ function App() {
             <button
               type="button"
               className="sail-top-chip"
-              onClick={() => navigate("settings")}
+              onClick={() => navigate("policies")}
               title="查看或修改 Decisions 路由模型配置"
             >
               <span className={`status-dot ${modelReady ? "ok" : ""}`} />
@@ -313,9 +360,20 @@ function App() {
               )}
             </button>
 
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => setConnectModalOpen(true)}
+            >
+              接入客户端
+            </button>
+
             {state.access?.shared && (
               <>
-                <span className="mono" style={{ fontSize: 12, color: "var(--ink-muted)" }}>
+                <span
+                  className="mono"
+                  style={{ fontSize: 12, color: "var(--ink-muted)" }}
+                >
                   {state.access.actor}
                 </span>
                 <button
@@ -346,34 +404,61 @@ function App() {
             <OverviewPage
               state={state}
               refresh={refresh}
-              onOpenServices={(opts) => {
+              onOpenUpstreams={(opts) => {
                 if (opts?.add) setOpenAddService(true);
-                navigate("services", opts?.serverId || null);
+                navigate("upstreams", opts?.serverId || null);
               }}
-              onOpenPlayground={() => navigate("playground")}
+              onOpenCatalog={(opts) => {
+                if (opts?.filter) {
+                  setCatalogInit({ access: opts.filter });
+                }
+                navigate("catalog");
+              }}
+              onOpenPlayground={(replay) => openSandboxReplay(replay)}
               onOpenLogs={(eventId) => navigate("logs", eventId || null)}
-              onOpenSettings={() => navigate("settings")}
+              onOpenPolicies={() => navigate("policies")}
+              onOpenConnectModal={() => setConnectModalOpen(true)}
               notify={setToast}
             />
           )}
 
-          {route.view === "services" && (
+          {route.view === "upstreams" && (
             <ServicesPage
               state={state}
               refresh={refresh}
               selectedServerId={route.subId}
-              onSelectServer={(id) => navigate("services", id)}
+              onSelectServer={(id) => navigate("upstreams", id)}
+              onOpenCatalog={(serverId) => {
+                setCatalogInit({ serverId });
+                navigate("catalog");
+              }}
               openAddOnMount={openAddService}
               onConsumedAdd={() => setOpenAddService(false)}
               notify={setToast}
             />
           )}
 
-          {route.view === "playground" && (
-            <PlaygroundPage
+          {route.view === "catalog" && (
+            <CatalogPage
               state={state}
               refresh={refresh}
-              onOpenSettings={() => navigate("settings")}
+              initialServerId={catalogInit?.serverId}
+              initialAccess={catalogInit?.access}
+              onConsumedInitial={() => setCatalogInit(null)}
+              onSelectServer={(serverId) => navigate("upstreams", serverId)}
+              notify={setToast}
+            />
+          )}
+
+          {route.view === "policies" && (
+            <SettingsPage
+              state={state}
+              refresh={refresh}
+              onOpenServices={() => navigate("upstreams")}
+              onOpenCatalog={(opts) => {
+                setCatalogInit({ access: opts?.access || "all" });
+                navigate("catalog");
+              }}
               notify={setToast}
             />
           )}
@@ -382,6 +467,7 @@ function App() {
             <LogsPage
               events={state.events}
               initialEventId={route.subId}
+              onReplay={(payload) => openSandboxReplay(payload)}
               onRefresh={() =>
                 refresh()
                   .then(() => setToast("日志已刷新"))
@@ -391,16 +477,25 @@ function App() {
             />
           )}
 
-          {route.view === "settings" && (
-            <SettingsPage
+          {route.view === "playground" && (
+            <PlaygroundPage
               state={state}
               refresh={refresh}
-              onOpenServices={() => navigate("services")}
+              replayDraft={replayDraft}
+              onOpenSettings={() => navigate("policies")}
               notify={setToast}
             />
           )}
         </main>
       </div>
+
+      {connectModalOpen && (
+        <ConnectClientModal
+          state={state}
+          onClose={() => setConnectModalOpen(false)}
+          notify={setToast}
+        />
+      )}
 
       {toast && (
         <div className="sail-toast" role="status">

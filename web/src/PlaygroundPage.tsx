@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   api,
@@ -27,22 +27,32 @@ const demoExamples = [
   },
 ];
 
+export type ReplayDraft = {
+  intent: string;
+  actor?: string;
+  seq: number;
+};
+
 export function PlaygroundPage({
   state,
   refresh,
+  replayDraft,
   onOpenSettings,
   notify,
 }: {
   state: Bootstrap;
   refresh: () => Promise<Bootstrap>;
+  replayDraft?: ReplayDraft | null;
   onOpenSettings: () => void;
   notify: (msg: string) => void;
 }) {
   const [actor, setActor] = useState(
-    state.access?.shared ? state.access.actor : "developer",
+    state.access?.shared
+      ? state.access.actor
+      : replayDraft?.actor || "developer",
   );
   const [includeDemo, setIncludeDemo] = useState(false);
-  const [intent, setIntent] = useState("");
+  const [intent, setIntent] = useState(replayDraft?.intent || "");
   const [showContext, setShowContext] = useState(false);
   const [context, setContext] = useState("");
   const [routing, setRouting] = useState(false);
@@ -58,6 +68,19 @@ export function PlaygroundPage({
   const [invoking, setInvoking] = useState(false);
   const [invokeError, setInvokeError] = useState("");
   const [invocation, setInvocation] = useState<Invocation | null>(null);
+
+  useEffect(() => {
+    if (!replayDraft) return;
+    setIntent(replayDraft.intent);
+    if (!state.access?.shared && replayDraft.actor) {
+      setActor(replayDraft.actor);
+    }
+    setIncludeDemo(false);
+    setResult(null);
+    setSelected(null);
+    setInvocation(null);
+    setRouteError("");
+  }, [replayDraft?.seq]);
 
   const servers = state.registry.servers;
   const eligiblePool = state.registry.tools.filter((t) => {
@@ -139,9 +162,9 @@ export function PlaygroundPage({
     <div>
       <div className="page-header">
         <div className="page-header-main">
-          <h1>路由调试</h1>
+          <h1>路由沙盒</h1>
           <p>
-            模拟本地 Agent 提交任务意图，观察 Decisions 模型的相关性判定并直接试调用候选工具。
+            模拟下游 Agent 发起意图发现（discover_tools），检验语义召回结果并直接试调候选工具（invoke_tool）。
           </p>
         </div>
         <div className="page-header-actions">

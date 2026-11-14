@@ -1,43 +1,47 @@
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
+import {
+  computeGatewayTelemetry,
+  formatCompactTokens,
+} from "./analytics";
 import {
   api,
   formatTime,
   pretty,
+  serverProtocolLabel,
   type Bootstrap,
   type Discovery,
-  type Event,
 } from "./types";
 import { AlertBox, CopyButton } from "./ui";
 
 type Props = {
   state: Bootstrap;
   refresh: () => Promise<Bootstrap>;
-  onOpenServices: (opts?: { add?: boolean; serverId?: string }) => void;
-  onOpenPlayground: () => void;
+  onOpenUpstreams: (opts?: { add?: boolean; serverId?: string }) => void;
+  onOpenCatalog: (opts?: { filter?: "rw" }) => void;
+  onOpenPlayground: (replay?: { intent: string; actor?: string }) => void;
   onOpenLogs: (eventId?: string) => void;
-  onOpenSettings: () => void;
+  onOpenPolicies: () => void;
+  onOpenConnectModal: () => void;
   notify: (msg: string) => void;
 };
 
 export function OverviewPage({
   state,
   refresh,
-  onOpenServices,
+  onOpenUpstreams,
+  onOpenCatalog,
   onOpenPlayground,
   onOpenLogs,
-  onOpenSettings,
+  onOpenPolicies,
+  onOpenConnectModal,
   notify,
 }: Props) {
-  const [clientTab, setClientTab] = useState<
-    "codex" | "claude" | "json" | "guide"
-  >("codex");
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const [testingModel, setTestingModel] = useState(false);
   const [testError, setTestError] = useState<any>(null);
-  const [testResult, setTestResult] = useState<Discovery | null>(null);
 
   const realServers = state.registry.servers.filter((s) => !s.demo);
-  const demoServers = state.registry.servers.filter((s) => s.demo);
   const activeRealServers = realServers.filter((s) => s.enabled);
   const realTools = state.registry.tools.filter((t) =>
     realServers.some((s) => s.id === t.server_id),
@@ -49,40 +53,15 @@ export function OverviewPage({
   const writeEnabled = enabledRealTools.length - readOnlyEnabled;
 
   const { setup, settings } = state;
-  const step1Done = setup.tools_ready;
-  const step2Done = setup.model_ready && !setup.model_check?.stale;
-  const step3Done = Boolean(
-    step1Done && step2Done && setup.agent_last_request,
-  );
-  const doneCount = [step1Done, step2Done, step3Done].filter(Boolean).length;
+  const modelReady = setup.model_ready && !setup.model_check?.stale;
+  const telemetry = computeGatewayTelemetry(state);
+  const maxTopHits = telemetry.topTools[0]?.hits || 1;
 
-  const firstEnabledTool = enabledRealTools[0];
-  const samplePrompt = firstEnabledTool
-    ? `请通过 gateway-lab 帮我完成这个任务：${firstEnabledTool.description || firstEnabledTool.name}。先调用 discover_tools 查找合适工具，再根据返回的 input_schema 调用 invoke_tool。`
-    : "请先调用 gateway-lab 的 discover_tools 描述当前任务查找工具，再按返回的 input_schema 调用 invoke_tool 执行。";
-
-  const snippet =
-    clientTab === "codex"
-      ? `codex mcp add gateway-lab --url ${state.mcp_url}`
-      : clientTab === "claude"
-        ? `claude mcp add --transport http gateway-lab ${state.mcp_url}`
-        : clientTab === "json"
-          ? pretty({
-              mcpServers: {
-                "gateway-lab": {
-                  type: "http",
-                  url: state.mcp_url,
-                },
-              },
-            })
-          : "需要外部能力时，先向 gateway-lab 的 discover_tools 描述当前任务与上下文；拿到候选工具的真实 ID 和 input_schema 后，再用 invoke_tool 执行调用。任务目标变化时重新调用 discover_tools。";
-
-  async function quickTestModel() {
+  async function quickVerifyModel() {
     setTestingModel(true);
     setTestError(null);
-    setTestResult(null);
     try {
-      const res = await api<Discovery>("/setup/model", {
+      await api<Discovery>("/setup/model", {
         method: "POST",
         body: pretty({
           ...settings,
@@ -91,9 +70,8 @@ export function OverviewPage({
           intent: "",
         }),
       });
-      setTestResult(res);
       await refresh();
-      notify("路由模型校验通过");
+      notify("路由模型连通性校验通过");
     } catch (e: any) {
       setTestError(e);
     } finally {
@@ -101,498 +79,629 @@ export function OverviewPage({
     }
   }
 
-  const recentEvents = state.events.slice(0, 8);
+  const showSetupBanner =
+    !bannerDismissed && (!setup.tools_ready || !modelReady);
 
   return (
     <div>
       <div className="page-header">
         <div className="page-header-main">
-          <h1>概览</h1>
+          <h1>运行大盘</h1>
           <p>
-            管理上游工具来源与 Decisions 路由模型，向本地 Agent 按需暴露最小工具集。
+            实时监控语义路由命中率、工具上下文收敛效率、上游连接健康度与未命中意图盲区。
           </p>
         </div>
         <div className="page-header-actions">
           <button
             type="button"
             className="btn"
-            onClick={onOpenPlayground}
+            onClick={() => onOpenPlayground()}
           >
-            路由调试
+            路由沙盒
           </button>
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => onOpenServices({ add: true })}
+            onClick={() => onOpenUpstreams({ add: true })}
           >
-            添加服务
+            添加上游服务
           </button>
         </div>
       </div>
 
-      {/* Top Grid: Left Setup Checklist + Right Navy Connection Card */}
-      <div className="overview-hero-grid">
-        <section className="card">
-          <div className="card-header">
-            <div className="card-header-title">
-              <h2>接入检查清单</h2>
-              <p>完成以下配置后，本地 Agent 即可通过单一端点按需发现并执行工具。</p>
-            </div>
-            <span
-              className="tnum"
-              style={{ fontSize: 12.5, color: "var(--ink-muted)" }}
+      {/* Slim Day-0 / Unverified Banner — collapses completely once verified or dismissed */}
+      {showSetupBanner && (
+        <div className="setup-banner">
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <strong style={{ fontSize: 13, color: "var(--ink-strong)" }}>
+              {!setup.tools_ready
+                ? "网关尚未向 Agent 开放任何上游工具"
+                : !setup.model_configured
+                  ? "尚未配置 Decisions 语义路由模型"
+                  : `路由模型 ${settings.model} 尚未完成连通性校验`}
+            </strong>
+            <span style={{ fontSize: 12.5, color: "var(--ink-muted)" }}>
+              {!setup.tools_ready
+                ? "请先接入至少一个 MCP 或 HTTP 服务，并在白名单中启用需要暴露的工具。"
+                : !setup.model_configured
+                  ? "前往「访问与路由」配置模型 Base URL 与密钥后即可启用按需工具发现。"
+                  : state.key_configured
+                    ? "API Key 已就绪，运行一次真实工具发现校验即可确认控制面就绪。"
+                    : "当前进程未检测到模型 API Key，请前往「访问与路由」注入密钥并完成校验。"}
+            </span>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {!setup.tools_ready ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => onOpenUpstreams({ add: realServers.length === 0 })}
+              >
+                {realServers.length === 0 ? "接入服务" : "启用工具"}
+              </button>
+            ) : setup.model_configured && state.key_configured ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={testingModel}
+                onClick={quickVerifyModel}
+              >
+                {testingModel && <Loader2 size={12} className="spin" />}
+                {testingModel ? "校验中…" : "立即校验"}
+              </button>
+            ) : null}
+            {setup.tools_ready && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={onOpenPolicies}
+              >
+                配置路由模型
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              aria-label="收起提示"
+              onClick={() => setBannerDismissed(true)}
             >
-              已完成 {doneCount} / 3
-            </span>
+              <X size={14} />
+            </button>
           </div>
+        </div>
+      )}
 
-          <div className="setup-step-list">
-            {/* Step 1 */}
-            <div className="setup-step-row">
-              <span
-                className={`setup-step-indicator ${
-                  step1Done ? "done" : "current"
-                }`}
-              >
-                1
-              </span>
-              <div className="setup-step-body">
-                <div className="setup-step-head">
-                  <strong
-                    style={
-                      step1Done ? { color: "var(--ink-body)", fontWeight: 550 } : undefined
-                    }
-                  >
-                    接入上游服务并启用工具
-                  </strong>
-                  <span
-                    className="tnum"
-                    style={{ fontSize: 12, color: "var(--ink-muted)" }}
-                  >
-                    {step1Done
-                      ? `已启用 ${setup.enabled_tools} 个工具`
-                      : realServers.length > 0
-                        ? "待启用工具"
-                        : "未接入"}
-                  </span>
-                </div>
-                <p>
-                  {step1Done
-                    ? `当前共有 ${activeRealServers.length} 个上游服务在线，向路由模型开放 ${setup.enabled_tools} 个工具。`
-                    : realServers.length > 0
-                      ? `已添加 ${realServers.length} 个服务（如 ${realServers[0].name}），请勾选要向 Agent 开放的工具。`
-                      : "支持远程 Streamable HTTP MCP、本地 stdio 进程以及自定义 HTTP API。"}
-                </p>
-                <div className="setup-step-actions">
-                  {realServers.length === 0 ? (
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => onOpenServices({ add: true })}
-                    >
-                      添加第一个服务
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() =>
-                        onOpenServices({ serverId: realServers[0].id })
-                      }
-                    >
-                      管理服务与工具
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
+      {testError && (
+        <div style={{ marginBottom: 16 }}>
+          <AlertBox
+            tone="error"
+            title={testError.message || String(testError)}
+            detail={testError.detail}
+          />
+        </div>
+      )}
 
-            {/* Step 2 */}
-            <div className="setup-step-row">
-              <span
-                className={`setup-step-indicator ${
-                  step2Done
-                    ? "done"
-                    : step1Done
-                      ? "current"
-                      : ""
-                }`}
-              >
-                2
-              </span>
-              <div className="setup-step-body">
-                <div className="setup-step-head">
-                  <strong
-                    style={
-                      step2Done ? { color: "var(--ink-body)", fontWeight: 550 } : undefined
-                    }
-                  >
-                    配置并验证 Decisions 路由模型
-                  </strong>
-                  <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>
-                    {step2Done
-                      ? "已验证"
-                      : setup.model_configured
-                        ? setup.model_check?.stale
-                          ? "需重新校验"
-                          : "待校验"
-                        : "未配置"}
-                  </span>
-                </div>
-                <p>
-                  {step2Done
-                    ? `路由模型 ${settings.model} 已验证通过，仅评估工具相关性，不直接执行下游操作。`
-                    : setup.model_configured
-                      ? `已保存模型 ${settings.model}${state.key_configured ? "（API Key 已载入）" : "（未检测到 API Key）"}，运行一次真实路由校验即可就绪。`
-                      : "支持 OpenAI Decisions API（如 gpt-6-luna）与 Gemini Decisions API（gemini-*）。"}
-                </p>
-                {testError && (
-                  <div style={{ marginTop: 8 }}>
-                    <AlertBox
-                      tone="error"
-                      title={testError.message || String(testError)}
-                      detail={testError.detail}
-                    />
-                  </div>
-                )}
-                {testResult && (
-                  <div style={{ marginTop: 8 }}>
-                    <AlertBox
-                      tone="info"
-                      title={`校验通过（${testResult.duration_ms} ms）：${testResult.summary}`}
-                    />
-                  </div>
-                )}
-                <div className="setup-step-actions">
-                  {setup.model_configured &&
-                    state.key_configured &&
-                    step1Done &&
-                    !step2Done && (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        style={{ color: "var(--ink-strong)", fontWeight: 600 }}
-                        disabled={testingModel}
-                        onClick={quickTestModel}
-                      >
-                        {testingModel && <Loader2 size={13} className="spin" />}
-                        {testingModel ? "校验中…" : "立即校验路由"}
-                      </button>
-                    )}
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    style={
-                      !step2Done &&
-                      !(setup.model_configured && state.key_configured && step1Done)
-                        ? { color: "var(--ink-strong)", fontWeight: 600 }
-                        : undefined
-                    }
-                    onClick={onOpenSettings}
-                  >
-                    {setup.model_configured ? "调整路由设置" : "配置路由模型"}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Step 3 */}
-            <div className="setup-step-row">
-              <span
-                className={`setup-step-indicator ${
-                  step3Done
-                    ? "done"
-                    : step1Done && step2Done
-                      ? "current"
-                      : ""
-                }`}
-              >
-                3
-              </span>
-              <div className="setup-step-body">
-                <div className="setup-step-head">
-                  <strong
-                    style={
-                      step3Done ? { color: "var(--ink-body)", fontWeight: 550 } : undefined
-                    }
-                  >
-                    在本地 Agent 中连接并调用
-                  </strong>
-                  <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>
-                    {setup.agent_last_request ? "已连接" : "等待请求"}
-                  </span>
-                </div>
-                <p>
-                  {setup.agent_last_request
-                    ? `最近收到请求：${setup.agent_last_request.title}（${formatTime(setup.agent_last_request.time)}）`
-                    : "复制右侧客户端命令完成挂载；重启会话后向 Agent 提出任务，网关会自动记录握手与调用。"}
-                </p>
-                <div className="setup-step-actions">
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={onOpenPlayground}
-                  >
-                    在调试台手动试跑
-                  </button>
-                  {setup.agent_last_request && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => onOpenLogs(setup.agent_last_request?.id)}
-                    >
-                      查看最近请求
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Right: Stripe Deep Navy Developer Connection Card */}
-        <section className="navy-card" aria-label="客户端连接配置">
-          <div className="navy-card-header">
-            <span className="navy-card-label">
-              <span className="sail-status-dot" />
-              MCP ENDPOINT
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <code style={{ fontSize: 12, color: "#fff" }}>
-                {state.mcp_url}
-              </code>
-              <CopyButton
-                value={state.mcp_url}
-                label="复制地址"
-                variant="navy"
-                onCopied={() => notify("已复制 MCP 地址")}
-              />
-            </div>
-          </div>
-
-          <div
-            className="navy-card-header"
-            style={{ background: "rgba(255,255,255,0.03)" }}
-          >
-            <div className="navy-tabs" role="tablist" aria-label="客户端类型">
-              {(
-                [
-                  ["codex", "Codex"],
-                  ["claude", "Claude Code"],
-                  ["json", "MCP JSON"],
-                  ["guide", "Agent 指引"],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={clientTab === id}
-                  className={clientTab === id ? "active" : ""}
-                  onClick={() => setClientTab(id)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <CopyButton
-              value={snippet}
-              label="复制配置"
-              variant="navy"
-              onCopied={() => notify("已复制到剪贴板")}
-            />
-          </div>
-
-          <pre className="navy-pre">{snippet}</pre>
-
-          <div className="navy-footer">
-            <span>
-              暴露固定工具：<code>discover_tools</code> ·{" "}
-              <code>get_tool_schema</code> · <code>invoke_tool</code>
-            </span>
-            <CopyButton
-              value={samplePrompt}
-              label="复制测试任务"
-              variant="navy"
-              onCopied={() => notify("已复制示例任务 Prompt")}
-            />
-          </div>
-        </section>
-      </div>
-
-      {/* 3-Column Summary Cards */}
-      <div className="metric-cards">
+      {/* Row 1: 4 Enterprise Gateway Golden Signal KPI Cards */}
+      <div className="kpi-grid-4">
         <div className="card metric-card">
           <div className="metric-card-top">
-            <span>上游服务</span>
+            <span>语义路由命中率</span>
+            <span className="tnum" style={{ fontSize: 12 }}>
+              近 {telemetry.discoverCount} 次发现
+            </span>
           </div>
           <div className="metric-number">
-            {activeRealServers.length}
-            <small>/ {realServers.length} 个已启用</small>
+            {telemetry.hitRatePct !== null
+              ? `${telemetry.hitRatePct.toFixed(1)}%`
+              : "—"}
+            {telemetry.discoverCount > 0 && (
+              <small>
+                ({telemetry.selectedCount} / {telemetry.discoverCount})
+              </small>
+            )}
           </div>
-          <div className="metric-foot">
-            <span>另含 {demoServers.length} 个调试演示服务</span>
+          <div className="metric-foot tnum">
+            <span>
+              {telemetry.noMatchCount} 未命中 · {telemetry.needsContextCount}{" "}
+              待补上下文
+            </span>
+            {telemetry.errorCount > 0 && (
+              <span
+                className="status-inline"
+                style={{ color: "var(--danger-ink)" }}
+              >
+                <span className="status-dot err" />
+                {telemetry.errorCount} 错误
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="card metric-card">
+          <div className="metric-card-top">
+            <span>工具上下文收敛率</span>
+            <span style={{ fontSize: 12 }}>按需暴露 ROI</span>
+          </div>
+          <div className="metric-number">
+            {telemetry.compressionPct !== null
+              ? `${telemetry.compressionPct.toFixed(1)}%`
+              : "—"}
+            <small>Schema 缩减</small>
+          </div>
+          <div className="metric-foot tnum">
+            <span>
+              {telemetry.avgEligible !== null &&
+              telemetry.avgSelectedOnHit !== null
+                ? `平均 ${Math.round(telemetry.avgEligible)} 候选 → 下发 ${telemetry.avgSelectedOnHit.toFixed(1)} 个`
+                : `单次下发上限 ${settings.max_tools} 个工具`}
+            </span>
+          </div>
+        </div>
+
+        <div className="card metric-card">
+          <div className="metric-card-top">
+            <span>路由决策延迟（P50）</span>
+            <span className="mono" style={{ fontSize: 12 }}>
+              {settings.model || "未配置"}
+            </span>
+          </div>
+          <div className="metric-number">
+            {telemetry.p50DiscoverMs !== null
+              ? `${telemetry.p50DiscoverMs.toLocaleString()} ms`
+              : "—"}
+            {telemetry.p95DiscoverMs !== null && (
+              <small>P95 {telemetry.p95DiscoverMs.toLocaleString()} ms</small>
+            )}
+          </div>
+          <div className="metric-foot tnum">
+            <span>
+              {telemetry.avgInvokeMs !== null
+                ? `下游调用均值 ${telemetry.avgInvokeMs} ms`
+                : `累计路由消耗 ${formatCompactTokens(telemetry.totalTokens)} tok`}
+            </span>
             <button
               type="button"
               className="btn-link"
-              onClick={() => onOpenServices()}
+              onClick={() => onOpenLogs()}
             >
-              管理服务
+              追踪明细
             </button>
           </div>
         </div>
 
         <div className="card metric-card">
           <div className="metric-card-top">
-            <span>向 Agent 开放的工具</span>
+            <span>开放工具面与护栏</span>
+            <span className="tnum" style={{ fontSize: 12 }}>
+              {activeRealServers.length} / {realServers.length} 服务在线
+            </span>
           </div>
           <div className="metric-number">
             {setup.enabled_tools}
-            <small>/ {realTools.length} 个已开放</small>
+            <small>/ {realTools.length} 已开放</small>
           </div>
-          <div className="metric-foot">
+          <div className="metric-foot tnum">
             <span>
               {readOnlyEnabled} 只读 · {writeEnabled} 写操作
             </span>
             <button
               type="button"
               className="btn-link"
-              onClick={() => onOpenServices()}
+              onClick={() =>
+                onOpenCatalog(writeEnabled > 0 ? { filter: "rw" } : undefined)
+              }
             >
-              检索工具
-            </button>
-          </div>
-        </div>
-
-        <div className="card metric-card">
-          <div className="metric-card-top">
-            <span>Decisions 路由策略</span>
-          </div>
-          <div
-            className="metric-number mono"
-            style={{
-              fontSize: 17,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              paddingTop: 3,
-              paddingBottom: 2,
-            }}
-            title={settings.model || "未配置模型"}
-          >
-            {settings.model || "未配置模型"}
-          </div>
-          <div className="metric-foot">
-            <span className="tnum">
-              返回上限 {settings.max_tools} · 超时 {settings.timeout_seconds}s
-            </span>
-            <button type="button" className="btn-link" onClick={onOpenSettings}>
-              路由设置
+              治理目录
             </button>
           </div>
         </div>
       </div>
 
-      {/* Recent Traffic Table */}
-      <section className="card">
-        <div className="card-header">
-          <div className="card-header-title">
-            <h2>最近请求记录</h2>
-            <p>实时记录工具发现、下游执行与 MCP 客户端会话请求。</p>
+      {/* Row 2: Traffic Outcome Proportion Bar */}
+      {telemetry.sampleSize > 0 && (
+        <section className="card dist-strip" aria-label="请求状态分布">
+          <div className="dist-strip-head">
+            <strong style={{ color: "var(--ink-strong)", fontWeight: 600 }}>
+              最近 {telemetry.sampleSize} 次网关请求状态分布
+            </strong>
+            <div className="dist-legend">
+              <span className="dist-legend-item">
+                <span
+                  className="status-dot"
+                  style={{ background: "var(--ink-strong)" }}
+                />
+                命中下发 {telemetry.selectedCount}
+              </span>
+              <span className="dist-legend-item">
+                <span className="status-dot" style={{ background: "#94a3b8" }} />
+                需补充上下文 {telemetry.needsContextCount}
+              </span>
+              <span className="dist-legend-item">
+                <span className="status-dot" style={{ background: "#cbd5e1" }} />
+                未命中 {telemetry.noMatchCount}
+              </span>
+              {telemetry.errorCount > 0 && (
+                <span
+                  className="dist-legend-item"
+                  style={{ color: "var(--danger-ink)" }}
+                >
+                  <span className="status-dot err" />
+                  异常错误 {telemetry.errorCount}
+                </span>
+              )}
+              <button
+                type="button"
+                className="btn-link"
+                onClick={() => onOpenLogs()}
+              >
+                全部请求日志
+              </button>
+            </div>
           </div>
-          {state.events.length > 0 && (
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => onOpenLogs()}
-            >
-              查看全部 ({state.events.length})
-            </button>
-          )}
+
+          <div className="dist-bar" role="presentation">
+            {telemetry.selectedCount > 0 && (
+              <div
+                className="dist-seg-selected"
+                style={{ flexGrow: telemetry.selectedCount }}
+                title={`命中 selected: ${telemetry.selectedCount}`}
+              />
+            )}
+            {telemetry.needsContextCount > 0 && (
+              <div
+                className="dist-seg-context"
+                style={{ flexGrow: telemetry.needsContextCount }}
+                title={`待补充上下文 needs_context: ${telemetry.needsContextCount}`}
+              />
+            )}
+            {telemetry.noMatchCount > 0 && (
+              <div
+                className="dist-seg-nomatch"
+                style={{ flexGrow: telemetry.noMatchCount }}
+                title={`未命中 no_match: ${telemetry.noMatchCount}`}
+              />
+            )}
+            {telemetry.errorCount > 0 && (
+              <div
+                className="dist-seg-error"
+                style={{ flexGrow: Math.max(telemetry.errorCount, 1.5) }}
+                title={`错误 error: ${telemetry.errorCount}`}
+              />
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Row 3: Control Plane 2-Column Operational Split */}
+      <div className="control-split">
+        {/* Left: Actionable Triage (Errors & Blind Spots) + Top Routed Tools */}
+        <div className="form-stack">
+          <section className="card">
+            <div className="card-header">
+              <div className="card-header-title">
+                <h2>异常告警与未命中意图盲区</h2>
+                <p>
+                  聚合近期网关错误及 Agent 发起但未匹配到开放工具的任务，支持一键带入沙盒复现。
+                </p>
+              </div>
+              <span
+                className="tnum"
+                style={{ fontSize: 12, color: "var(--ink-muted)" }}
+              >
+                {telemetry.attentionItems.length} 项待关注
+              </span>
+            </div>
+
+            {telemetry.attentionItems.length === 0 ? (
+              <div className="empty-box">
+                <h3>当前无异常或未命中盲区</h3>
+                <p>近期所有工具发现与调用请求均正常命中。</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="sail-table">
+                  <thead>
+                    <tr>
+                      <th>状态</th>
+                      <th>任务意图 / 诊断摘要</th>
+                      <th>身份</th>
+                      <th style={{ textAlign: "right" }}>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {telemetry.attentionItems.map((item) => (
+                      <tr key={`${item.status}-${item.lastEventId}`}>
+                        <td style={{ width: 120 }}>
+                          <EventStatusBadge status={item.status} />
+                        </td>
+                        <td>
+                          <span className="cell-primary">
+                            <span>{item.intent}</span>
+                            {item.count > 1 && (
+                              <span
+                                className="mono tnum"
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 500,
+                                  color: "var(--ink-muted)",
+                                }}
+                              >
+                                ×{item.count}
+                              </span>
+                            )}
+                          </span>
+                          <span className="cell-sub">
+                            {item.errorSummary
+                              ? item.errorSummary
+                              : `${formatTime(item.lastTime)} · 当前开放工具池未匹配到合适工具（或对应写操作已被护栏拦截）`}
+                          </span>
+                        </td>
+                        <td style={{ width: 96 }}>
+                          <code
+                            style={{ fontSize: 12, color: "var(--ink-muted)" }}
+                          >
+                            {item.actor}
+                          </code>
+                        </td>
+                        <td style={{ width: 156, textAlign: "right" }}>
+                          <div
+                            style={{
+                              display: "inline-flex",
+                              gap: 6,
+                              justifyContent: "flex-end",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              onClick={() => onOpenLogs(item.lastEventId)}
+                            >
+                              日志
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              onClick={() =>
+                                onOpenPlayground({
+                                  intent: item.intent,
+                                  actor: item.actor,
+                                })
+                              }
+                            >
+                              沙盒重放
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="card">
+            <div className="card-header">
+              <div className="card-header-title">
+                <h2>高频命中工具（Top Routed Tools）</h2>
+                <p>按近期语义路由选中频次排序，识别团队高频依赖能力与冗余长尾工具。</p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => onOpenCatalog()}
+              >
+                全部工具目录
+              </button>
+            </div>
+
+            {telemetry.topTools.length === 0 ? (
+              <div className="empty-box">
+                <p>暂无路由命中统计。</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="sail-table">
+                  <thead>
+                    <tr>
+                      <th>工具名称</th>
+                      <th>所属上游</th>
+                      <th>权限属性</th>
+                      <th style={{ textAlign: "right" }}>命中频次</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {telemetry.topTools.map((t) => (
+                      <tr key={t.id}>
+                        <td>
+                          <span className="cell-primary mono">{t.name}</span>
+                        </td>
+                        <td style={{ width: 120 }}>
+                          <button
+                            type="button"
+                            className="btn-link"
+                            onClick={() =>
+                              onOpenUpstreams({ serverId: t.serverId })
+                            }
+                          >
+                            {t.serverName}
+                          </button>
+                        </td>
+                        <td style={{ width: 90 }}>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: t.readOnly
+                                ? "var(--ink-muted)"
+                                : "var(--ink-body)",
+                            }}
+                          >
+                            {t.readOnly ? "只读" : "写操作"}
+                          </span>
+                        </td>
+                        <td style={{ width: 160 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "flex-end",
+                              gap: 10,
+                            }}
+                          >
+                            <div className="hit-bar-track">
+                              <div
+                                className="hit-bar-fill"
+                                style={{
+                                  width: `${Math.max(
+                                    8,
+                                    Math.round((t.hits / maxTopHits) * 100),
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                            <span
+                              className="mono tnum"
+                              style={{
+                                fontSize: 12,
+                                color: "var(--ink-strong)",
+                                minWidth: 38,
+                                textAlign: "right",
+                              }}
+                            >
+                              {t.hits} 次
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         </div>
 
-        {recentEvents.length === 0 ? (
-          <div className="empty-box">
-            <h3>暂无请求记录</h3>
-            <p>连接本地 Agent 发起任务，或在「路由调试」手动运行一次工具发现。</p>
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{ marginTop: 6 }}
-              onClick={onOpenPlayground}
-            >
-              前往路由调试
-            </button>
-          </div>
-        ) : (
-          <div className="table-wrap">
-            <table className="sail-table">
-              <thead>
-                <tr>
-                  <th>状态</th>
-                  <th>类型</th>
-                  <th>请求内容 / 目标</th>
-                  <th>身份</th>
-                  <th style={{ textAlign: "right" }}>耗时</th>
-                  <th style={{ textAlign: "right" }}>时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentEvents.map((ev: Event) => (
-                  <tr
-                    key={ev.id}
-                    className="row-clickable"
-                    onClick={() => onOpenLogs(ev.id)}
-                  >
-                    <td style={{ width: 120 }}>
-                      <EventStatusBadge status={ev.status} />
-                    </td>
-                    <td style={{ width: 110 }}>
-                      <span style={{ color: "var(--ink-muted)", fontSize: 12.5 }}>
-                        {ev.kind === "agent"
-                          ? "Agent 请求"
-                          : ev.kind === "discover"
-                            ? "工具发现"
-                            : "工具调用"}
+        {/* Right: Upstream Services Health Topology + Compact MCP Endpoint */}
+        <div className="form-stack">
+          <section className="card">
+            <div className="card-header">
+              <div className="card-header-title">
+                <h2>上游服务拓扑</h2>
+                <p>已注册的下游 MCP 与 HTTP 服务实例。</p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => onOpenUpstreams()}
+              >
+                管理上游
+              </button>
+            </div>
+
+            {realServers.length === 0 ? (
+              <div className="empty-box">
+                <h3>尚未接入上游服务</h3>
+                <p>支持远程 Streamable HTTP MCP、stdio 进程或 REST/OpenAPI 服务。</p>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  style={{ marginTop: 6 }}
+                  onClick={() => onOpenUpstreams({ add: true })}
+                >
+                  添加第一个上游
+                </button>
+              </div>
+            ) : (
+              <div>
+                {realServers.map((s) => {
+                  const srvTools = realTools.filter((t) => t.server_id === s.id);
+                  const openTools = srvTools.filter((t) => t.enabled);
+                  const openWrite = openTools.filter((t) => !t.read_only).length;
+                  const check = state.setup.source_checks[s.id];
+                  const hasErr = check?.status === "error";
+                  return (
+                    <div
+                      key={s.id}
+                      className="log-row"
+                      style={{ cursor: "pointer" }}
+                      onClick={() => onOpenUpstreams({ serverId: s.id })}
+                    >
+                      <div className="log-row-main">
+                        <div className="log-row-top">
+                          <span
+                            className={`status-dot ${
+                              hasErr ? "err" : s.enabled ? "ok" : ""
+                            }`}
+                          />
+                          <strong
+                            style={{
+                              fontSize: 13.5,
+                              color: "var(--ink-strong)",
+                            }}
+                          >
+                            {s.name}
+                          </strong>
+                          <span
+                            className="mono"
+                            style={{ fontSize: 12, color: "var(--ink-muted)" }}
+                          >
+                            {serverProtocolLabel(s)}
+                          </span>
+                        </div>
+                        <span className="log-row-meta tnum">
+                          开放 {openTools.length} / {srvTools.length} 工具 ·{" "}
+                          {openTools.length - openWrite} 只读 / {openWrite} 写操作
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: "var(--accent)",
+                          fontWeight: 500,
+                          flexShrink: 0,
+                        }}
+                      >
+                        详情
                       </span>
-                    </td>
-                    <td>
-                      <span className="cell-primary">{ev.title}</span>
-                    </td>
-                    <td style={{ width: 110 }}>
-                      <code style={{ fontSize: 12, color: "var(--ink-muted)" }}>
-                        {ev.actor}
-                      </code>
-                    </td>
-                    <td
-                      className="mono tnum"
-                      style={{
-                        width: 90,
-                        textAlign: "right",
-                        fontSize: 12,
-                        color: "var(--ink-muted)",
-                      }}
-                    >
-                      {ev.duration_ms} ms
-                    </td>
-                    <td
-                      className="tnum"
-                      style={{
-                        width: 150,
-                        textAlign: "right",
-                        fontSize: 12,
-                        color: "var(--ink-muted)",
-                      }}
-                    >
-                      {formatTime(ev.time)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <section className="navy-card" aria-label="网关数据面端点">
+            <div className="navy-card-header">
+              <span className="navy-card-label">
+                <span className="sail-status-dot" />
+                DATA PLANE ENDPOINT
+              </span>
+              <CopyButton
+                value={state.mcp_url}
+                label="复制地址"
+                variant="navy"
+                onCopied={() => notify("已复制 MCP 网关地址")}
+              />
+            </div>
+            <pre className="navy-pre" style={{ padding: "12px 14px" }}>
+              {state.mcp_url}
+            </pre>
+            <div className="navy-footer">
+              <span>
+                统一暴露 3 个元工具收敛上下文
+              </span>
+              <button
+                type="button"
+                className="navy-copy-btn"
+                onClick={onOpenConnectModal}
+              >
+                客户端接入指令
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

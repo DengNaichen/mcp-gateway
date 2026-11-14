@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { computeActorMatrix } from "./analytics";
 import {
   api,
   formatTime,
@@ -14,11 +15,13 @@ export function SettingsPage({
   state,
   refresh,
   onOpenServices,
+  onOpenCatalog,
   notify,
 }: {
   state: Bootstrap;
   refresh: () => Promise<Bootstrap>;
   onOpenServices: () => void;
+  onOpenCatalog?: (opts?: { access?: "rw" }) => void;
   notify: (msg: string) => void;
 }) {
   const [config, setConfig] = useState<Config>({ ...state.settings });
@@ -26,6 +29,7 @@ export function SettingsPage({
   const [clearKey, setClearKey] = useState(false);
   const [testIntent, setTestIntent] = useState("");
   const [busyMode, setBusyMode] = useState<"" | "save" | "test">("");
+  const [guardrailBusy, setGuardrailBusy] = useState(false);
   const [error, setError] = useState<any>(null);
   const [testResult, setTestResult] = useState<Discovery | null>(null);
 
@@ -85,16 +89,193 @@ export function SettingsPage({
   }
 
   const modelCheck = state.setup.model_check;
+  const actorRows = computeActorMatrix(
+    state.registry.servers,
+    state.registry.tools,
+    state.access?.shared ? state.access.actor : undefined,
+  );
+  const realActiveServers = state.registry.servers.filter(
+    (s) => !s.demo && s.enabled,
+  );
+  const enabledWriteTools = state.registry.tools.filter(
+    (t) =>
+      t.enabled &&
+      !t.read_only &&
+      realActiveServers.some((s) => s.id === t.server_id),
+  );
+
+  async function enforceReadOnlyGuardrail() {
+    if (enabledWriteTools.length === 0 || guardrailBusy) return;
+    setGuardrailBusy(true);
+    try {
+      const affectedServerIds = Array.from(
+        new Set(enabledWriteTools.map((t) => t.server_id)),
+      );
+      for (const serverId of affectedServerIds) {
+        const keepIds = state.registry.tools
+          .filter(
+            (t) => t.server_id === serverId && t.enabled && t.read_only,
+          )
+          .map((t) => t.id);
+        await api(`/servers/${encodeURIComponent(serverId)}/tools`, {
+          method: "POST",
+          body: pretty({ ids: keepIds }),
+        });
+      }
+      await refresh();
+      notify(`已关闭 ${enabledWriteTools.length} 个写操作工具，全局候选池已收敛为只读`);
+    } catch (e: any) {
+      notify(e.message);
+    } finally {
+      setGuardrailBusy(false);
+    }
+  }
 
   return (
     <div>
       <div className="page-header">
         <div className="page-header-main">
-          <h1>路由设置</h1>
+          <h1>访问与路由</h1>
           <p>
-            配置用于按任务意图筛选工具的 Decisions 模型及全局路由参数。模型仅返回候选工具 ID，参数与权限校验由 Go 后端执行。
+            审计各调用方身份（Actor）的工具可见范围与写操作护栏，并配置 Decisions 语义路由模型与分流阈值。
           </p>
         </div>
+      </div>
+
+      {/* Section 1: Consumer Actor & Read/Write Guardrail Matrix */}
+      <div className="settings-section">
+        <div className="settings-aside">
+          <h2>调用身份与写操作护栏</h2>
+          <p>
+            网关在路由与调用两阶段强制校验调用方 <code>actor</code>{" "}
+            白名单。不在候选池内的工具既不会暴露给模型，也无法通过{" "}
+            <code>invoke_tool</code> 越权调用。
+          </p>
+          <p style={{ marginTop: 8 }}>
+            接入鉴权：{" "}
+            <strong style={{ color: "var(--ink-strong)", fontWeight: 550 }}>
+              {state.access?.shared
+                ? `共享网关鉴权（${state.access.actor}）`
+                : "本机直连（默认 developer）"}
+            </strong>
+          </p>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              marginTop: 12,
+            }}
+          >
+            {onOpenCatalog && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => onOpenCatalog({ access: "rw" })}
+              >
+                审查写操作工具（{enabledWriteTools.length}）
+              </button>
+            )}
+            {enabledWriteTools.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={guardrailBusy}
+                onClick={() => void enforceReadOnlyGuardrail()}
+              >
+                {guardrailBusy && <Loader2 size={12} className="spin" />}
+                全局收敛为仅只读
+              </button>
+            )}
+          </div>
+        </div>
+
+        <section className="card">
+          <div className="card-header">
+            <div className="card-header-title">
+              <h2>身份访问矩阵（实时生效）</h2>
+              <p>基于当前在线上游服务与工具开放状态自动汇总。</p>
+            </div>
+            <span
+              className="tnum"
+              style={{ fontSize: 12.5, color: "var(--ink-muted)" }}
+            >
+              {enabledWriteTools.length === 0
+                ? "写操作护栏：全部只读"
+                : `已开放 ${enabledWriteTools.length} 个写工具`}
+            </span>
+          </div>
+          <div className="table-wrap">
+            <table className="sail-table">
+              <thead>
+                <tr>
+                  <th>身份（Actor）</th>
+                  <th>可达上游</th>
+                  <th>只读工具</th>
+                  <th>写操作工具</th>
+                  <th>按上游分布</th>
+                </tr>
+              </thead>
+              <tbody>
+                {actorRows.map((row) => (
+                  <tr key={row.actor}>
+                    <td style={{ width: 150 }}>
+                      <code
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          color: "var(--ink-strong)",
+                        }}
+                      >
+                        {row.actor}
+                      </code>
+                    </td>
+                    <td className="tnum" style={{ width: 105 }}>
+                      {row.reachableServers} 个服务
+                    </td>
+                    <td className="tnum" style={{ width: 105 }}>
+                      {row.readOnlyTools}
+                    </td>
+                    <td className="tnum" style={{ width: 115 }}>
+                      <span
+                        style={{
+                          color:
+                            row.writeTools > 0
+                              ? "var(--ink-strong)"
+                              : "var(--ink-muted)",
+                          fontWeight: row.writeTools > 0 ? 600 : 400,
+                        }}
+                      >
+                        {row.writeTools}
+                      </span>
+                    </td>
+                    <td>
+                      {row.byServer.length === 0 ? (
+                        <span
+                          style={{ fontSize: 12.5, color: "var(--ink-faint)" }}
+                        >
+                          无可见工具
+                        </span>
+                      ) : (
+                        <span
+                          className="tnum"
+                          style={{ fontSize: 12.5, color: "var(--ink-muted)" }}
+                        >
+                          {row.byServer
+                            .map(
+                              (s) =>
+                                `${s.serverName} ${s.readOnly + s.write}${s.write > 0 ? `（${s.write} 写）` : ""}`,
+                            )
+                            .join(" · ")}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
 
       <form

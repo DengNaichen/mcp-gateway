@@ -7,11 +7,13 @@ import { AlertBox, Badge, CopyButton } from "./ui";
 export function LogsPage({
   events,
   initialEventId,
+  onReplay,
   onRefresh,
   notify,
 }: {
   events: Event[];
   initialEventId?: string | null;
+  onReplay?: (payload: { intent: string; actor?: string }) => void;
   onRefresh: () => void;
   notify: (msg: string) => void;
 }) {
@@ -60,9 +62,9 @@ export function LogsPage({
     <div>
       <div className="page-header">
         <div className="page-header-main">
-          <h1>调用日志</h1>
+          <h1>请求日志</h1>
           <p>
-            按 Stripe Workbench 分栏模式审查最近 100 次路由发现、下游调用与客户端请求负载。
+            实时追踪数据面工具发现（discover）、下游调用（invoke）与客户端会话负载，支持一键送入路由沙盒复现。
           </p>
         </div>
         <div className="page-header-actions">
@@ -224,11 +226,27 @@ export function LogsPage({
                       {activeEvent.title}
                     </h2>
                   </div>
-                  <CopyButton
-                    value={pretty(activeEvent)}
-                    label="复制事件 JSON"
-                    onCopied={() => notify("已复制事件 JSON")}
-                  />
+                  <div style={{ display: "inline-flex", gap: 6, flexShrink: 0 }}>
+                    {activeEvent.kind === "discover" && onReplay && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() =>
+                          onReplay({
+                            intent: activeEvent.title,
+                            actor: activeEvent.actor,
+                          })
+                        }
+                      >
+                        在沙盒中重放
+                      </button>
+                    )}
+                    <CopyButton
+                      value={pretty(activeEvent)}
+                      label="复制事件 JSON"
+                      onCopied={() => notify("已复制事件 JSON")}
+                    />
+                  </div>
                 </div>
 
                 <dl className="kv-grid">
