@@ -1,25 +1,151 @@
 {
   "description": "Routing eval for the GitHub MCP server with only its 28 read-only tools enabled. `expected` tools must all be returned. `acceptable` tools are reasonable extras that do not count as noise. Any other returned tool is a false positive. `no_match` cases must return no tools.",
   "cases": [
-    {"intent": "这个仓库最近有哪些未关闭的 issue", "expected": ["github.list_issues"], "acceptable": ["github.search_issues"]},
-    {"intent": "show me open pull requests that need review", "expected": ["github.list_pull_requests"], "acceptable": ["github.search_pull_requests"]},
-    {"intent": "看一下最近的提交记录", "expected": ["github.list_commits"], "acceptable": ["github.search_commits"]},
-    {"intent": "find where the router selects tools in the code", "expected": ["github.search_code"], "acceptable": ["github.get_file_contents"]},
-    {"intent": "最新的 release 是哪个版本", "expected": ["github.get_latest_release"], "acceptable": ["github.list_releases"]},
-    {"intent": "who am I logged in as on GitHub", "expected": ["github.get_me"]},
-    {"intent": "查找 GitHub 上做 MCP gateway 的开源项目", "expected": ["github.search_repositories"]},
-    {"intent": "读一下这个仓库 README.md 的内容", "expected": ["github.get_file_contents"]},
-    {"intent": "这个仓库现在有哪些分支", "expected": ["github.list_branches"]},
-    {"intent": "show the details of commit a67b7ee", "expected": ["github.get_commit"], "acceptable": ["github.list_commits"]},
-    {"intent": "列出这个仓库所有的 tag", "expected": ["github.list_tags"], "acceptable": ["github.get_tag"]},
-    {"intent": "v1.2.0 这个版本的发布说明是什么", "expected": ["github.get_release_by_tag"], "acceptable": ["github.list_releases"]},
-    {"intent": "who has write access to this repository", "expected": ["github.list_repository_collaborators"]},
-    {"intent": "我加入了哪些 GitHub 团队", "expected": ["github.get_teams"]},
-    {"intent": "看一下 PR #12 的详细内容和 review 评论", "expected": ["github.pull_request_read"]},
-    {"intent": "issue #5 里具体写了什么", "expected": ["github.issue_read"]},
-    {"intent": "scan this diff for leaked API keys or passwords", "expected": ["github.run_secret_scanning"]},
-    {"intent": "帮我订一张明天去上海的机票", "no_match": true, "note": "unrelated domain"},
-    {"intent": "what is the weather in Toronto today", "no_match": true, "note": "unrelated domain"},
-    {"intent": "新建一个 issue 记录这个 bug", "no_match": true, "note": "close to GitHub, but write tools are disabled"}
+    {
+      "intent": "这个仓库最近有哪些未关闭的 issue",
+      "expected": [
+        "github.list_issues"
+      ],
+      "acceptable": [
+        "github.search_issues"
+      ]
+    },
+    {
+      "intent": "show me open pull requests that need review",
+      "expected": [
+        "github.list_pull_requests"
+      ],
+      "acceptable": [
+        "github.search_pull_requests"
+      ]
+    },
+    {
+      "intent": "看一下最近的提交记录",
+      "expected": [
+        "github.list_commits"
+      ],
+      "acceptable": [
+        "github.search_commits"
+      ]
+    },
+    {
+      "intent": "find where the router selects tools in the code",
+      "expected": [
+        "github.search_code"
+      ],
+      "acceptable": [
+        "github.get_file_contents"
+      ]
+    },
+    {
+      "intent": "最新的 release 是哪个版本",
+      "expected": [
+        "github.get_latest_release"
+      ],
+      "acceptable": [
+        "github.list_releases"
+      ]
+    },
+    {
+      "intent": "who am I logged in as on GitHub",
+      "expected": [
+        "github.get_me"
+      ]
+    },
+    {
+      "intent": "查找 GitHub 上做 MCP gateway 的开源项目",
+      "expected": [
+        "github.search_repositories"
+      ]
+    },
+    {
+      "intent": "读一下这个仓库 README.md 的内容",
+      "expected": [
+        "github.get_file_contents"
+      ]
+    },
+    {
+      "intent": "这个仓库现在有哪些分支",
+      "expected": [
+        "github.list_branches"
+      ]
+    },
+    {
+      "intent": "show the details of commit a67b7ee",
+      "expected": [
+        "github.get_commit"
+      ],
+      "acceptable": [
+        "github.list_commits"
+      ]
+    },
+    {
+      "intent": "列出这个仓库所有的 tag",
+      "expected": [
+        "github.list_tags"
+      ],
+      "acceptable": [
+        "github.get_tag"
+      ]
+    },
+    {
+      "intent": "v1.2.0 这个版本的发布说明是什么",
+      "expected": [
+        "github.get_release_by_tag"
+      ],
+      "acceptable": [
+        "github.list_releases"
+      ],
+      "needs_context": true,
+      "note": "With Linear enabled (release notes live there too), asking which service passes."
+    },
+    {
+      "intent": "who has write access to this repository",
+      "expected": [
+        "github.list_repository_collaborators"
+      ]
+    },
+    {
+      "intent": "我加入了哪些 GitHub 团队",
+      "expected": [
+        "github.get_teams"
+      ]
+    },
+    {
+      "intent": "看一下 PR #12 的详细内容和 review 评论",
+      "expected": [
+        "github.pull_request_read"
+      ]
+    },
+    {
+      "intent": "issue #5 里具体写了什么",
+      "expected": [
+        "github.issue_read"
+      ]
+    },
+    {
+      "intent": "scan this diff for leaked API keys or passwords",
+      "expected": [
+        "github.run_secret_scanning"
+      ]
+    },
+    {
+      "intent": "帮我订一张明天去上海的机票",
+      "no_match": true,
+      "note": "unrelated domain"
+    },
+    {
+      "intent": "what is the weather in Toronto today",
+      "no_match": true,
+      "note": "Still no_match for GitHub; a web search tool, when enabled, is a fair answer.",
+      "acceptable": [
+        "firecrawl.firecrawl_search"
+      ]
+    },
+    {
+      "intent": "新建一个 issue 记录这个 bug",
+      "no_match": true,
+      "note": "close to GitHub, but write tools are disabled"
+    }
   ]
 }

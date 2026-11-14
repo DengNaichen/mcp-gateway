@@ -1,0 +1,525 @@
+{
+  "description": "Routing eval across 14 services (read-only tools only): GitHub, Vercel, Supabase, Notion, Playwright, MongoDB, HubSpot, Slack, Sentry, Heroku, Netlify, Firecrawl, Context7, Linear. Cases are tagged by service; `cross` cases use vocabulary shared by several services and list every reasonable tool in `any_of`; `no_match` cases ask for write operations that are not enabled or for unrelated tasks. Written by the assistant after reading the tool list.",
+  "cases": [
+    {
+      "tag": "supabase",
+      "intent": "列出我在 Supabase 上的所有项目",
+      "expected": [
+        "supabase.list_projects"
+      ],
+      "acceptable": [
+        "supabase.list_organizations"
+      ]
+    },
+    {
+      "tag": "supabase",
+      "intent": "what tables are in my Supabase database",
+      "expected": [
+        "supabase.list_tables"
+      ]
+    },
+    {
+      "tag": "supabase",
+      "intent": "查一下 Supabase 项目有没有安全或性能方面的建议",
+      "expected": [
+        "supabase.get_advisors"
+      ]
+    },
+    {
+      "tag": "supabase",
+      "intent": "show the edge functions deployed in my Supabase project",
+      "expected": [
+        "supabase.list_edge_functions"
+      ],
+      "acceptable": [
+        "supabase.get_edge_function"
+      ]
+    },
+    {
+      "tag": "supabase",
+      "intent": "在 Supabase 的日志里筛选最近的错误",
+      "expected": [
+        "supabase.query_logs"
+      ]
+    },
+    {
+      "tag": "supabase",
+      "intent": "Supabase 项目的 API URL 和 publishable key 分别是什么",
+      "expected": [
+        "supabase.get_project_url",
+        "supabase.get_publishable_keys"
+      ]
+    },
+    {
+      "tag": "notion",
+      "intent": "在 Notion 里搜索标题包含 roadmap 的页面",
+      "expected": [
+        "notion.API-post-search"
+      ]
+    },
+    {
+      "tag": "notion",
+      "intent": "read the content of this Notion page as markdown",
+      "expected": [
+        "notion.API-retrieve-page-markdown"
+      ],
+      "acceptable": [
+        "notion.API-retrieve-a-page",
+        "notion.API-get-block-children"
+      ]
+    },
+    {
+      "tag": "notion",
+      "intent": "Notion 这个数据库有哪些属性字段",
+      "expected": [
+        "notion.API-retrieve-a-database"
+      ],
+      "acceptable": [
+        "notion.API-retrieve-a-data-source"
+      ]
+    },
+    {
+      "tag": "notion",
+      "intent": "list all users in our Notion workspace",
+      "expected": [
+        "notion.API-get-users"
+      ]
+    },
+    {
+      "tag": "playwright",
+      "intent": "把当前浏览器页面截个图给我看",
+      "expected": [
+        "playwright.browser_take_screenshot"
+      ],
+      "acceptable": [
+        "playwright.browser_snapshot"
+      ]
+    },
+    {
+      "tag": "playwright",
+      "intent": "what did the browser console print on this page",
+      "expected": [
+        "playwright.browser_console_messages"
+      ]
+    },
+    {
+      "tag": "playwright",
+      "intent": "看看这个页面加载时发出了哪些网络请求",
+      "expected": [
+        "playwright.browser_network_requests"
+      ],
+      "acceptable": [
+        "playwright.browser_network_request"
+      ]
+    },
+    {
+      "tag": "mongodb",
+      "intent": "list the collections in the orders database on MongoDB",
+      "expected": [
+        "mongodb.list-collections"
+      ],
+      "acceptable": [
+        "mongodb.list-databases"
+      ]
+    },
+    {
+      "tag": "mongodb",
+      "intent": "MongoDB 里 users 集合有多少条文档",
+      "expected": [
+        "mongodb.count"
+      ]
+    },
+    {
+      "tag": "mongodb",
+      "intent": "describe the indexes on the events collection in MongoDB",
+      "expected": [
+        "mongodb.collection-indexes"
+      ],
+      "acceptable": [
+        "mongodb.collection-schema"
+      ]
+    },
+    {
+      "tag": "mongodb",
+      "intent": "解释一下这个 Mongo 查询为什么慢，走了什么执行计划",
+      "expected": [
+        "mongodb.explain"
+      ],
+      "acceptable": [
+        "mongodb.collection-indexes"
+      ]
+    },
+    {
+      "tag": "hubspot",
+      "intent": "在 HubSpot 里搜索公司名包含 Acme 的联系人",
+      "expected": [
+        "hubspot.hubspot-search-objects"
+      ],
+      "acceptable": [
+        "hubspot.hubspot-list-objects"
+      ]
+    },
+    {
+      "tag": "hubspot",
+      "intent": "list the workflows configured in HubSpot",
+      "expected": [
+        "hubspot.hubspot-list-workflows"
+      ]
+    },
+    {
+      "tag": "hubspot",
+      "intent": "HubSpot 里 deal 对象有哪些属性字段",
+      "expected": [
+        "hubspot.hubspot-list-properties"
+      ],
+      "acceptable": [
+        "hubspot.hubspot-get-schemas"
+      ]
+    },
+    {
+      "tag": "slack",
+      "intent": "看看 Slack 上 #incidents 频道最近的消息",
+      "expected": [
+        "slack.slack_get_channel_history"
+      ],
+      "acceptable": [
+        "slack.slack_list_channels"
+      ]
+    },
+    {
+      "tag": "slack",
+      "intent": "list the channels in our Slack workspace",
+      "expected": [
+        "slack.slack_list_channels"
+      ]
+    },
+    {
+      "tag": "slack",
+      "intent": "这条 Slack 消息的 thread 里大家回复了什么",
+      "expected": [
+        "slack.slack_get_thread_replies"
+      ]
+    },
+    {
+      "tag": "sentry",
+      "intent": "Sentry 里最近 24 小时报错最多的 issue 是哪些",
+      "any_of": [
+        "sentry.search_issues",
+        "sentry.search_errors"
+      ]
+    },
+    {
+      "tag": "sentry",
+      "intent": "show the stack trace of this Sentry event",
+      "expected": [
+        "sentry.get_event_stacktrace"
+      ],
+      "acceptable": [
+        "sentry.get_issue_details"
+      ]
+    },
+    {
+      "tag": "sentry",
+      "intent": "Sentry 上这个 issue 出错前的面包屑记录",
+      "expected": [
+        "sentry.get_issue_breadcrumbs"
+      ]
+    },
+    {
+      "tag": "sentry",
+      "intent": "which cron monitors in Sentry missed their check-in",
+      "expected": [
+        "sentry.find_monitors"
+      ],
+      "acceptable": [
+        "sentry.get_monitor_details"
+      ]
+    },
+    {
+      "tag": "sentry",
+      "intent": "查一下 Sentry 里这个 trace 的详细信息",
+      "expected": [
+        "sentry.get_trace_details"
+      ],
+      "acceptable": [
+        "sentry.get_span_details"
+      ]
+    },
+    {
+      "tag": "heroku",
+      "intent": "list my Heroku apps",
+      "expected": [
+        "heroku.list_apps"
+      ]
+    },
+    {
+      "tag": "heroku",
+      "intent": "看看 Heroku 上 my-api 这个应用的日志",
+      "expected": [
+        "heroku.get_app_logs"
+      ]
+    },
+    {
+      "tag": "heroku",
+      "intent": "Heroku Postgres 数据库现在的状态和资源占用",
+      "expected": [
+        "heroku.pg_info"
+      ]
+    },
+    {
+      "tag": "heroku",
+      "intent": "which dynos are running for my-api on Heroku",
+      "expected": [
+        "heroku.ps_list"
+      ],
+      "acceptable": [
+        "heroku.get_app_info"
+      ]
+    },
+    {
+      "tag": "netlify",
+      "intent": "Netlify 上这个站点最近一次部署的状态",
+      "expected": [
+        "netlify.netlify-deploy-services-reader"
+      ]
+    },
+    {
+      "tag": "netlify",
+      "intent": "list my Netlify projects",
+      "expected": [
+        "netlify.netlify-project-services-reader"
+      ]
+    },
+    {
+      "tag": "firecrawl",
+      "intent": "把这个网站的所有 URL 列出来，不用抓页面内容",
+      "expected": [
+        "firecrawl.firecrawl_map"
+      ]
+    },
+    {
+      "tag": "firecrawl",
+      "intent": "search the web for the latest news about MCP gateways",
+      "expected": [
+        "firecrawl.firecrawl_search"
+      ],
+      "acceptable": [
+        "firecrawl.firecrawl_agent"
+      ]
+    },
+    {
+      "tag": "firecrawl",
+      "intent": "查一下 Firecrawl 账户还剩多少 credit",
+      "expected": [
+        "firecrawl.firecrawl_credit_usage"
+      ]
+    },
+    {
+      "tag": "firecrawl",
+      "intent": "find recent papers about retrieval-augmented generation",
+      "expected": [
+        "firecrawl.firecrawl_research_search_papers"
+      ]
+    },
+    {
+      "tag": "cross",
+      "intent": "Next.js 15 的 app router 怎么配置中间件，查最新文档",
+      "any_of": [
+        "context7.query-docs",
+        "vercel.search_vercel_documentation"
+      ],
+      "acceptable": [
+        "context7.resolve-library-id"
+      ]
+    },
+    {
+      "tag": "cross",
+      "intent": "回放一下用户在页面上点了什么、经过了哪些页面",
+      "expected": [
+        "sentry.get_replay_details"
+      ],
+      "acceptable": [
+        "sentry.search_replays"
+      ]
+    },
+    {
+      "tag": "cross",
+      "intent": "我的网站今天报了很多错，看看错误详情",
+      "any_of": [
+        "vercel.get_runtime_errors",
+        "sentry.search_errors",
+        "sentry.search_issues"
+      ],
+      "acceptable": [
+        "vercel.get_runtime_logs",
+        "sentry.get_issue_details",
+        "vercel.list_projects"
+      ]
+    },
+    {
+      "tag": "cross",
+      "intent": "list the teams I belong to",
+      "any_of": [
+        "github.get_teams",
+        "vercel.list_teams",
+        "heroku.list_teams",
+        "sentry.find_teams",
+        "netlify.netlify-team-services-reader"
+      ],
+      "needs_context": true,
+      "note": "Fits several services equally; asking which service is as good as any listed tool."
+    },
+    {
+      "tag": "cross",
+      "intent": "who am I logged in as",
+      "any_of": [
+        "github.get_me",
+        "vercel.get_auth_user",
+        "sentry.whoami",
+        "notion.API-get-self",
+        "hubspot.hubspot-get-user-details",
+        "netlify.netlify-user-services-reader"
+      ],
+      "needs_context": true,
+      "note": "Fits several services equally; asking which service is as good as any listed tool."
+    },
+    {
+      "tag": "cross",
+      "intent": "搜索 Supabase 文档里怎么开启 RLS",
+      "expected": [
+        "supabase.search_docs"
+      ]
+    },
+    {
+      "tag": "cross",
+      "intent": "看一下 Sentry 文档里怎么配置 source maps",
+      "expected": [
+        "sentry.search_docs"
+      ],
+      "acceptable": [
+        "sentry.get_doc"
+      ]
+    },
+    {
+      "tag": "linear",
+      "intent": "Linear 里分给我的、还没完成的 issue 有哪些",
+      "expected": [
+        "linear.list_issues"
+      ]
+    },
+    {
+      "tag": "linear",
+      "intent": "show the details of Linear issue ENG-123",
+      "expected": [
+        "linear.get_issue"
+      ]
+    },
+    {
+      "tag": "linear",
+      "intent": "我们团队当前这个 cycle 的进度怎么样",
+      "expected": [
+        "linear.list_cycles"
+      ]
+    },
+    {
+      "tag": "linear",
+      "intent": "list the projects in our Linear workspace and their status",
+      "expected": [
+        "linear.list_projects"
+      ],
+      "acceptable": [
+        "linear.get_status_updates"
+      ]
+    },
+    {
+      "tag": "linear",
+      "intent": "在 Linear 文档里搜一下 onboarding 相关的内容",
+      "expected": [
+        "linear.list_documents"
+      ],
+      "acceptable": [
+        "linear.get_document"
+      ]
+    },
+    {
+      "tag": "linear",
+      "intent": "who is on triage duty for the platform team right now",
+      "expected": [
+        "linear.get_triage_responsibility"
+      ],
+      "acceptable": [
+        "linear.list_teams",
+        "linear.get_team"
+      ]
+    },
+    {
+      "tag": "linear",
+      "intent": "看看我 Linear 收件箱里有哪些未读通知",
+      "expected": [
+        "linear.get_notifications"
+      ]
+    },
+    {
+      "tag": "linear",
+      "intent": "这个 Linear 项目的里程碑和截止日期",
+      "expected": [
+        "linear.list_milestones"
+      ],
+      "acceptable": [
+        "linear.get_milestone",
+        "linear.get_project"
+      ]
+    },
+    {
+      "tag": "cross",
+      "intent": "issue #5 里具体写了什么",
+      "any_of": [
+        "github.issue_read",
+        "linear.get_issue"
+      ],
+      "needs_context": true,
+      "note": "GitHub and Linear both have issues; a clarification is as good as either."
+    },
+    {
+      "tag": "cross",
+      "intent": "这个版本的 release notes 写了什么",
+      "any_of": [
+        "github.get_release_by_tag",
+        "linear.get_release_note",
+        "linear.list_release_notes",
+        "github.get_latest_release"
+      ],
+      "needs_context": true
+    },
+    {
+      "tag": "no_match",
+      "intent": "给 Slack 的 #incidents 频道发一条消息说问题已修复",
+      "no_match": true
+    },
+    {
+      "tag": "no_match",
+      "intent": "在 Notion 里新建一个会议纪要页面",
+      "no_match": true
+    },
+    {
+      "tag": "no_match",
+      "intent": "delete the users collection in MongoDB",
+      "no_match": true
+    },
+    {
+      "tag": "no_match",
+      "intent": "把 Heroku 上的 my-api 重启一下",
+      "no_match": true
+    },
+    {
+      "tag": "no_match",
+      "intent": "帮我把这段文字翻译成法语",
+      "no_match": true
+    },
+    {
+      "tag": "no_match",
+      "intent": "在 Linear 里新建一个 bug issue 并分给我",
+      "no_match": true
+    }
+  ]
+}

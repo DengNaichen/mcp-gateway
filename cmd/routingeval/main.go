@@ -18,9 +18,11 @@ type caseSpec struct {
 	Expected   []string `json:"expected,omitempty"`   // every one must be returned
 	AnyOf      []string `json:"any_of,omitempty"`     // at least one must be returned
 	Acceptable []string `json:"acceptable,omitempty"` // fine to return, not required
-	NoMatch    bool     `json:"no_match,omitempty"`
-	Tag        string   `json:"tag,omitempty"` // groups cases in the summary
-	Note       string   `json:"note,omitempty"`
+	NoMatch    bool     `json:"no_match,omitempty"`   // nothing but acceptable tools may be returned
+	// The intent fits several services equally: a needs_context answer passes too.
+	NeedsContext bool   `json:"needs_context,omitempty"`
+	Tag          string `json:"tag,omitempty"` // groups cases in the summary
+	Note         string `json:"note,omitempty"`
 }
 
 type suite struct {
@@ -34,12 +36,23 @@ type outcome struct {
 	Extra   []string // returned tools that are neither expected nor acceptable
 }
 
-// score judges one case. A no_match case passes only when nothing is returned.
-// Any other case passes when every expected tool and at least one any_of tool is
-// returned; tools in none of expected, any_of or acceptable are Extra.
-func score(c caseSpec, got []string) outcome {
+// score judges one case. A no_match case passes only when nothing but acceptable
+// tools is returned. Any other case passes when every expected tool and at least
+// one any_of tool is returned, or when it allows needs_context and the gateway asked
+// for clarification; tools in none of expected, any_of or acceptable are Extra.
+func score(c caseSpec, status string, got []string) outcome {
 	if c.NoMatch {
-		return outcome{Pass: len(got) == 0, Extra: got}
+		var o outcome
+		for _, id := range got {
+			if !slices.Contains(c.Acceptable, id) {
+				o.Extra = append(o.Extra, id)
+			}
+		}
+		o.Pass = len(o.Extra) == 0
+		return o
+	}
+	if c.NeedsContext && status == "needs_context" && len(got) == 0 {
+		return outcome{Pass: true}
 	}
 	var o outcome
 	for _, id := range c.Expected {
@@ -153,7 +166,7 @@ func run() error {
 		for j, t := range d.Tools {
 			got[j] = t.ID
 		}
-		o := score(c, got)
+		o := score(c, d.Status, got)
 		latency += d.DurationMS
 		tokens += d.PromptTokens
 		verdict := "PASS"
