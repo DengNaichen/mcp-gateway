@@ -45,7 +45,7 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, reg
 	}
 	eligible := []Tool{}
 	for _, t := range r.Tools {
-		if _, ok := servers[t.ServerID]; ok && g.authorizedTool(ctx, t, req.Actor) {
+		if _, ok := servers[t.ServerID]; ok && g.authorizedTool(ctx, t, req.Actor) && (len(req.Services) == 0 || slices.Contains(req.Services, t.ServerID)) {
 			eligible = append(eligible, t)
 		}
 	}
@@ -57,12 +57,24 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, reg
 	if strings.TrimSpace(s.Model) == "" {
 		return result, problem(409, "请先在模型设置中填写模型名称", nil)
 	}
-	decision, usage, err := selectWithModel(ctx, s, key, req, eligible)
+	var serviceUsage modelUsage
+	if g.routing.hierarchical && len(req.Services) == 0 {
+		chosen, usage, err := selectServices(ctx, s, key, req, servers, eligible)
+		if err != nil {
+			return result, err
+		}
+		serviceUsage = usage
+		if len(chosen) > 0 {
+			result.Servers = chosen
+			eligible = toolsOfServices(eligible, chosen)
+		}
+	}
+	decision, usage, err := selectTools(ctx, s, key, req, eligible, g.routing)
 	if err != nil {
 		return result, err
 	}
 	result.Model, result.Status, result.Summary, result.Question = s.Model, decision.Status, decision.Summary, decision.Question
-	result.PromptTokens, result.OutputTokens = usage.PromptTokens, usage.CompletionTokens
+	result.PromptTokens, result.OutputTokens = serviceUsage.PromptTokens+usage.PromptTokens, serviceUsage.CompletionTokens+usage.CompletionTokens
 	if !slices.Contains([]string{"selected", "no_match", "needs_context"}, decision.Status) {
 		return result, problem(502, "模型返回了不支持的 status", nil)
 	}

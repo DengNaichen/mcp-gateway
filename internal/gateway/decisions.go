@@ -93,6 +93,12 @@ func validProbability(p *float64) bool {
 }
 
 func selectWithModel(ctx context.Context, s Settings, key string, req DiscoverRequest, tools []Tool) (modelDecision, modelUsage, error) {
+	return selectTools(ctx, s, key, req, tools, routingOptions{})
+}
+
+// selectTools asks the model one relevance question per tool over the task and
+// the candidate summaries, then applies the fixed selection policy.
+func selectTools(ctx context.Context, s Settings, key string, req DiscoverRequest, tools []Tool, opts routingOptions) (modelDecision, modelUsage, error) {
 	var decision modelDecision
 	var usage modelUsage
 	if len(tools) == 0 || s.MaxTools < 1 {
@@ -102,37 +108,60 @@ func selectWithModel(ctx context.Context, s Settings, key string, req DiscoverRe
 	// thousands of tokens of tools. Measured on gemini-decision-1, that dropped one
 	// tool's relevance from 0.93 to 0.46.
 	input, err := json.Marshal(struct {
-		Intent     string       `json:"intent"`
-		Context    string       `json:"context"`
-		Candidates []Capability `json:"candidates"`
-	}{req.Intent, req.Context, summarizeTools(tools)})
+		Intent     string             `json:"intent"`
+		Context    string             `json:"context"`
+		Candidates []routingCandidate `json:"candidates"`
+	}{req.Intent, req.Context, routingCandidates(tools, opts.params)})
 	if err != nil {
 		return decision, usage, fmt.Errorf("encode routing context: %w", err)
 	}
+	instructions := make([]string, len(tools))
+	for i, t := range tools {
+		instructions[i] = relevanceInstructions(t.ID)
+	}
+	answers, err := askDecisions(ctx, s, key, string(input), instructions)
+	usage = answers.usage
+	if err != nil {
+		return decision, usage, err
+	}
+	if opts.refine {
+		if candidates := survivors(answers, tools, refineCandidates); len(candidates) > 0 {
+			decision, refineUsage, err := refineSelection(ctx, s, key, req, candidates, opts)
+			usage.PromptTokens += refineUsage.PromptTokens
+			usage.CompletionTokens += refineUsage.CompletionTokens
+			return decision, usage, err
+		}
+	}
+	decision, err = chooseTools(answers, tools, s.MaxTools)
+	return decision, usage, err
+}
+
+// askDecisions sends one Decisions request: the route_status question and one
+// yes/no question per entry of instructions, all judged over input. The answers
+// come back in the order of instructions.
+func askDecisions(ctx context.Context, s Settings, key, input string, instructions []string) (routeAnswers, error) {
 	build := openAICall
 	if isGeminiModel(s.Model) {
 		build = geminiCall
 	}
-	call, err := build(s, string(input), tools)
+	call, err := build(s, input, instructions)
 	if err != nil {
-		return decision, usage, err
+		return routeAnswers{}, err
 	}
-	if len(tools) > call.maxTools {
-		return decision, usage, invalid(fmt.Sprintf("当前模型单次最多路由 %d 个工具，现有 %d 个可用；请停用部分服务或工具", call.maxTools, len(tools)))
+	if len(instructions) > call.maxTools {
+		return routeAnswers{}, invalid(fmt.Sprintf("当前模型单次最多路由 %d 个工具，现有 %d 个可用；请停用部分服务或工具", call.maxTools, len(instructions)))
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.TimeoutSeconds)*time.Second)
 	defer cancel()
 	b, err := postDecisions(ctx, call, key)
 	if err != nil {
-		return decision, usage, err
+		return routeAnswers{}, err
 	}
-	answers, err := call.parse(b, len(tools))
-	usage = answers.usage
+	answers, err := call.parse(b, len(instructions))
 	if err != nil {
-		return decision, usage, err
+		return routeAnswers{usage: answers.usage}, err
 	}
-	decision, err = chooseTools(answers, tools, s.MaxTools)
-	return decision, usage, err
+	return answers, nil
 }
 
 func postDecisions(ctx context.Context, call decisionsCall, key string) ([]byte, error) {
@@ -166,7 +195,7 @@ func postDecisions(ctx context.Context, call decisionsCall, key string) ([]byte,
 	return b, nil
 }
 
-func openAICall(s Settings, input string, tools []Tool) (decisionsCall, error) {
+func openAICall(s Settings, input string, instructions []string) (decisionsCall, error) {
 	endpoint := strings.TrimRight(s.BaseURL, "/")
 	if strings.HasSuffix(endpoint, "/chat/completions") || strings.HasSuffix(endpoint, "/responses") {
 		return decisionsCall{}, invalid("当前使用 Decisions API，请将 Base URL 改为 https://api.openai.com/v1 或完整 /decisions 地址")
@@ -175,8 +204,8 @@ func openAICall(s Settings, input string, tools []Tool) (decisionsCall, error) {
 		endpoint += "/decisions"
 	}
 	questions := []decisionQuestion{{Type: "choice", Name: "route_status", Instructions: routeStatusInstructions, Choices: routeStatusChoices}}
-	for i, t := range tools {
-		questions = append(questions, decisionQuestion{Type: "predicate", Name: toolQuestionName(i), Instructions: relevanceInstructions(t.ID)})
+	for i, instruction := range instructions {
+		questions = append(questions, decisionQuestion{Type: "predicate", Name: toolQuestionName(i), Instructions: instruction})
 	}
 	body, err := json.Marshal(map[string]any{"model": s.Model, "input": input, "questions": questions})
 	if err != nil {

@@ -371,6 +371,8 @@ func TestArtifactIntegrityAndRestart(t *testing.T) {
 	}
 }
 func TestMaintenanceUpdatesModelCandidates(t *testing.T) {
+	// The fake model below answers only the yes/no stage.
+	t.Setenv("GATEWAY_ROUTING", "flat")
 	g, reference := testGateway(t)
 	g.StartMaintenance(context.Background())
 	approveRun(t, g.maintenance, enqueueTest(t, g.maintenance, false).ID)

@@ -30,6 +30,7 @@ type Gateway struct {
 	sessions    map[string]stdioSession
 	access      *accessPolicy
 	execution   executionPolicy
+	routing     routingOptions
 	maintenance *Maintainer
 }
 
@@ -105,6 +106,9 @@ func New(dir, baseURL string) (*Gateway, error) {
 	g.apiKey = os.Getenv("GATEWAY_MODEL_API_KEY")
 	if err := validateSettings(g.settings); err != nil {
 		return nil, fmt.Errorf("invalid model settings: %w", err)
+	}
+	if g.routing, err = loadRoutingOptions(); err != nil {
+		return nil, err
 	}
 	g.maintenance, err = newMaintainer(g)
 	if err != nil {

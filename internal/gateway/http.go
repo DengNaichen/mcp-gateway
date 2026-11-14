@@ -64,6 +64,7 @@ func (g *Gateway) mcpServer() *mcp.Server {
 	s.AddTool(&mcp.Tool{Name: "discover_tools", Description: "Describe your current task to discover a small set of authorized tools. Returns real tool IDs, schemas and usage reasons. Use invoke_tool to execute them. Rediscover as the task changes.", InputSchema: objectSchema(map[string]any{
 		"summary_only": map[string]any{"type": "boolean", "description": "Return capability summaries; use get_tool_schema for the selected tool"},
 		"intent":       map[string]any{"type": "string", "description": "The capability needed now, in natural language"}, "context": map[string]any{"type": "string", "description": "Relevant known facts and previous attempts"}, "actor": map[string]any{"type": "string", "enum": []string{"developer", "observer"}, "description": "Simulated identity only"},
+		"services": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Service IDs to search within when the task names a service (for example [\"github\"]); omit to search every service"},
 	}, "intent")}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		started := time.Now()
 		var in DiscoverRequest
