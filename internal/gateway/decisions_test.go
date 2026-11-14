@@ -53,7 +53,7 @@ func TestDecisionsRouting(t *testing.T) {
 					w.WriteHeader(400)
 					return
 				}
-				if payload.Model != "gpt-6-luna" || !strings.Contains(payload.Input, "inspect") || len(payload.Questions) != 4 || payload.Questions[0].Type != "choice" || payload.Questions[1].Name != "tool_0" || payload.Messages != nil || payload.ResponseFormat != nil {
+				if payload.Model != "gpt-6-luna" || !strings.Contains(payload.Input, "inspect") || len(payload.Questions) != 4 || payload.Questions[0].Type != "choice" || payload.Questions[1].Name != "tool_0" || !strings.Contains(payload.Questions[1].Instructions, `"s.a"`) || strings.Contains(payload.Questions[1].Instructions, "candidates[") || payload.Messages != nil || payload.ResponseFormat != nil {
 					t.Errorf("unexpected Decisions payload: %+v", payload)
 				}
 				respond(w, 200, decisionFixture(tc.status, tc.probabilities...))

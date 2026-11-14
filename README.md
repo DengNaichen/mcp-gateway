@@ -322,6 +322,8 @@ go run ./cmd/routingeval                      # 默认读 evals/routing/github.j
 go run ./cmd/routingeval -url http://127.0.0.1:8788 -cases evals/routing/github.json
 ```
 
+`evals/routing/vercel.json` 是只针对 Vercel 的另一组题，运行前先在网关里停用其他服务，让候选只有 Vercel 的工具。题目可带 `tag` 分组统计，`any_of` 表示返回其中任意一个即算对。每次调用约数万 input token，而模型服务按每分钟 token 限速（Gemini Tier 1 为 100 万/分钟），连续跑多组时评测脚本会在遇到错误后等待重试。
+
 输出逐题结果，以及召回、无噪声占比、负例正确率、精度和平均耗时/输入 token。它不是通过/失败的门槛，而是调阈值、改提示词或换模型前后用来对比的基线；题目由人标注，`acceptable` 的划分带主观性。
 
 ## 开发

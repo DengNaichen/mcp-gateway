@@ -1,0 +1,32 @@
+{
+  "description": "Routing eval for the Vercel MCP server alone (151 read-only tools enabled, run with every other server disabled). Cases are tagged by phrasing: `direct` reuses the tool descriptions' vocabulary, `indirect` is how a user would say it, `confusable` has near-duplicate tools. `expected` tools must all be returned, `any_of` needs at least one, `acceptable` tools are fine extras. Any other returned tool is noise.",
+  "cases": [
+    {"tag": "direct", "intent": "列出我所有的 Vercel 项目", "expected": ["vercel.list_projects"]},
+    {"tag": "direct", "intent": "list the teams I belong to on Vercel", "expected": ["vercel.list_teams"]},
+    {"tag": "direct", "intent": "看看项目 my-app 最近的部署记录", "expected": ["vercel.list_deployments"]},
+    {"tag": "direct", "intent": "查一下 my-app 的环境变量有哪些", "expected": ["vercel.filter_project_envs"]},
+    {"tag": "direct", "intent": "which domains are attached to project my-app", "expected": ["vercel.list_project_domains"]},
+    {"tag": "direct", "intent": "who am I logged in as on Vercel", "expected": ["vercel.get_auth_user"]},
+
+    {"tag": "indirect", "intent": "我的网站今天为什么报 500 错误", "any_of": ["vercel.get_runtime_errors", "vercel.get_runtime_logs"]},
+    {"tag": "indirect", "intent": "上一次部署为什么构建失败了", "expected": ["vercel.list_deployment_events"], "acceptable": ["vercel.get_deployment", "vercel.list_deployments"]},
+    {"tag": "indirect", "intent": "站点最近一周的访问量是多少", "any_of": ["vercel.count_pageviews", "vercel.aggregate_pageviews"]},
+    {"tag": "indirect", "intent": "example.com 这个域名还能不能注册，多少钱", "any_of": ["vercel.get_domain_availability", "vercel.get_domain_price", "vercel.search_domains"]},
+    {"tag": "indirect", "intent": "我们这个月在 Vercel 上花了多少钱", "expected": ["vercel.list_billing_charges"], "acceptable": ["vercel.get_ai_gateway_usage"]},
+    {"tag": "indirect", "intent": "Edge Config 里 maintenance_mode 这个 key 的值是什么", "expected": ["vercel.get_edge_config_item"], "acceptable": ["vercel.get_edge_config_items", "vercel.get_edge_configs"]},
+    {"tag": "indirect", "intent": "我的项目现在有没有正在受到攻击", "expected": ["vercel.get_active_attack_status"], "acceptable": ["vercel.get_firewall_config"]},
+    {"tag": "indirect", "intent": "show me what my serverless functions printed to the console", "expected": ["vercel.get_runtime_logs"]},
+    {"tag": "indirect", "intent": "Vercel 文档里怎么配置自定义域名", "expected": ["vercel.search_vercel_documentation"]},
+    {"tag": "indirect", "intent": "哪些 AI 模型在 Vercel AI Gateway 上最受欢迎", "expected": ["vercel.get_ai_gateway_leaderboard"], "acceptable": ["vercel.list_ai_gateway_models"]},
+    {"tag": "indirect", "intent": "我们团队里都有哪些成员", "expected": ["vercel.list_team_members"]},
+
+    {"tag": "confusable", "intent": "list the feature flags of my project", "any_of": ["vercel.list_flags", "vercel.list_flags_v2"]},
+    {"tag": "confusable", "intent": "查一下 example.com 的 DNS 记录", "expected": ["vercel.get_records"], "acceptable": ["vercel.get_domain_config"]},
+    {"tag": "confusable", "intent": "我名下有哪些 SSL 证书", "expected": ["vercel.list_certs"]},
+    {"tag": "confusable", "intent": "看一下最近一次 CI 运行的日志", "any_of": ["vercel.get_vercel_ci_invocation_logs", "vercel.list_vercel_ci_invocations", "vercel.get_vercel_ci_task_logs"]},
+
+    {"tag": "no_match", "intent": "帮我订一张明天去上海的机票", "no_match": true, "note": "unrelated domain"},
+    {"tag": "no_match", "intent": "把 my-app 的最新部署回滚到上一个版本", "no_match": true, "note": "write action; write tools are disabled"},
+    {"tag": "no_match", "intent": "给 my-app 新增一个环境变量 API_KEY", "no_match": true, "note": "write action; write tools are disabled"}
+  ]
+}

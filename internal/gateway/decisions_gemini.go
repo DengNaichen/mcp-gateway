@@ -16,7 +16,7 @@ type geminiAnswer struct {
 	Noul   *float64 `json:"noul"`
 }
 
-func geminiCall(s Settings, input string, n int) (decisionsCall, error) {
+func geminiCall(s Settings, input string, tools []Tool) (decisionsCall, error) {
 	endpoint := strings.TrimRight(s.BaseURL, "/")
 	if !strings.HasSuffix(endpoint, "/decisions") {
 		endpoint += "/decisions"
@@ -28,8 +28,8 @@ func geminiCall(s Settings, input string, n int) (decisionsCall, error) {
 	questions := map[string]any{
 		"route_status": map[string]any{"type": "choice", "instructions": routeStatusInstructions, "criteria": criteria},
 	}
-	for i := 0; i < n; i++ {
-		questions[toolQuestionName(i)] = map[string]any{"type": "noul", "instructions": relevanceInstructions(i)}
+	for i, t := range tools {
+		questions[toolQuestionName(i)] = map[string]any{"type": "noul", "instructions": relevanceInstructions(t.ID)}
 	}
 	body, err := json.Marshal(map[string]any{
 		"model":     s.Model,

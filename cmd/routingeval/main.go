@@ -15,9 +15,11 @@ import (
 
 type caseSpec struct {
 	Intent     string   `json:"intent"`
-	Expected   []string `json:"expected,omitempty"`
-	Acceptable []string `json:"acceptable,omitempty"`
+	Expected   []string `json:"expected,omitempty"`   // every one must be returned
+	AnyOf      []string `json:"any_of,omitempty"`     // at least one must be returned
+	Acceptable []string `json:"acceptable,omitempty"` // fine to return, not required
 	NoMatch    bool     `json:"no_match,omitempty"`
+	Tag        string   `json:"tag,omitempty"` // groups cases in the summary
 	Note       string   `json:"note,omitempty"`
 }
 
@@ -33,7 +35,8 @@ type outcome struct {
 }
 
 // score judges one case. A no_match case passes only when nothing is returned.
-// Any other case passes when every expected tool is returned; unlisted tools are Extra.
+// Any other case passes when every expected tool and at least one any_of tool is
+// returned; tools in none of expected, any_of or acceptable are Extra.
 func score(c caseSpec, got []string) outcome {
 	if c.NoMatch {
 		return outcome{Pass: len(got) == 0, Extra: got}
@@ -44,8 +47,11 @@ func score(c caseSpec, got []string) outcome {
 			o.Missing = append(o.Missing, id)
 		}
 	}
+	if len(c.AnyOf) > 0 && !slices.ContainsFunc(c.AnyOf, func(id string) bool { return slices.Contains(got, id) }) {
+		o.Missing = append(o.Missing, c.AnyOf...)
+	}
 	for _, id := range got {
-		if !slices.Contains(c.Expected, id) && !slices.Contains(c.Acceptable, id) {
+		if !slices.Contains(c.Expected, id) && !slices.Contains(c.AnyOf, id) && !slices.Contains(c.Acceptable, id) {
 			o.Extra = append(o.Extra, id)
 		}
 	}
@@ -94,6 +100,24 @@ func discover(client *http.Client, url, token, intent string) (discovery, error)
 	return d, nil
 }
 
+// discoverWithRetry waits and retries on failure: model providers rate-limit by
+// input tokens per minute, and the gateway reports their 429 as a 502.
+func discoverWithRetry(client *http.Client, url, token, intent string) (discovery, error) {
+	const attempts, wait = 4, 20 * time.Second
+	var d discovery
+	var err error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if d, err = discover(client, url, token, intent); err == nil {
+			return d, nil
+		}
+		if attempt < attempts {
+			fmt.Fprintf(os.Stderr, "  retrying in %s after: %v\n", wait, err)
+			time.Sleep(wait)
+		}
+	}
+	return d, err
+}
+
 func short(ids []string) string {
 	names := make([]string, len(ids))
 	for i, id := range ids {
@@ -118,8 +142,10 @@ func run() error {
 	token := os.Getenv("GATEWAY_TOKEN")
 	var positives, positivePass, negatives, negativePass, clean, returned, relevant, tokens int
 	var latency int64
+	type tally struct{ pass, total int }
+	byTag := map[string]*tally{}
 	for i, c := range s.Cases {
-		d, err := discover(client, *url, token, c.Intent)
+		d, err := discoverWithRetry(client, *url, token, c.Intent)
 		if err != nil {
 			return fmt.Errorf("case %d %q: %w", i+1, c.Intent, err)
 		}
@@ -133,6 +159,17 @@ func run() error {
 		verdict := "PASS"
 		if !o.Pass {
 			verdict = "MISS"
+		}
+		if c.Tag != "" {
+			t := byTag[c.Tag]
+			if t == nil {
+				t = &tally{}
+				byTag[c.Tag] = t
+			}
+			t.total++
+			if o.Pass {
+				t.pass++
+			}
 		}
 		switch {
 		case c.NoMatch:
@@ -168,6 +205,14 @@ func run() error {
 		fmt.Printf("precision  %d/%d returned tools were expected or acceptable (%.0f%%)\n", relevant, returned, 100*float64(relevant)/float64(returned))
 	}
 	fmt.Printf("cost       avg %dms, avg %d input tokens per call\n", latency/int64(n), tokens/n)
+	tags := make([]string, 0, len(byTag))
+	for tag := range byTag {
+		tags = append(tags, tag)
+	}
+	slices.Sort(tags)
+	for _, tag := range tags {
+		fmt.Printf("tag %-12s %d/%d pass\n", tag, byTag[tag].pass, byTag[tag].total)
+	}
 	return nil
 }
 

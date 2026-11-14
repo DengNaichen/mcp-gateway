@@ -30,8 +30,12 @@ var routeStatusChoices = []decisionChoice{
 	{Value: "needs_context", Description: "Clarification of the task is necessary to choose capabilities; missing tool arguments alone do not qualify."},
 }
 
-func relevanceInstructions(i int) string {
-	return routeRules + fmt.Sprintf("Is candidates[%d] directly useful for the current task, including necessary identifier lookups? Prefer the smallest useful set of capabilities.", i)
+// relevanceInstructions names the tool by ID rather than by its position in the
+// candidates array. Measured on gemini-decision-1 with 151 tools, "candidates[17]"
+// is not resolved reliably: irrelevant tools scored 0.97-0.99 and the right one
+// ranked 26th to 54th. Naming the tool gave the right one 0.98 and the rest below 0.25.
+func relevanceInstructions(toolID string) string {
+	return routeRules + fmt.Sprintf("Is the candidate tool %q directly useful for the current task, including necessary identifier lookups? Prefer the smallest useful set of capabilities.", toolID)
 }
 
 func toolQuestionName(i int) string { return fmt.Sprintf("tool_%d", i) }
@@ -103,7 +107,7 @@ func selectWithModel(ctx context.Context, s Settings, key string, req DiscoverRe
 	if isGeminiModel(s.Model) {
 		build = geminiCall
 	}
-	call, err := build(s, string(input), len(tools))
+	call, err := build(s, string(input), tools)
 	if err != nil {
 		return decision, usage, err
 	}
@@ -153,7 +157,7 @@ func postDecisions(ctx context.Context, call decisionsCall, key string) ([]byte,
 	return b, nil
 }
 
-func openAICall(s Settings, input string, n int) (decisionsCall, error) {
+func openAICall(s Settings, input string, tools []Tool) (decisionsCall, error) {
 	endpoint := strings.TrimRight(s.BaseURL, "/")
 	if strings.HasSuffix(endpoint, "/chat/completions") || strings.HasSuffix(endpoint, "/responses") {
 		return decisionsCall{}, invalid("当前使用 Decisions API，请将 Base URL 改为 https://api.openai.com/v1 或完整 /decisions 地址")
@@ -162,8 +166,8 @@ func openAICall(s Settings, input string, n int) (decisionsCall, error) {
 		endpoint += "/decisions"
 	}
 	questions := []decisionQuestion{{Type: "choice", Name: "route_status", Instructions: routeStatusInstructions, Choices: routeStatusChoices}}
-	for i := 0; i < n; i++ {
-		questions = append(questions, decisionQuestion{Type: "predicate", Name: toolQuestionName(i), Instructions: relevanceInstructions(i)})
+	for i, t := range tools {
+		questions = append(questions, decisionQuestion{Type: "predicate", Name: toolQuestionName(i), Instructions: relevanceInstructions(t.ID)})
 	}
 	body, err := json.Marshal(map[string]any{"model": s.Model, "input": input, "questions": questions})
 	if err != nil {

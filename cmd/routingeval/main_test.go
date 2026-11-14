@@ -19,6 +19,9 @@ func TestScore(t *testing.T) {
 		{"noise is reported but passes", c, []string{"s.a", "s.b", "s.z"}, true, nil, []string{"s.z"}},
 		{"missing expected fails", c, []string{"s.a", "s.c"}, false, []string{"s.b"}, nil},
 		{"empty fails a positive case", c, nil, false, []string{"s.a", "s.b"}, nil},
+		{"any_of passes with one", caseSpec{AnyOf: []string{"s.x", "s.y"}}, []string{"s.y"}, true, nil, nil},
+		{"any_of fails with none", caseSpec{AnyOf: []string{"s.x", "s.y"}}, []string{"s.z"}, false, []string{"s.x", "s.y"}, []string{"s.z"}},
+		{"any_of alternative is not noise", caseSpec{AnyOf: []string{"s.x", "s.y"}}, []string{"s.x", "s.y"}, true, nil, nil},
 		{"no_match passes on empty", caseSpec{NoMatch: true}, nil, true, nil, nil},
 		{"no_match fails on any tool", caseSpec{NoMatch: true}, []string{"s.a"}, false, nil, []string{"s.a"}},
 	} {

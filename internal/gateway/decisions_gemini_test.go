@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -50,7 +51,7 @@ func TestGeminiDecisionsRouting(t *testing.T) {
 				status := payload.Questions["route_status"]
 				criteria, _ := status["criteria"].(map[string]any)
 				if payload.Model != "gemini-decision-1" || len(payload.Input) != 1 || payload.Input[0]["type"] != "text" || !strings.Contains(payload.Input[0]["text"], "inspect") ||
-					len(payload.Questions) != 4 || status["type"] != "choice" || len(criteria) != 3 || payload.Questions["tool_0"]["type"] != "noul" || payload.Questions["tool_2"]["instructions"] == nil {
+					len(payload.Questions) != 4 || status["type"] != "choice" || len(criteria) != 3 || payload.Questions["tool_0"]["type"] != "noul" || payload.Questions["tool_2"]["instructions"] == nil || !strings.Contains(fmt.Sprint(payload.Questions["tool_2"]["instructions"]), `"s.c"`) || strings.Contains(fmt.Sprint(payload.Questions["tool_0"]["instructions"]), "candidates[") {
 					t.Errorf("unexpected Gemini payload: %+v", payload)
 				}
 				respond(w, 200, geminiFixture(tc.status, tc.probabilities...))
