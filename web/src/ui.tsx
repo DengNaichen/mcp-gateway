@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Check, Copy, X } from "lucide-react";
+import { X } from "lucide-react";
 
 export type BadgeTone =
   | "neutral"
@@ -121,7 +121,6 @@ export function CopyButton({
 
   return (
     <button type="button" className={className} onClick={handleCopy}>
-      {copied ? <Check size={13} /> : <Copy size={13} />}
       <span>{copied ? "已复制" : label}</span>
     </button>
   );

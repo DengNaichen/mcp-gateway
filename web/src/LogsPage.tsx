@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, RefreshCw, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { formatTime, pretty, type Event } from "./types";
 import { EventStatusBadge } from "./OverviewPage";
 import { AlertBox, Badge, CopyButton } from "./ui";
@@ -70,7 +70,6 @@ export function LogsPage({
             每 4s 自动刷新
           </span>
           <button type="button" className="btn" onClick={onRefresh}>
-            <RefreshCw size={14} />
             刷新
           </button>
         </div>
@@ -134,14 +133,18 @@ export function LogsPage({
             </div>
           </div>
 
-          <Badge>{filtered.length} 条记录</Badge>
+          <span
+            className="tnum"
+            style={{ fontSize: 12.5, color: "var(--ink-muted)" }}
+          >
+            {filtered.length} 条记录
+          </span>
         </div>
       </div>
 
       {/* Split Master-Detail Logs Workbench */}
       {filtered.length === 0 ? (
         <div className="card empty-box">
-          <Activity size={26} />
           <h3>没有匹配的请求记录</h3>
           <p>尝试放宽过滤条件，或通过本地 Agent / 路由调试发起一次请求。</p>
         </div>
@@ -269,9 +272,7 @@ export function LogsPage({
 
                 {activeEvent.detail?.summary && (
                   <AlertBox
-                    tone={
-                      activeEvent.status === "selected" ? "success" : "warning"
-                    }
+                    tone="info"
                     title={String(activeEvent.detail.summary)}
                   />
                 )}

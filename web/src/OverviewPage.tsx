@@ -1,16 +1,5 @@
 import { useState } from "react";
-import {
-  Activity,
-  ArrowRight,
-  Check,
-  Loader2,
-  Layers,
-  Network,
-  Play,
-  Plus,
-  Sparkles,
-  Terminal,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
   api,
   formatTime,
@@ -19,7 +8,7 @@ import {
   type Discovery,
   type Event,
 } from "./types";
-import { AlertBox, Badge, CopyButton } from "./ui";
+import { AlertBox, CopyButton } from "./ui";
 
 type Props = {
   state: Bootstrap;
@@ -118,18 +107,7 @@ export function OverviewPage({
     <div>
       <div className="page-header">
         <div className="page-header-main">
-          <h1>
-            概览
-            {step1Done && step2Done ? (
-              <Badge tone="success" dot>
-                网关就绪
-              </Badge>
-            ) : (
-              <Badge tone="warning" dot>
-                待完成配置
-              </Badge>
-            )}
-          </h1>
+          <h1>概览</h1>
           <p>
             管理上游工具来源与 Decisions 路由模型，向本地 Agent 按需暴露最小工具集。
           </p>
@@ -140,7 +118,6 @@ export function OverviewPage({
             className="btn"
             onClick={onOpenPlayground}
           >
-            <Play size={14} />
             路由调试
           </button>
           <button
@@ -148,7 +125,6 @@ export function OverviewPage({
             className="btn btn-primary"
             onClick={() => onOpenServices({ add: true })}
           >
-            <Plus size={15} />
             添加服务
           </button>
         </div>
@@ -162,9 +138,12 @@ export function OverviewPage({
               <h2>接入检查清单</h2>
               <p>完成以下配置后，本地 Agent 即可通过单一端点按需发现并执行工具。</p>
             </div>
-            <Badge tone={doneCount === 3 ? "success" : "accent"}>
-              {doneCount} / 3 已完成
-            </Badge>
+            <span
+              className="tnum"
+              style={{ fontSize: 12.5, color: "var(--ink-muted)" }}
+            >
+              已完成 {doneCount} / 3
+            </span>
           </div>
 
           <div className="setup-step-list">
@@ -175,20 +154,27 @@ export function OverviewPage({
                   step1Done ? "done" : "current"
                 }`}
               >
-                {step1Done ? <Check size={13} /> : "1"}
+                1
               </span>
               <div className="setup-step-body">
                 <div className="setup-step-head">
-                  <strong>接入上游服务并启用工具</strong>
-                  {step1Done ? (
-                    <Badge tone="success">
-                      已启用 {setup.enabled_tools} 个工具
-                    </Badge>
-                  ) : realServers.length > 0 ? (
-                    <Badge tone="warning">待启用工具</Badge>
-                  ) : (
-                    <Badge>未接入</Badge>
-                  )}
+                  <strong
+                    style={
+                      step1Done ? { color: "var(--ink-body)", fontWeight: 550 } : undefined
+                    }
+                  >
+                    接入上游服务并启用工具
+                  </strong>
+                  <span
+                    className="tnum"
+                    style={{ fontSize: 12, color: "var(--ink-muted)" }}
+                  >
+                    {step1Done
+                      ? `已启用 ${setup.enabled_tools} 个工具`
+                      : realServers.length > 0
+                        ? "待启用工具"
+                        : "未接入"}
+                  </span>
                 </div>
                 <p>
                   {step1Done
@@ -201,22 +187,20 @@ export function OverviewPage({
                   {realServers.length === 0 ? (
                     <button
                       type="button"
-                      className="btn btn-primary btn-sm"
+                      className="btn btn-sm"
                       onClick={() => onOpenServices({ add: true })}
                     >
-                      <Plus size={13} />
                       添加第一个服务
                     </button>
                   ) : (
                     <button
                       type="button"
-                      className={`btn btn-sm ${!step1Done ? "btn-primary" : ""}`}
+                      className="btn btn-sm"
                       onClick={() =>
                         onOpenServices({ serverId: realServers[0].id })
                       }
                     >
                       管理服务与工具
-                      <ArrowRight size={13} />
                     </button>
                   )}
                 </div>
@@ -234,20 +218,26 @@ export function OverviewPage({
                       : ""
                 }`}
               >
-                {step2Done ? <Check size={13} /> : "2"}
+                2
               </span>
               <div className="setup-step-body">
                 <div className="setup-step-head">
-                  <strong>配置并验证 Decisions 路由模型</strong>
-                  {step2Done ? (
-                    <Badge tone="success">{settings.model}</Badge>
-                  ) : setup.model_configured ? (
-                    <Badge tone="warning">
-                      {setup.model_check?.stale ? "需重新校验" : "待测试路由"}
-                    </Badge>
-                  ) : (
-                    <Badge>未配置</Badge>
-                  )}
+                  <strong
+                    style={
+                      step2Done ? { color: "var(--ink-body)", fontWeight: 550 } : undefined
+                    }
+                  >
+                    配置并验证 Decisions 路由模型
+                  </strong>
+                  <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>
+                    {step2Done
+                      ? "已验证"
+                      : setup.model_configured
+                        ? setup.model_check?.stale
+                          ? "需重新校验"
+                          : "待校验"
+                        : "未配置"}
+                  </span>
                 </div>
                 <p>
                   {step2Done
@@ -268,7 +258,7 @@ export function OverviewPage({
                 {testResult && (
                   <div style={{ marginTop: 8 }}>
                     <AlertBox
-                      tone="success"
+                      tone="info"
                       title={`校验通过（${testResult.duration_ms} ms）：${testResult.summary}`}
                     />
                   </div>
@@ -280,30 +270,27 @@ export function OverviewPage({
                     !step2Done && (
                       <button
                         type="button"
-                        className="btn btn-primary btn-sm"
+                        className="btn btn-sm"
+                        style={{ color: "var(--ink-strong)", fontWeight: 600 }}
                         disabled={testingModel}
                         onClick={quickTestModel}
                       >
-                        {testingModel ? (
-                          <Loader2 size={13} className="spin" />
-                        ) : (
-                          <Sparkles size={13} />
-                        )}
+                        {testingModel && <Loader2 size={13} className="spin" />}
                         {testingModel ? "校验中…" : "立即校验路由"}
                       </button>
                     )}
                   <button
                     type="button"
-                    className={`btn btn-sm ${
+                    className="btn btn-sm"
+                    style={
                       !step2Done &&
                       !(setup.model_configured && state.key_configured && step1Done)
-                        ? "btn-primary"
-                        : ""
-                    }`}
+                        ? { color: "var(--ink-strong)", fontWeight: 600 }
+                        : undefined
+                    }
                     onClick={onOpenSettings}
                   >
                     {setup.model_configured ? "调整路由设置" : "配置路由模型"}
-                    <ArrowRight size={13} />
                   </button>
                 </div>
               </div>
@@ -320,16 +307,20 @@ export function OverviewPage({
                       : ""
                 }`}
               >
-                {step3Done ? <Check size={13} /> : "3"}
+                3
               </span>
               <div className="setup-step-body">
                 <div className="setup-step-head">
-                  <strong>在本地 Agent 中连接并调用</strong>
-                  {setup.agent_last_request ? (
-                    <Badge tone="success">已连接</Badge>
-                  ) : (
-                    <Badge>等待请求</Badge>
-                  )}
+                  <strong
+                    style={
+                      step3Done ? { color: "var(--ink-body)", fontWeight: 550 } : undefined
+                    }
+                  >
+                    在本地 Agent 中连接并调用
+                  </strong>
+                  <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>
+                    {setup.agent_last_request ? "已连接" : "等待请求"}
+                  </span>
                 </div>
                 <p>
                   {setup.agent_last_request
@@ -342,7 +333,6 @@ export function OverviewPage({
                     className="btn btn-sm"
                     onClick={onOpenPlayground}
                   >
-                    <Terminal size={13} />
                     在调试台手动试跑
                   </button>
                   {setup.agent_last_request && (
@@ -435,7 +425,6 @@ export function OverviewPage({
         <div className="card metric-card">
           <div className="metric-card-top">
             <span>上游服务</span>
-            <Network size={15} />
           </div>
           <div className="metric-number">
             {activeRealServers.length}
@@ -448,7 +437,7 @@ export function OverviewPage({
               className="btn-link"
               onClick={() => onOpenServices()}
             >
-              管理服务 →
+              管理服务
             </button>
           </div>
         </div>
@@ -456,7 +445,6 @@ export function OverviewPage({
         <div className="card metric-card">
           <div className="metric-card-top">
             <span>向 Agent 开放的工具</span>
-            <Layers size={15} />
           </div>
           <div className="metric-number">
             {setup.enabled_tools}
@@ -471,7 +459,7 @@ export function OverviewPage({
               className="btn-link"
               onClick={() => onOpenServices()}
             >
-              检索工具 →
+              检索工具
             </button>
           </div>
         </div>
@@ -479,7 +467,6 @@ export function OverviewPage({
         <div className="card metric-card">
           <div className="metric-card-top">
             <span>Decisions 路由策略</span>
-            <Sparkles size={15} />
           </div>
           <div
             className="metric-number mono"
@@ -500,7 +487,7 @@ export function OverviewPage({
               返回上限 {settings.max_tools} · 超时 {settings.timeout_seconds}s
             </span>
             <button type="button" className="btn-link" onClick={onOpenSettings}>
-              路由设置 →
+              路由设置
             </button>
           </div>
         </div>
@@ -520,14 +507,12 @@ export function OverviewPage({
               onClick={() => onOpenLogs()}
             >
               查看全部 ({state.events.length})
-              <ArrowRight size={13} />
             </button>
           )}
         </div>
 
         {recentEvents.length === 0 ? (
           <div className="empty-box">
-            <Activity size={24} />
             <h3>暂无请求记录</h3>
             <p>连接本地 Agent 发起任务，或在「路由调试」手动运行一次工具发现。</p>
             <button
@@ -559,7 +544,7 @@ export function OverviewPage({
                     className="row-clickable"
                     onClick={() => onOpenLogs(ev.id)}
                   >
-                    <td style={{ width: 110 }}>
+                    <td style={{ width: 120 }}>
                       <EventStatusBadge status={ev.status} />
                     </td>
                     <td style={{ width: 110 }}>
@@ -613,11 +598,29 @@ export function OverviewPage({
 }
 
 export function EventStatusBadge({ status }: { status: string }) {
-  if (status === "error" || status === "failed") {
-    return <Badge tone="danger">{status}</Badge>;
-  }
-  if (status === "needs_context" || status === "no_match") {
-    return <Badge tone="warning">{status}</Badge>;
-  }
-  return <Badge tone="success">{status}</Badge>;
+  const isError = status === "error" || status === "failed";
+  const isWarn = status === "needs_context";
+  const isNeutral = status === "no_match";
+  const dotClass = isError
+    ? "err"
+    : isWarn
+      ? "warn"
+      : isNeutral
+        ? ""
+        : "ok";
+  return (
+    <span
+      className="status-inline mono"
+      style={{
+        color: isError
+          ? "var(--danger-ink)"
+          : isNeutral
+            ? "var(--ink-muted)"
+            : "var(--ink-body)",
+      }}
+    >
+      <span className={`status-dot ${dotClass}`} />
+      {status}
+    </span>
+  );
 }

@@ -1,13 +1,5 @@
 import { useState } from "react";
-import {
-  ArrowRight,
-  FileJson,
-  Loader2,
-  Play,
-  Plus,
-  Sparkles,
-  Waypoints,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
   api,
   exampleFromSchema,
@@ -17,7 +9,8 @@ import {
   type Invocation,
   type Tool,
 } from "./types";
-import { AlertBox, Badge, CopyButton } from "./ui";
+import { EventStatusBadge } from "./OverviewPage";
+import { AlertBox, CopyButton } from "./ui";
 
 const demoExamples = [
   {
@@ -152,12 +145,18 @@ export function PlaygroundPage({
           </p>
         </div>
         <div className="page-header-actions">
-          <Badge tone={state.settings.model ? "info" : "warning"}>
-            路由模型：{state.settings.model || "未配置"}
-          </Badge>
-          <Badge>候选池：{eligiblePool.length} 个工具</Badge>
+          <span
+            className="tnum"
+            style={{ fontSize: 12.5, color: "var(--ink-muted)", marginRight: 4 }}
+          >
+            模型{" "}
+            <code style={{ color: "var(--ink-body)" }}>
+              {state.settings.model || "未配置"}
+            </code>{" "}
+            · 候选池 {eligiblePool.length} 个工具
+          </span>
           <button type="button" className="btn btn-sm" onClick={onOpenSettings}>
-            路由参数 →
+            路由参数
           </button>
         </div>
       </div>
@@ -226,8 +225,7 @@ export function PlaygroundPage({
                   className="btn btn-ghost btn-sm"
                   onClick={() => setShowContext(!showContext)}
                 >
-                  <Plus size={13} />
-                  {showContext ? "收起上下文" : "添加上下文"}
+                  {showContext ? "收起上下文" : "+ 添加上下文"}
                 </button>
 
                 <div
@@ -319,13 +317,8 @@ export function PlaygroundPage({
                 disabled={!intent.trim() || routing}
                 onClick={() => void runDiscover()}
               >
-                {routing ? (
-                  <Loader2 size={14} className="spin" />
-                ) : (
-                  <Sparkles size={14} />
-                )}
+                {routing && <Loader2 size={14} className="spin" />}
                 {routing ? "模型选择中…" : "运行工具发现"}
-                {!routing && <ArrowRight size={14} />}
               </button>
             </div>
           </section>
@@ -337,23 +330,25 @@ export function PlaygroundPage({
                 <h2>2. 路由决策与命中工具</h2>
               </div>
               {result && (
-                <div style={{ display: "flex", gap: 6 }}>
-                  <Badge
-                    tone={
-                      result.status === "selected"
-                        ? "success"
-                        : result.status === "needs_context"
-                          ? "warning"
-                          : "neutral"
-                    }
-                  >
-                    {result.status}
-                  </Badge>
-                  <Badge>{result.duration_ms} ms</Badge>
+                <div
+                  className="tnum"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    fontSize: 12,
+                    color: "var(--ink-muted)",
+                  }}
+                >
+                  <EventStatusBadge status={result.status} />
+                  <span>{result.duration_ms} ms</span>
                   {result.prompt_tokens + result.output_tokens > 0 && (
-                    <Badge>
-                      {result.prompt_tokens + result.output_tokens} tok
-                    </Badge>
+                    <span>
+                      {(
+                        result.prompt_tokens + result.output_tokens
+                      ).toLocaleString()}{" "}
+                      tok
+                    </span>
                   )}
                 </div>
               )}
@@ -367,7 +362,7 @@ export function PlaygroundPage({
 
             {routing ? (
               <div className="empty-box">
-                <Loader2 size={24} className="spin" />
+                <Loader2 size={20} className="spin" />
                 <h3>正在请求 Decisions 路由模型…</h3>
                 <p>按身份筛选候选工具 → 逐项评估相关性概率 → 返回匹配 Schema</p>
               </div>
@@ -388,7 +383,7 @@ export function PlaygroundPage({
                     {result.summary}
                   </strong>
                   {result.question && (
-                    <p style={{ marginTop: 4, color: "var(--warning-ink)" }}>
+                    <p style={{ marginTop: 4, color: "var(--ink-muted)" }}>
                       补充信息建议：{result.question}
                     </p>
                   )}
@@ -416,12 +411,12 @@ export function PlaygroundPage({
                           >
                             {t.name}
                           </span>
-                          <Badge tone="info">
-                            {srv?.name || t.server_id}
-                          </Badge>
-                          <Badge tone={t.read_only ? "neutral" : "warning"}>
+                          <span
+                            style={{ fontSize: 12, color: "var(--ink-muted)" }}
+                          >
+                            {srv?.name || t.server_id} ·{" "}
                             {t.read_only ? "只读" : "写操作"}
-                          </Badge>
+                          </span>
                         </div>
                         <span className="log-row-meta">{t.reason}</span>
                       </div>
@@ -433,7 +428,6 @@ export function PlaygroundPage({
             ) : (
               !routeError && (
                 <div className="empty-box">
-                  <Waypoints size={24} />
                   <h3>等待运行工具发现</h3>
                   <p>输入任务描述后运行，命中的候选工具与相关性概率将在此展示。</p>
                 </div>
@@ -449,15 +443,14 @@ export function PlaygroundPage({
               <h2>3. 工具检查与试调用（invoke_tool）</h2>
             </div>
             {selected && (
-              <Badge tone={selected.read_only ? "neutral" : "warning"}>
-                {selected.read_only ? "READ ONLY" : "WRITE"}
-              </Badge>
+              <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>
+                {selected.read_only ? "只读" : "写操作"}
+              </span>
             )}
           </div>
 
           {!selected ? (
             <div className="empty-box">
-              <FileJson size={24} />
               <h3>未选中工具</h3>
               <p>从左侧命中结果中选择任一工具，检查真实 JSON Schema 或直接发起试调用。</p>
             </div>
@@ -524,7 +517,6 @@ export function PlaygroundPage({
                     style={{ alignSelf: "flex-start" }}
                     onClick={() => setInspectorTab("invoke")}
                   >
-                    <Play size={13} />
                     使用此工具试运行
                   </button>
                 </>
@@ -563,11 +555,7 @@ export function PlaygroundPage({
                     disabled={invoking}
                     onClick={() => void runInvoke()}
                   >
-                    {invoking ? (
-                      <Loader2 size={14} className="spin" />
-                    ) : (
-                      <Play size={14} />
-                    )}
+                    {invoking && <Loader2 size={14} className="spin" />}
                     {invoking ? "执行中…" : "执行调用"}
                   </button>
 

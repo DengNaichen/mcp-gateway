@@ -1,15 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  ArrowLeft,
-  Code2,
-  FileJson,
-  Loader2,
-  Network,
-  Plus,
-  RefreshCw,
-  Search,
-  Terminal,
-} from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import {
   api,
   formatTime,
@@ -184,7 +174,6 @@ export function ServicesPage({
                 className="btn"
                 onClick={() => setAddModalMode("paste")}
               >
-                <FileJson size={14} />
                 粘贴 MCP JSON
               </button>
               <button
@@ -192,7 +181,6 @@ export function ServicesPage({
                 className="btn btn-primary"
                 onClick={() => setAddModalMode("form")}
               >
-                <Plus size={15} />
                 添加服务
               </button>
             </div>
@@ -205,12 +193,16 @@ export function ServicesPage({
                 <h2>已接入服务</h2>
                 <p>点击任一服务进入详情页管理其工具列表、自动维护与连接认证。</p>
               </div>
-              <Badge>{realServers.length} 个服务</Badge>
+              <span
+                className="tnum"
+                style={{ fontSize: 12.5, color: "var(--ink-muted)" }}
+              >
+                {realServers.length} 个服务
+              </span>
             </div>
 
             {realServers.length === 0 ? (
               <div className="empty-box">
-                <Network size={26} />
                 <h3>尚未接入任何上游服务</h3>
                 <p>
                   你可以接入远程 Streamable HTTP MCP、本地 stdio 进程，或者已有内部 HTTP API；也可以直接粘贴一段{" "}
@@ -222,7 +214,6 @@ export function ServicesPage({
                     className="btn"
                     onClick={() => setAddModalMode("paste")}
                   >
-                    <FileJson size={14} />
                     粘贴配置导入
                   </button>
                   <button
@@ -230,7 +221,6 @@ export function ServicesPage({
                     className="btn btn-primary"
                     onClick={() => setAddModalMode("form")}
                   >
-                    <Plus size={14} />
                     添加第一个服务
                   </button>
                 </div>
@@ -244,7 +234,7 @@ export function ServicesPage({
                       <th>协议</th>
                       <th>连接目标</th>
                       <th>工具启用</th>
-                      <th>状态</th>
+                      <th>启用</th>
                       <th style={{ textAlign: "right" }}>操作</th>
                     </tr>
                   </thead>
@@ -277,7 +267,12 @@ export function ServicesPage({
                             )}
                           </td>
                           <td style={{ width: 130 }}>
-                            <Badge tone="info">{serverProtocolLabel(s)}</Badge>
+                            <span
+                              className="mono"
+                              style={{ fontSize: 12, color: "var(--ink-muted)" }}
+                            >
+                              {serverProtocolLabel(s)}
+                            </span>
                           </td>
                           <td style={{ maxWidth: 320 }}>
                             <code
@@ -302,7 +297,7 @@ export function ServicesPage({
                               / {srvTools.length}
                             </span>
                           </td>
-                          <td style={{ width: 130 }}>
+                          <td style={{ width: 110 }}>
                             <div
                               style={{
                                 display: "inline-flex",
@@ -316,17 +311,19 @@ export function ServicesPage({
                                 label={`${s.name} 启用状态`}
                                 onChange={() => toggleServer(s)}
                               />
-                              {check?.status === "error" ? (
-                                <Badge tone="danger">连接异常</Badge>
-                              ) : s.enabled ? (
-                                <Badge tone="success">已启用</Badge>
-                              ) : (
-                                <Badge>已停用</Badge>
+                              {check?.status === "error" && (
+                                <span
+                                  className="status-inline"
+                                  style={{ color: "var(--danger-ink)" }}
+                                >
+                                  <span className="status-dot err" />
+                                  异常
+                                </span>
                               )}
                             </div>
                           </td>
                           <td
-                            style={{ width: 180, textAlign: "right" }}
+                            style={{ width: 170, textAlign: "right" }}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <div
@@ -343,12 +340,9 @@ export function ServicesPage({
                                   disabled={!!syncingId}
                                   onClick={() => syncServer(s)}
                                 >
-                                  <RefreshCw
-                                    size={12}
-                                    className={
-                                      syncingId === s.id ? "spin" : ""
-                                    }
-                                  />
+                                  {syncingId === s.id && (
+                                    <Loader2 size={12} className="spin" />
+                                  )}
                                   同步
                                 </button>
                               )}
@@ -357,7 +351,7 @@ export function ServicesPage({
                                 className="btn btn-sm"
                                 onClick={() => onSelectServer(s.id)}
                               >
-                                管理 →
+                                管理
                               </button>
                             </div>
                           </td>
@@ -377,7 +371,12 @@ export function ServicesPage({
                 <h2>全局工具检索</h2>
                 <p>跨服务搜索工具定义、快速切换启用状态或审查输入 Schema。</p>
               </div>
-              <Badge>{explorerTools.length} 个匹配工具</Badge>
+              <span
+                className="tnum"
+                style={{ fontSize: 12.5, color: "var(--ink-muted)" }}
+              >
+                {explorerTools.length} 个匹配工具
+              </span>
             </div>
 
             <div className="toolbar">
@@ -507,16 +506,24 @@ export function ServicesPage({
                               )}
                             </td>
                             <td style={{ width: 110 }}>
-                              <Badge tone={t.read_only ? "neutral" : "warning"}>
+                              <span
+                                style={{
+                                  fontSize: 12.5,
+                                  color: t.read_only
+                                    ? "var(--ink-muted)"
+                                    : "var(--ink-body)",
+                                  fontWeight: t.read_only ? 400 : 500,
+                                }}
+                              >
                                 {t.read_only ? "只读" : "写操作"}
-                              </Badge>
+                              </span>
                             </td>
                             <td style={{ width: 150 }}>
-                              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                                {t.actors.map((a) => (
-                                  <Badge key={a}>{a}</Badge>
-                                ))}
-                              </div>
+                              <code
+                                style={{ fontSize: 12, color: "var(--ink-muted)" }}
+                              >
+                                {t.actors.join(", ")}
+                              </code>
                             </td>
                             <td style={{ width: 110 }}>
                               <Switch
@@ -620,7 +627,12 @@ export function ServicesPage({
                           <span className="cell-sub">{s.description}</span>
                         </td>
                         <td>
-                          <Badge tone="info">{serverProtocolLabel(s)}</Badge>
+                          <span
+                            className="mono"
+                            style={{ fontSize: 12, color: "var(--ink-muted)" }}
+                          >
+                            {serverProtocolLabel(s)}
+                          </span>
                         </td>
                         <td>
                           <code style={{ fontSize: 12 }}>{s.endpoint}</code>
@@ -634,7 +646,7 @@ export function ServicesPage({
                             className="btn btn-sm"
                             onClick={() => onSelectServer(s.id)}
                           >
-                            查看工具 →
+                            查看工具
                           </button>
                         </td>
                       </tr>
@@ -780,19 +792,15 @@ function ServiceDetailView({
   return (
     <div>
       <button type="button" className="back-link" onClick={onBack}>
-        <ArrowLeft size={14} />
-        返回服务与工具
+        ← 返回服务与工具
       </button>
 
       <div className="page-header" style={{ marginBottom: 16 }}>
         <div className="page-header-main">
           <h1>
             {server.name}
-            <Badge tone="info">{serverProtocolLabel(server)}</Badge>
+            <Badge>{serverProtocolLabel(server)}</Badge>
             {server.demo && <Badge>DEMO</Badge>}
-            <Badge tone={server.enabled ? "success" : "neutral"} dot>
-              {server.enabled ? "运行中" : "已停用"}
-            </Badge>
           </h1>
           {server.description && <p>{server.description}</p>}
         </div>
@@ -823,7 +831,7 @@ function ServiceDetailView({
               disabled={syncing}
               onClick={onSync}
             >
-              <RefreshCw size={14} className={syncing ? "spin" : ""} />
+              {syncing && <Loader2 size={14} className="spin" />}
               同步下游工具
             </button>
           )}
@@ -833,7 +841,6 @@ function ServiceDetailView({
               className="btn btn-primary"
               onClick={onAddHttpTool}
             >
-              <Plus size={14} />
               添加 HTTP 工具
             </button>
           )}
@@ -1016,7 +1023,6 @@ function ServiceDetailView({
                     className="btn btn-primary"
                     onClick={onAddHttpTool}
                   >
-                    <Plus size={14} />
                     手动添加工具
                   </button>
                 </div>
@@ -1052,16 +1058,24 @@ function ServiceDetailView({
                           </span>
                         </td>
                         <td style={{ width: 120 }}>
-                          <Badge tone={t.read_only ? "neutral" : "warning"}>
+                          <span
+                            style={{
+                              fontSize: 12.5,
+                              color: t.read_only
+                                ? "var(--ink-muted)"
+                                : "var(--ink-body)",
+                              fontWeight: t.read_only ? 400 : 500,
+                            }}
+                          >
                             {t.read_only ? "只读" : "写操作"}
-                          </Badge>
+                          </span>
                         </td>
                         <td style={{ width: 150 }}>
-                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                            {t.actors.map((a) => (
-                              <Badge key={a}>{a}</Badge>
-                            ))}
-                          </div>
+                          <code
+                            style={{ fontSize: 12, color: "var(--ink-muted)" }}
+                          >
+                            {t.actors.join(", ")}
+                          </code>
                         </td>
                         <td style={{ width: 110 }}>
                           <Switch
@@ -1605,7 +1619,6 @@ function AddServiceModal({
                 className={`option-card ${protocol === "http" ? "selected" : ""}`}
                 onClick={() => setProtocol("http")}
               >
-                <Network size={16} />
                 <span>
                   <strong>MCP 地址</strong>
                   <small>Streamable HTTP</small>
@@ -1616,7 +1629,6 @@ function AddServiceModal({
                 className={`option-card ${protocol === "stdio" ? "selected" : ""}`}
                 onClick={() => setProtocol("stdio")}
               >
-                <Terminal size={16} />
                 <span>
                   <strong>本地进程</strong>
                   <small>stdio 标准输入输出</small>
@@ -1627,7 +1639,6 @@ function AddServiceModal({
                 className={`option-card ${protocol === "api" ? "selected" : ""}`}
                 onClick={() => setProtocol("api")}
               >
-                <Code2 size={16} />
                 <span>
                   <strong>HTTP API</strong>
                   <small>REST / OpenAPI 服务</small>

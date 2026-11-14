@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Check, Loader2, ShieldCheck, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import {
   api,
   formatTime,
@@ -8,7 +8,7 @@ import {
   type Config,
   type Discovery,
 } from "./types";
-import { AlertBox, Badge } from "./ui";
+import { AlertBox } from "./ui";
 
 export function SettingsPage({
   state,
@@ -90,20 +90,7 @@ export function SettingsPage({
     <div>
       <div className="page-header">
         <div className="page-header-main">
-          <h1>
-            路由设置
-            {state.setup.model_ready && !modelCheck?.stale ? (
-              <Badge tone="success" dot>
-                校验已通过
-              </Badge>
-            ) : state.setup.model_configured ? (
-              <Badge tone="warning" dot>
-                {modelCheck?.stale ? "需重新校验" : "待校验"}
-              </Badge>
-            ) : (
-              <Badge>未配置</Badge>
-            )}
-          </h1>
+          <h1>路由设置</h1>
           <p>
             配置用于按任务意图筛选工具的 Decisions 模型及全局路由参数。模型仅返回候选工具 ID，参数与权限校验由 Go 后端执行。
           </p>
@@ -190,11 +177,11 @@ export function SettingsPage({
               <label className="field">
                 <span className="field-label">
                   API Key
-                  {state.key_configured ? (
-                    <Badge tone="success">当前内存已加载 Key</Badge>
-                  ) : (
-                    <em>未检测到 Key</em>
-                  )}
+                  <em>
+                    {state.key_configured
+                      ? "当前内存已加载 Key"
+                      : "未检测到 Key"}
+                  </em>
                 </span>
                 <input
                   type="password"
@@ -316,21 +303,17 @@ export function SettingsPage({
 
               {dirty && modelCheck && (
                 <AlertBox
-                  tone="warning"
+                  tone="info"
                   title="表单参数已修改，点击「保存并校验路由」更新验证状态。"
                 />
               )}
 
               {!dirty && modelCheck && (
                 <AlertBox
-                  tone={
-                    modelCheck.status === "error" || modelCheck.stale
-                      ? "warning"
-                      : "success"
-                  }
+                  tone={modelCheck.status === "error" ? "error" : "info"}
                   title={
                     modelCheck.stale
-                      ? `工具池或参数发生变化，需重新校验（上次：${formatTime(modelCheck.checked_at)}）`
+                      ? `工具池或参数发生变化，建议重新校验（上次：${formatTime(modelCheck.checked_at)}）`
                       : `${modelCheck.message}（${formatTime(modelCheck.checked_at)}）`
                   }
                   detail={modelCheck.detail}
@@ -357,7 +340,12 @@ export function SettingsPage({
                     <strong style={{ color: "var(--ink-strong)" }}>
                       实时校验响应：{testResult.status}
                     </strong>
-                    <Badge tone="success">{testResult.duration_ms} ms</Badge>
+                    <span
+                      className="mono tnum"
+                      style={{ fontSize: 12, color: "var(--ink-muted)" }}
+                    >
+                      {testResult.duration_ms} ms
+                    </span>
                   </div>
                   <p style={{ fontSize: 12.5, color: "var(--ink-muted)" }}>
                     {testResult.summary}
@@ -366,15 +354,22 @@ export function SettingsPage({
                     <div
                       style={{
                         display: "flex",
-                        gap: 6,
-                        flexWrap: "wrap",
+                        flexDirection: "column",
+                        gap: 4,
                         marginTop: 8,
+                        fontSize: 12,
+                        color: "var(--ink-body)",
                       }}
                     >
                       {testResult.tools.map((t) => (
-                        <Badge key={t.id} tone="accent">
-                          <span className="mono">{t.id}</span> · {t.reason}
-                        </Badge>
+                        <div key={t.id}>
+                          <code style={{ color: "var(--ink-strong)" }}>
+                            {t.id}
+                          </code>{" "}
+                          <span style={{ color: "var(--ink-muted)" }}>
+                            — {t.reason}
+                          </span>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -383,11 +378,7 @@ export function SettingsPage({
             </div>
 
             <div className="card-footer">
-              <span
-                className="field-hint"
-                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-              >
-                <ShieldCheck size={14} />
+              <span className="field-hint">
                 路由校验仅验证模型响应与工具映射，不执行下游工具。
               </span>
 
@@ -398,10 +389,8 @@ export function SettingsPage({
                   disabled={Boolean(busyMode)}
                   onClick={() => void submit(false)}
                 >
-                  {busyMode === "save" ? (
+                  {busyMode === "save" && (
                     <Loader2 size={14} className="spin" />
-                  ) : (
-                    <Check size={14} />
                   )}
                   仅保存配置
                 </button>
@@ -410,10 +399,8 @@ export function SettingsPage({
                   className="btn btn-primary"
                   disabled={Boolean(busyMode) || !state.setup.tools_ready}
                 >
-                  {busyMode === "test" ? (
+                  {busyMode === "test" && (
                     <Loader2 size={14} className="spin" />
-                  ) : (
-                    <Sparkles size={14} />
                   )}
                   {busyMode === "test" ? "正在校验…" : "保存并校验路由"}
                 </button>

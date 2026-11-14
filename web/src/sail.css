@@ -788,22 +788,22 @@ a:hover {
   font-size: 13.5px;
 }
 
-/* Badges */
+/* Badges & Quiet Status Indicators */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 21px;
-  padding: 0 7px;
+  height: 20px;
+  padding: 0 6px;
   border-radius: var(--radius-sm);
   font-size: 12px;
-  font-weight: 550;
+  font-weight: 500;
   line-height: 1;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  border: 1px solid var(--neutral-border);
-  background: var(--neutral-bg);
-  color: var(--neutral-ink);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--ink-muted);
 }
 
 .badge-dot {
@@ -814,9 +814,9 @@ a:hover {
 }
 
 .badge.success {
-  background: var(--success-bg);
-  border-color: var(--success-border);
-  color: var(--success-ink);
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--ink-body);
 }
 .badge.warning {
   background: var(--warning-bg);
@@ -829,14 +829,43 @@ a:hover {
   color: var(--danger-ink);
 }
 .badge.info {
-  background: var(--info-bg);
-  border-color: var(--info-border);
-  color: var(--info-ink);
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--ink-muted);
 }
 .badge.accent {
-  background: var(--accent-soft);
-  border-color: var(--accent-border);
-  color: var(--accent);
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--ink-body);
+}
+
+.status-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-body);
+  white-space: nowrap;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #94a3b8;
+  flex-shrink: 0;
+}
+
+.status-dot.ok {
+  background: #10b981;
+}
+
+.status-dot.warn {
+  background: #f59e0b;
+}
+
+.status-dot.err {
+  background: #ef4444;
 }
 
 /* Switch */
@@ -1297,32 +1326,33 @@ a:hover {
 }
 
 .setup-step-indicator {
-  width: 22px;
-  height: 22px;
+  width: 21px;
+  height: 21px;
   border-radius: 50%;
   margin-top: 1px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   font-family: var(--font-mono);
   flex-shrink: 0;
-  background: var(--bg-muted);
-  color: var(--ink-muted);
-  border: 1px solid var(--border-strong);
+  background: #ffffff;
+  color: var(--ink-faint);
+  border: 1px solid var(--border);
 }
 
 .setup-step-indicator.done {
-  background: var(--success-bg);
-  border-color: var(--success-border);
-  color: var(--success-ink);
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--ink-muted);
 }
 
 .setup-step-indicator.current {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #ffffff;
+  background: #ffffff;
+  border-color: var(--ink-strong);
+  color: var(--ink-strong);
+  font-weight: 600;
 }
 
 .setup-step-body {

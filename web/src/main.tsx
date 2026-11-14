@@ -2,19 +2,16 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
-  Check,
-  ChevronRight,
   Home,
   Layers,
   Loader2,
   Settings2,
-  Sparkles,
   Waypoints,
   X,
 } from "lucide-react";
 import "./sail.css";
 import { api, type Bootstrap, type Event } from "./types";
-import { Badge, CopyButton, GatewayLogo } from "./ui";
+import { CopyButton, GatewayLogo } from "./ui";
 import { LoginPage } from "./LoginPage";
 import { OverviewPage } from "./OverviewPage";
 import { ServicesPage } from "./ServicesPage";
@@ -210,7 +207,7 @@ function App() {
               className={`sail-nav-item ${route.view === "overview" ? "active" : ""}`}
               onClick={() => navigate("overview")}
             >
-              <Home size={16} />
+              <Home size={15} strokeWidth={1.65} />
               <span>概览</span>
             </button>
             <button
@@ -218,7 +215,7 @@ function App() {
               className={`sail-nav-item ${route.view === "services" ? "active" : ""}`}
               onClick={() => navigate("services")}
             >
-              <Layers size={16} />
+              <Layers size={15} strokeWidth={1.65} />
               <span>服务与工具</span>
               <span className="sail-nav-badge">
                 {state.setup.enabled_tools}/{realTools.length}
@@ -235,7 +232,7 @@ function App() {
               className={`sail-nav-item ${route.view === "playground" ? "active" : ""}`}
               onClick={() => navigate("playground")}
             >
-              <Waypoints size={16} />
+              <Waypoints size={15} strokeWidth={1.65} />
               <span>路由调试</span>
             </button>
             <button
@@ -243,7 +240,7 @@ function App() {
               className={`sail-nav-item ${route.view === "logs" ? "active" : ""}`}
               onClick={() => navigate("logs")}
             >
-              <Activity size={16} />
+              <Activity size={15} strokeWidth={1.65} />
               <span>调用日志</span>
               {state.events.length > 0 && (
                 <span className="sail-nav-badge">{state.events.length}</span>
@@ -254,7 +251,7 @@ function App() {
               className={`sail-nav-item ${route.view === "settings" ? "active" : ""}`}
               onClick={() => navigate("settings")}
             >
-              <Settings2 size={16} />
+              <Settings2 size={15} strokeWidth={1.65} />
               <span>路由设置</span>
             </button>
           </nav>
@@ -286,13 +283,13 @@ function App() {
             <button type="button" onClick={() => navigate("overview")}>
               Gateway
             </button>
-            <ChevronRight size={13} />
+            <span style={{ color: "var(--ink-faint)" }}>/</span>
             {activeService ? (
               <>
                 <button type="button" onClick={() => navigate("services")}>
                   服务与工具
                 </button>
-                <ChevronRight size={13} />
+                <span style={{ color: "var(--ink-faint)" }}>/</span>
                 <strong>{activeService.name}</strong>
               </>
             ) : (
@@ -307,22 +304,20 @@ function App() {
               onClick={() => navigate("settings")}
               title="查看或修改 Decisions 路由模型配置"
             >
-              <Sparkles size={13} style={{ color: "var(--accent)" }} />
+              <span className={`status-dot ${modelReady ? "ok" : ""}`} />
               <span className="mono">
-                {state.settings.model || "模型未配置"}
+                {state.settings.model || "配置路由模型"}
               </span>
-              <Badge tone={modelReady ? "success" : "warning"}>
-                {modelReady
-                  ? "已就绪"
-                  : state.setup.model_configured
-                    ? "待校验"
-                    : "去配置"}
-              </Badge>
+              {!modelReady && state.setup.model_configured && (
+                <span style={{ color: "var(--ink-muted)" }}>· 待校验</span>
+              )}
             </button>
 
             {state.access?.shared && (
               <>
-                <Badge tone="info">{state.access.actor}</Badge>
+                <span className="mono" style={{ fontSize: 12, color: "var(--ink-muted)" }}>
+                  {state.access.actor}
+                </span>
                 <button
                   type="button"
                   className="btn btn-sm"
@@ -409,7 +404,6 @@ function App() {
 
       {toast && (
         <div className="sail-toast" role="status">
-          <Check size={14} style={{ color: "#34d399" }} />
           <span>{toast}</span>
           <button
             type="button"

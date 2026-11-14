@@ -1,14 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  Bot,
-  Clock3,
-  FileCode2,
-  Loader2,
-  Play,
-  RefreshCw,
-  RotateCcw,
-  Square,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { api, formatTime, pretty, type Server, type Tool } from "./types";
 import { AcceptanceEditor } from "./AcceptanceEditor";
 import { AlertBox, Badge } from "./ui";
@@ -323,12 +314,12 @@ export function ServiceMaintenanceTab({
               <p>跟踪上游接口变更并经独立验收后原子更新工具定义。</p>
             </div>
             {mState && (
-              <Badge tone={mState.runtime.available ? "success" : "neutral"} dot>
+              <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>
                 {mState.runtime.available ? "Pi 已就绪" : "无 Pi"} ·{" "}
                 {mState.runtime.execution.mode === "docker"
                   ? "Docker 隔离"
                   : "本机执行"}
-              </Badge>
+              </span>
             )}
           </div>
 
@@ -342,7 +333,6 @@ export function ServiceMaintenanceTab({
                     className={`option-card ${isNative ? "selected" : ""}`}
                     onClick={() => setForm({ ...form, format: "native" })}
                   >
-                    <RefreshCw size={16} />
                     <span>
                       <strong>原生 MCP 同步</strong>
                       <small>直接拉取下游 tools/list，无需模型</small>
@@ -354,7 +344,6 @@ export function ServiceMaintenanceTab({
                     className={`option-card ${isOpenAPI ? "selected" : ""}`}
                     onClick={() => setForm({ ...form, format: "openapi" })}
                   >
-                    <FileCode2 size={16} />
                     <span>
                       <strong>OpenAPI 确定性导入</strong>
                       <small>解析 OpenAPI 3.0/3.1 JSON 或 YAML</small>
@@ -366,7 +355,6 @@ export function ServiceMaintenanceTab({
                   className={`option-card ${isPi ? "selected" : ""}`}
                   onClick={() => setForm({ ...form, format: "pi" })}
                 >
-                  <Bot size={16} />
                   <span>
                     <strong>Pi 编程适配</strong>
                     <small>在隔离容器中生成与维护 .mjs 适配脚本</small>
@@ -658,11 +646,7 @@ export function ServiceMaintenanceTab({
                 }
                 onClick={() => void triggerCheck(false)}
               >
-                {busy ? (
-                  <Loader2 size={14} className="spin" />
-                ) : (
-                  <Play size={14} />
-                )}
+                {busy && <Loader2 size={14} className="spin" />}
                 保存并立即检查
               </button>
             </div>
@@ -677,12 +661,16 @@ export function ServiceMaintenanceTab({
                 <h2>维护运行记录</h2>
                 <p>选择任一任务查看验收报告、工具 Diff 与产物。</p>
               </div>
-              <Badge>{runs.length} 条记录</Badge>
+              <span
+                className="tnum"
+                style={{ fontSize: 12.5, color: "var(--ink-muted)" }}
+              >
+                {runs.length} 条记录
+              </span>
             </div>
 
             {runs.length === 0 ? (
               <div className="empty-box">
-                <Clock3 size={22} />
                 <h3>尚未运行过维护检查</h3>
                 <p>配置左侧同步策略与验收用例后，点击「保存并立即检查」。</p>
               </div>
@@ -784,7 +772,6 @@ export function ServiceMaintenanceTab({
                         })
                       }
                     >
-                      <RotateCcw size={13} />
                       回退
                     </button>
                   )}
@@ -803,7 +790,6 @@ export function ServiceMaintenanceTab({
                         })
                       }
                     >
-                      <Square size={12} />
                       取消
                     </button>
                   )}
@@ -929,7 +915,6 @@ export function ServiceMaintenanceTab({
                           })
                         }
                       >
-                        <FileCode2 size={13} />
                         {name}
                       </button>
                     ))}

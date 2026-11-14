@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { api } from "./types";
 import { AlertBox, GatewayLogo } from "./ui";
 
@@ -64,7 +64,7 @@ export function LoginPage({ onLogin }: { onLogin: () => Promise<unknown> }) {
           className="btn btn-primary btn-lg"
           disabled={busy || !token.trim()}
         >
-          {busy ? <Loader2 size={15} className="spin" /> : <ShieldCheck size={15} />}
+          {busy && <Loader2 size={15} className="spin" />}
           验证并进入控制台
         </button>
 
