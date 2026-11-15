@@ -517,10 +517,7 @@ func (u *DesktopUI) renderLoginView(c *ui.Context) {
 						ui.Box(c).Size(32, 32).Radius(8).Background(SailAccentSoft).Border(1, SailAccentBorder).Center().Children(func() {
 							ui.Icon(c, IconLogo).Size(18, 18).TextColor(SailAccent)
 						})
-						ui.Column(c).Gap(2).Children(func() {
-							ui.Text(c, "MCP Gateway").FontSize(16).Bold().TextColor(SailInkStrong)
-							ui.Text(c, "共享控制面身份验证").FontSize(12).TextColor(SailInkMuted)
-						})
+						ui.Text(c, "MCP Gateway").FontSize(16).Bold().TextColor(SailInkStrong)
 					})
 
 					if u.LoginError != "" {
@@ -532,14 +529,14 @@ func (u *DesktopUI) renderLoginView(c *ui.Context) {
 						if ui.TextInput(c.Key("login-token"), &u.LoginToken).
 							Password().
 							AutoFocus().
-							Placeholder("输入 GATEWAY_AUTH_FILE 中配置的 admin token").
+							Placeholder("粘贴令牌").
 							FillWidth().
 							Submitted() {
 							u.submitLogin()
 						}
 					})
 
-					if ui.PrimaryButton(c, "登录控制面").FillWidth().Disabled(u.LoggingIn || strings.TrimSpace(u.LoginToken) == "").Clicked() {
+					if ui.PrimaryButton(c, "登录").FillWidth().Disabled(u.LoggingIn || strings.TrimSpace(u.LoginToken) == "").Clicked() {
 						u.submitLogin()
 					}
 				})
@@ -611,7 +608,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 	}
 
 	ui.Column(c).
-		Width(236).
+		Width(228).
 		Shrink(0).
 		FillHeight().
 		Background(SailBgSidebar).
@@ -621,84 +618,69 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 			// Top draggable brand header clearing macOS traffic lights.
 			ui.Row(c).
 				FillWidth().
-				Padding(topPad, 16, 12, 16).
+				Padding(topPad, 16, 14, 16).
 				Gap(9).
 				AlignItems(ui.Center).
 				DragWindow().
 				Children(func() {
 					ui.Box(c).
-						Size(26, 26).
+						Size(24, 24).
 						Radius(6).
 						Background(SailAccentSoft).
 						Border(1, SailAccentBorder).
 						Center().
 						Children(func() {
-							ui.Icon(c, IconLogo).Size(15, 15).TextColor(SailAccent)
+							ui.Icon(c, IconLogo).Size(14, 14).TextColor(SailAccent)
 						})
-					ui.Column(c).Gap(1).Children(func() {
-						ui.Text(c, "MCP Gateway").FontSize(13.5).Bold().TextColor(SailInkStrong).SingleLine()
-						ui.Text(c, "控制面").FontSize(11).TextColor(SailInkMuted).SingleLine()
-					})
+					ui.Text(c, "MCP Gateway").FontSize(13.5).Bold().TextColor(SailInkStrong).SingleLine()
 				})
 
 			// Scrollable navigation sections.
-			ui.Scroll(c).Grow(1).FillWidth().Padding(4, 10, 10, 10).Gap(14).Children(func() {
-				u.renderNavGroup(c, "控制面", []navItem{
+			ui.Scroll(c).Grow(1).FillWidth().Padding(4, 10, 10, 10).Gap(18).Children(func() {
+				u.renderNavGroup(c, "工作台", []navItem{
 					{id: ViewOverview, label: "运行大盘", icon: IconHome},
-					{id: ViewServices, label: "上游服务", icon: IconServer, badge: fmt.Sprintf("%d", activeRealServers)},
+					{id: ViewServices, label: "上游服务", icon: IconServer, badge: countBadge(activeRealServers)},
 					{id: ViewCatalog, label: "工具目录", icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
 					{id: ViewClients, label: "连接客户端", icon: IconServer},
 					{id: ViewSettings, label: "访问与路由", icon: IconShield},
 				})
-				u.renderNavGroup(c, "观测与诊断", []navItem{
+				u.renderNavGroup(c, "观测与调试", []navItem{
 					{id: ViewLogs, label: "请求日志", icon: IconActivity, badge: countBadge(len(state.Events))},
 					{id: ViewPlayground, label: "路由沙盒", icon: IconWaypoints},
 				})
 			})
 
-			// Footer MCP endpoint mini card.
-			ui.Column(c).FillWidth().Padding(10, 12, 12, 12).Gap(8).Children(func() {
-				ui.Column(c).
-					FillWidth().
-					Padding(10, 11).
-					Gap(6).
-					Radius(7).
-					Background(SailBgCanvas).
-					Border(1, SailBorder).
-					Children(func() {
-						ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-							ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-								SailStatusDot(c, SailSuccessInk)
-								ui.Text(c, "数据面监听中").FontSize(11.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-							})
-							copyBtn := ui.ButtonBase(c.Key("sidebar-copy-mcp")).
-								Padding(2, 7).
-								Radius(4).
-								Background(SailBgSubtle).
-								Border(1, SailBorder).
-								Cursor(ui.CursorPointer)
-							if copyBtn.Hovered() {
-								copyBtn.Background(SailBgHover)
-							}
-							copyBtn.Children(func() {
-								ui.Text(c, "复制").FontSize(11).TextColor(SailInkBody).SingleLine()
-							})
-							if copyBtn.Clicked() {
-								c.WriteClipboard(state.MCPURL)
-								u.Notify("已复制 MCP 接入端点")
-							}
+			// Footer minimal MCP endpoint bar.
+			ui.Column(c).
+				FillWidth().
+				Padding(12, 14).
+				Gap(4).
+				BorderWidth(1, 0, 0, 0).
+				BorderColor(SailBorder).
+				Children(func() {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+						SailQuietStatus(c, "MCP 端点", SailSuccessInk, SailInkMuted)
+						copyBtn := ui.ButtonBase(c.Key("sidebar-copy-mcp")).
+							Padding(2, 6).
+							Radius(4).
+							Cursor(ui.CursorPointer)
+						if copyBtn.Hovered() {
+							copyBtn.Background(SailBgMuted)
+						}
+						copyBtn.Children(func() {
+							ui.Text(c, "复制").FontSize(11).FontWeight(500).TextColor(SailAccent).SingleLine()
 						})
-						ui.Text(c, state.MCPURL).
-							Font("monospace").
-							FontSize(11).
-							TextColor(SailInkMuted).
-							SingleLine()
+						if copyBtn.Clicked() {
+							c.WriteClipboard(state.MCPURL)
+							u.Notify("已复制 MCP 接入端点")
+						}
 					})
-
-				if ui.Button(c.Key("sidebar-connect-btn"), "接入客户端配置").FillWidth().FontSize(12).Clicked() {
-					u.OpenClients()
-				}
-			})
+					ui.Text(c, state.MCPURL).
+						Font("monospace").
+						FontSize(11).
+						TextColor(SailInkFaint).
+						SingleLine()
+				})
 		})
 }
 
@@ -717,9 +699,9 @@ func countBadge(n int) string {
 }
 
 func (u *DesktopUI) renderNavGroup(c *ui.Context, heading string, items []navItem) {
-	ui.Column(c).FillWidth().Gap(3).Children(func() {
+	ui.Column(c).FillWidth().Gap(2).Children(func() {
 		ui.Text(c, heading).
-			Padding(2, 8).
+			Padding(2, 10).
 			FontSize(11).
 			FontWeight(600).
 			TextColor(SailInkFaint)
@@ -729,7 +711,7 @@ func (u *DesktopUI) renderNavGroup(c *ui.Context, heading string, items []navIte
 				FillWidth().
 				Padding(7, 10).
 				Radius(6).
-				Gap(8).
+				Gap(9).
 				AlignItems(ui.Center).
 				Cursor(ui.CursorPointer)
 			if active {
@@ -756,15 +738,16 @@ func (u *DesktopUI) renderNavGroup(c *ui.Context, heading string, items []navIte
 					lbl.FontWeight(500)
 				}
 				if item.badge != "" {
-					badgeBg := SailBgMuted
-					badgeInk := SailInkMuted
+					badgeInk := SailInkFaint
 					if active {
-						badgeBg = SailAccentSoft
 						badgeInk = SailAccent
 					}
-					ui.Box(c).Padding(1, 6).Radius(999).Background(badgeBg).Children(func() {
-						ui.Text(c, item.badge).FontSize(11).FontWeight(600).TextColor(badgeInk).SingleLine()
-					})
+					ui.Text(c, item.badge).
+						FontSize(11.5).
+						FontWeight(500).
+						FontFeatures("tnum").
+						TextColor(badgeInk).
+						SingleLine()
 				}
 			})
 
@@ -799,30 +782,17 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 		ui.Row(c).
 			FillWidth().
 			Height(topH).
-			Padding(0, 24).
+			Padding(0, 32).
 			Gap(12).
 			AlignItems(ui.Center).
 			Justify(ui.SpaceBetween).
 			Background(SailBgCanvas).
 			BorderWidth(0, 0, 1, 0).
-			BorderColor(SailBorder).
+			BorderColor(SailDivider).
 			DragWindow().
 			Children(func() {
 				// Breadcrumbs.
 				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					rootLink := ui.ButtonBase(c.Key("bc-root")).Padding(2, 4).Radius(4).Cursor(ui.CursorPointer)
-					if rootLink.Hovered() {
-						rootLink.Background(SailBgHover)
-					}
-					rootLink.Children(func() {
-						ui.Text(c, "控制面").FontSize(13).TextColor(SailInkMuted).SingleLine()
-					})
-					if rootLink.Clicked() {
-						u.Navigate(ViewOverview)
-					}
-
-					ui.Text(c, "/").FontSize(13).TextColor(SailInkFaint)
-
 					if activeServerName != "" {
 						svcLink := ui.ButtonBase(c.Key("bc-services")).Padding(2, 4).Radius(4).Cursor(ui.CursorPointer)
 						if svcLink.Hovered() {
@@ -837,24 +807,21 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						ui.Text(c, "/").FontSize(13).TextColor(SailInkFaint)
 						ui.Text(c, activeServerName).FontSize(13).FontWeight(600).TextColor(SailInkStrong).SingleLine()
 					} else {
-						ui.Text(c, viewTitle(u.ViewMode)).FontSize(13).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+						ui.Text(c, viewTitle(u.ViewMode)).FontSize(13).FontWeight(500).TextColor(SailInkMuted).SingleLine()
 					}
 				})
 
-				// Right action chips & buttons.
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-					// Model readiness chip.
+				// Right status & refresh controls.
+				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 					modelChip := ui.ButtonBase(c.Key("top-model-chip")).
 						Padding(4, 10).
-						Radius(999).
+						Radius(6).
 						Gap(6).
 						AlignItems(ui.Center).
-						Background(SailBgSubtle).
-						Border(1, SailBorder).
 						Cursor(ui.CursorPointer).
-						Tooltip("查看或修改 Decisions 路由模型配置")
+						Tooltip("路由模型配置")
 					if modelChip.Hovered() {
-						modelChip.Background(SailBgHover).Border(1, SailBorderStrong)
+						modelChip.Background(SailBgHover)
 					}
 					modelChip.Children(func() {
 						dotColor := SailWarningInk
@@ -864,18 +831,14 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						SailStatusDot(c, dotColor)
 						modelName := state.Settings.Model
 						if modelName == "" {
-							modelName = "配置路由模型"
+							modelName = "未配置模型"
 						}
-						ui.Text(c, modelName).Font("monospace").FontSize(12).TextColor(SailInkStrong).SingleLine()
-						if !modelReady && state.Setup.ModelConfigured {
-							ui.Text(c, "· 待校验").FontSize(11.5).TextColor(SailInkMuted).SingleLine()
-						}
+						ui.Text(c, modelName).Font("monospace").FontSize(12).TextColor(SailInkBody).SingleLine()
 					})
 					if modelChip.Clicked() {
 						u.Navigate(ViewSettings)
 					}
 
-					// Refresh button.
 					refreshBtn := ui.ButtonBase(c.Key("top-refresh-btn")).
 						Padding(5, 10).
 						Radius(6).
@@ -889,39 +852,34 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						refreshBtn.Background(SailBgHover)
 					}
 					refreshBtn.Children(func() {
-						ui.Icon(c, IconRefresh).Size(13, 13).TextColor(SailInkBody)
+						ui.Icon(c, IconRefresh).Size(12.5, 12.5).TextColor(SailInkMuted)
 						lbl := "刷新"
 						if u.Refreshing {
-							lbl = "刷新中"
+							lbl = "同步中"
 						}
-						ui.Text(c, lbl).FontSize(12.5).TextColor(SailInkBody).SingleLine()
+						ui.Text(c, lbl).FontSize(12).TextColor(SailInkBody).SingleLine()
 					})
 					if refreshBtn.Clicked() {
 						u.Refresh()
 					}
 
-					// Connect client button.
-					if SailSmallButton(c.Key("top-connect-btn"), "接入客户端").Clicked() {
-						u.OpenClients()
-					}
-
 					if state.Access.Shared {
 						ui.Text(c, state.Access.Actor).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
-						if SailSmallButton(c.Key("top-logout-btn"), "退出登录").Clicked() {
+						if SailSmallButton(c.Key("top-logout-btn"), "退出").Clicked() {
 							u.logout()
 						}
 					}
 				})
 			})
 
-		// Main scrollable page viewport.
+		// Main scrollable page viewport with generous breathing room.
 		ui.Scroll(c.Key("main-scroll-"+string(u.ViewMode))).
 			TrackScroll(u.scrollState(u.ViewMode)).
 			Grow(1).
 			FillWidth().
-			Padding(24, 28).
+			Padding(28, 36).
 			Children(func() {
-				ui.Column(c).FillWidth().MaxWidth(1240).Gap(18).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(1200).Gap(26).Children(func() {
 					switch u.ViewMode {
 					case ViewOverview:
 						u.renderOverview(c)

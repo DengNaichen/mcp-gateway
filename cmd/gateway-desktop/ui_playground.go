@@ -168,34 +168,33 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 	// Page Header.
 	modelDisplay := state.Settings.Model
 	if modelDisplay == "" {
-		modelDisplay = "未配置"
+		modelDisplay = "未配置模型"
 	}
-	SailSectionHeader(c, "路由沙盒", "模拟下游 Agent 发起意图发现（discover_tools），检验语义召回结果并直接试调候选工具（invoke_tool）。", func() {
-		ui.Row(c).Gap(6).Padding(4, 10).Radius(999).Background(SailBgSubtle).Border(1, SailBorder).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "模型").FontSize(12).TextColor(SailInkMuted).SingleLine()
-			ui.Text(c, modelDisplay).Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-			ui.Text(c, "·").FontSize(12).TextColor(SailInkFaint)
-			ui.Textf(c, "候选池 %d 个工具", eligibleCount).FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted).SingleLine()
-		})
+	SailSectionHeader(c, "路由沙盒", "", func() {
+		ui.Textf(c, "%s · 候选 %d", modelDisplay, eligibleCount).
+			FontSize(12.5).
+			FontFeatures("tnum").
+			TextColor(SailInkMuted).
+			SingleLine()
 		if SailSmallButton(c.Key("pg-settings-btn"), "路由参数").Clicked() {
 			u.Navigate(ViewSettings)
 		}
 	})
 
 	if strings.TrimSpace(state.Settings.Model) == "" {
-		SailAlertBox(c, ToneWarning, "尚未配置 Decisions 路由模型", "请先前往「访问与路由」填写模型名称、Base URL 与 API Key。")
+		SailAlertBox(c, ToneWarning, "尚未配置路由模型", "请前往「访问与路由」设置 Model ID 与 API Key。")
 	}
 
 	// Two-column Workbench Split.
-	ui.Row(c).FillWidth().Gap(18).AlignItems(ui.Start).Children(func() {
+	ui.Row(c).FillWidth().Gap(24).AlignItems(ui.Start).Children(func() {
 		// Left Column: Intent Composer + Discovery Results.
-		ui.Column(c).Grow(1).MinWidth(0).Gap(16).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(24).Children(func() {
 			u.renderPlaygroundComposer(c, st, state, effectiveActor, scopeOptions, scopeLabelToID)
 			u.renderPlaygroundResults(c, st, serversByID, toolsByID, effectiveActor)
 		})
 
 		// Right Column: Tool Schema & Direct Invoke Inspector.
-		ui.Column(c).Grow(1).MinWidth(0).Gap(16).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(24).Children(func() {
 			u.renderPlaygroundInspector(c, st, toolsByID, effectiveActor)
 		})
 	})
@@ -210,32 +209,29 @@ func (u *DesktopUI) renderPlaygroundComposer(
 	scopeLabelToID map[string]string,
 ) {
 	SailCard(c, func() {
-		SailCardTitle(c, "1. 输入任务意图（discover_tools）", "", func() {
-			ui.Text(c, "快捷键 ⌘+Enter").FontSize(11.5).TextColor(SailInkFaint).SingleLine()
+		SailCardTitle(c, "任务意图", "", func() {
+			ui.Text(c, "⌘+Enter").FontSize(11.5).Font("monospace").TextColor(SailInkFaint).SingleLine()
 		})
 
-		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			ui.Text(c, "自然语言任务意图（intent）").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-			ui.TextArea(c.Key("pg-intent"), &st.intent).
-				Placeholder("描述当前要完成的开发或运维任务，例如：查看仓库最近有哪些未关闭的 PR 需要 review…").
-				Lines(3, 6).
-				FillWidth().
-				OnTextKey(func(k ui.TextKey) bool {
-					if k.Key == ui.KeyEnter && (k.Mods == ui.Cmd || k.Mods == ui.Ctrl) {
-						intent := k.Text()
-						st.intent = intent
-						u.runPlaygroundDiscover(st, intent, effectiveActor)
-						return true
-					}
-					return false
-				})
-		})
+		ui.TextArea(c.Key("pg-intent"), &st.intent).
+			Placeholder("输入任务意图，例如：查看待 review 的未关闭 PR…").
+			Lines(3, 6).
+			FillWidth().
+			OnTextKey(func(k ui.TextKey) bool {
+				if k.Key == ui.KeyEnter && (k.Mods == ui.Cmd || k.Mods == ui.Ctrl) {
+					intent := k.Text()
+					st.intent = intent
+					u.runPlaygroundDiscover(st, intent, effectiveActor)
+					return true
+				}
+				return false
+			})
 
 		if st.showContext {
-			ui.Column(c).FillWidth().Gap(6).Children(func() {
-				ui.Text(c, "补充上下文（context）").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+			ui.Column(c).FillWidth().Gap(5).Children(func() {
+				ui.Text(c, "补充上下文").FontSize(12).FontWeight(600).TextColor(SailInkMuted)
 				ui.TextArea(c.Key("pg-context"), &st.context).
-					Placeholder("补充已知服务名、仓库名或前序排查线索…").
+					Placeholder("已知服务名、仓库名或排查线索…").
 					Lines(2, 4).
 					FillWidth()
 			})
@@ -243,7 +239,7 @@ func (u *DesktopUI) renderPlaygroundComposer(
 
 		// Context toggle + quick demo examples.
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Wrap().Children(func() {
-			ctxLabel := "+ 添加上下文"
+			ctxLabel := "+ 上下文"
 			if st.showContext {
 				ctxLabel = "收起上下文"
 			}
@@ -252,7 +248,6 @@ func (u *DesktopUI) renderPlaygroundComposer(
 			}
 
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Wrap().Children(func() {
-				ui.Text(c, "快捷示例：").FontSize(12).TextColor(SailInkMuted).SingleLine()
 				for i, ex := range playgroundDemoExamples {
 					if SailSmallButton(c.Key(fmt.Sprintf("pg-demo-%d", i)), ex.Short).Clicked() {
 						st.intent = ex.Intent
@@ -269,20 +264,16 @@ func (u *DesktopUI) renderPlaygroundComposer(
 			})
 		})
 
-		ui.Divider(c)
+		ui.Box(c).FillWidth().Height(1).Background(SailDivider)
 
-		// Actor, Service Scope, Include Demo, Summary Only controls.
+		// Actor, Service Scope, Include Demo, Summary Only controls + Primary Discover action.
 		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Wrap().Children(func() {
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				actorLabel := "模拟身份"
+				ui.Text(c, "身份").FontSize(12).TextColor(SailInkMuted).SingleLine()
 				if state.Access.Shared {
-					actorLabel = "当前身份"
-				}
-				ui.Text(c, actorLabel).FontSize(12.5).TextColor(SailInkMuted).SingleLine()
-				if state.Access.Shared {
-					SailBadge(c, effectiveActor, ToneInfo)
+					ui.Text(c, effectiveActor).Font("monospace").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
 				} else {
-					if ui.Select(c.Key("pg-actor"), &st.actor, []string{"developer", "observer"}).MinWidth(120).Changed() {
+					if ui.Select(c.Key("pg-actor"), &st.actor, []string{"developer", "observer"}).MinWidth(116).Changed() {
 						st.result = nil
 						st.selectedTool = nil
 						st.invocation = nil
@@ -291,8 +282,8 @@ func (u *DesktopUI) renderPlaygroundComposer(
 			})
 
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "限定服务").FontSize(12.5).TextColor(SailInkMuted).SingleLine()
-				if ui.Select(c.Key("pg-scope"), &st.serviceScopeLabel, scopeOptions).MinWidth(170).Changed() {
+				ui.Text(c, "服务").FontSize(12).TextColor(SailInkMuted).SingleLine()
+				if ui.Select(c.Key("pg-scope"), &st.serviceScopeLabel, scopeOptions).MinWidth(164).Changed() {
 					st.selectedServiceID = scopeLabelToID[st.serviceScopeLabel]
 					st.result = nil
 					st.selectedTool = nil
@@ -303,25 +294,22 @@ func (u *DesktopUI) renderPlaygroundComposer(
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Wrap().Children(func() {
 			ui.Row(c).Gap(16).AlignItems(ui.Center).Wrap().Children(func() {
-				if ui.Checkbox(c.Key("pg-include-demo"), &st.includeDemo, "包含内置演示工具").Changed() {
+				if ui.Checkbox(c.Key("pg-include-demo"), &st.includeDemo, "演示工具").Changed() {
 					st.result = nil
 					st.selectedTool = nil
 					st.invocation = nil
 				}
 
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-					if ui.Switch(c.Key("pg-summary-only"), &st.summaryOnly).Label("仅返回摘要").Changed() {
-						st.result = nil
-						st.selectedTool = nil
-						st.invocation = nil
-					}
-					ui.Text(c, "仅返回摘要（summary_only）").FontSize(12.5).TextColor(SailInkBody).SingleLine()
-				})
+				if ui.Checkbox(c.Key("pg-summary-only"), &st.summaryOnly, "仅摘要").Changed() {
+					st.result = nil
+					st.selectedTool = nil
+					st.invocation = nil
+				}
 			})
 
 			btnLabel := "发起路由发现"
 			if st.routing {
-				btnLabel = "模型选择中…"
+				btnLabel = "路由中…"
 			}
 			if ui.PrimaryButton(c.Key("pg-discover-btn"), btnLabel).
 				Disabled(strings.TrimSpace(st.intent) == "" || st.routing).
@@ -339,31 +327,40 @@ func (u *DesktopUI) renderPlaygroundResults(
 	toolsByID map[string]gateway.Tool,
 	effectiveActor string,
 ) {
-	SailCard(c, func() {
-		SailCardTitle(c, "2. 路由决策与命中工具", "", func() {
+	SailFlushCard(c, func() {
+		var headerNote string
+		if res := st.result; res != nil {
+			headerNote = fmt.Sprintf("候选 %d · %d ms", res.Eligible, res.DurationMS)
+			if res.PromptTokens+res.OutputTokens > 0 {
+				headerNote += fmt.Sprintf(" · %d tok", res.PromptTokens+res.OutputTokens)
+			}
+		}
+
+		SailListCardHeader(c, "路由结果", headerNote, func() {
 			if res := st.result; res != nil {
-				SailBadgeDot(c, discoveryStatusLabel(res.Status), discoveryStatusTone(res.Status))
-				ui.Textf(c, "候选 %d", res.Eligible).FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted).SingleLine()
-				ui.Textf(c, "%d ms", res.DurationMS).FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted).SingleLine()
-				if res.PromptTokens+res.OutputTokens > 0 {
-					ui.Textf(c, "Prompt %d / Out %d tok", res.PromptTokens, res.OutputTokens).
-						FontSize(12).
-						FontFeatures("tnum").
-						TextColor(SailInkMuted).
-						SingleLine()
+				switch res.Status {
+				case "selected":
+					SailQuietStatus(c, "已命中", SailSuccessInk, SailInkStrong)
+				case "needs_context":
+					SailBadge(c, "需补充信息", ToneWarning)
+				case "error", "failed":
+					SailBadge(c, discoveryStatusLabel(res.Status), ToneDanger)
+				default:
+					SailQuietStatus(c, discoveryStatusLabel(res.Status), SailInkFaint, SailInkMuted)
 				}
 			}
 		})
 
 		if st.routeError != "" {
-			SailAlertBox(c, ToneDanger, "路由发现失败", st.routeError)
+			ui.Column(c).FillWidth().Padding(16, 20).Children(func() {
+				SailAlertBox(c, ToneDanger, "路由发现失败", st.routeError)
+			})
 		}
 
 		if st.routing {
-			ui.Column(c).FillWidth().Padding(24, 16).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Spinner(c).Label("正在请求 Decisions 路由模型")
-				ui.Text(c, "正在请求 Decisions 路由模型…").FontSize(13.5).FontWeight(600).TextColor(SailInkStrong)
-				ui.Text(c, "按身份筛选候选工具 → 评估语义相关性 → 返回匹配工具与理由").FontSize(12).TextColor(SailInkMuted)
+			ui.Column(c).FillWidth().Padding(32, 20).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Spinner(c).Label("正在请求路由模型")
+				ui.Text(c, "正在评估候选工具…").FontSize(13).TextColor(SailInkMuted)
 			})
 			return
 		}
@@ -371,100 +368,93 @@ func (u *DesktopUI) renderPlaygroundResults(
 		res := st.result
 		if res == nil {
 			if st.routeError == "" {
-				SailEmptyState(c, "等待运行工具发现", "输入任务意图后点击「发起路由发现」，命中的候选工具、精选理由与 Token 耗时将在此展示。", "", nil)
+				ui.Column(c).FillWidth().Padding(20).Children(func() {
+					SailEmptyState(c, "尚未发起路由", "", "", nil)
+				})
 			}
 			return
 		}
 
-		SailSubtleCard(c, func() {
-			summaryText := res.Summary
-			if summaryText == "" {
-				summaryText = "（模型未返回摘要）"
-			}
-			ui.Text(c, summaryText).FontSize(13).FontWeight(600).TextColor(SailInkStrong)
-
-			if res.Question != "" {
-				ui.Text(c, "补充信息建议："+res.Question).FontSize(12.5).TextColor(SailWarningInk)
-			}
-
-			ui.Row(c).Gap(12).Wrap().AlignItems(ui.Center).Children(func() {
-				if res.Model != "" {
-					ui.Textf(c, "模型: %s", res.Model).Font("monospace").FontSize(11.5).TextColor(SailInkMuted)
-				}
-				if len(res.Servers) > 0 {
-					ui.Textf(c, "分层命中服务: %s", strings.Join(res.Servers, ", ")).Font("monospace").FontSize(11.5).TextColor(SailInkMuted)
-				}
-				if res.PromptTokens+res.OutputTokens > 0 {
-					ui.Textf(c, "总 Token: %d（Prompt %d + Output %d）", res.PromptTokens+res.OutputTokens, res.PromptTokens, res.OutputTokens).
-						FontSize(11.5).
-						FontFeatures("tnum").
-						TextColor(SailInkMuted)
-				}
-			})
-		})
+		if res.Summary != "" || res.Question != "" {
+			ui.Column(c).
+				FillWidth().
+				Padding(14, 20).
+				Gap(4).
+				Background(SailBgSubtle).
+				BorderWidth(0, 0, 1, 0).
+				BorderColor(SailDivider).
+				Children(func() {
+					if res.Summary != "" {
+						ui.Text(c, res.Summary).FontSize(13).LineHeight(1.48).FontWeight(500).TextColor(SailInkStrong)
+					}
+					if res.Question != "" {
+						ui.Text(c, "建议补充："+res.Question).FontSize(12.5).TextColor(SailWarningInk)
+					}
+				})
+		}
 
 		if len(res.Tools) == 0 {
-			SailEmptyState(c, "未命中工具", "请尝试补充更具体的服务名称、操作目标，或检查当前身份下的已启用工具。", "", nil)
+			ui.Column(c).FillWidth().Padding(20).Children(func() {
+				SailEmptyState(c, "未命中工具", "", "", nil)
+			})
 			return
 		}
 
-		ui.Column(c).FillWidth().Gap(8).Children(func() {
-			for idx, sel := range res.Tools {
-				isSelected := st.selectedTool != nil && st.selectedTool.ID == sel.ID
-				srvName := sel.ServerID
-				if srv, ok := serversByID[sel.ServerID]; ok && srv.Name != "" {
-					srvName = srv.Name
-				}
+		for idx, item := range res.Tools {
+			sel := item
+			isSelected := st.selectedTool != nil && st.selectedTool.ID == sel.ID
+			isLast := idx == len(res.Tools)-1
+			srvName := sel.ServerID
+			if srv, ok := serversByID[sel.ServerID]; ok && srv.Name != "" {
+				srvName = srv.Name
+			}
 
-				rowBtn := ui.ButtonBase(c.Key("pg-hit-"+sel.ID)).
-					FillWidth().
-					Padding(12, 14).
-					Radius(7).
-					Gap(10).
-					AlignItems(ui.Start).
-					Cursor(ui.CursorPointer)
-				if isSelected {
-					rowBtn.Background(SailAccentSoft).Border(1, SailAccentBorder)
-				} else if rowBtn.Hovered() {
-					rowBtn.Background(SailBgHover).Border(1, SailBorderStrong)
-				} else {
-					rowBtn.Background(SailBgCanvas).Border(1, SailBorder)
-				}
+			rowBtn := ui.ButtonBase(c.Key("pg-hit-"+sel.ID)).
+				FillWidth().
+				Padding(13, 20).
+				Gap(14).
+				AlignItems(ui.Center).
+				Justify(ui.SpaceBetween).
+				Cursor(ui.CursorPointer)
+			if !isLast {
+				rowBtn.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+			}
+			if isSelected {
+				rowBtn.Background(SailAccentSoft)
+			} else if rowBtn.Hovered() {
+				rowBtn.Background(SailBgHover)
+			}
 
-				rowBtn.Children(func() {
-					ui.Box(c).
-						Padding(2, 7).
-						Radius(999).
-						Background(SailBgMuted).
-						Children(func() {
-							ui.Textf(c, "#%d", idx+1).Font("monospace").FontSize(11.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-						})
-
-					ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-						ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
-							ui.Row(c).Grow(1).MinWidth(0).Gap(8).AlignItems(ui.Center).Children(func() {
-								ui.Text(c, sel.Name).Font("monospace").FontSize(13).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-								ui.Text(c, srvName).FontSize(12).TextColor(SailInkMuted).SingleLine()
-							})
-							if sel.ReadOnly {
-								SailBadge(c, "只读", ToneSuccess)
-							} else {
-								SailBadge(c, "写操作", ToneWarning)
-							}
-						})
-						if sel.Reason != "" {
-							ui.Text(c, sel.Reason).FontSize(12.5).TextColor(SailInkBody)
-						} else if sel.Description != "" {
-							ui.Text(c, sel.Description).FontSize(12.5).TextColor(SailInkMuted)
+			rowBtn.Children(func() {
+				// Anchor 1 & 2: Rank + Name + Service, plus 1–2 line Reason/Summary
+				ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
+					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+						ui.Textf(c, "#%d", idx+1).Font("monospace").FontSize(11.5).FontWeight(600).TextColor(SailInkFaint).SingleLine()
+						nameCol := SailInkStrong
+						if isSelected {
+							nameCol = SailAccent
 						}
+						ui.Text(c, sel.Name).Font("monospace").FontSize(13).FontWeight(600).TextColor(nameCol).SingleLine()
+						ui.Text(c, srvName).FontSize(11.5).TextColor(SailInkFaint).SingleLine()
 					})
+
+					if sel.Reason != "" {
+						ui.Text(c, sel.Reason).FontSize(12.5).LineHeight(1.42).TextColor(SailInkMuted).MaxLines(2)
+					} else {
+						SailDescSummary(c, sel.Description, "", 1)
+					}
 				})
 
-				if rowBtn.Clicked() {
-					u.selectPlaygroundTool(st, sel, toolsByID, effectiveActor)
+				// Anchor 3: RW risk badge only when write-capable
+				if !sel.ReadOnly {
+					SailBadge(c, "写操作", ToneWarning).Shrink(0)
 				}
+			})
+
+			if rowBtn.Clicked() {
+				u.selectPlaygroundTool(st, sel, toolsByID, effectiveActor)
 			}
-		})
+		}
 	})
 }
 
@@ -475,10 +465,10 @@ func (u *DesktopUI) renderPlaygroundInspector(
 	effectiveActor string,
 ) {
 	SailCard(c, func() {
-		SailCardTitle(c, "3. 工具检查与试调用（invoke_tool）", "", func() {
+		SailCardTitle(c, "工具检查与试调用", "", func() {
 			if st.selectedTool != nil {
 				if st.selectedTool.ReadOnly {
-					SailBadge(c, "只读", ToneSuccess)
+					ui.Text(c, "只读").FontSize(12).TextColor(SailInkMuted).SingleLine()
 				} else {
 					SailBadge(c, "写操作", ToneWarning)
 				}
@@ -487,17 +477,17 @@ func (u *DesktopUI) renderPlaygroundInspector(
 
 		sel := st.selectedTool
 		if sel == nil {
-			SailEmptyState(c, "未选中工具", "从左侧命中结果中选择任一工具，检查真实 Input Schema 或直接发起试调用。", "", nil)
+			SailEmptyState(c, "未选择工具", "", "", nil)
 			return
 		}
 
-		ui.Column(c).FillWidth().Gap(4).Children(func() {
+		ui.Column(c).FillWidth().Gap(8).Children(func() {
 			ui.Text(c, sel.ID).Font("monospace").FontSize(14).Bold().TextColor(SailInkStrong).Selectable()
-			if sel.Description != "" {
-				ui.Text(c, sel.Description).FontSize(12.5).TextColor(SailInkMuted)
-			}
 			if sel.Reason != "" {
-				ui.Text(c, "路由理由: "+sel.Reason).FontSize(12).TextColor(SailAccent)
+				ui.Text(c, sel.Reason).FontSize(12.5).LineHeight(1.45).TextColor(SailAccent)
+			}
+			if strings.TrimSpace(sel.Description) != "" {
+				SailDescriptionDetail(c, "pg-desc-"+sel.ID, sel.Description)
 			}
 		})
 
@@ -505,21 +495,23 @@ func (u *DesktopUI) renderPlaygroundInspector(
 
 		if st.inspectorTab == 0 {
 			if sel.InputSchema == nil {
-				SailAlertBox(c, ToneInfo, "当前命中结果来自摘要模式（summary_only）", "摘要模式仅返回能力描述与理由，可按需调用 get_tool_schema 拉取完整 Input Schema。")
-				ui.Row(c).Gap(8).Children(func() {
-					btnText := "拉取完整 Input Schema"
-					if st.loadingSchema {
-						btnText = "加载中…"
-					}
-					if ui.PrimaryButton(c.Key("pg-fetch-schema"), btnText).Disabled(st.loadingSchema).Clicked() {
-						u.fetchPlaygroundToolSchema(st, sel.ID, effectiveActor)
-					}
-					if full, ok := toolsByID[sel.ID]; ok && full.InputSchema != nil {
-						if SailSmallButton(c.Key("pg-use-local-schema"), "从本地注册表补全").Clicked() {
-							sel.Tool = full
-							st.argsText = initialArgsForTool(full)
+				SailSubtleCard(c, func() {
+					ui.Text(c, "摘要模式未附带 Input Schema").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
+					ui.Row(c).Gap(8).Children(func() {
+						btnText := "拉取 Schema"
+						if st.loadingSchema {
+							btnText = "加载中…"
 						}
-					}
+						if ui.PrimaryButton(c.Key("pg-fetch-schema"), btnText).Disabled(st.loadingSchema).Clicked() {
+							u.fetchPlaygroundToolSchema(st, sel.ID, effectiveActor)
+						}
+						if full, ok := toolsByID[sel.ID]; ok && full.InputSchema != nil {
+							if SailSmallButton(c.Key("pg-use-local-schema"), "使用本地缓存").Clicked() {
+								sel.Tool = full
+								st.argsText = initialArgsForTool(full)
+							}
+						}
+					})
 				})
 			} else {
 				SailCodeBlock(c, "INPUT SCHEMA", PrettyJSON(sel.InputSchema), func() {
@@ -527,7 +519,7 @@ func (u *DesktopUI) renderPlaygroundInspector(
 				})
 			}
 
-			if ui.PrimaryButton(c.Key("pg-goto-invoke"), "使用此工具试运行").Clicked() {
+			if ui.PrimaryButton(c.Key("pg-goto-invoke"), "试运行此工具").Clicked() {
 				st.inspectorTab = 1
 			}
 			return
@@ -536,8 +528,8 @@ func (u *DesktopUI) renderPlaygroundInspector(
 		// Tab 1: Direct Invoke Workbench.
 		ui.Column(c).FillWidth().Gap(6).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-				ui.Text(c, "调用参数（arguments） JSON").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-				if SailSmallButton(c.Key("pg-reset-args"), "填入示例参数").Clicked() {
+				ui.Text(c, "参数 (JSON)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+				if SailSmallButton(c.Key("pg-reset-args"), "示例参数").Clicked() {
 					toolForArgs := sel.Tool
 					if toolForArgs.InputSchema == nil {
 						if full, ok := toolsByID[sel.ID]; ok {
@@ -555,26 +547,26 @@ func (u *DesktopUI) renderPlaygroundInspector(
 		})
 
 		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			ui.Text(c, "返回字段裁剪（fields，可选，逗号分隔路径）").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+			ui.Text(c, "字段裁剪").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 			ui.TextInput(c.Key("pg-fields"), &st.fieldsText).
 				Font("monospace").
-				Placeholder("例如：logs.timestamp, logs.message").
+				Placeholder("可选，如 logs.timestamp, logs.message").
 				FillWidth()
 		})
 
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			invokeLabel := "执行调用（Invoke）"
+			invokeLabel := "执行调用"
 			if st.invoking {
 				invokeLabel = "执行中…"
 			}
 			if ui.PrimaryButton(c.Key("pg-invoke-btn"), invokeLabel).Disabled(st.invoking).Clicked() {
 				u.runPlaygroundInvoke(st, sel.ID, effectiveActor)
 			}
-			ui.Textf(c, "调用身份: %s", effectiveActor).Font("monospace").FontSize(12).TextColor(SailInkMuted)
+			ui.Textf(c, "身份 · %s", effectiveActor).Font("monospace").FontSize(12).TextColor(SailInkMuted)
 		})
 
 		if st.invokeError != "" {
-			SailAlertBox(c, ToneDanger, "工具调用失败", st.invokeError)
+			SailAlertBox(c, ToneDanger, "调用失败", st.invokeError)
 		}
 
 		if inv := st.invocation; inv != nil {
@@ -782,25 +774,12 @@ func (u *DesktopUI) runPlaygroundInvoke(st *playgroundState, toolID, effectiveAc
 func discoveryStatusLabel(status string) string {
 	switch status {
 	case "selected":
-		return "selected · 已命中"
+		return "已命中"
 	case "needs_context":
-		return "needs_context · 需补充信息"
+		return "需补充信息"
 	case "no_match":
-		return "no_match · 无匹配"
+		return "无匹配"
 	default:
 		return status
-	}
-}
-
-func discoveryStatusTone(status string) BadgeTone {
-	switch status {
-	case "selected":
-		return ToneSuccess
-	case "needs_context":
-		return ToneWarning
-	case "error", "failed":
-		return ToneDanger
-	default:
-		return ToneNeutral
 	}
 }
