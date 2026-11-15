@@ -12,11 +12,11 @@
    - 删掉表单底部、弹窗顶部、Tab 顶部的常识性说明（如“点击保存后生效”、“语义路由模型将按相关性打分”等）。仅保留高价值护栏提醒或空状态引导。
 
 2. **去套娃与 Hairline Divider 列表**
-   - **严禁卡片套小卡片**：容器内列表统一使用无外框的底部分割线行（`SailHairlineRow` / `SailDivider`，`1px solid #e3e8ee`），替代层层描边 + 圆角 + 阴影的小卡片堆叠。
+   - **严禁卡片套小卡片**：容器内列表统一使用无外框的底部分割线行（`SailFlushCard` 内的细分割线行 / `SailDivider`，`1px solid #e3e8ee`），替代层层描边 + 圆角 + 阴影的小卡片堆叠。
    - **单行最多 3 个信息锚点**：列表行聚焦「主标识（+ 弱化从属名） / 清洗后一句话摘要 / 状态或风险开关」，次要元数据（`Actors`、`Tags`、`Revision`、`Adapter`）全部收进右侧详情检视面板。
 
 3. **徽标降噪（Badge De-noising）**
-   - **常规/在线/只读状态降噪**：使用 `SailQuietMeta(c, text, dotColor...)`（6–7px 状态圆点 + `12px` 柔和灰字 `#697386`），不再铺满高对比度绿/蓝彩色胶囊。
+   - **常规/在线/只读状态降噪**：使用 `SailQuietStatus(c, label, dotColor, textColor)`（6–7px 状态圆点 + `12px` 柔和灰字 `#697386`），不再铺满高对比度绿/蓝彩色胶囊。
    - **高饱和彩色仅留给关键风险与异常**：
      - 写操作风险：`RW` 保留柔和琥珀告警胶囊（`ToneWarning`）；
      - 错误与故障：连接失败、路由异常保留红/琥珀提示（`ToneDanger` / `ToneWarning`）。
@@ -34,25 +34,20 @@
 
 `ui_theme.go` 提供统一的解析与双场景渲染组件：
 
-### 2.1 解析器：`ParseRichDescription(raw string) RichDescription`
+### 2.1 列表摘要：`CleanDescriptionSummary(raw string) string`
 
-- 剥离首尾空白、统一换行符，去除生硬 Markdown 符号（`###` 标题前缀、`**bold**`、`__bold__`、`` `code` ``、Markdown 行内链接保留文本），跳过围栏代码块。
-- 结构化拆分为：
-  - `Summary string`：提取首段第一句核心用途摘要（自动截断 `Args:` / `Parameters:` 与多余换行，按 rune 限长 120 字符），专供列表行展示。
-  - `Lead string`：清洗后的首段完整引导说明。
-  - `Bullets []string`：自动提取 `- ` / `* ` / `1.` 要点行及 `Args:` / `Parameters:` 下的参数说明行。
-  - `HasMore bool`：原文是否包含额外段落、`Returns:` / `Example:` 尾部章节、代码块或超长条目的折叠标记。
+- 去除 Markdown 标记与文档分节噪声，提取简洁用途摘要。
+- `SailDescSummary(c, raw, emptyFallback, maxLines)` 用于列表展示，限制行数并保留空描述的明确回退。
 
-### 2.2 列表行渲染：`SailDescSummary(c, raw, maxLines)`
+### 2.2 详情解析：`ParseStructuredDescription(raw string) StructuredDescription`
 
-- 仅渲染 `Summary`，使用 `SailInkMuted`（`#697386`）、`12.5px`、`MaxLines(maxLines)` 自动省略号截断；`maxLines <= 1` 时单行截断。
-- 若 `raw` 为空则返回空 `ui.Element{}`（调用方按需显示“暂无描述”或缺失提示）。
+- `Lead`：首段用途；`Paragraphs`：补充段落。
+- `Bullets`：要点；`Params`：参数名、类型与说明。
+- `HasMoreRaw`：存在需展开查看的原文内容。
 
-### 2.3 详情抽屉渲染：`SailDescStructured(c, keyPrefix, raw)`
+### 2.3 详情渲染：`SailDescriptionDetail(c, key, raw)`
 
-- 首段 `Lead` 使用 `LineHeight(1.55)`、`SailInkBody` 可选中文本。
-- `Bullets` 渲染为带柔和圆点缩进的清晰条目；若条目符合 `paramName: desc` 格式，参数名自动以等宽强对比字体（`monospace` + `SailInkStrong`）高亮，解释文字用 `SailInkBody`。
-- 若 `HasMore == true`（或条目超过 6 条），底部提供轻量 `"查看完整原文"` / `"收起原文"` 切换，展开后在柔灰底框内展示可复制原文。
+保留结构化段落、行内代码/强调、要点和等宽参数名；长内容按需展开原文。上述名称对应 PR #6 合入后的原生实现，原型页面用于信息层级与交互参考。
 
 ---
 
@@ -60,9 +55,16 @@
 
 | 页面 | 文件 | 核心减法与重构重点 |
 | --- | --- | --- |
-| 运行大盘 Overview | `ui_overview.go` | 去掉多余引导说明；4 张 KPI 卡片保持 3 行以内的紧凑对齐；异常盲区与热点工具改用 `SailHairlineRow` 无框分割行；状态降噪为圆点 + 灰字 |
-| 上游服务 Services | `ui_services.go` | 砍掉列表页、Subtab 与弹窗顶部 70% 说明废话；服务行与工具白名单行改为 `SailHairlineRow`；列表调用 `SailDescSummary`，工具编辑/详情调用 `SailDescStructured`；仅保留 `RW` 与错误告警胶囊 |
-| 工具目录 Catalog | `ui_catalog.go` | 筛选栏合并紧凑；列表行精简为「工具名 + 弱化服务名 / `SailDescSummary` / 右侧 `RW` 或灰字 `RO` + 开关」；`Actors`/`Tags` 全部收进右侧详情面板；右侧描述区使用 `SailDescStructured` 彻底告别纯文本墙 |
-| 请求日志 Logs | `ui_logs.go` | 删掉导语；左侧时间线改用 `SailHairlineRow`（状态圆点 + 意图/工具标题 + 弱化时间/耗时）；右侧追踪面板突出状态、延迟、Token 与命中工具清洗摘要 |
+| 运行大盘 Overview | `ui_overview.go` | 去掉多余引导说明；4 张 KPI 卡片保持 3 行以内的紧凑对齐；异常盲区与热点工具改用 细分割线行 无框分割行；状态降噪为圆点 + 灰字 |
+| 上游服务 Services | `ui_services.go` | 砍掉列表页、Subtab 与弹窗顶部 70% 说明废话；服务行与工具白名单行改为 细分割线行；列表调用 `SailDescSummary`，工具编辑/详情调用 `SailDescriptionDetail`；仅保留 `RW` 与错误告警胶囊 |
+| 工具目录 Catalog | `ui_catalog.go` | 筛选栏合并紧凑；列表行精简为「工具名 + 弱化服务名 / `SailDescSummary` / 右侧 `RW` 或灰字 `RO` + 开关」；`Actors`/`Tags` 全部收进右侧详情面板；右侧描述区使用 `SailDescriptionDetail` 彻底告别纯文本墙 |
+| 请求日志 Logs | `ui_logs.go` | 删掉导语；左侧时间线改用 细分割线行（状态圆点 + 意图/工具标题 + 弱化时间/耗时）；右侧追踪面板突出状态、延迟、Token 与命中工具清洗摘要 |
 | 路由沙盒 Playground | `ui_playground.go` | 精简左右工作台标题与提示文案；命中工具列表改用分割线行 + `SailDescSummary` + 弱化命中理由；右侧 Inspector 结构化展示工具描述与 Schema |
 | 访问与路由 Settings | `ui_settings.go` | 删掉护栏矩阵与策略卡片的冗余副标题；表格改用细分割线与等宽数字；仅在开放写工具或校验失败时保留告警块 |
+
+
+## 4. 0.0.2 整合补充
+
+- 应用跟随系统浅色/暗色外观，主题切换不重置页面或数据。浅色保留极简重构的 token；暗色覆盖背景、文字、分割线、输入框与语义状态色。
+- 「连接客户端」采用一行一个客户端：品牌图标、名称、定位配置的 ↗，以及按状态显示的写入/更新/已配置/检查操作；撤回放入更多菜单。
+- Dev 与 Stable 的应用身份、数据目录、端口、客户端 MCP 条目及更新策略相互隔离。

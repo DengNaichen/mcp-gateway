@@ -389,7 +389,7 @@ func run() error {
 	}
 	defer d.cleanup()
 
-	mygo.Theme.SetSource(mygo.ThemeLight)
+	mygo.Theme.SetSource(mygo.ThemeSystem)
 	if buildinfo.Current().Channel == "stable" {
 		mygo.Use(native.Plugin)
 	}

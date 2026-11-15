@@ -54,6 +54,7 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 			"native_ui":       true,
 			"build":           buildinfo.Current(),
 			"updates_enabled": buildinfo.Current().Channel == "stable",
+			"dark":            mygo.Theme.IsDark(),
 		}
 		if rt != nil {
 			resp["mode"] = rt.Mode
@@ -71,6 +72,30 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 			resp["current_view"] = string(uiApp.CurrentView())
 		}
 		writeJSON(w, http.StatusOK, resp)
+	})
+
+	mux.HandleFunc("POST /theme", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Source string `json:"source"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		var source mygo.ThemeSource
+		switch in.Source {
+		case "system":
+			source = mygo.ThemeSystem
+		case "light":
+			source = mygo.ThemeLight
+		case "dark":
+			source = mygo.ThemeDark
+		default:
+			writeJSON(w, 400, map[string]string{"error": "unknown theme source"})
+			return
+		}
+		mygo.Theme.SetSource(source)
+		writeJSON(w, 200, map[string]any{"source": in.Source, "dark": mygo.Theme.IsDark()})
 	})
 
 	mux.HandleFunc("POST /view", func(w http.ResponseWriter, r *http.Request) {
