@@ -47,3 +47,5 @@ CGO_ENABLED=0 go tool mygo build -skip-dmg
 原生端到端验证可设置 `GATEWAY_CLIENT_CONFIG_HOME` 指向隔离目录，`GATEWAY_DESKTOP_CONTROL` 指向本地 Unix socket；GET /clients、POST /clients（ID/Action）与 UI 共用管理器。该 socket 默认关闭，权限为 0600。
 
 最终生成的 app 再次完成全部五客户端 write → 重复 write → revoke，状态及文件核对通过。最终构建和运行证据保留在 `/tmp/gateway-client-verification/`：`final-build/`、`final-tests.log`、`new-race.log`、`final-runtime.log`、`final-clients.png`。测试服务器已退出；本机 Codex 配置恢复到原始校验和，Cursor 测试条目已撤回，且在已登录的 MCP 页面确认不存在。
+
+2026-11-16 客户端页面补充：嵌入五客户端品牌图标，路径改为名称后的 ↗ 按钮，完整路径保留在 tooltip。已有文件通过 MyGo ShowItemInFolder 定位；未创建文件时打开最近存在的上级目录，不创建额外文件。新增路径回退及可访问按钮/隐藏长路径测试通过，实际打包页面截图位于 `/tmp/gateway-client-icons/page.png`。未设置测试配置目录覆盖时，实际读取的路径已核对为 `/Users/nd/.codex/config.toml` 等真实用户目录。系统屏幕捕获返回 SCStreamError -3811，因此未完成 Finder 实际点击验证；已核对 MyGo 原生 API 接线、运行页面和路径解析。

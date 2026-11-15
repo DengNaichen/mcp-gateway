@@ -3,6 +3,7 @@ package main
 import (
 	"gatewaylab/internal/clientconfig"
 	"github.com/egoist/mygo/ui"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -16,6 +17,14 @@ func TestClientPageAndLocalActions(t *testing.T) {
 	for _, name := range []string{"Codex CLI", "Claude Code", "Cursor", "OpenCode v2", "Pi"} {
 		if !tester.HasText(name) {
 			t.Fatal("missing client", name)
+		}
+	}
+	for _, row := range u.ClientStatuses {
+		if tester.HasText(row.Path) {
+			t.Fatal("raw config path rendered", row.ID)
+		}
+		if _, ok := tester.Access("打开 " + row.Name + " 配置位置"); !ok {
+			t.Fatal("missing accessible path action", row.ID)
 		}
 	}
 	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi"} {
@@ -42,5 +51,24 @@ func TestClientPageAndLocalActions(t *testing.T) {
 	tester.Frame()
 	if !tester.HasText("未配置") {
 		t.Fatal("missing removed status")
+	}
+}
+
+func TestConfigLocationFallback(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "config.json")
+	if err := os.WriteFile(file, []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		path, want string
+		file       bool
+	}{
+		{file, file, true}, {root, root, false}, {filepath.Join(root, "missing", "config.json"), root, false},
+	} {
+		got, isFile, err := nearestConfigLocation(tc.path)
+		if err != nil || got != tc.want || isFile != tc.file {
+			t.Fatalf("%s: %s %v %v", tc.path, got, isFile, err)
+		}
 	}
 }

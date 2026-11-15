@@ -93,10 +93,21 @@ func (u *DesktopUI) renderClients(c *ui.Context) {
 func (u *DesktopUI) renderClientCard(c *ui.Context, row clientconfig.Status) {
 	ui.Column(c).FillWidth().Padding(18).Gap(8).Radius(8).Border(1, SailBorder).Background(SailBgCanvas).Children(func() {
 		ui.Row(c).FillWidth().Justify(ui.SpaceBetween).Children(func() {
-			ui.Text(c, row.Name).FontSize(16).Bold().TextColor(SailInkStrong)
+			ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
+				ui.Image(c, clientIcons[row.ID]).Size(28, 28).TextColor(SailInkStrong)
+				ui.Text(c, row.Name).FontSize(16).Bold().TextColor(SailInkStrong)
+				reveal := ui.ButtonBase(c.Key("reveal-path")).Size(28, 28).Radius(6).Center().Cursor(ui.CursorPointer).
+					Label("打开 " + row.Name + " 配置位置").Tooltip(row.Path)
+				if reveal.Hovered() {
+					reveal.Background(SailBgMuted)
+				}
+				reveal.Children(func() { ui.Icon(c, clientPathArrow).Size(17, 17).TextColor(SailInkMuted) })
+				if reveal.Clicked() {
+					u.RunAsync(func() error { return revealClientConfig(row.Path) })
+				}
+			})
 			ui.Text(c, row.State).FontSize(12).TextColor(SailInkMuted)
 		})
-		ui.Text(c, row.Path).FontSize(12).TextColor(SailInkMuted)
 		if row.Detail != "" {
 			ui.Text(c, row.Detail).FontSize(12).TextColor(SailInkMuted)
 		}
