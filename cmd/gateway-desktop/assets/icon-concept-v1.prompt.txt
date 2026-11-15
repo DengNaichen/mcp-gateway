@@ -1,0 +1,8 @@
+Generated with the built-in image_gen tool.
+
+Use case: logo-brand
+Asset type: macOS desktop app icon for Gateway Lab, an MCP gateway that unifies many tools and intelligently routes an AI agent to the right one.
+Primary request: Create one polished, distinctive app icon built around the idea of several paths becoming one through a gateway.
+Composition: A single large rounded-square app tile centered on a square 1024 x 1024 transparent canvas, approximately 88% canvas width, front facing. Deep indigo-violet tile, inspired by the app's existing #635BFF accent. Inside is one bold sculptural ivory-white gateway: a thick softly squared arch with a clearly open central doorway. Three short parallel lavender paths approach the doorway from the lower foreground and smoothly converge into one bright path passing through it. Keep this a unified compact emblem, not an architecture diagram. Strong silhouette and generous spacing, readable at 32px.
+Style: Premium macOS app icon, restrained dimensionality, satin ceramic emblem and softly beveled tile. Subtle violet ambient light inside the doorway, crisp edges, controlled soft studio shading. Beautiful simple geometry, quiet developer-tool personality, balanced optical weight.
+Constraints: One icon only. Transparent outside the rounded-square tile. No lettering, no wordmark, no text, no tiny nodes, no circuit-board pattern, no sparkle, no robot, no brain, no ornamental elements, no surrounding mockup, no multiple variants. Avoid excessive glow, glassmorphism, or complex realistic textures.

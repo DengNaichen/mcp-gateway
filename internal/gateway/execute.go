@@ -33,7 +33,7 @@ func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func connectMCP(ctx, processContext context.Context, s Server) (*mcp.ClientSession, error) {
-	client := mcp.NewClient(&mcp.Implementation{Name: "gateway-lab", Version: "0.1.0"}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "gateway-lab", Version: "0.0.1"}, nil)
 	if err := checkEnvironment(s); err != nil {
 		return nil, err
 	}

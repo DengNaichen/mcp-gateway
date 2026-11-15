@@ -1,10 +1,17 @@
 /bin/
-/data/*.json
-/data/*.jsonl
-/data/*.db
-/data/*.db-*
-/data/maintenance/
+/build/
+/.mygo/
+/data/
 /web/node_modules/
-.env
 .DS_Store
 *.log
+
+# Secrets, certificates, keys & release artifacts
+.env*
+!.env.example
+*.p12
+*.cer
+*.pem
+*.key
+mygo-update.key
+*.dmg

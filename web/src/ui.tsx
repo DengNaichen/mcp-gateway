@@ -11,28 +11,13 @@ export type BadgeTone =
 
 export function GatewayLogo({ size = 18 }: { size?: number }) {
   return (
-    <svg
+    <img
+      src="/favicon.svg"
       width={size}
       height={size}
-      viewBox="0 0 32 32"
-      fill="none"
+      alt=""
       aria-hidden="true"
-    >
-      <path
-        d="M7 7h8v7H7V7Zm10 11h8v7h-8v-7Z"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M15 10.5h5.5a4 4 0 0 1 4 4V18M17 21.5h-5.5a4 4 0 0 1-4-4V14"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-      <circle cx="24.5" cy="7" r="2.2" fill="currentColor" />
-      <circle cx="7.5" cy="25" r="2.2" fill="currentColor" />
-    </svg>
+    />
   );
 }
 

@@ -1,0 +1,447 @@
+{
+  "measured_at": "2026-11-15T14:49:10.867701+00:00",
+  "method": "tiktoken on compact JSON; counts content once, excludes model-specific hidden formatting, system prompt, dialogue, calls and execution results. 500-tool values are mean-based projections, not 500 observed enabled tools.",
+  "registry": {
+    "total": 655,
+    "non_demo": 647,
+    "enabled_non_demo": 395,
+    "enabled_non_demo_servers": 14,
+    "max_selected_tools": 4
+  },
+  "gateway_tools": [
+    "discover_tools",
+    "get_tool_schema",
+    "invoke_tool"
+  ],
+  "encodings": {
+    "o200k_base": {
+      "gateway_fixed_function_definitions": 357,
+      "gateway_raw_mcp_tools_list": 349,
+      "catalogs": {
+        "all_non_demo": {
+          "per_function": {
+            "count": 647,
+            "sum": 273634,
+            "mean": 422.9,
+            "median": 232,
+            "p90": 841,
+            "min": 41,
+            "max": 5583
+          },
+          "full_function_array": 273636,
+          "projected_500_functions": 211464,
+          "selected_tool_payload": {
+            "count": 647,
+            "sum": 297682,
+            "mean": 460.1,
+            "median": 270,
+            "p90": 879,
+            "min": 75,
+            "max": 5619
+          },
+          "projected_gateway_plus_selected": {
+            "1": 817,
+            "3": 1737,
+            "4": 2197,
+            "5": 2657
+          },
+          "by_service": {
+            "context7": {
+              "tools": 2,
+              "function_tokens": 1069
+            },
+            "firecrawl": {
+              "tools": 32,
+              "function_tokens": 18040
+            },
+            "github": {
+              "tools": 46,
+              "function_tokens": 11386
+            },
+            "heroku": {
+              "tools": 33,
+              "function_tokens": 4684
+            },
+            "hubspot": {
+              "tools": 21,
+              "function_tokens": 8509
+            },
+            "linear": {
+              "tools": 70,
+              "function_tokens": 22726
+            },
+            "mongodb": {
+              "tools": 31,
+              "function_tokens": 15029
+            },
+            "netlify": {
+              "tools": 10,
+              "function_tokens": 4968
+            },
+            "notion": {
+              "tools": 24,
+              "function_tokens": 17480
+            },
+            "playwright": {
+              "tools": 25,
+              "function_tokens": 4017
+            },
+            "sentry": {
+              "tools": 73,
+              "function_tokens": 46397
+            },
+            "slack": {
+              "tools": 8,
+              "function_tokens": 705
+            },
+            "supabase": {
+              "tools": 22,
+              "function_tokens": 3773
+            },
+            "vercel": {
+              "tools": 250,
+              "function_tokens": 114879
+            }
+          }
+        },
+        "enabled_non_demo": {
+          "per_function": {
+            "count": 395,
+            "sum": 131781,
+            "mean": 333.6,
+            "median": 214,
+            "p90": 662,
+            "min": 41,
+            "max": 2936
+          },
+          "full_function_array": 131783,
+          "projected_500_functions": 166811,
+          "selected_tool_payload": {
+            "count": 395,
+            "sum": 146484,
+            "mean": 370.8,
+            "median": 254,
+            "p90": 699,
+            "min": 75,
+            "max": 2969
+          },
+          "projected_gateway_plus_selected": {
+            "1": 728,
+            "3": 1470,
+            "4": 1840,
+            "5": 2211
+          },
+          "by_service": {
+            "context7": {
+              "tools": 2,
+              "function_tokens": 1069
+            },
+            "firecrawl": {
+              "tools": 22,
+              "function_tokens": 11858
+            },
+            "github": {
+              "tools": 32,
+              "function_tokens": 7832
+            },
+            "heroku": {
+              "tools": 13,
+              "function_tokens": 1255
+            },
+            "hubspot": {
+              "tools": 14,
+              "function_tokens": 4380
+            },
+            "linear": {
+              "tools": 39,
+              "function_tokens": 8953
+            },
+            "mongodb": {
+              "tools": 20,
+              "function_tokens": 10821
+            },
+            "netlify": {
+              "tools": 7,
+              "function_tokens": 3706
+            },
+            "notion": {
+              "tools": 13,
+              "function_tokens": 8895
+            },
+            "playwright": {
+              "tools": 7,
+              "function_tokens": 1475
+            },
+            "sentry": {
+              "tools": 48,
+              "function_tokens": 28751
+            },
+            "slack": {
+              "tools": 5,
+              "function_tokens": 407
+            },
+            "supabase": {
+              "tools": 22,
+              "function_tokens": 3773
+            },
+            "vercel": {
+              "tools": 151,
+              "function_tokens": 38634
+            }
+          }
+        }
+      },
+      "historical_discovery_payload_by_selected_count": {
+        "1": {
+          "count": 96,
+          "sum": 51032,
+          "mean": 531.6,
+          "median": 406.0,
+          "p90": 950,
+          "min": 170,
+          "max": 3039
+        },
+        "2": {
+          "count": 4,
+          "sum": 3513,
+          "mean": 878.2,
+          "median": 767.0,
+          "p90": 1604,
+          "min": 375,
+          "max": 1604
+        }
+      },
+      "historical_gateway_plus_discovery_payload": {
+        "count": 100,
+        "sum": 90245,
+        "mean": 902.5,
+        "median": 769.0,
+        "p90": 1326,
+        "min": 527,
+        "max": 3396
+      }
+    },
+    "cl100k_base": {
+      "gateway_fixed_function_definitions": 343,
+      "gateway_raw_mcp_tools_list": 332,
+      "catalogs": {
+        "all_non_demo": {
+          "per_function": {
+            "count": 647,
+            "sum": 264909,
+            "mean": 409.4,
+            "median": 226,
+            "p90": 823,
+            "min": 41,
+            "max": 5377
+          },
+          "full_function_array": 264911,
+          "projected_500_functions": 204721,
+          "selected_tool_payload": {
+            "count": 647,
+            "sum": 287649,
+            "mean": 444.6,
+            "median": 262,
+            "p90": 859,
+            "min": 73,
+            "max": 5411
+          },
+          "projected_gateway_plus_selected": {
+            "1": 788,
+            "3": 1677,
+            "4": 2121,
+            "5": 2566
+          },
+          "by_service": {
+            "context7": {
+              "tools": 2,
+              "function_tokens": 1069
+            },
+            "firecrawl": {
+              "tools": 32,
+              "function_tokens": 17401
+            },
+            "github": {
+              "tools": 46,
+              "function_tokens": 10919
+            },
+            "heroku": {
+              "tools": 33,
+              "function_tokens": 4582
+            },
+            "hubspot": {
+              "tools": 21,
+              "function_tokens": 8318
+            },
+            "linear": {
+              "tools": 70,
+              "function_tokens": 22045
+            },
+            "mongodb": {
+              "tools": 31,
+              "function_tokens": 14801
+            },
+            "netlify": {
+              "tools": 10,
+              "function_tokens": 4704
+            },
+            "notion": {
+              "tools": 24,
+              "function_tokens": 16479
+            },
+            "playwright": {
+              "tools": 25,
+              "function_tokens": 3912
+            },
+            "sentry": {
+              "tools": 73,
+              "function_tokens": 45462
+            },
+            "slack": {
+              "tools": 8,
+              "function_tokens": 677
+            },
+            "supabase": {
+              "tools": 22,
+              "function_tokens": 3719
+            },
+            "vercel": {
+              "tools": 250,
+              "function_tokens": 110849
+            }
+          }
+        },
+        "enabled_non_demo": {
+          "per_function": {
+            "count": 395,
+            "sum": 128175,
+            "mean": 324.5,
+            "median": 209,
+            "p90": 639,
+            "min": 41,
+            "max": 2907
+          },
+          "full_function_array": 128177,
+          "projected_500_functions": 162247,
+          "selected_tool_payload": {
+            "count": 395,
+            "sum": 142089,
+            "mean": 359.7,
+            "median": 246,
+            "p90": 676,
+            "min": 73,
+            "max": 2938
+          },
+          "projected_gateway_plus_selected": {
+            "1": 703,
+            "3": 1422,
+            "4": 1782,
+            "5": 2142
+          },
+          "by_service": {
+            "context7": {
+              "tools": 2,
+              "function_tokens": 1069
+            },
+            "firecrawl": {
+              "tools": 22,
+              "function_tokens": 11538
+            },
+            "github": {
+              "tools": 32,
+              "function_tokens": 7513
+            },
+            "heroku": {
+              "tools": 13,
+              "function_tokens": 1234
+            },
+            "hubspot": {
+              "tools": 14,
+              "function_tokens": 4316
+            },
+            "linear": {
+              "tools": 39,
+              "function_tokens": 8610
+            },
+            "mongodb": {
+              "tools": 20,
+              "function_tokens": 10676
+            },
+            "netlify": {
+              "tools": 7,
+              "function_tokens": 3522
+            },
+            "notion": {
+              "tools": 13,
+              "function_tokens": 8382
+            },
+            "playwright": {
+              "tools": 7,
+              "function_tokens": 1445
+            },
+            "sentry": {
+              "tools": 48,
+              "function_tokens": 28225
+            },
+            "slack": {
+              "tools": 5,
+              "function_tokens": 392
+            },
+            "supabase": {
+              "tools": 22,
+              "function_tokens": 3719
+            },
+            "vercel": {
+              "tools": 151,
+              "function_tokens": 37562
+            }
+          }
+        }
+      },
+      "historical_discovery_payload_by_selected_count": {
+        "1": {
+          "count": 96,
+          "sum": 50433,
+          "mean": 525.3,
+          "median": 408.0,
+          "p90": 950,
+          "min": 176,
+          "max": 3014
+        },
+        "2": {
+          "count": 4,
+          "sum": 3463,
+          "mean": 865.8,
+          "median": 747.5,
+          "p90": 1579,
+          "min": 389,
+          "max": 1579
+        }
+      },
+      "historical_gateway_plus_discovery_payload": {
+        "count": 100,
+        "sum": 88196,
+        "mean": 882.0,
+        "median": 757.0,
+        "p90": 1305,
+        "min": 519,
+        "max": 3357
+      }
+    }
+  },
+  "history": {
+    "database": "data/gateway.db",
+    "selected_records": 100,
+    "newest": "2026-11-14T21:50:11.412353+08:00",
+    "oldest": "2026-11-14T21:37:32.539906+08:00",
+    "router_prompt_tokens_reported": {
+      "count": 100,
+      "sum": 2239794,
+      "mean": 22397.9,
+      "median": 13603.0,
+      "p90": 39661,
+      "min": 6375,
+      "max": 64536
+    }
+  }
+}

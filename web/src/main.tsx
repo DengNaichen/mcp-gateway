@@ -216,25 +216,7 @@ function App() {
 
       {/* Light Stripe Sail Enterprise Control Plane Sidebar */}
       <aside className="sail-sidebar">
-        <a
-          href="#overview"
-          className="sail-brand"
-          onClick={(e) => {
-            e.preventDefault();
-            navigate("overview");
-          }}
-        >
-          <span className="sail-brand-mark">
-            <GatewayLogo size={17} />
-          </span>
-          <span className="sail-brand-text">
-            <span className="sail-brand-title">MCP Gateway</span>
-            <span className="sail-brand-sub">
-              {state.access?.shared ? "共享网关控制面" : "本地网关控制面"}
-            </span>
-          </span>
-        </a>
-
+        <div className="sail-sidebar-drag" aria-hidden="true" />
         <div className="sail-nav-section">
           <div className="sail-nav-heading">控制面</div>
           <nav className="sail-nav-list" aria-label="控制面导航">

@@ -60,7 +60,7 @@ func toolResult(data any) (*mcp.CallToolResult, error) {
 }
 
 func (g *Gateway) mcpServer() *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "gateway-lab", Version: "0.1.0"}, nil)
+	s := mcp.NewServer(&mcp.Implementation{Name: "gateway-lab", Version: "0.0.1"}, nil)
 	s.AddTool(&mcp.Tool{Name: "discover_tools", Description: "Describe your current task to discover a small set of authorized tools. Returns real tool IDs, schemas and usage reasons. Use invoke_tool to execute them. Rediscover as the task changes.", InputSchema: objectSchema(map[string]any{
 		"summary_only": map[string]any{"type": "boolean", "description": "Return capability summaries; use get_tool_schema for the selected tool"},
 		"intent":       map[string]any{"type": "string", "description": "The capability needed now, in natural language"}, "context": map[string]any{"type": "string", "description": "Relevant known facts and previous attempts"}, "actor": map[string]any{"type": "string", "enum": []string{"developer", "observer"}, "description": "Simulated identity only"},
@@ -129,7 +129,7 @@ func (g *Gateway) Handler(assets fs.FS) http.Handler {
 	mux.Handle("/demo/mcp", mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server { return demo }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true}))
 	mux.HandleFunc("GET /demo/api/{name}", g.demoHTTP)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 200, map[string]any{"status": "ok", "version": "0.1.0"})
+		respond(w, 200, map[string]any{"status": "ok", "version": "0.0.1"})
 	})
 	mux.HandleFunc("GET /api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
 		settings, key := g.Config()
