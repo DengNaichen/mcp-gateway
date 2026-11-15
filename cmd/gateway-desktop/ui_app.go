@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"gatewaylab/internal/clientconfig"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -22,6 +26,7 @@ const (
 	ViewPlayground ViewID = "playground"
 	ViewLogs       ViewID = "logs"
 	ViewSettings   ViewID = "settings"
+	ViewClients    ViewID = "clients"
 )
 
 func viewTitle(v ViewID) string {
@@ -36,6 +41,8 @@ func viewTitle(v ViewID) string {
 		return "路由沙盒"
 	case ViewLogs:
 		return "请求日志"
+	case ViewClients:
+		return "连接客户端"
 	case ViewSettings:
 		return "访问与路由"
 	default:
@@ -46,8 +53,12 @@ func viewTitle(v ViewID) string {
 // DesktopUI owns the native mygo/ui application state, API client, routing,
 // background polling, and thread-safe async updates for the desktop window.
 type DesktopUI struct {
-	Runtime *gatewayRuntime
-	Client  *APIClient
+	ClientConfigs     *clientconfig.Manager
+	ClientStatuses    []clientconfig.Status
+	ClientConfigError string
+	ClientsBusy       bool
+	Runtime           *gatewayRuntime
+	Client            *APIClient
 
 	// Current window reference (guarded by mu for background goroutines).
 	mu        sync.Mutex
@@ -72,7 +83,6 @@ type DesktopUI struct {
 	ReplayIntent          string
 	ReplayActor           string
 	ReplaySeq             int
-	ShowConnectModal      bool
 
 	// Auth & bootstrap lifecycle state.
 	NeedsLogin bool
@@ -104,6 +114,17 @@ func NewDesktopUI(rt *gatewayRuntime) *DesktopUI {
 		ViewMode:     ViewOverview,
 		Loading:      true,
 		scrollStates: make(map[ViewID]*ui.ScrollState),
+	}
+	home, err := os.UserHomeDir()
+	configEnv := os.Getenv
+	if testHome := os.Getenv("GATEWAY_CLIENT_CONFIG_HOME"); testHome != "" {
+		home, err = testHome, nil
+		configEnv = func(string) string { return "" }
+	}
+	if err == nil {
+		d.ClientConfigs = clientconfig.New(home, filepath.Join(home, ".mcp-gateway", "client-config"), configEnv)
+	} else {
+		d.ClientConfigError = err.Error()
 	}
 	d.viewAtomic.Store(ViewOverview)
 	return d
@@ -327,6 +348,9 @@ func (u *DesktopUI) pollLoop(ctx context.Context) {
 // --- Cross-page navigation helpers ---
 
 func (u *DesktopUI) Navigate(view ViewID) {
+	if view == ViewClients {
+		u.refreshClientConfigs()
+	}
 	u.ViewMode = view
 	if view != ViewServices {
 		u.SelectedServerID = ""
@@ -373,8 +397,8 @@ func (u *DesktopUI) OpenLogsEvent(eventID string) {
 	u.viewAtomic.Store(ViewLogs)
 }
 
-func (u *DesktopUI) OpenConnectModal() {
-	u.ShowConnectModal = true
+func (u *DesktopUI) OpenClients() {
+	u.Navigate(ViewClients)
 }
 
 func (u *DesktopUI) scrollState(view ViewID) *ui.ScrollState {
@@ -469,10 +493,6 @@ func (u *DesktopUI) View(c *ui.Context) {
 		u.renderSidebar(c, bar)
 		u.renderMainWorkspace(c, bar)
 	})
-
-	if u.ShowConnectModal {
-		u.renderConnectModal(c)
-	}
 
 	u.drainToasts(c)
 }
@@ -627,6 +647,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 					{id: ViewOverview, label: "运行大盘", icon: IconHome},
 					{id: ViewServices, label: "上游服务", icon: IconServer, badge: fmt.Sprintf("%d", activeRealServers)},
 					{id: ViewCatalog, label: "工具目录", icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
+					{id: ViewClients, label: "连接客户端", icon: IconServer},
 					{id: ViewSettings, label: "访问与路由", icon: IconShield},
 				})
 				u.renderNavGroup(c, "观测与诊断", []navItem{
@@ -675,7 +696,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 					})
 
 				if ui.Button(c.Key("sidebar-connect-btn"), "接入客户端配置").FillWidth().FontSize(12).Clicked() {
-					u.OpenConnectModal()
+					u.OpenClients()
 				}
 			})
 		})
@@ -881,7 +902,7 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 
 					// Connect client button.
 					if SailSmallButton(c.Key("top-connect-btn"), "接入客户端").Clicked() {
-						u.OpenConnectModal()
+						u.OpenClients()
 					}
 
 					if state.Access.Shared {
@@ -912,6 +933,8 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						u.renderPlayground(c)
 					case ViewLogs:
 						u.renderLogs(c)
+					case ViewClients:
+						u.renderClients(c)
 					case ViewSettings:
 						u.renderSettings(c)
 					default:

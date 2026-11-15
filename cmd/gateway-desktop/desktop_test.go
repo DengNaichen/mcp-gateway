@@ -445,16 +445,8 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 	if err := tester.Click("接入客户端"); err != nil {
 		t.Fatalf("open connect modal: %v", err)
 	}
-	if !tester.HasText("Codex CLI") || !tester.HasText("Claude Code") {
-		t.Fatal("expected connect modal tabs")
-	}
-	for _, tab := range []string{"Claude Code", "Cursor", "Claude Desktop", "系统提示词规范"} {
-		if err := tester.Click(tab); err != nil {
-			t.Fatalf("click connect tab %q: %v", tab, err)
-		}
-	}
-	if err := tester.Click("完成"); err != nil {
-		t.Fatalf("close connect modal: %v", err)
+	if uiApp.CurrentView() != ViewClients {
+		t.Fatal("expected client configuration page")
 	}
 
 	// 2. Services list, Add Service Modal, and Service Detail tabs.

@@ -19,7 +19,6 @@ type overviewLocalState struct {
 	testingModel    bool
 	testErrTitle    string
 	testErrDetail   string
-	connectTab      int
 }
 
 var (
@@ -161,7 +160,7 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 				ui.Text(c, "接入客户端").SingleLine()
 			})
 			if connectBtn.Clicked() {
-				u.OpenConnectModal()
+				u.OpenClients()
 			}
 
 			addSvcBtn := ui.PrimaryButton(c.Key("ov-hdr-add-svc"), "").Padding(5, 12).FontSize(12.5)
@@ -805,7 +804,7 @@ func (u *DesktopUI) renderOverviewTopToolsCard(c *ui.Context, topTools []TopTool
 			for idx, tool := range topTools {
 				t := tool
 				isLast := idx == len(topTools)-1
-				row := ui.Row(c.Key("ov-toptool-" + t.ID)).
+				row := ui.Row(c.Key("ov-toptool-"+t.ID)).
 					FillWidth().
 					Padding(10, 18).
 					Gap(12).
@@ -924,7 +923,7 @@ func (u *DesktopUI) renderOverviewServersCard(
 				check, hasCheck := state.Setup.SourceChecks[s.ID]
 				hasErr := hasCheck && check.Status == "error"
 
-				row := ui.ButtonBase(c.Key("ov-srv-row-" + s.ID)).
+				row := ui.ButtonBase(c.Key("ov-srv-row-"+s.ID)).
 					FillWidth().
 					Padding(12, 18).
 					Gap(12).
@@ -1063,7 +1062,7 @@ func (u *DesktopUI) renderOverviewEndpointCard(c *ui.Context, state *Bootstrap) 
 						SingleLine()
 
 					if ovRenderNavyBtn(c, "ov-ep-connect-modal", "客户端接入指令") {
-						u.OpenConnectModal()
+						u.OpenClients()
 					}
 				})
 		})
@@ -1105,332 +1104,6 @@ func (u *DesktopUI) ovSectionTableCard(
 				})
 			body()
 		})
-}
-
-// --- Connect Client Configuration Modal ---
-
-type ovClientTabSpec struct {
-	id       string
-	label    string
-	hint     string
-	wrapText bool
-}
-
-var ovClientTabs = []ovClientTabSpec{
-	{
-		id:    "codex",
-		label: "Codex CLI",
-		hint:  "在终端执行以下命令挂载网关：",
-	},
-	{
-		id:    "claude-code",
-		label: "Claude Code",
-		hint:  "在终端执行以下命令挂载 Streamable HTTP 网关：",
-	},
-	{
-		id:    "cursor",
-		label: "Cursor",
-		hint:  "写入 ~/.cursor/mcp.json 或工作区 .cursor/mcp.json：",
-	},
-	{
-		id:    "claude-desktop",
-		label: "Claude Desktop",
-		hint:  "写入 ~/Library/Application Support/Claude/claude_desktop_config.json（兼容通用 mcpServers 客户端）：",
-	},
-	{
-		id:       "guide",
-		label:    "系统提示词规范",
-		hint:     "推荐注入到 Agent 系统提示词（AGENTS.md / CLAUDE.md）以引导按需工具发现：",
-		wrapText: true,
-	},
-}
-
-func ovBuildConnectSnippet(tabID string, mcpURL string) string {
-	switch tabID {
-	case "codex":
-		return fmt.Sprintf("codex mcp add mcp-gateway --url %s", mcpURL)
-	case "claude-code":
-		return fmt.Sprintf("claude mcp add --transport http mcp-gateway %s", mcpURL)
-	case "cursor":
-		return PrettyJSON(map[string]any{
-			"mcpServers": map[string]any{
-				"mcp-gateway": map[string]any{
-					"url": mcpURL,
-				},
-			},
-		})
-	case "claude-desktop":
-		return PrettyJSON(map[string]any{
-			"mcpServers": map[string]any{
-				"mcp-gateway": map[string]any{
-					"type": "http",
-					"url":  mcpURL,
-				},
-			},
-		})
-	default:
-		return "需要外部工具时，先向 mcp-gateway 的 discover_tools 提交当前意图与上下文；网关按相关性返回最小候选工具 Schema 后，再调用 invoke_tool 执行。任务目标切换时重新调用 discover_tools。"
-	}
-}
-
-func (u *DesktopUI) renderConnectModal(c *ui.Context) {
-	if u.State == nil {
-		return
-	}
-	state := u.State
-	ov := u.overviewState()
-	if ov.connectTab < 0 || ov.connectTab >= len(ovClientTabs) {
-		ov.connectTab = 0
-	}
-
-	// Build verification prompt using first enabled real tool if available.
-	activeReal := make(map[string]bool, len(state.Registry.Servers))
-	for _, s := range state.Registry.Servers {
-		if !s.Demo && s.Enabled {
-			activeReal[s.ID] = true
-		}
-	}
-	var firstTool *gateway.Tool
-	for i := range state.Registry.Tools {
-		t := &state.Registry.Tools[i]
-		if t.Enabled && activeReal[t.ServerID] {
-			firstTool = t
-			break
-		}
-	}
-	samplePrompt := "请先调用 mcp-gateway 的 discover_tools 描述当前任务查找工具，再按返回的 input_schema 调用 invoke_tool 执行。"
-	if firstTool != nil {
-		taskDesc := firstTool.Description
-		if taskDesc == "" {
-			taskDesc = firstTool.Name
-		}
-		samplePrompt = fmt.Sprintf(
-			"请通过 mcp-gateway 完成任务：%s。先调用 discover_tools 查找匹配工具，再按返回的 input_schema 调用 invoke_tool。",
-			taskDesc,
-		)
-	}
-
-	activeSpec := ovClientTabs[ov.connectTab]
-	snippet := ovBuildConnectSnippet(activeSpec.id, state.MCPURL)
-
-	ui.DialogBase(c.Key("connect-client-modal"), &u.ShowConnectModal, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(26, 31, 54, 0.38)).Padding(20)
-		panel.
-			Width(660).
-			MaxWidthPercent(94).
-			MaxHeightPercent(90).
-			Radius(10).
-			Background(SailBgCanvas).
-			Border(1, SailBorder).
-			Shadow(0, 16, 36, 0, ui.RGBA(26, 31, 54, 0.22)).
-			Label("接入 MCP 客户端").
-			Clip()
-
-		// Modal Header
-		ui.Row(c).
-			FillWidth().
-			Shrink(0).
-			Padding(15, 20).
-			BorderWidth(0, 0, 1, 0).
-			BorderColor(SailBorder).
-			AlignItems(ui.Center).
-			Justify(ui.SpaceBetween).
-			Children(func() {
-				ui.Text(c, "接入 MCP 客户端").FontSize(16).Bold().TextColor(SailInkStrong)
-				closeBtn := ui.ButtonBase(c.Key("connect-modal-close")).
-					Size(28, 28).
-					Radius(6).
-					Center().
-					Cursor(ui.CursorPointer).
-					Label("关闭弹窗")
-				if closeBtn.Hovered() {
-					closeBtn.Background(SailBgMuted)
-				}
-				closeBtn.Children(func() {
-					ui.Icon(c, ovIconClose).Size(15, 15).TextColor(SailInkMuted)
-				})
-				if closeBtn.Clicked() {
-					u.ShowConnectModal = false
-				}
-			})
-
-		// Modal Body
-		ui.Scroll(c.Key("connect-modal-body")).
-			FillWidth().
-			Shrink(1).
-			MinHeight(0).
-			MaxHeight(480).
-			Padding(18, 20).
-			Gap(14).
-			Children(func() {
-				ui.Text(
-					c,
-					"所有 Agent 客户端只需挂载下方单一 Streamable HTTP 端点。网关仅向客户端暴露固定的 3 个元工具（discover_tools、get_tool_schema、invoke_tool），避免下游上百个工具撑爆上下文。",
-				).FontSize(12.5).LineHeight(1.5).TextColor(SailInkMuted)
-
-				// Deep Navy Client Config Card
-				ui.Column(c).
-					FillWidth().
-					Radius(8).
-					Background(SailNavyBg).
-					Border(1, SailNavyBorder).
-					Clip().
-					Children(func() {
-						// Top Endpoint Row
-						ui.Row(c).
-							FillWidth().
-							Padding(10, 14).
-							Background(SailNavyHeader).
-							BorderWidth(0, 0, 1, 0).
-							BorderColor(SailNavyBorder).
-							AlignItems(ui.Center).
-							Justify(ui.SpaceBetween).
-							Gap(10).
-							Wrap().
-							Children(func() {
-								ui.Row(c).Gap(7).AlignItems(ui.Center).Children(func() {
-									ui.Box(c).Size(7, 7).Radius(999).Background(ui.Hex("#10b981")).Shrink(0)
-									ui.Text(c, "MCP ENDPOINT").
-										Font("monospace").
-										FontSize(11.5).
-										FontWeight(600).
-										TextColor(SailNavyMuted).
-										SingleLine()
-								})
-
-								ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-									ui.Text(c, state.MCPURL).
-										Font("monospace").
-										FontSize(12).
-										TextColor(ui.Hex("#ffffff")).
-										Selectable().
-										SingleLine()
-									if ovRenderNavyBtn(c, "connect-copy-url", "复制地址") {
-										c.WriteClipboard(state.MCPURL)
-										u.Notify("已复制 MCP 地址")
-									}
-								})
-							})
-
-						// Client Selector Tabs + Copy Config Button
-						ui.Row(c).
-							FillWidth().
-							Padding(8, 12).
-							Background(ui.RGBA(255, 255, 255, 0.03)).
-							BorderWidth(0, 0, 1, 0).
-							BorderColor(SailNavyBorder).
-							AlignItems(ui.Center).
-							Justify(ui.SpaceBetween).
-							Gap(8).
-							Wrap().
-							Children(func() {
-								tabs := ui.TabsBase(c.Key("connect-client-tabs"), &ov.connectTab, len(ovClientTabs))
-								tabs.List.Gap(4).Wrap().Children(func() {
-									for i, spec := range ovClientTabs {
-										active := ov.connectTab == i
-										tab := tabs.Tab(i).
-											Padding(4, 10).
-											Radius(5).
-											Cursor(ui.CursorPointer)
-										if active {
-											tab.Background(ui.RGBA(99, 91, 255, 0.62))
-										} else if tab.Hovered() {
-											tab.Background(ui.RGBA(255, 255, 255, 0.09))
-										}
-										tabColor := SailNavyMuted
-										weight := 500
-										if active {
-											tabColor = ui.Hex("#ffffff")
-											weight = 600
-										}
-										tab.Children(func() {
-											ui.Text(c, spec.label).
-												FontSize(12).
-												FontWeight(weight).
-												TextColor(tabColor).
-												SingleLine()
-										})
-									}
-								})
-
-								if ovRenderNavyBtn(c, "connect-copy-snippet", "复制配置") {
-									c.WriteClipboard(snippet)
-									u.Notify("已复制到剪贴板")
-								}
-							})
-
-						// Target config path / usage hint
-						ui.Box(c).
-							FillWidth().
-							Padding(8, 14, 0, 14).
-							Children(func() {
-								ui.Text(c, activeSpec.hint).FontSize(11.5).TextColor(SailNavyMuted)
-							})
-
-						// Snippet Preview
-						if activeSpec.wrapText {
-							ui.Box(c).FillWidth().Padding(10, 14, 14, 14).Children(func() {
-								ui.Text(c, snippet).
-									Font("monospace").
-									FontSize(12.5).
-									LineHeight(1.55).
-									TextColor(SailNavyText).
-									Selectable()
-							})
-						} else {
-							ui.ScrollBoth(c.Key("connect-snippet-scroll")).
-								FillWidth().
-								MaxHeight(240).
-								Padding(10, 14, 14, 14).
-								Children(func() {
-									ui.Text(c, snippet).
-										Font("monospace").
-										FontSize(12.5).
-										LineHeight(1.55).
-										TextColor(SailNavyText).
-										Selectable().
-										NoWrap()
-								})
-						}
-					})
-
-				if state.Access.Shared {
-					SailAlertBox(
-						c,
-						ToneWarning,
-						"共享鉴权模式提示",
-						"当前实例处于共享鉴权模式，客户端请求需携带管理员签发的 Authorization: Bearer <token> 请求头。",
-					)
-				}
-			})
-
-		// Modal Footer
-		ui.Row(c).
-			FillWidth().
-			Shrink(0).
-			Padding(12, 20).
-			Background(SailBgSubtle).
-			BorderWidth(1, 0, 0, 0).
-			BorderColor(SailBorder).
-			AlignItems(ui.Center).
-			Justify(ui.End).
-			Gap(8).
-			Children(func() {
-				promptBtn := ui.Button(c.Key("connect-copy-prompt"), "").Padding(6, 12).FontSize(12.5)
-				promptBtn.Children(func() {
-					ui.Icon(c, ovIconCopy).Size(13, 13)
-					ui.Text(c, "复制连通性验证 Prompt").SingleLine()
-				})
-				if promptBtn.Clicked() {
-					c.WriteClipboard(samplePrompt)
-					u.Notify("已复制验证 Prompt")
-				}
-
-				if ui.PrimaryButton(c.Key("connect-done-btn"), "完成").Padding(6, 16).FontSize(12.5).Clicked() {
-					u.ShowConnectModal = false
-				}
-			})
-	})
 }
 
 // --- Local Styling & Formatting Helpers ---

@@ -356,3 +356,11 @@ web/dist          可直接内嵌的前端构建产物
 ```
 
 参考：[Uber MCP Gateway](https://www.uber.com/pr/en/blog/designing-mcp-gateway/)、[官方 MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)、[OpenAI Decisions API](https://developers.openai.com/api/reference/resources/decisions/methods/create)。
+
+## 原生桌面端：连接客户端
+
+MyGo 桌面端侧栏「连接客户端」可将本 Gateway 的 MCP 入口写入 Codex CLI、Claude Code、Cursor、OpenCode v2 和 Pi 的用户级配置，并支持撤回。客户端通过该入口发现 `discover_tools`、`get_tool_schema` 和 `invoke_tool`。
+
+页面显示实际配置路径和文件状态。写入保留其他配置；同名冲突不会覆盖；撤回只移除本应用写入且未被外部修改的条目。配置后需重载客户端并保持 Gateway 运行，Pi 可使用 `/reload`。共享鉴权模式还需在客户端补充 Bearer Token。
+
+实现边界、客户端版本和验证方法见 [客户端配置验证](docs/client-setup/verification.md)。
