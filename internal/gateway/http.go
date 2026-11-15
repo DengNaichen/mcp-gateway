@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"gatewaylab/internal/buildinfo"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -129,7 +131,7 @@ func (g *Gateway) Handler(assets fs.FS) http.Handler {
 	mux.Handle("/demo/mcp", mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server { return demo }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true}))
 	mux.HandleFunc("GET /demo/api/{name}", g.demoHTTP)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 200, map[string]any{"status": "ok", "version": "0.0.1"})
+		respond(w, 200, map[string]any{"status": "ok", "version": buildinfo.Current().Version, "channel": buildinfo.Current().Channel, "application": buildinfo.Current().Identifier, "instance_id": g.instanceID, "data_identity": buildinfo.DataIdentity(g.dir)})
 	})
 	mux.HandleFunc("GET /api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
 		settings, key := g.Config()

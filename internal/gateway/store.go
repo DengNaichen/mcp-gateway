@@ -13,11 +13,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	_ "modernc.org/sqlite"
 )
 
 type Gateway struct {
+	instanceID  string
 	mu          sync.RWMutex
 	registry    Registry
 	settings    Settings
@@ -58,7 +60,7 @@ func New(dir, baseURL string) (*Gateway, error) {
 			}
 		}
 	}()
-	g := &Gateway{execution: execution, access: access, dir: dir, baseURL: baseURL, events: []Event{}, settings: Settings{
+	g := &Gateway{instanceID: uuid.NewString(), execution: execution, access: access, dir: dir, baseURL: baseURL, events: []Event{}, settings: Settings{
 		BaseURL: "https://api.openai.com/v1", Model: "gpt-6-luna", MaxTools: 4, TimeoutSeconds: 45,
 	}, db: db}
 	if err := g.loadRegistry(); err != nil {

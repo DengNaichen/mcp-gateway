@@ -40,5 +40,26 @@ jobs:
       - name: Run Go tests
         run: CGO_ENABLED=0 go test -count=1 ./...
 
+      - name: Test channel and release policy
+        run: |
+          node --test scripts/release-policy.test.mjs
+          CGO_ENABLED=0 go test -ldflags="-X gatewaylab/internal/buildinfo.channel=stable" ./...
+
       - name: Verify desktop package build (ad-hoc)
         run: make package
+
+      - name: Verify Stable package identity
+        run: node scripts/build-channel.mjs package stable -skip-dmg
+
+      - name: Archive Dev app with executable permissions
+        run: |
+          for app in build/dev/*/*.app; do
+            ditto -c -k --sequesterRsrc --keepParent "$app" "$(dirname "$app")/mcp-gateway-dev.zip"
+          done
+
+      - name: Retain Dev build for testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-gateway-dev-${{ github.sha }}
+          path: build/dev/*/*.zip
+          if-no-files-found: error

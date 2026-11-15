@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"gatewaylab/internal/buildinfo"
+
 	"github.com/egoist/mygo"
 )
 
@@ -47,9 +49,11 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 		d.mu.Unlock()
 
 		resp := map[string]any{
-			"ready":         rt != nil,
-			"window_exists": win != nil,
-			"native_ui":     true,
+			"ready":           rt != nil,
+			"window_exists":   win != nil,
+			"native_ui":       true,
+			"build":           buildinfo.Current(),
+			"updates_enabled": buildinfo.Current().Channel == "stable",
 		}
 		if rt != nil {
 			resp["mode"] = rt.Mode

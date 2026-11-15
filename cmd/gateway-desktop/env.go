@@ -10,10 +10,11 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"gatewaylab/internal/buildinfo"
 )
 
 const (
-	appDataDirName  = "mcp-gateway"
 	pathBeginMarker = "__MCP_GW_PATH_BEGIN__"
 	pathEndMarker   = "__MCP_GW_PATH_END__"
 )
@@ -38,17 +39,17 @@ func resolveDataDir(explicit string) (string, error) {
 	if trimmed := strings.TrimSpace(explicit); trimmed != "" {
 		return filepath.Abs(trimmed)
 	}
-	if fromEnv := strings.TrimSpace(os.Getenv("GATEWAY_DATA_DIR")); fromEnv != "" {
+	if fromEnv := strings.TrimSpace(os.Getenv(buildinfo.EnvironmentKey("GATEWAY_DATA_DIR"))); fromEnv != "" {
 		return filepath.Abs(fromEnv)
 	}
 	if configDir, err := os.UserConfigDir(); err == nil && configDir != "" {
-		return filepath.Join(configDir, appDataDirName), nil
+		return filepath.Join(configDir, buildinfo.Current().Slug), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return "", fmt.Errorf("resolve user config directory: %w", err)
 	}
-	return filepath.Join(home, "."+appDataDirName), nil
+	return filepath.Join(home, "."+buildinfo.Current().Slug), nil
 }
 
 // enrichProcessEnvironment ensures HOME, LANG, and PATH are populated for GUI

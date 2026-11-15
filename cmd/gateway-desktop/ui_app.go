@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
 
 	"github.com/egoist/mygo"
@@ -122,7 +123,7 @@ func NewDesktopUI(rt *gatewayRuntime) *DesktopUI {
 		configEnv = func(string) string { return "" }
 	}
 	if err == nil {
-		d.ClientConfigs = clientconfig.New(home, filepath.Join(home, ".mcp-gateway", "client-config"), configEnv)
+		d.ClientConfigs = clientconfig.New(home, filepath.Join(home, "."+buildinfo.Current().Slug, "client-config"), configEnv)
 	} else {
 		d.ClientConfigError = err.Error()
 	}
@@ -518,7 +519,7 @@ func (u *DesktopUI) renderLoginView(c *ui.Context) {
 							ui.Icon(c, IconLogo).Size(18, 18).TextColor(SailAccent)
 						})
 						ui.Column(c).Gap(2).Children(func() {
-							ui.Text(c, "MCP Gateway").FontSize(16).Bold().TextColor(SailInkStrong)
+							ui.Text(c, buildinfo.Current().Name).FontSize(16).Bold().TextColor(SailInkStrong)
 							ui.Text(c, "共享控制面身份验证").FontSize(12).TextColor(SailInkMuted)
 						})
 					})
@@ -636,7 +637,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 							ui.Icon(c, IconLogo).Size(15, 15).TextColor(SailAccent)
 						})
 					ui.Column(c).Gap(1).Children(func() {
-						ui.Text(c, "MCP Gateway").FontSize(13.5).Bold().TextColor(SailInkStrong).SingleLine()
+						ui.Text(c, buildinfo.Current().Name).FontSize(13.5).Bold().TextColor(SailInkStrong).SingleLine()
 						ui.Text(c, "控制面").FontSize(11).TextColor(SailInkMuted).SingleLine()
 					})
 				})

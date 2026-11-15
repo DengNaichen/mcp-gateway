@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 
+	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
 
 	"github.com/egoist/mygo/ui"
@@ -74,7 +75,7 @@ func (u *DesktopUI) runClientConfig(id, action string) {
 func (u *DesktopUI) renderClients(c *ui.Context) {
 	ui.Text(c, "连接客户端").FontSize(24).Bold().TextColor(SailInkStrong)
 	ui.Text(c, "将 MCP Gateway 写入本机当前用户的全局配置。客户端自动发现 discover_tools、get_tool_schema 和 invoke_tool。").FontSize(13).TextColor(SailInkMuted)
-	ui.Text(c, u.clientEndpoint()).FontSize(12).TextColor(SailInkMuted)
+	ui.Text(c, "客户端条目："+buildinfo.Current().Slug+" · "+u.clientEndpoint()).FontSize(12).TextColor(SailInkMuted)
 	ui.Text(c, "已配置表示文件已写入；实际连接需要 Gateway 运行，并由客户端重载配置。项目配置可能覆盖全局配置。").FontSize(12).TextColor(SailInkMuted)
 	if u.State != nil && u.State.Access.Shared {
 		ui.Text(c, "当前网关需要身份凭据。写入后需在客户端补充 Bearer Token 才能连接。").FontSize(12).TextColor(SailInkMuted)

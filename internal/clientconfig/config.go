@@ -3,6 +3,7 @@ package clientconfig
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,12 +13,16 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
+	"gatewaylab/internal/buildinfo"
+
+	"github.com/gofrs/flock"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/tailscale/hujson"
 )
 
-const ServerName = "mcp-gateway"
+var serverName = buildinfo.Current().Slug
 
 type Client struct {
 	ID, Name, Path string
@@ -129,7 +134,7 @@ func entry(c Client, b []byte) (map[string]any, error) {
 			return nil, fmt.Errorf("%s 必须是对象", key)
 		}
 	}
-	v, ok := root[ServerName]
+	v, ok := root[serverName]
 	if !ok {
 		return nil, nil
 	}
@@ -213,6 +218,11 @@ func (m *Manager) Write(id, endpoint string) error {
 	if e != nil {
 		return e
 	}
+	lock, e := lockConfig(c.Path)
+	if e != nil {
+		return e
+	}
+	defer lock.Close()
 	b, e := read(c.Path)
 	if e != nil {
 		return e
@@ -236,7 +246,7 @@ func (m *Manager) Write(id, endpoint string) error {
 	var next []byte
 	if c.TOML {
 		encoded, _ := json.Marshal(endpoint)
-		rec.Block = "\n[mcp_servers.mcp-gateway]\nurl = " + string(encoded) + "\n"
+		rec.Block = "\n[mcp_servers." + serverName + "]\nurl = " + string(encoded) + "\n"
 		next = append(bytes.Clone(b), []byte(rec.Block)...)
 	} else {
 		next, e = editJSON(c, b, want)
@@ -274,6 +284,11 @@ func (m *Manager) Revoke(id string) error {
 	if e != nil {
 		return e
 	}
+	lock, e := lockConfig(c.Path)
+	if e != nil {
+		return e
+	}
+	defer lock.Close()
 	r, e := m.load(c)
 	if e != nil {
 		return e
@@ -333,7 +348,7 @@ func editJSON(c Client, b []byte, value map[string]any) ([]byte, error) {
 			}
 		}
 	}
-	op := map[string]any{"op": "remove", "path": ptr + "/" + ServerName}
+	op := map[string]any{"op": "remove", "path": ptr + "/" + serverName}
 	if value != nil {
 		op["op"] = "add"
 		op["value"] = value
@@ -404,4 +419,24 @@ func uniqueKeys(v *hujson.Value) error {
 		}
 	}
 	return nil
+}
+
+// Both channels coordinate on the target file, not their separate receipt dirs.
+// The lock file is kept so waiting processes always refer to the same inode.
+func lockConfig(path string) (*flock.Flock, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, err
+	}
+	lock := flock.New(path + ".mcp-gateway.lock")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	ok, err := lock.TryLockContext(ctx, 25*time.Millisecond)
+	if err != nil || !ok {
+		_ = lock.Close()
+		if err != nil {
+			return nil, fmt.Errorf("等待客户端配置锁失败，请稍后重试: %w", err)
+		}
+		return nil, errors.New("客户端配置正被其他进程修改，请稍后重试")
+	}
+	return lock, nil
 }
