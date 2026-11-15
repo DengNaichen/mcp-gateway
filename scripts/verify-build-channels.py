@@ -98,6 +98,11 @@ try:
         assert not entries(row)
     assert (ARTIFACTS / "clients/.mcp-gateway/client-config").is_dir()
     assert (ARTIFACTS / "clients/.mcp-gateway-dev/client-config").is_dir()
+    states["verification"] = {
+        "git_head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+        "git_dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()),
+        "workspace": str(ROOT),
+    }
     (ARTIFACTS / "results.json").write_text(json.dumps(states, indent=2))
     print("PASS: bundle identity, runtime identity, update policy, data isolation, five shared client configs and independent revoke")
 finally:

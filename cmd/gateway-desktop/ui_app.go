@@ -676,7 +676,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 							u.Notify("已复制 MCP 接入端点")
 						}
 					})
-					ui.Text(c, state.MCPURL).
+					ui.Text(c, state.MCPURL).TruncateMiddle().Tooltip(state.MCPURL).
 						Font("monospace").
 						FontSize(11).
 						TextColor(SailInkFaint).
