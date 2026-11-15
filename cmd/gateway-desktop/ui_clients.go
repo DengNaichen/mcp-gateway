@@ -72,40 +72,75 @@ func (u *DesktopUI) runClientConfig(id, action string) {
 	})
 }
 func (u *DesktopUI) renderClients(c *ui.Context) {
-	ui.Text(c, "连接客户端").FontSize(24).Bold().TextColor(SailInkStrong)
-	ui.Text(c, "将 MCP Gateway 写入本机当前用户的全局配置。客户端自动发现 discover_tools、get_tool_schema 和 invoke_tool。").FontSize(13).TextColor(SailInkMuted)
-	ui.Text(c, u.clientEndpoint()).FontSize(12).TextColor(SailInkMuted)
-	ui.Text(c, "已配置表示文件已写入；实际连接需要 Gateway 运行，并由客户端重载配置。项目配置可能覆盖全局配置。").FontSize(12).TextColor(SailInkMuted)
+	note := ""
 	if u.State != nil && u.State.Access.Shared {
-		ui.Text(c, "当前网关需要身份凭据。写入后需在客户端补充 Bearer Token 才能连接。").FontSize(12).TextColor(SailInkMuted)
+		note = "共享网关需在客户端补充 Bearer Token"
 	}
-	if u.ClientConfigError != "" {
-		ui.Text(c, u.ClientConfigError).FontSize(13).TextColor(SailInkStrong)
-	}
-	if SailSmallButton(c.Key("clients-refresh"), "刷新状态").Width(110).Disabled(u.ClientsBusy).Clicked() {
-		u.refreshClientConfigs()
-	}
-	for _, row := range u.ClientStatuses {
-		u.renderClientCard(c.Key("client-"+row.ID), row)
-	}
-}
-func (u *DesktopUI) renderClientCard(c *ui.Context, row clientconfig.Status) {
-	ui.Column(c).FillWidth().Padding(18).Gap(8).Radius(8).Border(1, SailBorder).Background(SailBgCanvas).Children(func() {
-		ui.Row(c).FillWidth().Justify(ui.SpaceBetween).Children(func() {
-			ui.Text(c, row.Name).FontSize(16).Bold().TextColor(SailInkStrong)
-			ui.Text(c, row.State).FontSize(12).TextColor(SailInkMuted)
-		})
-		ui.Text(c, row.Path).FontSize(12).TextColor(SailInkMuted)
-		if row.Detail != "" {
-			ui.Text(c, row.Detail).FontSize(12).TextColor(SailInkMuted)
+	SailSectionHeader(c, "连接客户端", note, func() {
+		if ep := u.clientEndpoint(); ep != "" {
+			ui.Text(c, ep).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
 		}
-		ui.Row(c).Gap(8).Children(func() {
-			if SailSmallButton(c.Key("write"), "写入配置").Disabled(u.ClientsBusy || !row.CanWrite).Clicked() {
-				u.runClientConfig(row.ID, "write")
+		if SailSmallButton(c.Key("clients-refresh"), "刷新状态").Disabled(u.ClientsBusy).Clicked() {
+			u.refreshClientConfigs()
+		}
+	})
+
+	if u.ClientConfigError != "" {
+		SailAlertBox(c, ToneDanger, "配置操作失败", u.ClientConfigError)
+	}
+
+	SailFlushCard(c, func() {
+		for idx, row := range u.ClientStatuses {
+			u.renderClientRow(c.Key("client-"+row.ID), row, idx == len(u.ClientStatuses)-1)
+		}
+	})
+}
+
+func (u *DesktopUI) renderClientRow(c *ui.Context, row clientconfig.Status, isLast bool) {
+	dotColor := SailInkFaint
+	stateColor := SailInkMuted
+	if row.State == "已配置" {
+		dotColor = SailSuccessInk
+		stateColor = SailInkBody
+	} else if row.State != "未配置" {
+		dotColor = SailWarningInk
+		stateColor = SailWarningInk
+	}
+
+	line := ui.Row(c).
+		FillWidth().
+		Padding(16, 20).
+		Gap(16).
+		AlignItems(ui.Center).
+		Justify(ui.SpaceBetween)
+	if !isLast {
+		line.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+	}
+	if line.Hovered() {
+		line.Background(SailBgHover)
+	}
+	line.Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				SailStatusDot(c, dotColor)
+				ui.Text(c, row.Name).FontSize(14).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+			})
+			ui.Text(c, row.Path).Font("monospace").FontSize(11.5).TextColor(SailInkMuted).SingleLine()
+			if row.Detail != "" {
+				ui.Text(c, row.Detail).FontSize(12).TextColor(SailInkMuted).MaxLines(1)
 			}
-			if SailSmallButton(c.Key("revoke"), "撤回配置").Disabled(u.ClientsBusy || !row.CanRevoke).Clicked() {
-				u.runClientConfig(row.ID, "revoke")
-			}
+		})
+
+		ui.Row(c).Shrink(0).Gap(12).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, row.State).FontSize(12).FontWeight(500).TextColor(stateColor).SingleLine()
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				if SailSmallButton(c.Key("write"), "写入配置").Disabled(u.ClientsBusy || !row.CanWrite).Clicked() {
+					u.runClientConfig(row.ID, "write")
+				}
+				if SailSmallButton(c.Key("revoke"), "撤回配置").Disabled(u.ClientsBusy || !row.CanRevoke).Clicked() {
+					u.runClientConfig(row.ID, "revoke")
+				}
+			})
 		})
 	})
 }

@@ -538,3 +538,38 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 		t.Fatal("expected shared-gateway login screen to render")
 	}
 }
+
+func TestDescriptionCleaningAndStructuredRendering(t *testing.T) {
+	raw := "## search_issues\n\n搜索 GitHub Issues 与 Pull Requests，支持按状态和标签过滤。更多细节请参考上游文档。\n\n- 支持 `is:open` 与 `label:bug` 语法\n- 自动分页返回前 50 条\n\nArgs:\n  query (string): 搜索关键词表达式\n  limit (int): 最大返回条数\n"
+
+	gotSummary := CleanDescriptionSummary(raw)
+	wantSummary := "搜索 GitHub Issues 与 Pull Requests，支持按状态和标签过滤。"
+	if gotSummary != wantSummary {
+		t.Fatalf("CleanDescriptionSummary = %q, want %q", gotSummary, wantSummary)
+	}
+
+	inlineArgs := "Fetch repository commits from default branch. Args: owner (str), repo (str)"
+	if got := CleanDescriptionSummary(inlineArgs); got != "Fetch repository commits from default branch." {
+		t.Fatalf("inline Args tail not stripped: %q", got)
+	}
+
+	parsed := ParseStructuredDescription(raw)
+	if parsed.Lead == "" || len(parsed.Bullets) != 2 || len(parsed.Params) != 2 || !parsed.HasMoreRaw {
+		t.Fatalf("unexpected ParseStructuredDescription: %+v", parsed)
+	}
+
+	tester := ui.NewTester(func(c *ui.Context) {
+		applySailTheme(c)
+		SailDescriptionDetail(c, "test-desc", raw)
+	}, 640, 480)
+
+	if !tester.HasText("参数说明") || !tester.HasText("展开完整原始描述") {
+		t.Fatal("expected structured params and raw disclosure toggle")
+	}
+	if err := tester.Click("展开完整原始描述"); err != nil {
+		t.Fatalf("click raw toggle: %v", err)
+	}
+	if !tester.HasText("收起原始描述") {
+		t.Fatal("expected raw description block to expand")
+	}
+}

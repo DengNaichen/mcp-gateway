@@ -194,7 +194,7 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 	)
 	actorSeen := make(map[string]bool)
 	var actorOptions []catalogSelectOption
-	actorOptions = append(actorOptions, catalogSelectOption{Value: "all", Label: "所有身份"})
+	actorOptions = append(actorOptions, catalogSelectOption{Value: "all", Label: "全部身份"})
 
 	for _, t := range tools {
 		isReal := realServerIDs[t.ServerID]
@@ -234,7 +234,7 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 
 	// Build service dropdown options.
 	srvOptions := make([]catalogSelectOption, 0, 1+len(servers))
-	srvOptions = append(srvOptions, catalogSelectOption{Value: "all", Label: "所有所属服务"})
+	srvOptions = append(srvOptions, catalogSelectOption{Value: "all", Label: "全部服务"})
 	visibleServers := realServers
 	if st.showDemo {
 		visibleServers = servers
@@ -351,17 +351,14 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 	SailSectionHeader(
 		c,
 		"工具目录",
-		"跨服务治理注册表中的全部工具契约：审计语义描述、控制候选池开放白名单、收敛写操作暴露面，并识别长期零命中的冗余工具。",
+		"",
 		func() {
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				SailBadge(c, fmt.Sprintf("已开放 %d / %d", enabledRealCount, realToolCount), ToneAccent)
-				if rwEnabledCount > 0 {
-					SailBadge(c, fmt.Sprintf("写操作 %d", rwEnabledCount), ToneWarning)
-				} else {
-					SailBadge(c, "纯只读暴露", ToneSuccess)
-				}
-				SailBadge(c, fmt.Sprintf("近期命中 %d", hitRealToolCount), ToneNeutral)
-			})
+			if SailSmallButton(c.Key("cat-nav-services"), "上游服务").Clicked() {
+				u.Navigate(ViewServices)
+			}
+			if SailSmallButton(c.Key("cat-nav-playground"), "路由沙盒").Clicked() {
+				u.Navigate(ViewPlayground)
+			}
 		},
 	)
 
@@ -370,19 +367,17 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 	if closedRealCount < 0 {
 		closedRealCount = 0
 	}
-	rwTone := ToneSuccess
-	rwHint := "当前未开放任何写操作工具"
+	rwTone := ToneNeutral
 	if rwEnabledCount > 0 {
 		rwTone = ToneWarning
-		rwHint = "点击筛选全部写操作 (rw) 工具"
 	}
-	ui.Row(c).FillWidth().Wrap().Gap(12).Children(func() {
+	ui.Row(c).FillWidth().Wrap().Gap(16).Children(func() {
 		SailKPICard(
 			c.Key("cat-kpi-open"),
-			"已开放工具 / 注册总数",
+			"已开放 / 总数",
 			fmt.Sprintf("%d / %d", enabledRealCount, realToolCount),
-			fmt.Sprintf("已关闭 %d 个 · 点击查看已开放", closedRealCount),
-			ToneAccent,
+			fmt.Sprintf("已关闭 %d", closedRealCount),
+			ToneNeutral,
 			func() {
 				if st.statusIdx == 1 {
 					st.statusIdx = 0
@@ -393,10 +388,10 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 		)
 		SailKPICard(
 			c.Key("cat-kpi-ro"),
-			"已开放只读工具 (ro)",
+			"只读工具",
 			fmt.Sprintf("%d", roEnabledCount),
-			"点击筛选只读查询类契约",
-			ToneSuccess,
+			"",
+			ToneNeutral,
 			func() {
 				if st.accessIdx == 1 {
 					st.accessIdx = 0
@@ -407,9 +402,9 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 		)
 		SailKPICard(
 			c.Key("cat-kpi-rw"),
-			"已开放写操作 (rw)",
+			"写操作工具",
 			fmt.Sprintf("%d", rwEnabledCount),
-			rwHint,
+			"",
 			rwTone,
 			func() {
 				if st.accessIdx == 2 {
@@ -421,62 +416,56 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 		)
 		SailKPICard(
 			c.Key("cat-kpi-hits"),
-			"近期命中工具数",
+			"近期命中",
 			fmt.Sprintf("%d", hitRealToolCount),
-			fmt.Sprintf("基于最近 %d 条追踪事件排序", u.Telemetry.SampleSize),
-			ToneInfo,
+			"",
+			ToneNeutral,
 			func() {
 				st.sortIdx = 0
 			},
 		)
 	})
 
-	// 3. Multi-dimensional Filter Bar.
+	// 3. Compact Filter Bar.
 	SailCard(c.Key("cat-filter-card"), func() {
-		ui.Row(c).FillWidth().Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.SearchField(c.Key("cat-search"), &st.query).
-				Placeholder("搜索工具 ID、名称、功能描述或标签…").
-				Label("搜索工具目录").
-				Width(250)
-
-			catalogRenderSelect(c, "cat-srv-select", &st.serverFilter, srvOptions, 168)
-
-			ui.Segmented(c.Key("cat-status-seg"), &st.statusIdx, "全部", "已开放", "已关闭").
-				Label("开放状态筛选")
-
-			ui.Segmented(c.Key("cat-access-seg"), &st.accessIdx, "全部", "只读 ro", "写操作 rw").
-				Label("读写属性筛选")
-		})
-
 		ui.Row(c).FillWidth().Wrap().Gap(10).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Row(c).Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
+				ui.SearchField(c.Key("cat-search"), &st.query).
+					Placeholder("搜索名称、ID 或描述…").
+					Label("搜索工具目录").
+					Width(230)
+
+				catalogRenderSelect(c, "cat-srv-select", &st.serverFilter, srvOptions, 156)
+
+				ui.Segmented(c.Key("cat-status-seg"), &st.statusIdx, "全部", "已开放", "已关闭").
+					Label("开放状态筛选")
+
+				ui.Segmented(c.Key("cat-access-seg"), &st.accessIdx, "全部", "只读", "写操作").
+					Label("读写属性筛选")
+			})
+
+			ui.Row(c).Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
 				if len(actorOptions) > 1 {
-					catalogRenderSelect(c, "cat-actor-select", &st.actorFilter, actorOptions, 136)
+					catalogRenderSelect(c, "cat-actor-select", &st.actorFilter, actorOptions, 124)
 				}
 
-				ui.Segmented(c.Key("cat-sort-seg"), &st.sortIdx, "按近期命中", "按名称 A–Z").
+				ui.Segmented(c.Key("cat-sort-seg"), &st.sortIdx, "按命中", "名称 A–Z").
 					Label("排序方式")
 
 				if len(demoServers) > 0 {
-					ui.Checkbox(c.Key("cat-show-demo"), &st.showDemo, "包含演示工具")
+					ui.Checkbox(c.Key("cat-show-demo"), &st.showDemo, "演示工具")
 				}
-			})
 
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				if st.hasActiveFilters() {
-					if SailSmallButton(c.Key("cat-reset-filters"), "重置筛选").Clicked() {
+					if SailSmallButton(c.Key("cat-reset-filters"), "重置").Clicked() {
 						st.resetFilters()
 					}
 				}
 				if st.panelCollapsed && len(filtered) > 0 {
-					if SailSmallButton(c.Key("cat-reopen-panel"), "展开详情面板").Clicked() {
+					if SailSmallButton(c.Key("cat-reopen-panel"), "展开详情").Clicked() {
 						st.panelCollapsed = false
 					}
 				}
-				ui.Textf(c, "共 %d 个匹配工具", len(filtered)).
-					FontSize(12.5).
-					TextColor(SailInkMuted).
-					FontFeatures("tnum")
 			})
 		})
 	})
@@ -486,9 +475,9 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 		if !st.showDemo && realToolCount == 0 && len(tools) > 0 {
 			SailEmptyState(
 				c,
-				"尚未接入真实上游工具",
-				"当前注册表中仅有内置演示工具。你可以前往「上游服务」接入自己的 MCP / OpenAPI 服务，或开启演示工具预览治理流程。",
-				"显示内置演示工具",
+				"暂无真实上游工具",
+				"",
+				"显示演示工具",
 				func() {
 					st.showDemo = true
 				},
@@ -497,13 +486,13 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 			actionLbl := ""
 			var actionFn func()
 			if st.hasActiveFilters() {
-				actionLbl = "清空筛选条件"
+				actionLbl = "清空筛选"
 				actionFn = st.resetFilters
 			}
 			SailEmptyState(
 				c,
-				"没有匹配的工具契约",
-				"请尝试放宽关键词搜索、所属服务、开放状态或读写属性筛选条件。",
+				"无匹配工具",
+				"",
 				actionLbl,
 				actionFn,
 			)
@@ -528,39 +517,24 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 	}
 	pagedTools := filtered[startIdx:endIdx]
 
-	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(16).Children(func() {
-		// Left Column: Tool Table Card.
+	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(22).Children(func() {
+		// Left Column: Hairline-divided Tool List Card (max 3 anchors per row).
 		ui.Column(c.Key("cat-table-card")).
 			Grow(1).
 			MinWidth(0).
-			Radius(8).
+			Radius(10).
 			Background(SailBgCanvas).
 			Border(1, SailBorder).
-			Shadow(0, 1, 3, 0, SailCardShadow).
+			Shadow(0, 1, 2, 0, SailCardShadow).
 			Clip().
 			Children(func() {
-				// Table Header.
-				ui.Row(c).
-					FillWidth().
-					Padding(10, 16).
-					Gap(10).
-					AlignItems(ui.Center).
-					Background(SailBgSubtle).
-					BorderWidth(0, 0, 1, 0).
-					BorderColor(SailBorder).
-					Children(func() {
-						ui.Text(c, "工具标识与功能描述").Grow(1).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted).SingleLine()
-						ui.Text(c, "所属服务").Width(120).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted).SingleLine()
-						ui.Text(c, "读写属性").Width(82).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted).SingleLine()
-						if selectedTool == nil {
-							ui.Text(c, "允许身份").Width(110).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted).SingleLine()
-						}
-						ui.Text(c, "命中").Width(58).Shrink(0).TextAlign(ui.End).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted).SingleLine()
-						ui.Text(c, "开放").Width(54).Shrink(0).TextAlign(ui.Center).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted).SingleLine()
-						ui.Text(c, "契约").Width(62).Shrink(0).TextAlign(ui.End).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted).SingleLine()
-					})
+				SailListCardHeader(c, "工具列表", fmt.Sprintf("%d 项", len(filtered)), nil)
 
-				// Table Rows.
+				maxDescLines := 1
+				if selectedTool == nil {
+					maxDescLines = 2
+				}
+
 				seenRowKeys := make(map[string]int, len(pagedTools))
 				for idx, tool := range pagedTools {
 					t := tool
@@ -572,39 +546,38 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 					srv := serverByID[t.ServerID]
 					hits := hitCounts[t.ID]
 					isSelected := selectedTool != nil && selectedTool.ID == t.ID
-					isLast := idx == len(pagedTools)-1
+					isLast := idx == len(pagedTools)-1 && totalPages <= 1
 
 					rowBg := SailBgCanvas
 					if isSelected {
 						rowBg = SailAccentSoft
 					}
 
-					row := ui.Row(c.Key("cat-row-" + rowKey)).
+					row := ui.Row(c.Key("cat-row-"+rowKey)).
 						FillWidth().
-						Padding(12, 16).
-						Gap(10).
+						Padding(13, 20).
+						Gap(14).
 						AlignItems(ui.Center).
+						Justify(ui.SpaceBetween).
 						Background(rowBg)
 					if !isLast {
-						row.BorderWidth(0, 0, 1, 0).BorderColor(SailBorder)
+						row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+					}
+					if row.Hovered() && !isSelected {
+						row.Background(SailBgHover)
 					}
 
 					row.Children(func() {
-						// 1. Primary Tool Info (clickable to inspect in right panel).
+						// Anchor 1 & 2: Primary Identity + Cleaned 1–2 line Summary.
 						infoBtn := ui.ButtonBase(c.Key("cat-info-" + rowKey)).
 							Column().
 							Grow(1).
 							MinWidth(0).
 							Gap(4).
 							AlignItems(ui.Start).
-							Padding(2, 4).
-							Radius(5).
 							Cursor(ui.CursorPointer)
-						if infoBtn.Hovered() && !isSelected {
-							infoBtn.Background(SailBgHover)
-						}
 						infoBtn.Children(func() {
-							ui.Row(c).FillWidth().Wrap().Gap(6).AlignItems(ui.Center).Children(func() {
+							ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 								nameColor := SailInkStrong
 								if isSelected {
 									nameColor = SailAccent
@@ -616,122 +589,37 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 									TextColor(nameColor).
 									SingleLine()
 
-								if t.Method != "" && t.Path != "" {
-									SailBadge(c, t.Method+" "+t.Path, ToneNeutral)
+								srvName := srv.Name
+								if srvName == "" {
+									srvName = t.ServerID
 								}
-								for tagIdx, tag := range t.Tags {
-									if tagIdx >= 3 {
-										ui.Textf(c, "+%d", len(t.Tags)-3).FontSize(11).TextColor(SailInkFaint)
-										break
-									}
-									if strings.TrimSpace(tag) != "" {
-										SailBadge(c, "#"+strings.TrimSpace(tag), ToneAccent)
-									}
+								ui.Text(c, srvName).
+									FontSize(11.5).
+									TextColor(SailInkFaint).
+									SingleLine()
+
+								if !t.ReadOnly {
+									SailBadge(c, "写操作", ToneWarning)
 								}
 							})
 
-							ui.Text(c, t.ID).
-								Font("monospace").
-								FontSize(11).
-								TextColor(SailInkFaint).
-								SingleLine()
-
-							if strings.TrimSpace(t.Description) != "" {
-								ui.Text(c, t.Description).
-									FontSize(12).
-									TextColor(SailInkMuted).
-									MaxLines(2)
-							} else {
-								ui.Text(c, "缺少语义描述，可能降低路由召回率，建议补充。").
-									FontSize(12).
-									TextColor(SailWarningInk).
-									MaxLines(2)
-							}
+							SailDescSummary(c, t.Description, "暂无描述", maxDescLines).FillWidth()
 						})
 						if infoBtn.Clicked() {
 							st.selectedToolID = t.ID
 							st.panelCollapsed = false
 						}
 
-						// 2. Upstream Service link.
-						ui.Row(c).Width(120).Shrink(0).Gap(4).AlignItems(ui.Center).Clip().Children(func() {
-							srvName := srv.Name
-							if srvName == "" {
-								srvName = t.ServerID
-							}
-							srvBtn := ui.ButtonBase(c.Key("cat-srv-link-" + rowKey)).
-								MinWidth(0).
-								Shrink(1).
-								Padding(3, 6).
-								Radius(4).
-								Cursor(ui.CursorPointer).
-								Tooltip("查看上游服务 " + srvName)
-							if srvBtn.Hovered() {
-								srvBtn.Background(SailBgHover)
-							}
-							srvBtn.Children(func() {
-								ui.Text(c, srvName).
-									MinWidth(0).
-									FontSize(12.5).
-									FontWeight(500).
-									TextColor(SailAccent).
+						// Anchor 3: Quiet hit count + Enable Switch + Detail toggle.
+						ui.Row(c).Shrink(0).Gap(12).AlignItems(ui.Center).Children(func() {
+							if hits > 0 {
+								ui.Textf(c, "%d 次", hits).
+									FontSize(12).
+									TextColor(SailInkMuted).
+									FontFeatures("tnum").
 									SingleLine()
-							})
-							if srvBtn.Clicked() {
-								u.OpenServiceDetail(t.ServerID)
 							}
-							if srv.Demo {
-								SailBadge(c, "DEMO", ToneNeutral).Shrink(0)
-							}
-						})
 
-						// 3. Read/Write badge.
-						ui.Row(c).Width(82).Shrink(0).AlignItems(ui.Center).Children(func() {
-							if t.ReadOnly {
-								SailBadge(c, "只读 ro", ToneSuccess)
-							} else {
-								SailBadge(c, "写操作 rw", ToneWarning)
-							}
-						})
-
-						// 4. Allowed Actors (when full width).
-						if selectedTool == nil {
-							actorsLabel := strings.Join(t.Actors, ", ")
-							if actorsLabel == "" {
-								actorsLabel = "—"
-							}
-							ui.Text(c, actorsLabel).
-								Width(110).
-								Shrink(0).
-								Font("monospace").
-								FontSize(11.5).
-								TextColor(SailInkMuted).
-								SingleLine()
-						}
-
-						// 5. Recent Hit count.
-						if hits > 0 {
-							ui.Textf(c, "%d 次", hits).
-								Width(58).
-								Shrink(0).
-								TextAlign(ui.End).
-								FontSize(12.5).
-								FontWeight(600).
-								TextColor(SailInkStrong).
-								FontFeatures("tnum").
-								SingleLine()
-						} else {
-							ui.Text(c, "—").
-								Width(58).
-								Shrink(0).
-								TextAlign(ui.End).
-								FontSize(12.5).
-								TextColor(SailInkFaint).
-								SingleLine()
-						}
-
-						// 6. Enable/Disable Switch (calls POST /api/servers/{server_id}/tools).
-						ui.Row(c).Width(54).Shrink(0).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
 							enabledVal := t.Enabled
 							busy := st.togglingIDs[t.ID]
 							if ui.Switch(c.Key("cat-sw-"+rowKey), &enabledVal).
@@ -740,10 +628,7 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 								Changed() {
 								u.catalogToggleToolWhitelist(st, t)
 							}
-						})
 
-						// 7. Inspect button.
-						ui.Row(c).Width(62).Shrink(0).Justify(ui.End).AlignItems(ui.Center).Children(func() {
 							btnLabel := "详情"
 							if isSelected {
 								btnLabel = "收起"
@@ -760,24 +645,21 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 					})
 				}
 
-				// Pagination Footer.
-				ui.Row(c).
-					FillWidth().
-					Padding(10, 16).
-					AlignItems(ui.Center).
-					Justify(ui.SpaceBetween).
-					Background(SailBgSubtle).
-					BorderWidth(1, 0, 0, 0).
-					BorderColor(SailBorder).
-					Children(func() {
-						ui.Textf(c, "显示 %d–%d / 共 %d 个匹配工具", startIdx+1, endIdx, len(filtered)).
-							FontSize(12).
-							TextColor(SailInkMuted).
-							FontFeatures("tnum")
+				// Pagination Footer (shown only when multi-page).
+				if totalPages > 1 {
+					ui.Row(c).
+						FillWidth().
+						Padding(12, 20).
+						AlignItems(ui.Center).
+						Justify(ui.SpaceBetween).
+						Children(func() {
+							ui.Textf(c, "%d–%d / %d", startIdx+1, endIdx, len(filtered)).
+								FontSize(12).
+								TextColor(SailInkMuted).
+								FontFeatures("tnum")
 
-						if totalPages > 1 {
 							ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-								ui.Textf(c, "第 %d / %d 页", st.page, totalPages).
+								ui.Textf(c, "%d / %d 页", st.page, totalPages).
 									FontSize(12).
 									TextColor(SailInkMuted).
 									FontFeatures("tnum")
@@ -788,8 +670,8 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 									st.page++
 								}
 							})
-						}
-					})
+						})
+				}
 			})
 
 		// Right Column: Tool Detail Panel / Inspector.
@@ -808,31 +690,31 @@ func (u *DesktopUI) renderCatalogDetailPanel(
 ) {
 	st.syncEditForm(tool)
 
-	ui.Column(c.Key("cat-detail-" + tool.ID)).
-		Width(416).
+	ui.Column(c.Key("cat-detail-"+tool.ID)).
+		Width(420).
 		Shrink(0).
-		Padding(18).
-		Gap(14).
-		Radius(8).
+		Padding(20, 22).
+		Gap(16).
+		Radius(10).
 		Background(SailBgCanvas).
 		Border(1, SailBorder).
-		Shadow(0, 2, 8, 0, SailCardShadow).
+		Shadow(0, 1, 2, 0, SailCardShadow).
 		Children(func() {
-			// Top Status Badges + Collapse Button.
+			// Top Status Row + Collapse Button (Badge Diet).
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
-				ui.Row(c).Wrap().Gap(6).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
 					if tool.Enabled {
-						SailBadgeDot(c, "已开放", ToneSuccess)
+						SailQuietStatus(c, "已开放", SailSuccessInk, SailInkStrong)
 					} else {
-						SailBadgeDot(c, "已关闭", ToneNeutral)
+						SailQuietStatus(c, "已关闭", SailInkFaint, SailInkMuted)
 					}
 					if tool.ReadOnly {
-						SailBadge(c, "只读 ro", ToneSuccess)
+						ui.Text(c, "只读").FontSize(12).TextColor(SailInkMuted).SingleLine()
 					} else {
-						SailBadge(c, "写操作 rw", ToneWarning)
+						SailBadge(c, "写操作", ToneWarning)
 					}
 					if srv.Demo {
-						SailBadge(c, "DEMO", ToneNeutral)
+						ui.Text(c, "演示").FontSize(12).TextColor(SailInkFaint).SingleLine()
 					}
 				})
 
@@ -841,7 +723,7 @@ func (u *DesktopUI) renderCatalogDetailPanel(
 				}
 			})
 
-			// Tool Name & Full ID + Copy ID.
+			// Tool Name & Copy ID.
 			ui.Column(c).FillWidth().Gap(4).Children(func() {
 				ui.Text(c, tool.Name).
 					Font("monospace").
@@ -860,36 +742,17 @@ func (u *DesktopUI) renderCatalogDetailPanel(
 						Selectable().
 						SingleLine()
 
-					copyIDBtn := ui.ButtonBase(c.Key("cat-copy-id-" + tool.ID)).
-						Padding(2, 8).
-						Radius(4).
-						Background(SailBgSubtle).
-						Border(1, SailBorder).
-						Cursor(ui.CursorPointer)
-					if copyIDBtn.Hovered() {
-						copyIDBtn.Background(SailBgHover)
-					}
-					copyIDBtn.Children(func() {
-						ui.Text(c, "复制 ID").FontSize(11).TextColor(SailInkBody).SingleLine()
-					})
-					if copyIDBtn.Clicked() {
+					if SailSmallButton(c.Key("cat-copy-id-"+tool.ID), "复制 ID").Padding(2, 8).FontSize(11).Clicked() {
 						c.WriteClipboard(tool.ID)
 						u.Notify("已复制工具 ID: " + tool.ID)
 					}
 				})
 			})
 
-			// Quick Governance Switch + Sandbox Jump Card.
+			// Borderless Quick Governance Switch + Sandbox Jump Surface.
 			SailSubtleCard(c, func() {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(10).Children(func() {
-					ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-						ui.Text(c, "服务白名单开关").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
-						statusDesc := "当前对语义路由隐藏，不允许调用"
-						if tool.Enabled {
-							statusDesc = "当前已加入候选池开放白名单"
-						}
-						ui.Text(c, statusDesc).FontSize(11.5).TextColor(SailInkMuted)
-					})
+					ui.Text(c, "开放白名单").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
 					enabledVal := tool.Enabled
 					if ui.Switch(c.Key("cat-detail-sw-"+tool.ID), &enabledVal).
 						Disabled(st.togglingIDs[tool.ID]).
@@ -900,12 +763,12 @@ func (u *DesktopUI) renderCatalogDetailPanel(
 				})
 
 				ui.Row(c).FillWidth().Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
-					if ui.PrimaryButton(c.Key("cat-sandbox-jump-"+tool.ID), "在沙盒中测试此工具").Grow(1).Clicked() {
+					if ui.PrimaryButton(c.Key("cat-sandbox-jump-"+tool.ID), "沙盒测试").Grow(1).Clicked() {
 						intent := catalogBuildTestIntent(tool)
 						actor := catalogPickTestActor(tool)
 						u.OpenPlaygroundReplay(intent, actor)
 					}
-					if SailSmallButton(c.Key("cat-open-srv-"+tool.ID), "查看所属服务").Clicked() {
+					if SailSmallButton(c.Key("cat-open-srv-"+tool.ID), "所属服务").Clicked() {
 						u.OpenServiceDetail(tool.ServerID)
 					}
 				})
@@ -947,75 +810,40 @@ func (u *DesktopUI) renderCatalogOverviewTab(c *ui.Context, tool gateway.Tool, s
 		actorsDisplay = "—"
 	}
 
-	// Metadata rows.
+	// Structured Description Section (prominent lead + bullets + params + collapsible raw).
+	ui.Column(c).FillWidth().Gap(8).Children(func() {
+		ui.Text(c, "功能描述").FontSize(12).FontWeight(600).TextColor(SailInkMuted)
+		SailDescriptionDetail(c, "cat-desc-"+tool.ID, tool.Description)
+	})
+
+	ui.Box(c).FillWidth().Height(1).Background(SailDivider)
+
+	// Metadata rows (progressive disclosure of secondary fields).
 	ui.Column(c).FillWidth().Gap(2).Children(func() {
 		SailKeyValueRow(c, "工具完整 ID", tool.ID, true)
-		SailKeyValueRow(c, "所属上游服务", srvDisplay, false)
-		SailKeyValueRow(c, "读写权限属性", accessDisplay, false)
-		SailKeyValueRow(c, "允许的 Actors", actorsDisplay, true)
-		SailKeyValueRow(c, "近期路由命中", fmt.Sprintf("%d 次", hits), false)
+		SailKeyValueRow(c, "所属服务", srvDisplay, false)
+		SailKeyValueRow(c, "读写属性", accessDisplay, false)
+		SailKeyValueRow(c, "允许身份", actorsDisplay, true)
+		SailKeyValueRow(c, "近期命中", fmt.Sprintf("%d 次", hits), false)
 		if tool.Method != "" || tool.Path != "" {
 			SailKeyValueRow(c, "HTTP 映射", strings.TrimSpace(tool.Method+" "+tool.Path), true)
 		}
-		if tool.Adapter != "" {
-			SailKeyValueRow(c, "协议适配器", tool.Adapter, true)
-		}
-		if tool.Revision != "" {
-			SailKeyValueRow(c, "契约修订号", truncateRunes(tool.Revision, 24), true)
-		}
-	})
-
-	// Description block.
-	ui.Column(c).FillWidth().Gap(6).Children(func() {
-		ui.Text(c, "功能描述").FontSize(12).FontWeight(600).TextColor(SailInkMuted)
-		if strings.TrimSpace(tool.Description) != "" {
-			ui.Column(c).
-				FillWidth().
-				Padding(10, 12).
-				Radius(6).
-				Background(SailBgSubtle).
-				Border(1, SailBorder).
-				Children(func() {
-					ui.Text(c, tool.Description).
-						FontSize(12.5).
-						LineHeight(1.5).
-						TextColor(SailInkStrong).
-						Selectable()
-				})
-		} else {
-			SailAlertBox(c, ToneWarning, "尚未填写功能描述", "Decisions 语义路由模型依赖工具描述评估任务相关性，建议在「编辑契约」中补充清晰说明。")
-		}
-	})
-
-	// Tags section.
-	ui.Column(c).FillWidth().Gap(6).Children(func() {
-		ui.Text(c, "标签（Tags）").FontSize(12).FontWeight(600).TextColor(SailInkMuted)
-		hasTag := false
-		for _, tg := range tool.Tags {
-			if strings.TrimSpace(tg) != "" {
-				hasTag = true
-				break
-			}
-		}
-		if hasTag {
-			ui.Row(c).FillWidth().Wrap().Gap(6).Children(func() {
-				for _, tg := range tool.Tags {
-					trimmed := strings.TrimSpace(tg)
-					if trimmed != "" {
-						SailBadge(c, "#"+trimmed, ToneAccent)
-					}
+		if len(tool.Tags) > 0 {
+			var cleanTags []string
+			for _, tg := range tool.Tags {
+				if v := strings.TrimSpace(tg); v != "" {
+					cleanTags = append(cleanTags, "#"+v)
 				}
-			})
-		} else {
-			ui.Text(c, "未配置分类标签").FontSize(12).TextColor(SailInkFaint)
+			}
+			if len(cleanTags) > 0 {
+				SailKeyValueRow(c, "分类标签", strings.Join(cleanTags, "  "), true)
+			}
 		}
 	})
 
 	// input_schema formatted JSON preview with one-click copy.
 	ui.Column(c).FillWidth().Gap(6).Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			ui.Text(c, "输入参数契约（input_schema）").FontSize(12).FontWeight(600).TextColor(SailInkMuted)
-		})
+		ui.Text(c, "输入参数 Schema").FontSize(12).FontWeight(600).TextColor(SailInkMuted)
 		schemaObj := any(tool.InputSchema)
 		if len(tool.InputSchema) == 0 {
 			schemaObj = map[string]any{"type": "object", "properties": map[string]any{}}
@@ -1027,7 +855,7 @@ func (u *DesktopUI) renderCatalogOverviewTab(c *ui.Context, tool gateway.Tool, s
 
 	if len(tool.Example) > 0 {
 		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			ui.Text(c, "调用参数示例（example）").FontSize(12).FontWeight(600).TextColor(SailInkMuted)
+			ui.Text(c, "参数示例").FontSize(12).FontWeight(600).TextColor(SailInkMuted)
 			SailCodeBlock(c, "EXAMPLE", PrettyJSON(tool.Example), func() {
 				u.Notify("已复制示例参数 JSON")
 			})
@@ -1038,23 +866,19 @@ func (u *DesktopUI) renderCatalogOverviewTab(c *ui.Context, tool gateway.Tool, s
 func (u *DesktopUI) renderCatalogEditTab(c *ui.Context, st *catalogPageState, tool gateway.Tool) {
 	ui.Column(c).FillWidth().Gap(12).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			ui.Column(c).Gap(2).Children(func() {
-				ui.Text(c, "声明为只读工具 (ro)").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
-				ui.Text(c, "只读工具承诺不修改上游外部状态").FontSize(11.5).TextColor(SailInkMuted)
-			})
-			ui.Switch(c.Key("cat-edit-ro-"+tool.ID), &st.editReadOnly).Label("声明为只读工具")
+			ui.Text(c, "只读模式").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
+			ui.Switch(c.Key("cat-edit-ro-"+tool.ID), &st.editReadOnly).Label("只读模式")
 		})
 
 		ui.Column(c).FillWidth().Gap(5).Children(func() {
-			ui.Text(c, "功能语义描述").FontSize(12).FontWeight(600).TextColor(SailInkBody)
+			ui.Text(c, "功能描述").FontSize(12).FontWeight(600).TextColor(SailInkBody)
 			ui.TextArea(c.Key("cat-edit-desc-"+tool.ID), &st.editDesc).
-				Lines(3, 7).
-				Placeholder("说明该工具解决什么问题、适用哪些查询或变更场景…").
+				Lines(4, 8).
 				FillWidth()
 		})
 
 		ui.Column(c).FillWidth().Gap(5).Children(func() {
-			ui.Text(c, "允许的 Actors（逗号分隔）").FontSize(12).FontWeight(600).TextColor(SailInkBody)
+			ui.Text(c, "允许身份 (Actors)").FontSize(12).FontWeight(600).TextColor(SailInkBody)
 			ui.TextInput(c.Key("cat-edit-actors-"+tool.ID), &st.editActors).
 				Font("monospace").
 				Placeholder("developer, observer").
@@ -1062,9 +886,9 @@ func (u *DesktopUI) renderCatalogEditTab(c *ui.Context, st *catalogPageState, to
 		})
 
 		ui.Column(c).FillWidth().Gap(5).Children(func() {
-			ui.Text(c, "标签 Tags（逗号分隔）").FontSize(12).FontWeight(600).TextColor(SailInkBody)
+			ui.Text(c, "分类标签 (Tags)").FontSize(12).FontWeight(600).TextColor(SailInkBody)
 			ui.TextInput(c.Key("cat-edit-tags-"+tool.ID), &st.editTags).
-				Placeholder("github, pr, search").
+				Placeholder("github, pr").
 				FillWidth()
 		})
 
@@ -1073,7 +897,7 @@ func (u *DesktopUI) renderCatalogEditTab(c *ui.Context, st *catalogPageState, to
 				st.editLoadedID = ""
 				st.syncEditForm(tool)
 			}
-			saveLabel := "保存契约元数据"
+			saveLabel := "保存契约"
 			if st.savingContract {
 				saveLabel = "保存中…"
 			}
@@ -1181,11 +1005,11 @@ func catalogSplitCSV(raw string) []string {
 }
 
 func catalogBuildTestIntent(tool gateway.Tool) string {
-	desc := strings.TrimSpace(tool.Description)
+	desc := CleanDescriptionSummary(tool.Description)
 	if desc != "" {
-		return fmt.Sprintf("使用 %s (%s)：%s", tool.Name, tool.ID, desc)
+		return fmt.Sprintf("使用 %s：%s", tool.Name, desc)
 	}
-	return fmt.Sprintf("调用服务 %s 的 %s 工具 (%s)", tool.ServerID, tool.Name, tool.ID)
+	return fmt.Sprintf("调用 %s (%s)", tool.Name, tool.ID)
 }
 
 func catalogPickTestActor(tool gateway.Tool) string {
