@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       git_ref:
-        description: Branch, tag, or commit SHA to build
-        required: false
-        default: main
+        description: Existing version tag to build (published releases cannot be overwritten)
+        required: true
+        default: ""
         type: string
       platform:
         description: MyGo target platforms (comma-separated)
@@ -21,7 +21,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.git_ref || github.ref }}
+  group: release-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
@@ -35,6 +35,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.git_ref || github.ref }}
 
       - name: Set up Node.js
@@ -45,14 +46,19 @@ jobs:
       - name: Verify version and tag
         id: meta
         run: |
-          VERSION="$(node --input-type=module -e 'import cfg from "./mygo.config.ts"; const c = typeof cfg === "function" ? await cfg({ command: "build" }) : cfg; if (!c?.version) throw new Error("missing version in mygo.config.ts"); process.stdout.write(c.version);')"
+          VERSION="$(node -p 'require("./internal/buildinfo/profiles.json").version')"
           TAG="v${VERSION}"
           if [[ "${{ github.event_name }}" == "push" && "$GITHUB_REF_NAME" != "$TAG" ]]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match version $VERSION in mygo.config.ts (expected $TAG)"
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $VERSION in profiles.json (expected $TAG)"
             exit 1
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Reject published releases and mismatched tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-policy.mjs
 
       - name: Create draft release
         env:
@@ -61,7 +67,7 @@ jobs:
           TAG="${{ steps.meta.outputs.tag }}"
           VERSION="${{ steps.meta.outputs.version }}"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; build will upload artifacts to it."
+            echo "Draft release $TAG already exists; continuing verified tag build."
             exit 0
           fi
 
@@ -94,6 +100,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.git_ref || github.ref }}
 
       - name: Set up Go
@@ -169,11 +176,11 @@ jobs:
           PLATFORM: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'darwin/arm64,darwin/amd64' }}
         run: |
           if [[ -n "$MYGO_UPDATER_PRIVATE_KEY" ]]; then
-            CGO_ENABLED=0 go tool mygo build -platform "$PLATFORM" -upload
+            node scripts/build-channel.mjs package stable -platform "$PLATFORM" -upload
             echo "uploaded=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::Missing MYGO_UPDATER_PRIVATE_KEY secret. Building without -upload and updater manifests."
-            CGO_ENABLED=0 go tool mygo build -platform "$PLATFORM"
+            node scripts/build-channel.mjs package stable -platform "$PLATFORM"
             echo "uploaded=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -183,12 +190,12 @@ jobs:
         with:
           name: macos-release-${{ needs.draft-release.outputs.tag }}
           path: |
-            build/*/*.dmg
-            build/*/*.tar.gz
-            build/*/*.delta
-            build/*/update-*.json
-            build/*/install.sh
-            build/SHA256SUMS
+            build/stable/*/*.dmg
+            build/stable/*/*.tar.gz
+            build/stable/*/*.delta
+            build/stable/*/update-*.json
+            build/stable/*/install.sh
+            build/stable/SHA256SUMS
           if-no-files-found: warn
 
       - name: Clean up temporary keychain

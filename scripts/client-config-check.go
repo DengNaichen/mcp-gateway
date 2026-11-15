@@ -14,7 +14,7 @@ func main() {
 	root := flag.String("home", "", "explicit test config home (required)")
 	state := flag.String("state", "", "receipt directory (required)")
 	client := flag.String("client", "", "client ID")
-	action := flag.String("action", "status", "status, write, revoke")
+	action := flag.String("action", "status", "status, write, update, revoke")
 	endpoint := flag.String("endpoint", "http://127.0.0.1:18878/mcp", "Gateway MCP URL")
 	flag.Parse()
 	if *root == "" || *state == "" {
@@ -26,6 +26,8 @@ func main() {
 	switch *action {
 	case "write":
 		err = m.Write(*client, *endpoint)
+	case "update":
+		err = m.Update(*client, *endpoint)
 	case "revoke":
 		err = m.Revoke(*client)
 	case "status":

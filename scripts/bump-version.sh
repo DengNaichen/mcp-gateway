@@ -43,36 +43,30 @@ if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; the
   exit 1
 fi
 
-CURRENT_VERSION="$(node --input-type=module -e 'import cfg from "./mygo.config.ts"; const c = typeof cfg === "function" ? await cfg({ command: "build" }) : cfg; process.stdout.write(c.version);')"
+CURRENT_VERSION="$(node -p 'require("./internal/buildinfo/profiles.json").version')"
 
 if [[ "$CURRENT_VERSION" != "$VERSION" ]]; then
   echo "Bumping version $CURRENT_VERSION -> $VERSION"
   NEW_VERSION="$VERSION" node --input-type=module -e '
     import fs from "node:fs";
     const v = process.env.NEW_VERSION;
-    let cfg = fs.readFileSync("mygo.config.ts", "utf8");
-    const cfgNext = cfg.replace(/^(\s*version:\s*)"[^"]*"/m, `$1"${v}"`);
-    if (cfg === cfgNext) throw new Error("Failed to update version in mygo.config.ts");
-    fs.writeFileSync("mygo.config.ts", cfgNext);
-
-    let mainGo = fs.readFileSync("cmd/gateway-desktop/main.go", "utf8");
-    const mainNext = mainGo.replace(/(mygo\.App\.SetVersion\()"[^"]*"(\))/, `$1"${v}"$2`);
-    if (mainGo !== mainNext) {
-      fs.writeFileSync("cmd/gateway-desktop/main.go", mainNext);
-    }
+    const path = "internal/buildinfo/profiles.json";
+    const profiles = JSON.parse(fs.readFileSync(path, "utf8"));
+    profiles.version = v;
+    fs.writeFileSync(path, JSON.stringify(profiles, null, 2) + "\n");
   '
 
-  UPDATED_VERSION="$(node --input-type=module -e 'import cfg from "./mygo.config.ts"; const c = typeof cfg === "function" ? await cfg({ command: "build" }) : cfg; process.stdout.write(c.version);')"
+  UPDATED_VERSION="$(node -p 'require("./internal/buildinfo/profiles.json").version')"
   if [[ "$UPDATED_VERSION" != "$VERSION" ]]; then
     echo "Error: version verification failed after update (got: $UPDATED_VERSION)" >&2
     exit 1
   fi
 
-  git add mygo.config.ts cmd/gateway-desktop/main.go
+  git add internal/buildinfo/profiles.json
   git commit -m "chore: bump version to $VERSION"
   git push origin HEAD:refs/heads/main
 else
-  echo "mygo.config.ts is already at $VERSION; tagging HEAD."
+  echo "internal/buildinfo/profiles.json is already at $VERSION; tagging HEAD."
 fi
 
 git tag "$TAG"

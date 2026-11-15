@@ -3,6 +3,7 @@ package clientconfig
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,12 +13,16 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
+	"gatewaylab/internal/buildinfo"
+
+	"github.com/gofrs/flock"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/tailscale/hujson"
 )
 
-const ServerName = "mcp-gateway"
+var serverName = buildinfo.Current().Slug
 
 type Client struct {
 	ID, Name, Path string
@@ -25,8 +30,8 @@ type Client struct {
 	TOML           bool
 }
 type Status struct {
-	ID, Name, Path, State, Detail string
-	CanWrite, CanRevoke           bool
+	ID, Name, Path, State, Detail  string
+	CanWrite, CanUpdate, CanRevoke bool
 }
 type Manager struct {
 	Clients  []Client
@@ -34,9 +39,10 @@ type Manager struct {
 	mu       sync.Mutex
 }
 type receipt struct {
-	Path  string
-	Entry map[string]any
-	Block string
+	Path     string
+	Entry    map[string]any
+	Block    string
+	Previous *receipt `json:",omitempty"`
 }
 
 // New uses explicit paths so integration tests never touch the user's real settings.
@@ -129,7 +135,7 @@ func entry(c Client, b []byte) (map[string]any, error) {
 			return nil, fmt.Errorf("%s 必须是对象", key)
 		}
 	}
-	v, ok := root[ServerName]
+	v, ok := root[serverName]
 	if !ok {
 		return nil, nil
 	}
@@ -151,6 +157,14 @@ func (m *Manager) load(c Client) (*receipt, error) {
 		e = errors.New("配置路径已改变，保留原写入记录")
 	}
 	return &r, e
+}
+
+// A pending update owns either side of the atomic config replacement.
+func matchingReceipt(r *receipt, got map[string]any) *receipt {
+	if r != nil && !reflect.DeepEqual(got, r.Entry) && r.Previous != nil && reflect.DeepEqual(got, r.Previous.Entry) {
+		return r.Previous
+	}
+	return r
 }
 func (m *Manager) status(c Client, endpoint string) Status {
 	s := Status{ID: c.ID, Name: c.Name, Path: c.Path, State: "未配置", CanWrite: true}
@@ -175,15 +189,23 @@ func (m *Manager) status(c Client, endpoint string) Status {
 		s.CanWrite = false
 		return s
 	}
+	r = matchingReceipt(r, got)
 	if got == nil {
 		return s
 	}
 	s.CanWrite = false
 	if r != nil && reflect.DeepEqual(got, r.Entry) {
+		if c.TOML && (r.Block == "" || bytes.Count(b, []byte(r.Block)) != 1) {
+			s.State = "配置已变更"
+			s.Detail = "配置文本已被外部修改，请检查配置"
+			return s
+		}
 		s.State = "已配置"
 		s.CanRevoke = true
 		if !reflect.DeepEqual(got, desired(c, endpoint)) {
-			s.Detail = "Gateway 地址已改变，请撤回后重新写入"
+			s.State = "需要更新"
+			s.CanUpdate = true
+			s.Detail = "Gateway 地址已改变，可更新本应用管理的配置"
 		}
 		return s
 	}
@@ -202,7 +224,11 @@ func (m *Manager) Statuses(endpoint string) []Status {
 }
 
 // Write refuses conflicts; the durable receipt is saved before changing the client file.
-func (m *Manager) Write(id, endpoint string) error {
+func (m *Manager) Write(id, endpoint string) error { return m.write(id, endpoint, false) }
+
+// Update only replaces an entry still matching our durable ownership receipt.
+func (m *Manager) Update(id, endpoint string) error { return m.write(id, endpoint, true) }
+func (m *Manager) write(id, endpoint string, update bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	u, e := url.Parse(endpoint)
@@ -213,6 +239,11 @@ func (m *Manager) Write(id, endpoint string) error {
 	if e != nil {
 		return e
 	}
+	lock, e := lockConfig(c.Path)
+	if e != nil {
+		return e
+	}
+	defer lock.Close()
 	b, e := read(c.Path)
 	if e != nil {
 		return e
@@ -226,18 +257,46 @@ func (m *Manager) Write(id, endpoint string) error {
 	if e != nil {
 		return e
 	}
+	pending := r != nil && r.Previous != nil
+	r = matchingReceipt(r, got)
 	if got != nil {
-		if r != nil && reflect.DeepEqual(got, r.Entry) && reflect.DeepEqual(got, want) {
+		if r == nil || !reflect.DeepEqual(got, r.Entry) {
+			return errors.New("配置已被外部修改或不属于本应用，未覆盖")
+		}
+		if reflect.DeepEqual(got, want) {
+			if pending {
+				final := *r
+				final.Previous = nil
+				raw, _ := json.MarshalIndent(final, "", "  ")
+				return atomicWrite(m.receiptPath(c), raw)
+			}
 			return nil
 		}
-		return errors.New("已有同名配置，未覆盖；请先检查或撤回")
+		if !update {
+			return errors.New("已有配置需要更新，请使用更新配置")
+		}
+	} else if update {
+		return errors.New("配置已不存在，请刷新后写入配置")
 	}
 	rec := receipt{Path: c.Path, Entry: want}
+	if got != nil {
+		previous := *r
+		previous.Previous = nil
+		rec.Previous = &previous
+	}
+
 	var next []byte
 	if c.TOML {
 		encoded, _ := json.Marshal(endpoint)
-		rec.Block = "\n[mcp_servers.mcp-gateway]\nurl = " + string(encoded) + "\n"
-		next = append(bytes.Clone(b), []byte(rec.Block)...)
+		rec.Block = "\n[mcp_servers." + serverName + "]\nurl = " + string(encoded) + "\n"
+		if got != nil {
+			if r.Block == "" || bytes.Count(b, []byte(r.Block)) != 1 {
+				return errors.New("配置文本已改变，未更新")
+			}
+			next = bytes.Replace(b, []byte(r.Block), []byte(rec.Block), 1)
+		} else {
+			next = append(bytes.Clone(b), []byte(rec.Block)...)
+		}
 	} else {
 		next, e = editJSON(c, b, want)
 		if e != nil {
@@ -265,6 +324,11 @@ func (m *Manager) Write(id, endpoint string) error {
 	if !reflect.DeepEqual(actual, want) {
 		return errors.New("写入后校验失败，请刷新配置")
 	}
+	if rec.Previous != nil {
+		rec.Previous = nil
+		rb, _ = json.MarshalIndent(rec, "", "  ")
+		return atomicWrite(m.receiptPath(c), rb)
+	}
 	return nil
 }
 func (m *Manager) Revoke(id string) error {
@@ -274,6 +338,11 @@ func (m *Manager) Revoke(id string) error {
 	if e != nil {
 		return e
 	}
+	lock, e := lockConfig(c.Path)
+	if e != nil {
+		return e
+	}
+	defer lock.Close()
 	r, e := m.load(c)
 	if e != nil {
 		return e
@@ -289,6 +358,7 @@ func (m *Manager) Revoke(id string) error {
 	if e != nil {
 		return e
 	}
+	r = matchingReceipt(r, got)
 	if got == nil {
 		return os.Remove(m.receiptPath(c))
 	}
@@ -333,7 +403,7 @@ func editJSON(c Client, b []byte, value map[string]any) ([]byte, error) {
 			}
 		}
 	}
-	op := map[string]any{"op": "remove", "path": ptr + "/" + ServerName}
+	op := map[string]any{"op": "remove", "path": ptr + "/" + serverName}
 	if value != nil {
 		op["op"] = "add"
 		op["value"] = value
@@ -404,4 +474,24 @@ func uniqueKeys(v *hujson.Value) error {
 		}
 	}
 	return nil
+}
+
+// Both channels coordinate on the target file, not their separate receipt dirs.
+// The lock file is kept so waiting processes always refer to the same inode.
+func lockConfig(path string) (*flock.Flock, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, err
+	}
+	lock := flock.New(path + ".mcp-gateway.lock")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	ok, err := lock.TryLockContext(ctx, 25*time.Millisecond)
+	if err != nil || !ok {
+		_ = lock.Close()
+		if err != nil {
+			return nil, fmt.Errorf("等待客户端配置锁失败，请稍后重试: %w", err)
+		}
+		return nil, errors.New("客户端配置正被其他进程修改，请稍后重试")
+	}
+	return lock, nil
 }

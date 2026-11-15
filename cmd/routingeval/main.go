@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"gatewaylab/internal/buildinfo"
 )
 
 type caseSpec struct {
@@ -140,7 +142,7 @@ func short(ids []string) string {
 }
 
 func run() error {
-	url := flag.String("url", "http://127.0.0.1:8788", "Gateway URL")
+	url := flag.String("url", "http://"+buildinfo.DefaultAddr(), "Gateway URL")
 	file := flag.String("cases", "evals/routing/github.json", "Case file")
 	flag.Parse()
 	raw, err := os.ReadFile(*file)

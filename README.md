@@ -11,7 +11,7 @@ cd mcp-gateway
 ./start.sh
 ```
 
-打开 <http://127.0.0.1:8788>。前端已经内嵌到 Go 程序中，运行时只需启动一个进程。更换端口使用 `./start.sh -addr 127.0.0.1:8888`。
+打开 <http://127.0.0.1:8789>。前端已经内嵌到 Go 程序中，运行时只需启动一个进程。更换端口使用 `./start.sh -addr 127.0.0.1:8888`。
 
 从源码首次准备和构建需要 Go 1.26+、Node.js 22.12+：
 
@@ -150,7 +150,7 @@ Git 来源可替换 files 为 `repository: {"url":"https://git.example/team/api.
 MCP Streamable HTTP endpoint：
 
 ```text
-http://127.0.0.1:8788/mcp
+http://127.0.0.1:8789/mcp
 ```
 
 客户端配置示例，具体字段按客户端调整：
@@ -160,7 +160,7 @@ http://127.0.0.1:8788/mcp
   "mcpServers": {
     "gateway-lab": {
       "type": "http",
-      "url": "http://127.0.0.1:8788/mcp"
+      "url": "http://127.0.0.1:8789/mcp"
     }
   }
 }
@@ -327,7 +327,7 @@ GitLab 测试使用临时数据目录：导入示例规格 → 负责人契约�
 
 ```sh
 go run ./cmd/routingeval                      # 默认读 evals/routing/github.json
-go run ./cmd/routingeval -url http://127.0.0.1:8788 -cases evals/routing/github.json
+go run ./cmd/routingeval -url http://127.0.0.1:8789 -cases evals/routing/github.json
 ```
 
 `evals/routing/vercel.json` 是只针对 Vercel 的另一组题，运行前先在网关里停用其他服务，让候选只有 Vercel 的工具（默认的按服务收窄开着时不必停用）。`evals/routing/multi.json` 是 14 个服务、61 题的跨服务题，含用词在多个服务间通用的 `cross` 题和写操作 `no_match` 题。题目可标 `needs_context: true`，表示意图在几个服务间同样成立，网关要求补充上下文也算对；`no_match` 题可带 `acceptable`，表示启用了某些工具（如网页搜索）时返回它们不算错。题目可带 `tag` 分组统计，`any_of` 表示返回其中任意一个即算对。每次调用约数万 input token，而模型服务按每分钟 token 限速（Gemini Tier 1 为 100 万/分钟），连续跑多组时评测脚本会在遇到错误后等待重试。
@@ -341,7 +341,7 @@ go run ./cmd/routingeval -url http://127.0.0.1:8788 -cases evals/routing/github.
 ```sh
 # 终端 1：Go 后端，使用已有 web/dist
 make run
-# 终端 2：React 热更新，API 代理至 8788
+# 终端 2：React 热更新，API 代理至 8789
 cd web && npm run dev
 # 完成修改后重新内嵌前端并生成两个程序
 make build
@@ -364,3 +364,29 @@ MyGo 桌面端侧栏「连接客户端」可将本 Gateway 的 MCP 入口写入 
 页面显示实际配置路径和文件状态。写入保留其他配置；同名冲突不会覆盖；撤回只移除本应用写入且未被外部修改的条目。配置后需重载客户端并保持 Gateway 运行，Pi 可使用 `/reload`。共享鉴权模式还需在客户端补充 Bearer Token。
 
 实现边界、客户端版本和验证方法见 [客户端配置验证](docs/client-setup/verification.md)。
+
+
+## Dev 与 Stable 构建
+
+本地默认运行开发版，正式版的应用标识、数据目录和更新源保持不变。两版可同时安装运行。
+
+| 项目 | Dev | Stable |
+| --- | --- | --- |
+| 应用 | MCP Gateway Dev（DEV 图标） | MCP Gateway |
+| 默认端口 | 8789 | 8788 |
+| 用户数据目录名 | mcp-gateway-dev | mcp-gateway |
+| 客户端 MCP 条目 | mcp-gateway-dev | mcp-gateway |
+| 自动更新 | 关闭 | 正式发布源 |
+| 产物 | build/dev/ | build/stable/ |
+
+```sh
+make dev      # 运行 Dev 原生桌面端
+make package  # 打包 Dev .app
+make release  # 显式打包 Stable；不上传、不安装
+```
+
+版本号统一维护在 `internal/buildinfo/profiles.json`；Dev 自动附加 Git 短 SHA 和 dirty 标记。身份编译进程序，Finder 启动不依赖渠道环境变量。Dev 使用 `GATEWAY_DEV_DATA_DIR` / `GATEWAY_DEV_PUBLIC_URL`，Stable 继续使用原来的 `GATEWAY_DATA_DIR` / `GATEWAY_PUBLIC_URL`；显式 `-data`、`-addr` 仍优先。
+
+正式上传通过 `scripts/release-macos-local.sh --upload` 或 tag 发布工作流执行，要求干净工作区、HEAD 对应版本 tag，且该版本尚未正式发布。已发布版本必须升版，不能覆盖上传。普通 CI 只保留 Dev 测试包。
+
+更多构建入口、隔离边界及验证记录见 [构建渠道说明](docs/build-channels/README.md)。

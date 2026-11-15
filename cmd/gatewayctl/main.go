@@ -11,10 +11,12 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"gatewaylab/internal/buildinfo"
 )
 
 func run() error {
-	endpoint := flag.String("url", "http://127.0.0.1:8788", "Gateway URL")
+	endpoint := flag.String("url", "http://"+buildinfo.DefaultAddr(), "Gateway URL")
 	actor := flag.String("actor", "developer", "Simulated policy identity")
 	args := flag.String("args", "{}", "Tool arguments as JSON")
 	fields := flag.String("fields", "", "Comma-separated response projection paths")
