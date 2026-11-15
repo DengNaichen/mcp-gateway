@@ -14,13 +14,14 @@ import (
 	"syscall"
 	"time"
 
+	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/gateway"
 	"gatewaylab/web"
 )
 
 func run() error {
-	addr := flag.String("addr", "127.0.0.1:8788", "HTTP listening address")
-	data := flag.String("data", "data", "Local registry and settings directory")
+	addr := flag.String("addr", buildinfo.DefaultAddr(), "HTTP listening address")
+	data := flag.String("data", "data/"+buildinfo.Current().Channel, "Local registry and settings directory")
 	flag.Parse()
 	host, _, err := net.SplitHostPort(*addr)
 	if err != nil {
@@ -31,7 +32,7 @@ func run() error {
 		return fmt.Errorf("non-loopback listener requires GATEWAY_AUTH_FILE")
 	}
 	base := "http://" + *addr
-	if public := os.Getenv("GATEWAY_PUBLIC_URL"); public != "" {
+	if public := os.Getenv(buildinfo.EnvironmentKey("GATEWAY_PUBLIC_URL")); public != "" {
 		base = public
 	}
 	g, err := gateway.New(*data, base)

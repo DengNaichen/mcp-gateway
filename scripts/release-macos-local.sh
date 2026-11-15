@@ -102,4 +102,4 @@ if [[ "$SKIP_NOTARIZE" == false ]]; then
   echo "    Notary profile:   ${MACOS_NOTARY_PROFILE}"
 fi
 
-CGO_ENABLED=0 go tool mygo build "${build_args[@]}"
+node scripts/build-channel.mjs package stable "${build_args[@]}"

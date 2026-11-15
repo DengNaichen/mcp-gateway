@@ -2,6 +2,8 @@ package clientconfig
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -165,5 +167,114 @@ func TestPathOverridesAndJSONC(t *testing.T) {
 		if c.Path != filepath.Join(custom, suffix) {
 			t.Fatalf("%s: %s", id, c.Path)
 		}
+	}
+}
+
+func TestUpdateManagedClients(t *testing.T) {
+	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi"} {
+		t.Run(id, func(t *testing.T) {
+			h := t.TempDir()
+			m := New(h, filepath.Join(h, "receipts"), func(string) string { return "" })
+			c, _ := m.client(id)
+			oldURL, newURL := "http://localhost:8788/mcp", "http://localhost:8789/mcp"
+			if err := m.Update(id, newURL); err == nil {
+				t.Fatal("updated absent entry")
+			}
+			if err := m.Write(id, oldURL); err != nil {
+				t.Fatal(err)
+			}
+			b, _ := read(c.Path)
+			if c.TOML {
+				b = append(b, []byte("\n[unrelated]\nkeep = true\n")...)
+			} else {
+				b = bytes.Replace(b, []byte("{"), []byte("{\n// retain user comment\n\"unrelated\":true,"), 1)
+			}
+			os.WriteFile(c.Path, b, 0600)
+			s := m.status(c, newURL)
+			if !s.CanUpdate || !s.CanRevoke || s.CanWrite {
+				t.Fatalf("bad pending status: %+v", s)
+			}
+			if err := m.Update(id, newURL); err != nil {
+				t.Fatal(err)
+			}
+			updated, _ := read(c.Path)
+			got, err := entry(c, updated)
+			if err != nil || got["url"] != newURL {
+				t.Fatal("wrong updated entry", got, err)
+			}
+			if !bytes.Contains(updated, []byte("unrelated")) {
+				t.Fatal("lost unrelated config")
+			}
+			if s = m.status(c, newURL); s.CanUpdate || !s.CanRevoke {
+				t.Fatalf("not current: %+v", s)
+			}
+			if err := m.Update(id, newURL); err != nil {
+				t.Fatal("update not idempotent", err)
+			}
+			again, _ := read(c.Path)
+			if !bytes.Equal(updated, again) {
+				t.Fatal("repeat update rewrote file")
+			}
+			// Manual edits are never silently replaced by Update.
+			changed := bytes.ReplaceAll(updated, []byte("8789"), []byte("9999"))
+			os.WriteFile(c.Path, changed, 0600)
+			if err := m.Update(id, newURL); err == nil {
+				t.Fatal("overwrote user edit")
+			}
+			after, _ := read(c.Path)
+			if !bytes.Equal(after, changed) {
+				t.Fatal("changed conflict")
+			}
+			os.WriteFile(c.Path, updated, 0600)
+			if err := m.Revoke(id); err != nil {
+				t.Fatal(err)
+			}
+			after, _ = read(c.Path)
+			if !bytes.Contains(after, []byte("unrelated")) {
+				t.Fatal("revoke lost unrelated config")
+			}
+		})
+	}
+}
+func TestInterruptedUpdateKeepsOwnership(t *testing.T) {
+	for _, written := range []bool{false, true} {
+		t.Run(fmt.Sprint(written), func(t *testing.T) {
+			h := t.TempDir()
+			m := New(h, filepath.Join(h, "receipts"), func(string) string { return "" })
+			c, _ := m.client("cursor")
+			oldURL, newURL := "http://localhost:8788/mcp", "http://localhost:8789/mcp"
+			if err := m.Write(c.ID, oldURL); err != nil {
+				t.Fatal(err)
+			}
+			prior, err := m.load(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pending := receipt{Path: c.Path, Entry: desired(c, newURL), Previous: prior}
+			raw, _ := json.Marshal(pending)
+			atomicWrite(m.receiptPath(c), raw)
+			if written {
+				b, _ := read(c.Path)
+				next, err := editJSON(c, b, pending.Entry)
+				if err != nil {
+					t.Fatal(err)
+				}
+				atomicWrite(c.Path, next)
+			}
+			reopened := New(h, m.StateDir, func(string) string { return "" })
+			if !reopened.status(c, newURL).CanRevoke {
+				t.Fatal("lost ownership after interrupted update")
+			}
+			if err := reopened.Update(c.ID, newURL); err != nil {
+				t.Fatal(err)
+			}
+			settled, err := reopened.load(c)
+			if err != nil || settled.Previous != nil {
+				t.Fatal("update journal was not finalized", err)
+			}
+			if err := reopened.Revoke(c.ID); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

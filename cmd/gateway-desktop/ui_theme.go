@@ -12,7 +12,7 @@ import (
 //go:embed assets/mcp.svg
 var mcpLogoSVG []byte
 
-// Stripe Sail / Linear-inspired light design tokens.
+// Stripe Sail / Linear design tokens; refreshed from the system appearance each frame.
 var (
 	SailBgCanvas  = ui.Hex("#ffffff")
 	SailBgSidebar = ui.Hex("#f8fafc")
@@ -63,6 +63,65 @@ var (
 
 	SailCardShadow = ui.RGBA(15, 23, 42, 0.035)
 )
+
+// setSailPalette swaps the Sail tokens for the light or dark palette.
+func setSailPalette(dark bool) {
+	if !dark {
+		SailBgCanvas = ui.Hex("#ffffff")
+		SailBgSidebar = ui.Hex("#f8fafc")
+		SailBgSubtle = ui.Hex("#f7f9fc")
+		SailBgMuted = ui.Hex("#eef2f6")
+		SailBgHover = ui.Hex("#f3f6fa")
+		SailNavyBg = ui.Hex("#0a2540")
+		SailNavyHeader = ui.Hex("#0d2e4d")
+		SailNavyBorder = ui.RGBA(255, 255, 255, 0.14)
+		SailNavyText = ui.Hex("#e6edf5")
+		SailNavyMuted = ui.Hex("#93a7be")
+		SailInkStrong = ui.Hex("#111827")
+		SailInkBody = ui.Hex("#374151")
+		SailInkMuted = ui.Hex("#6b7280")
+		SailInkFaint = ui.Hex("#9ca3af")
+		SailBorder = ui.Hex("#e5e9f0")
+		SailDivider = ui.Hex("#edf1f6")
+		SailBorderStrong = ui.Hex("#cbd5e1")
+		SailAccent = ui.Hex("#635bff")
+		SailAccentHover = ui.Hex("#5248f5")
+		SailAccentPressed = ui.Hex("#4338ca")
+		SailAccentSoft = ui.Hex("#f5f6ff")
+		SailAccentBorder = ui.Hex("#d5d2ff")
+		SailSuccessBg = ui.Hex("#dcfce7")
+		SailSuccessBorder = ui.Hex("#bbf7d0")
+		SailSuccessInk = ui.Hex("#15803d")
+		SailWarningBg = ui.Hex("#fef3c7")
+		SailWarningBorder = ui.Hex("#fde68a")
+		SailWarningInk = ui.Hex("#b45309")
+		SailDangerBg = ui.Hex("#fee2e2")
+		SailDangerBorder = ui.Hex("#fecaca")
+		SailDangerInk = ui.Hex("#b91c1c")
+		SailInfoBg = ui.Hex("#e0e7ff")
+		SailInfoBorder = ui.Hex("#c7d2fe")
+		SailInfoInk = ui.Hex("#3730a3")
+		SailNeutralBg = ui.Hex("#f1f5f9")
+		SailNeutralBorder = ui.Hex("#e2e8f0")
+		SailNeutralInk = ui.Hex("#475569")
+		SailCardShadow = ui.RGBA(15, 23, 42, 0.035)
+		return
+	}
+	SailDivider = ui.Hex("#1d293c")
+	SailBgCanvas, SailBgSidebar, SailBgSubtle = ui.Hex("#0f1626"), ui.Hex("#0b1120"), ui.Hex("#131c2e")
+	SailBgMuted, SailBgHover = ui.Hex("#1b263b"), ui.Hex("#18223a")
+	SailNavyBg, SailNavyHeader = ui.Hex("#060d1a"), ui.Hex("#0a1426")
+	SailInkStrong, SailInkBody, SailInkMuted, SailInkFaint = ui.Hex("#f1f5f9"), ui.Hex("#cbd5e1"), ui.Hex("#94a3b8"), ui.Hex("#64748b")
+	SailBorder, SailBorderStrong = ui.Hex("#243049"), ui.Hex("#34425f")
+	SailAccent, SailAccentHover, SailAccentPressed = ui.Hex("#7a73ff"), ui.Hex("#8f89ff"), ui.Hex("#635bff")
+	SailAccentSoft, SailAccentBorder = ui.Hex("#1e1d4a"), ui.Hex("#3b3894")
+	SailSuccessBg, SailSuccessBorder, SailSuccessInk = ui.Hex("#0d2f22"), ui.Hex("#14573f"), ui.Hex("#4ade9d")
+	SailWarningBg, SailWarningBorder, SailWarningInk = ui.Hex("#33260a"), ui.Hex("#5c4413"), ui.Hex("#fbbf24")
+	SailDangerBg, SailDangerBorder, SailDangerInk = ui.Hex("#381416"), ui.Hex("#661f24"), ui.Hex("#f87171")
+	SailInfoBg, SailInfoBorder, SailInfoInk = ui.Hex("#1a2150"), ui.Hex("#2f3a8a"), ui.Hex("#a5b4fc")
+	SailNeutralBg, SailNeutralBorder, SailNeutralInk = ui.Hex("#1b263b"), ui.Hex("#2b3750"), ui.Hex("#a3b1c6")
+	SailCardShadow = ui.RGBA(0, 0, 0, 0.35)
+}
 
 // BadgeTone identifies semantic status styling for high-signal pills and alerts.
 type BadgeTone uint8
@@ -120,9 +179,15 @@ var (
 	IconChevronRight = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>`))
 )
 
-// applySailTheme installs the restrained light theme on the UI context.
+// applySailTheme follows the system appearance while preserving the decluttered palette.
 func applySailTheme(c *ui.Context) {
-	t := *ui.LightTheme().WithAccent(SailAccent)
+	dark := c.Theme().Dark
+	setSailPalette(dark)
+	base := ui.LightTheme()
+	if dark {
+		base = ui.DarkTheme()
+	}
+	t := *base.WithAccent(SailAccent)
 	t.Background = SailBgCanvas
 	t.Surface = SailBgSubtle
 	t.SurfaceHover = SailBgHover
@@ -439,7 +504,7 @@ func SailDangerButton(c *ui.Context, label string) ui.Element {
 		Border(1, SailDangerBorder).
 		Cursor(ui.CursorPointer)
 	if btn.Hovered() {
-		btn.Background(ui.Hex("#fecaca"))
+		btn.Background(SailDangerBorder)
 	}
 	btn.Children(func() {
 		ui.Text(c, label).FontSize(12.5).FontWeight(600).TextColor(SailDangerInk).SingleLine()

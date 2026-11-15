@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/gateway"
 	"gatewaylab/web"
 
@@ -24,7 +25,7 @@ func TestParseDesktopFlagsAndPSNFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected parse error: %v", err)
 	}
-	if addr != "127.0.0.1:8788" || custom || data != "" {
+	if addr != buildinfo.DefaultAddr() || custom || data != "" {
 		t.Fatalf("got addr=%q custom=%v data=%q", addr, custom, data)
 	}
 
@@ -38,17 +39,17 @@ func TestParseDesktopFlagsAndPSNFiltering(t *testing.T) {
 }
 
 func TestResolveDataDir(t *testing.T) {
-	t.Setenv("GATEWAY_DATA_DIR", "")
+	t.Setenv(buildinfo.EnvironmentKey("GATEWAY_DATA_DIR"), "")
 	defaultDir, err := resolveDataDir("")
 	if err != nil {
 		t.Fatalf("resolveDataDir default failed: %v", err)
 	}
-	if !filepath.IsAbs(defaultDir) || filepath.Base(defaultDir) != "mcp-gateway" {
+	if !filepath.IsAbs(defaultDir) || filepath.Base(defaultDir) != buildinfo.Current().Slug {
 		t.Fatalf("unexpected default data dir: %q", defaultDir)
 	}
 
 	tmp := t.TempDir()
-	t.Setenv("GATEWAY_DATA_DIR", tmp)
+	t.Setenv(buildinfo.EnvironmentKey("GATEWAY_DATA_DIR"), tmp)
 	envDir, err := resolveDataDir("")
 	if err != nil || envDir != tmp {
 		t.Fatalf("expected env dir %q, got %q (err=%v)", tmp, envDir, err)
@@ -101,8 +102,13 @@ func TestStartAttachAndPortConflict(t *testing.T) {
 		t.Fatalf("expected modeOwned, got %s", owned.Mode)
 	}
 
-	// Starting a second instance on the same port should detect /api/health and attach.
-	attached, conflict, err := startOrAttachGateway(ctx, owned.ListenAddr, t.TempDir(), assets)
+	// An unrelated data directory must not silently attach to this backend.
+	foreign, foreignConflict, foreignErr := startOrAttachGateway(ctx, owned.ListenAddr, t.TempDir(), assets)
+	if foreign != nil || foreignConflict == nil || foreignErr != nil {
+		t.Fatalf("foreign data dir attached: %v %v", foreignConflict, foreignErr)
+	}
+	// Starting the same identity and data directory should detect /api/health and attach.
+	attached, conflict, err := startOrAttachGateway(ctx, owned.ListenAddr, owned.DataDir, assets)
 	if err != nil || conflict != nil {
 		t.Fatalf("attach gateway failed: conflict=%v err=%v", conflict, err)
 	}
@@ -116,7 +122,7 @@ func TestStartAttachAndPortConflict(t *testing.T) {
 		t.Fatalf("attached shutdown error: %v", err)
 	}
 	cancel()
-	if !probeGatewayHealth(ctx, owned.UIURL) {
+	if !probeGatewayHealth(ctx, owned.UIURL, owned.DataDir) {
 		t.Fatal("owned gateway should remain healthy after attached client shuts down")
 	}
 
@@ -137,7 +143,7 @@ func TestStartAttachAndPortConflict(t *testing.T) {
 	uiApp.Loading = false
 
 	tester := ui.NewTester(uiApp.View, 1280, 820)
-	if !tester.HasText("MCP Gateway") {
+	if !tester.HasText(buildinfo.Current().Name) {
 		t.Fatal("expected native UI sidebar to render MCP Gateway")
 	}
 	for _, navLabel := range []string{"上游服务", "工具目录", "访问与路由", "请求日志", "路由沙盒", "运行大盘"} {
@@ -152,7 +158,7 @@ func TestStartAttachAndPortConflict(t *testing.T) {
 		t.Fatalf("owned shutdown error: %v", err)
 	}
 	cancelOwned()
-	if probeGatewayHealth(ctx, owned.UIURL) {
+	if probeGatewayHealth(ctx, owned.UIURL, owned.DataDir) {
 		t.Fatal("owned gateway should stop responding after shutdown")
 	}
 

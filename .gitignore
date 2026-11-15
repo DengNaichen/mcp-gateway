@@ -15,3 +15,6 @@
 *.key
 mygo-update.key
 *.dmg
+
+# Bare desktop builds are artifacts, never source.
+/gateway-desktop

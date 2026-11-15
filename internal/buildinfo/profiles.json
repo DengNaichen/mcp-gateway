@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "stable": {
+    "name": "MCP Gateway",
+    "identifier": "NaichengDeng.mcp-gateway",
+    "slug": "mcp-gateway",
+    "port": 8788
+  },
+  "dev": {
+    "name": "MCP Gateway Dev",
+    "identifier": "NaichengDeng.mcp-gateway.dev",
+    "slug": "mcp-gateway-dev",
+    "port": 8789
+  }
+}

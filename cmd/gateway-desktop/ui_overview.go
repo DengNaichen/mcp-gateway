@@ -490,7 +490,7 @@ func ovMetricCard(c *ui.Context, fn func()) {
 
 func (u *DesktopUI) renderOverviewTrafficStrip(c *ui.Context, telemetry GatewayTelemetry) {
 	colorContext := ui.Hex("#94a3b8")
-	colorNoMatch := ui.Hex("#cbd5e1")
+	colorNoMatch := SailBorderStrong
 	colorError := ui.Hex("#ef4444")
 	colorInvokeOK := ui.Hex("#10b981")
 

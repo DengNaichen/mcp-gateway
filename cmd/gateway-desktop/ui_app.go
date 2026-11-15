@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
 
 	"github.com/egoist/mygo"
@@ -122,7 +123,7 @@ func NewDesktopUI(rt *gatewayRuntime) *DesktopUI {
 		configEnv = func(string) string { return "" }
 	}
 	if err == nil {
-		d.ClientConfigs = clientconfig.New(home, filepath.Join(home, ".mcp-gateway", "client-config"), configEnv)
+		d.ClientConfigs = clientconfig.New(home, filepath.Join(home, "."+buildinfo.Current().Slug, "client-config"), configEnv)
 	} else {
 		d.ClientConfigError = err.Error()
 	}
@@ -517,7 +518,7 @@ func (u *DesktopUI) renderLoginView(c *ui.Context) {
 						ui.Box(c).Size(32, 32).Radius(8).Background(SailAccentSoft).Border(1, SailAccentBorder).Center().Children(func() {
 							ui.Icon(c, IconLogo).Size(18, 18).TextColor(SailAccent)
 						})
-						ui.Text(c, "MCP Gateway").FontSize(16).Bold().TextColor(SailInkStrong)
+						ui.Text(c, buildinfo.Current().Name).FontSize(16).Bold().TextColor(SailInkStrong)
 					})
 
 					if u.LoginError != "" {
@@ -632,7 +633,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 						Children(func() {
 							ui.Icon(c, IconLogo).Size(14, 14).TextColor(SailAccent)
 						})
-					ui.Text(c, "MCP Gateway").FontSize(13.5).Bold().TextColor(SailInkStrong).SingleLine()
+					ui.Text(c, buildinfo.Current().Name).FontSize(13.5).Bold().TextColor(SailInkStrong).SingleLine()
 				})
 
 			// Scrollable navigation sections.
@@ -675,7 +676,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 							u.Notify("已复制 MCP 接入端点")
 						}
 					})
-					ui.Text(c, state.MCPURL).
+					ui.Text(c, state.MCPURL).TruncateMiddle().Tooltip(state.MCPURL).
 						Font("monospace").
 						FontSize(11).
 						TextColor(SailInkFaint).

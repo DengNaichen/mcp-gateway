@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/gateway"
 )
 
@@ -100,7 +101,7 @@ func loopbackHTTPClient(timeout time.Duration) *http.Client {
 
 // probeGatewayHealth checks whether baseURL is a live MCP Gateway instance via
 // GET /api/health (returning {"status":"ok","version":"..."}).
-func probeGatewayHealth(ctx context.Context, baseURL string) bool {
+func probeGatewayHealth(ctx context.Context, baseURL, dataDir string) bool {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/api/health", nil)
 	if err != nil {
 		return false
@@ -117,13 +118,17 @@ func probeGatewayHealth(ctx context.Context, baseURL string) bool {
 		return false
 	}
 	var payload struct {
-		Status  string `json:"status"`
-		Version string `json:"version"`
+		Status       string `json:"status"`
+		Version      string `json:"version"`
+		Channel      string `json:"channel"`
+		Application  string `json:"application"`
+		InstanceID   string `json:"instance_id"`
+		DataIdentity string `json:"data_identity"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return false
 	}
-	if payload.Status != "ok" || payload.Version == "" {
+	if payload.Status != "ok" || payload.Version != buildinfo.Current().Version || payload.Channel != buildinfo.Current().Channel || payload.Application != buildinfo.Current().Identifier || payload.InstanceID == "" || payload.DataIdentity != buildinfo.DataIdentity(dataDir) {
 		return false
 	}
 	// Also confirm /api/auth/me exists (200 in local mode or 401 Bearer in shared mode)
@@ -151,11 +156,11 @@ func probeGatewayHealth(ctx context.Context, baseURL string) bool {
 	return hasShared
 }
 
-func waitGatewayReady(ctx context.Context, baseURL string) error {
+func waitGatewayReady(ctx context.Context, baseURL, dataDir string) error {
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if probeGatewayHealth(ctx, baseURL) {
+		if probeGatewayHealth(ctx, baseURL, dataDir) {
 			return nil
 		}
 		select {
@@ -183,7 +188,7 @@ func startOrAttachGateway(ctx context.Context, addr, dataDir string, assets fs.F
 		candidateUI := "http://" + dialAddr
 		probeCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 		defer cancel()
-		if probeGatewayHealth(probeCtx, candidateUI) {
+		if probeGatewayHealth(probeCtx, candidateUI, dataDir) {
 			slog.Info("reusing existing mcp gateway instance", "url", candidateUI)
 			return &gatewayRuntime{
 				Mode:       modeAttached,
@@ -203,7 +208,7 @@ func startOrAttachGateway(ctx context.Context, addr, dataDir string, assets fs.F
 	}
 	uiURL := "http://" + dialAddr
 	baseURL := uiURL
-	if public := strings.TrimSpace(os.Getenv("GATEWAY_PUBLIC_URL")); public != "" {
+	if public := strings.TrimSpace(os.Getenv(buildinfo.EnvironmentKey("GATEWAY_PUBLIC_URL"))); public != "" {
 		baseURL = strings.TrimRight(public, "/")
 	}
 
@@ -250,7 +255,7 @@ func startOrAttachGateway(ctx context.Context, addr, dataDir string, assets fs.F
 
 	readyCtx, cancelReady := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelReady()
-	if err := waitGatewayReady(readyCtx, uiURL); err != nil {
+	if err := waitGatewayReady(readyCtx, uiURL, dataDir); err != nil {
 		stopCtx, cancelStop := context.WithTimeout(context.Background(), 3*time.Second)
 		_ = shutdownFn(stopCtx)
 		cancelStop()

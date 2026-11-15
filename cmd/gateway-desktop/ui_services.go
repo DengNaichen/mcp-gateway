@@ -663,7 +663,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 					}
 					ui.Text(c, lbl).FontSize(11.5).TextColor(SailInkMuted)
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, target).Font("monospace").FontSize(12.5).TextColor(SailInkStrong).SingleLine().Selectable()
+						ui.Text(c, target).Font("monospace").FontSize(12.5).TextColor(SailInkStrong).SingleLine().TruncateMiddle().Tooltip(target).Selectable()
 						if SailSmallButton(c.Key("detail-copy-target"), "复制").Padding(2, 7).FontSize(11).Clicked() {
 							c.WriteClipboard(target)
 							u.Notify("已复制连接目标")

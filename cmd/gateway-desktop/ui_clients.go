@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 
+	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
 
 	"github.com/egoist/mygo/ui"
@@ -38,6 +39,8 @@ func (u *DesktopUI) changeClientConfig(id, action, endpoint string) error {
 	switch action {
 	case "write":
 		return u.ClientConfigs.Write(id, endpoint)
+	case "update":
+		return u.ClientConfigs.Update(id, endpoint)
 	case "revoke":
 		return u.ClientConfigs.Revoke(id)
 	default:
@@ -64,6 +67,8 @@ func (u *DesktopUI) runClientConfig(id, action string) {
 		if err == nil {
 			if action == "write" {
 				u.Notify("配置已写入，请重启客户端；Pi 可执行 /reload")
+			} else if action == "update" {
+				u.Notify("配置已更新，请重载客户端")
 			} else {
 				u.Notify("配置已撤回，请重载客户端")
 			}
@@ -77,70 +82,70 @@ func (u *DesktopUI) renderClients(c *ui.Context) {
 		note = "共享网关需在客户端补充 Bearer Token"
 	}
 	SailSectionHeader(c, "连接客户端", note, func() {
-		if ep := u.clientEndpoint(); ep != "" {
-			ui.Text(c, ep).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
-		}
+		ui.Text(c, buildinfo.Current().Slug+" · "+u.clientEndpoint()).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
 		if SailSmallButton(c.Key("clients-refresh"), "刷新状态").Disabled(u.ClientsBusy).Clicked() {
 			u.refreshClientConfigs()
 		}
 	})
-
 	if u.ClientConfigError != "" {
 		SailAlertBox(c, ToneDanger, "配置操作失败", u.ClientConfigError)
 	}
 
-	SailFlushCard(c, func() {
-		for idx, row := range u.ClientStatuses {
-			u.renderClientRow(c.Key("client-"+row.ID), row, idx == len(u.ClientStatuses)-1)
+	ui.Column(c.Key("client-list")).FillWidth().Radius(8).Border(1, SailBorder).Background(SailBgCanvas).Clip().Children(func() {
+		for i, row := range u.ClientStatuses {
+			u.renderClientRow(c.Key("client-"+row.ID), row, i > 0)
 		}
 	})
 }
-
-func (u *DesktopUI) renderClientRow(c *ui.Context, row clientconfig.Status, isLast bool) {
-	dotColor := SailInkFaint
-	stateColor := SailInkMuted
-	if row.State == "已配置" {
-		dotColor = SailSuccessInk
-		stateColor = SailInkBody
-	} else if row.State != "未配置" {
-		dotColor = SailWarningInk
-		stateColor = SailWarningInk
-	}
-
-	line := ui.Row(c).
-		FillWidth().
-		Padding(16, 20).
-		Gap(16).
-		AlignItems(ui.Center).
-		Justify(ui.SpaceBetween)
-	if !isLast {
-		line.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-	}
-	if line.Hovered() {
-		line.Background(SailBgHover)
+func (u *DesktopUI) renderClientRow(c *ui.Context, row clientconfig.Status, divider bool) {
+	line := ui.Row(c).FillWidth().Padding(14, 18).Gap(12).AlignItems(ui.Center).Justify(ui.SpaceBetween)
+	if divider {
+		line.BorderWidth(1, 0, 0, 0).BorderColor(SailBorder)
 	}
 	line.Children(func() {
-		ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				SailStatusDot(c, dotColor)
-				ui.Text(c, row.Name).FontSize(14).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-			})
-			ui.Text(c, row.Path).Font("monospace").FontSize(11.5).TextColor(SailInkMuted).SingleLine()
-			if row.Detail != "" {
-				ui.Text(c, row.Detail).FontSize(12).TextColor(SailInkMuted).MaxLines(1)
+		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
+			ui.Image(c, clientIcons[row.ID]).Size(26, 26).TextColor(SailInkStrong)
+			ui.Text(c, row.Name).FontSize(14).Bold().TextColor(SailInkStrong).SingleLine()
+			reveal := ui.ButtonBase(c.Key("reveal-path")).Size(28, 28).Radius(6).Center().Cursor(ui.CursorPointer).
+				Label("打开 " + row.Name + " 配置位置").Tooltip(row.Path)
+			if reveal.Hovered() {
+				reveal.Background(SailBgMuted)
+			}
+			reveal.Children(func() { ui.Icon(c, clientPathArrow).Size(17, 17).TextColor(SailInkMuted) })
+			if reveal.Clicked() {
+				u.RunAsync(func() error { return revealClientConfig(row.Path) })
 			}
 		})
-
-		ui.Row(c).Shrink(0).Gap(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, row.State).FontSize(12).FontWeight(500).TextColor(stateColor).SingleLine()
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				if SailSmallButton(c.Key("write"), "写入配置").Disabled(u.ClientsBusy || !row.CanWrite).Clicked() {
+		ui.Row(c).AlignItems(ui.Center).Gap(8).Shrink(0).Children(func() {
+			switch {
+			case row.CanUpdate:
+				if SailSmallButton(c.Key("update"), "更新配置").Disabled(u.ClientsBusy).Clicked() {
+					u.runClientConfig(row.ID, "update")
+				}
+			case row.CanWrite:
+				if SailSmallButton(c.Key("write"), "写入配置").Disabled(u.ClientsBusy).Clicked() {
 					u.runClientConfig(row.ID, "write")
 				}
-				if SailSmallButton(c.Key("revoke"), "撤回配置").Disabled(u.ClientsBusy || !row.CanRevoke).Clicked() {
-					u.runClientConfig(row.ID, "revoke")
+			case row.CanRevoke:
+				ui.Text(c, "✓ 已配置").FontSize(12).TextColor(SailInkMuted).Tooltip("配置已是最新；客户端重载后生效")
+			default:
+				if SailSmallButton(c.Key("inspect"), "检查配置").Tooltip(row.Detail).Disabled(u.ClientsBusy).Clicked() {
+					u.ClientConfigError = row.Name + "：" + row.Detail
+					u.RunAsync(func() error { return revealClientConfig(row.Path) })
 				}
-			})
+			}
+			if row.CanRevoke {
+				more := ui.ButtonBase(c.Key("more")).Size(28, 28).Radius(6).Center().Label(row.Name + " 更多操作").Disabled(u.ClientsBusy)
+				if more.Hovered() {
+					more.Background(SailBgMuted)
+				}
+				more.Children(func() { ui.Text(c, "⋯").FontSize(18).TextColor(SailInkMuted) })
+				more.PopoverMenuButton(func(menu *ui.Menu) {
+					if menu.Item("撤回配置").Chosen() {
+						u.runClientConfig(row.ID, "revoke")
+					}
+				})
+			}
 		})
 	})
 }

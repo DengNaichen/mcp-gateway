@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gatewaylab/internal/buildinfo"
 	"gatewaylab/web"
 
 	"github.com/egoist/mygo"
@@ -47,9 +48,9 @@ type desktopApp struct {
 
 func (d *desktopApp) setupMenus() {
 	appMenu := mygo.NewMenu([]*mygo.MenuItem{
-		{Label: "MCP Gateway", Submenu: []*mygo.MenuItem{
+		{Label: buildinfo.Current().Name, Submenu: []*mygo.MenuItem{
 			{Role: mygo.RoleAbout},
-			updater.MenuItem(),
+			channelUpdateMenuItem(),
 			mygo.Separator(),
 			{Role: mygo.RoleServices},
 			mygo.Separator(),
@@ -109,18 +110,18 @@ func (d *desktopApp) setupTray() {
 			d.openInBrowser()
 		}},
 		mygo.Separator(),
-		updater.MenuItem(),
+		channelUpdateMenuItem(),
 		mygo.Separator(),
-		{ID: "quit", Label: "退出 MCP Gateway", Accelerator: "CmdOrCtrl+Q", Click: func(*mygo.MenuItem, *mygo.Window) {
+		{ID: "quit", Label: "退出 " + buildinfo.Current().Name, Accelerator: "CmdOrCtrl+Q", Click: func(*mygo.MenuItem, *mygo.Window) {
 			d.requestQuit()
 		}},
 	})
 
 	tray, err := mygo.NewTray(mygo.TrayOptions{
-		ID:             "mcp-gateway",
+		ID:             buildinfo.Current().Slug,
 		Icon:           trayIconPNG,
 		IconIsTemplate: true,
-		ToolTip:        "MCP Gateway",
+		ToolTip:        buildinfo.Current().Name,
 		Menu:           menu,
 	})
 	if err != nil {
@@ -158,7 +159,7 @@ func (d *desktopApp) updateTrayReady(rt *gatewayRuntime) {
 	if item := menu.ItemByID("open-browser"); item != nil {
 		item.SetEnabled(true)
 	}
-	tray.SetToolTip("MCP Gateway — " + rt.MCPURL)
+	tray.SetToolTip(buildinfo.Current().Name + " — " + rt.MCPURL)
 }
 
 func (d *desktopApp) copyMCPURL() {
@@ -215,7 +216,7 @@ func (d *desktopApp) showMainWindow() {
 		}
 
 		win = mygo.NewWindow(mygo.WindowOptions{
-			Title:                "MCP Gateway · 控制面",
+			Title:                buildinfo.Current().Name + " · " + buildinfo.Current().Version,
 			Width:                1280,
 			Height:               820,
 			MinWidth:             960,
@@ -224,7 +225,7 @@ func (d *desktopApp) showMainWindow() {
 			TitleBarStyle:        mygo.TitleBarHidden,
 			TrafficLightPosition: &mygo.Point{X: 20, Y: 18},
 			TitleBarHeight:       50,
-			BackgroundColor:      "#ffffff",
+			BackgroundColor:      "light-dark(#ffffff, #0f1626)",
 			Content:              ui.View(uiApp.View),
 		})
 
@@ -259,7 +260,7 @@ func (d *desktopApp) startBackend() {
 			Type:          mygo.MessageWarning,
 			Title:         "MCP Gateway 端口冲突",
 			Message:       fmt.Sprintf("监听地址 %s 已被其他程序占用", d.addr),
-			Detail:        "未在该端口检测到正在运行的 MCP Gateway 实例。您可以改用系统分配的本机空闲端口启动，或退出后再试。",
+			Detail:        "端口已占用，未找到与当前渠道、版本和数据目录匹配的 Gateway。您可以改用系统分配的本机空闲端口启动，或退出后再试。",
 			Buttons:       []string{"使用空闲端口启动", "退出"},
 			DefaultButton: 0,
 			CancelButton:  1,
@@ -329,7 +330,7 @@ func (d *desktopApp) cleanup() {
 
 func parseDesktopFlags(rawArgs []string) (addr string, addrCustom bool, dataFlag string, err error) {
 	fs := flag.NewFlagSet("gateway-desktop", flag.ContinueOnError)
-	addrPtr := fs.String("addr", "127.0.0.1:8788", "HTTP listening address")
+	addrPtr := fs.String("addr", buildinfo.DefaultAddr(), "HTTP listening address")
 	dataPtr := fs.String("data", "", "Local registry and settings directory (defaults to user config dir)")
 	if err := fs.Parse(filterLaunchArgs(rawArgs)); err != nil {
 		return "", false, "", err
@@ -362,9 +363,12 @@ func run() error {
 		return fmt.Errorf("load embedded frontend: %w", err)
 	}
 
+	if mygo.App.IsPackaged() && mygo.App.Name() != buildinfo.Current().Name {
+		return fmt.Errorf("package identity %q does not match compiled channel %q; rebuild using scripts/build-channel.mjs", mygo.App.Name(), buildinfo.Current().Channel)
+	}
 	if !mygo.App.IsPackaged() {
-		mygo.App.SetName("MCP Gateway")
-		mygo.App.SetVersion("0.0.1")
+		mygo.App.SetName(buildinfo.Current().Name)
+		mygo.App.SetVersion(buildinfo.Current().Version)
 	}
 	// Enforce single-instance lock for standard launches so double-clicking the
 	// .app while running in the tray focuses the existing control plane window.
@@ -385,8 +389,10 @@ func run() error {
 	}
 	defer d.cleanup()
 
-	mygo.Theme.SetSource(mygo.ThemeLight)
-	mygo.Use(native.Plugin)
+	mygo.Theme.SetSource(mygo.ThemeSystem)
+	if buildinfo.Current().Channel == "stable" {
+		mygo.Use(native.Plugin)
+	}
 	d.setupMenus()
 
 	// Keep the Gateway + Tray alive when all windows are closed/hidden.
@@ -438,4 +444,11 @@ func main() {
 		slog.Error("gateway desktop stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+func channelUpdateMenuItem() *mygo.MenuItem {
+	if buildinfo.Current().Channel == "stable" {
+		return updater.MenuItem()
+	}
+	return &mygo.MenuItem{Label: "开发版 · 自动更新已关闭", Disabled: true}
 }
