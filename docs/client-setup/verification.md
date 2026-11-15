@@ -49,3 +49,7 @@ CGO_ENABLED=0 go tool mygo build -skip-dmg
 最终生成的 app 再次完成全部五客户端 write → 重复 write → revoke，状态及文件核对通过。最终构建和运行证据保留在 `/tmp/gateway-client-verification/`：`final-build/`、`final-tests.log`、`new-race.log`、`final-runtime.log`、`final-clients.png`。测试服务器已退出；本机 Codex 配置恢复到原始校验和，Cursor 测试条目已撤回，且在已登录的 MCP 页面确认不存在。
 
 2026-11-16 客户端页面补充：嵌入五客户端品牌图标，路径改为名称后的 ↗ 按钮，完整路径保留在 tooltip。已有文件通过 MyGo ShowItemInFolder 定位；未创建文件时打开最近存在的上级目录，不创建额外文件。新增路径回退及可访问按钮/隐藏长路径测试通过，实际打包页面截图位于 `/tmp/gateway-client-icons/page.png`。未设置测试配置目录覆盖时，实际读取的路径已核对为 `/Users/nd/.codex/config.toml` 等真实用户目录。系统屏幕捕获返回 SCStreamError -3811，因此未完成 Finder 实际点击验证；已核对 MyGo 原生 API 接线、运行页面和路径解析。
+
+客户端列表进一步收敛为单行：未配置时只显示「写入配置」，本应用管理的旧端点显示「更新配置」，最新配置显示「✓ 已配置」及更多菜单，撤回位于菜单中。外部修改/读取异常显示「检查配置」，完整原因在提示及检查操作中展示。
+
+新增 Update 操作在跨进程锁下核对写入记录，保留其他条目；TOML 要求原受管片段仍匹配。更新记录在文件替换前保存前后两种状态，替换后收敛，避免中断导致丢失所有权。测试覆盖五客户端更新、无关内容保留、重复更新、拒绝外部改动、更新中断恢复及更新后撤回。全量 Go 测试和 clientconfig race 检查通过；实际 Dev 应用完成更新及撤回，四种 UI 状态截图位于 `/tmp/gateway-client-rows/states.png`。检查工具 action 增加 `update`。
