@@ -1,5 +1,5 @@
 {
-  "version": "0.0.1",
+  "version": "0.0.2",
   "stable": {
     "name": "MCP Gateway",
     "identifier": "NaichengDeng.mcp-gateway",
