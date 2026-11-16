@@ -14,34 +14,63 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test-and-package:
-    name: Test & Desktop Package (macOS)
-    runs-on: macos-latest
+  checks:
+    name: Checks (Linux)
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
           check-latest: true
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
       - name: Check Markdown links
         run: python3 scripts/check-doc-links.py
 
+      - name: Go vet
+        run: go vet ./...
+
       - name: Run Go tests
         run: CGO_ENABLED=0 go test -count=1 ./...
 
-      - name: Test channel and release policy
-        run: |
-          node --test scripts/release-policy.test.mjs scripts/worktree-runtime.test.mjs
-          CGO_ENABLED=0 go test -ldflags="-X gatewaylab/internal/buildinfo.channel=stable" ./...
+      - name: Test stable channel
+        run: CGO_ENABLED=0 go test -ldflags="-X gatewaylab/internal/buildinfo.channel=stable" ./...
+
+      - name: Test release policy and worktree runtime
+        run: node --test scripts/release-policy.test.mjs scripts/worktree-runtime.test.mjs
+
+      # GO-2026-6859 (net/http, fixed in go1.27.4) hits go.mod's go 1.27.3; remove
+      # continue-on-error once the Go version is bumped.
+      - name: Vulnerability scan (govulncheck)
+        continue-on-error: true
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  package:
+    name: Desktop Package (macOS)
+    needs: checks
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
 
       - name: Verify desktop package build (ad-hoc)
         run: make package
@@ -56,7 +85,7 @@ jobs:
           done
 
       - name: Retain Dev build for testing
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mcp-gateway-dev-${{ github.sha }}
           path: build/dev/*/*.zip
