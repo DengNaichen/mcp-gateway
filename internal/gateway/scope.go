@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"gatewaylab/internal/buildinfo"
+	"gatewaylab/internal/store"
 	"gatewaylab/internal/workspace"
 )
 
@@ -248,69 +249,35 @@ func (g *Gateway) loadScopes() error {
 		Observed:     []ObservedRepo{},
 	}
 
-	var stateJSON string
-	if err := g.db.QueryRow("SELECT definition FROM scope_state WHERE id=1").Scan(&stateJSON); err == nil {
-		var parsed struct {
+	parsed, err := store.ScopeState[json.RawMessage](g.db).Load()
+	if err == nil {
+		var mode struct {
 			Enforce bool `json:"enforce"`
 		}
-		if err := json.Unmarshal([]byte(stateJSON), &parsed); err != nil {
+		if err := json.Unmarshal(parsed, &mode); err != nil {
 			return fmt.Errorf("decode scope_state: %w", err)
 		}
-		state.Enforce = parsed.Enforce
+		state.Enforce = mode.Enforce
 	}
-
-	repoRows, err := g.db.Query("SELECT definition FROM repositories ORDER BY rowid")
+	repos, err := store.Repositories[Repository](g.db).List()
 	if err != nil {
-		return fmt.Errorf("query repositories: %w", err)
-	}
-	for repoRows.Next() {
-		var raw string
-		if err := repoRows.Scan(&raw); err != nil {
-			closeRows(repoRows)
-			return err
-		}
-		var repo Repository
-		if err := json.Unmarshal([]byte(raw), &repo); err != nil {
-			closeRows(repoRows)
-			return fmt.Errorf("decode repository: %w", err)
-		}
-		repo = normalizeRepositorySlices(repo)
-		state.Repositories = append(state.Repositories, repo)
-	}
-	if err := repoRows.Err(); err != nil {
-		closeRows(repoRows)
 		return err
 	}
-	closeRows(repoRows)
-
-	ruleRows, err := g.db.Query("SELECT definition FROM scope_rules ORDER BY repo_key, agent_key")
+	for _, repo := range repos {
+		state.Repositories = append(state.Repositories, normalizeRepositorySlices(repo))
+	}
+	rules, err := store.ScopeRules[ScopeRule](g.db).List()
 	if err != nil {
-		return fmt.Errorf("query scope_rules: %w", err)
+		return err
 	}
 	hasWildcardDefault := false
-	for ruleRows.Next() {
-		var raw string
-		if err := ruleRows.Scan(&raw); err != nil {
-			closeRows(ruleRows)
-			return err
-		}
-		var rule ScopeRule
-		if err := json.Unmarshal([]byte(raw), &rule); err != nil {
-			closeRows(ruleRows)
-			return fmt.Errorf("decode scope_rule: %w", err)
-		}
+	for _, rule := range rules {
 		rule = normalizeScopeRuleSlices(rule)
 		if rule.RepoKey == "*" && rule.AgentKey == "*" {
 			hasWildcardDefault = true
 		}
 		state.Rules = append(state.Rules, rule)
 	}
-	if err := ruleRows.Err(); err != nil {
-		closeRows(ruleRows)
-		return err
-	}
-	closeRows(ruleRows)
-
 	if !hasWildcardDefault {
 		def := ScopeRule{
 			RepoKey:   "*",
@@ -321,28 +288,11 @@ func (g *Gateway) loadScopes() error {
 		state.Rules = append([]ScopeRule{def}, state.Rules...)
 	}
 
-	obsRows, err := g.db.Query("SELECT definition FROM scope_observations ORDER BY last_seen DESC LIMIT ?", maxScopeObservations)
+	observed, err := store.ScopeObservations[ObservedRepo](g.db).List(maxScopeObservations)
 	if err != nil {
-		return fmt.Errorf("query scope_observations: %w", err)
-	}
-	for obsRows.Next() {
-		var raw string
-		if err := obsRows.Scan(&raw); err != nil {
-			closeRows(obsRows)
-			return err
-		}
-		var obs ObservedRepo
-		if err := json.Unmarshal([]byte(raw), &obs); err != nil {
-			closeRows(obsRows)
-			return fmt.Errorf("decode scope_observation: %w", err)
-		}
-		state.Observed = append(state.Observed, obs)
-	}
-	if err := obsRows.Err(); err != nil {
-		closeRows(obsRows)
 		return err
 	}
-	closeRows(obsRows)
+	state.Observed = observed
 
 	sortRepositories(state.Repositories)
 	sortScopeRules(state.Rules)
@@ -469,7 +419,7 @@ func (g *Gateway) SetScopeMode(enforce bool) error {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if _, err := g.db.Exec(`INSERT INTO scope_state(id, definition) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET definition=excluded.definition`, string(raw)); err != nil {
+	if err := store.ScopeState[json.RawMessage](g.db).Save(raw); err != nil {
 		return fmt.Errorf("persist scope mode: %w", err)
 	}
 	g.scope.Enforce = enforce
@@ -584,7 +534,7 @@ func (g *Gateway) SaveRepository(ctx context.Context, in SaveRepositoryRequest) 
 	if err != nil {
 		return Repository{}, err
 	}
-	if _, err := g.db.Exec(`INSERT INTO repositories(id, definition) VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET definition=excluded.definition`, repo.ID, string(raw)); err != nil {
+	if err := store.Repositories[json.RawMessage](g.db).Put(repo.ID, raw); err != nil {
 		return Repository{}, fmt.Errorf("persist repository: %w", err)
 	}
 
@@ -677,10 +627,10 @@ func (g *Gateway) DeleteRepository(id string) error {
 			_ = tx.Rollback()
 		}
 	}()
-	if _, err := tx.Exec("DELETE FROM repositories WHERE id = ?", id); err != nil {
+	if err := store.Repositories[Repository](tx).Delete(id); err != nil {
 		return fmt.Errorf("delete repository: %w", err)
 	}
-	if _, err := tx.Exec("DELETE FROM scope_rules WHERE repo_key = ?", id); err != nil {
+	if err := store.ScopeRules[ScopeRule](tx).DeleteRepository(id); err != nil {
 		return fmt.Errorf("delete repository rules: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -714,6 +664,7 @@ func (g *Gateway) SaveScopeRule(in ScopeRule) (ScopeRule, error) {
 		return ScopeRule{}, invalid("指定的仓库不存在")
 	}
 
+	reg := g.Snapshot()
 	normalizedGrants := make([]ServiceGrant, 0, len(in.Grants))
 	seenServers := map[string]bool{}
 	for _, gr := range in.Grants {
@@ -724,7 +675,7 @@ func (g *Gateway) SaveScopeRule(in ScopeRule) (ScopeRule, error) {
 			}
 			return ScopeRule{}, invalid("server_id 不能为空")
 		}
-		if !slices.ContainsFunc(g.registry.Servers, func(s Server) bool { return s.ID == sid }) {
+		if !slices.ContainsFunc(reg.Servers, func(s Server) bool { return s.ID == sid }) {
 			return ScopeRule{}, invalid("服务不存在: " + sid)
 		}
 		seenServers[sid] = true
@@ -740,7 +691,7 @@ func (g *Gateway) SaveScopeRule(in ScopeRule) (ScopeRule, error) {
 			if tid == "" || slices.Contains(toolIDs, tid) {
 				continue
 			}
-			if !slices.ContainsFunc(g.registry.Tools, func(t Tool) bool { return t.ID == tid && t.ServerID == sid }) {
+			if !slices.ContainsFunc(reg.Tools, func(t Tool) bool { return t.ID == tid && t.ServerID == sid }) {
 				return ScopeRule{}, invalid(fmt.Sprintf("工具 %s 不属于服务 %s", tid, sid))
 			}
 			toolIDs = append(toolIDs, tid)
@@ -762,7 +713,7 @@ func (g *Gateway) SaveScopeRule(in ScopeRule) (ScopeRule, error) {
 	if err != nil {
 		return ScopeRule{}, err
 	}
-	if _, err := g.db.Exec(`INSERT INTO scope_rules(repo_key, agent_key, definition) VALUES(?, ?, ?) ON CONFLICT(repo_key, agent_key) DO UPDATE SET definition=excluded.definition`, rule.RepoKey, rule.AgentKey, string(raw)); err != nil {
+	if err := store.ScopeRules[json.RawMessage](g.db).Put(rule.RepoKey, rule.AgentKey, raw); err != nil {
 		return ScopeRule{}, fmt.Errorf("persist scope rule: %w", err)
 	}
 
@@ -801,7 +752,7 @@ func (g *Gateway) DeleteScopeRule(repoKey, agentKey string) error {
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if _, err := g.db.Exec("DELETE FROM scope_rules WHERE repo_key = ? AND agent_key = ?", repoKey, agentKey); err != nil {
+	if err := store.ScopeRules[ScopeRule](g.db).Delete(repoKey, agentKey); err != nil {
 		return fmt.Errorf("delete scope rule: %w", err)
 	}
 	g.scope.Rules = slices.DeleteFunc(slices.Clone(g.scope.Rules), func(r ScopeRule) bool {
@@ -823,10 +774,7 @@ func (g *Gateway) PreviewScope(ctx context.Context, repoKey, actor string) (Scop
 		return ScopePreviewResponse{}, invalid("指定的仓库不存在")
 	}
 	rules := slices.Clone(g.scope.Rules)
-	reg := Registry{
-		Servers: slices.Clone(g.registry.Servers),
-		Tools:   slices.Clone(g.registry.Tools),
-	}
+	reg := g.Snapshot()
 	g.mu.RUnlock()
 
 	enabledServers := map[string]Server{}
@@ -1011,7 +959,7 @@ func (g *Gateway) pruneBoundObservationsLocked() {
 	kept := make([]ObservedRepo, 0, len(g.scope.Observed))
 	for _, obs := range g.scope.Observed {
 		if matchConfiguredRepoByAnchors(g.scope.Repositories, obs.Kind, obs.GitCommonDir, obs.Root) != nil {
-			if _, err := g.db.Exec("DELETE FROM scope_observations WHERE fingerprint = ?", obs.Fingerprint); err != nil {
+			if err := store.ScopeObservations[ObservedRepo](g.db).Delete(obs.Fingerprint); err != nil {
 				slog.Debug("prune bound scope observation", "error", err)
 			}
 			continue
@@ -1057,7 +1005,7 @@ func (g *Gateway) recordObservation(info workspace.Info, agent string, now time.
 
 	raw, err := json.Marshal(obs)
 	if err == nil {
-		if _, dbErr := g.db.Exec(`INSERT INTO scope_observations(fingerprint, last_seen, definition) VALUES(?, ?, ?) ON CONFLICT(fingerprint) DO UPDATE SET last_seen=excluded.last_seen, definition=excluded.definition`, obs.Fingerprint, obs.LastSeen, string(raw)); dbErr != nil {
+		if dbErr := store.ScopeObservations[json.RawMessage](g.db).Put(obs.Fingerprint, obs.LastSeen, raw); dbErr != nil {
 			slog.Warn("persist scope observation", "error", dbErr)
 		}
 	}
@@ -1066,7 +1014,7 @@ func (g *Gateway) recordObservation(info workspace.Info, agent string, now time.
 		evicted := next[maxScopeObservations:]
 		next = next[:maxScopeObservations]
 		for _, ev := range evicted {
-			_, _ = g.db.Exec("DELETE FROM scope_observations WHERE fingerprint = ?", ev.Fingerprint)
+			_ = store.ScopeObservations[ObservedRepo](g.db).Delete(ev.Fingerprint)
 		}
 	}
 	g.scope.Observed = next

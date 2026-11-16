@@ -494,18 +494,6 @@ func rebaseDefinitions(root map[string]any) {
 
 var pathVariable = regexp.MustCompile(`\{([^{}]+)\}`)
 
-func supportedParameterStyle(in, style string, explode bool) bool {
-	switch in {
-	case "path", "header":
-		return style == "simple"
-	case "query":
-		return style == "form" || (style == "deepObject" && explode) || ((style == "spaceDelimited" || style == "pipeDelimited") && !explode)
-	case "cookie":
-		return style == "form"
-	}
-	return false
-}
-
 func decodePointer(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "~1", "/"), "~0", "~")
 }

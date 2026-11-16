@@ -204,37 +204,37 @@ func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
 	}
 	// Commit all imported definitions atomically. New and changed definitions
 	// remain disabled until their local owner explicitly enables them again.
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	updated := Registry{Servers: g.registry.Servers, Tools: slices.Clone(g.registry.Tools)}
-	for i, t := range updated.Tools {
-		if t.ServerID == id && !slices.ContainsFunc(imported, func(found Tool) bool { return found.ID == t.ID }) {
-			updated.Tools[i].Enabled = false
-		}
-	}
-	for _, t := range imported {
-		i := slices.IndexFunc(updated.Tools, func(old Tool) bool { return old.ID == t.ID })
-		if i >= 0 {
-			old := updated.Tools[i]
-			a, err := json.Marshal(old.InputSchema)
-			if err != nil {
-				return 0, fmt.Errorf("encode existing schema: %w", err)
+	err = g.registry.Update(func(current Registry) (Registry, error) {
+		updated := Registry{Servers: current.Servers, Tools: slices.Clone(current.Tools)}
+		for i, t := range updated.Tools {
+			if t.ServerID == id && !slices.ContainsFunc(imported, func(found Tool) bool { return found.ID == t.ID }) {
+				updated.Tools[i].Enabled = false
 			}
-			b, err := json.Marshal(t.InputSchema)
-			if err != nil {
-				return 0, fmt.Errorf("encode updated schema: %w", err)
-			}
-			t.Enabled = old.Enabled && old.Description == t.Description && bytes.Equal(a, b)
-			t.Actors, t.Tags, t.Example = old.Actors, old.Tags, old.Example
-			updated.Tools[i] = t
-		} else {
-			updated.Tools = append(updated.Tools, t)
 		}
-	}
-	if err := g.persistRegistry(updated); err != nil {
+		for _, t := range imported {
+			i := slices.IndexFunc(updated.Tools, func(old Tool) bool { return old.ID == t.ID })
+			if i >= 0 {
+				old := updated.Tools[i]
+				a, err := json.Marshal(old.InputSchema)
+				if err != nil {
+					return Registry{}, fmt.Errorf("encode existing schema: %w", err)
+				}
+				b, err := json.Marshal(t.InputSchema)
+				if err != nil {
+					return Registry{}, fmt.Errorf("encode updated schema: %w", err)
+				}
+				t.Enabled = old.Enabled && old.Description == t.Description && bytes.Equal(a, b)
+				t.Actors, t.Tags, t.Example = old.Actors, old.Tags, old.Example
+				updated.Tools[i] = t
+			} else {
+				updated.Tools = append(updated.Tools, t)
+			}
+		}
+		return updated, nil
+	})
+	if err != nil {
 		return 0, err
 	}
-	g.registry = updated
 	return len(imported), nil
 }
 

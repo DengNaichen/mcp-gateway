@@ -75,37 +75,3 @@ func generateDefinitions(r MaintenanceRun, docs []sourceDocument, dir string) er
 	}
 	return writeJSON(filepath.Join(dir, "output", "manifest.json"), maintenanceBundle{Summary: fmt.Sprintf("从 %s 定义同步 %d 个工具，未调用模型", format, len(tools)), Tools: tools})
 }
-func validateMapping(t Tool) error {
-	if t.HTTP == nil {
-		return nil
-	}
-	if t.Adapter != "" {
-		return invalid("工具不能同时定义脚本和 HTTP 映射")
-	}
-	seen := map[string]bool{}
-	for _, p := range t.HTTP.Parameters {
-		if p.Name == "" || !supportedParameterStyle(p.In, p.Style, p.Explode) || seen[p.In+":"+p.Name] {
-			return invalid("HTTP 参数映射无效或重复")
-		}
-		seen[p.In+":"+p.Name] = true
-	}
-	for _, match := range pathVariable.FindAllStringSubmatch(t.Path, -1) {
-		if !seen["path:"+match[1]] {
-			return invalid("HTTP 路径模板缺少映射")
-		}
-	}
-	if len(t.HTTP.Responses) == 0 {
-		return invalid("HTTP 映射缺少响应定义")
-	}
-	for _, r := range t.HTTP.Responses {
-		if r.MediaType != "application/json" && r.MediaType != "text/plain" && r.MediaType != "empty" {
-			return invalid("HTTP 响应 media type 无效")
-		}
-		if r.Schema != nil {
-			if _, err := compileSchema(r.Schema); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}

@@ -3,7 +3,6 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,10 +17,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/workspace"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func initGitRepoForScopeTest(t *testing.T, dir, remoteURL string, withCommit bool) string {
@@ -147,53 +146,15 @@ func registerMultiServiceUpstream(t *testing.T, g *Gateway) {
 	}
 }
 
-func TestV6MigrationAndWriteRegistryNoFKInterference(t *testing.T) {
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "gateway.db")
-
-	// 1. Construct a legacy user_version=5 database before opening Gateway.
-	u := url.URL{Scheme: "file", Path: dbPath}
-	q := u.Query()
-	q.Add("_pragma", "foreign_keys(1)")
-	u.RawQuery = q.Encode()
-	rawDB, err := sql.Open("sqlite", u.String())
+func TestScopeRulesSurviveRegistryReconciliation(t *testing.T) {
+	g, err := New(t.TempDir(), "http://127.0.0.1:8789")
 	if err != nil {
 		t.Fatal(err)
-	}
-	_, err = rawDB.Exec(`PRAGMA journal_mode=WAL;
-CREATE TABLE servers (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE tools (id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES servers(id), definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE settings (id INTEGER PRIMARY KEY CHECK(id=1), definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE activity (id TEXT PRIMARY KEY, time TEXT NOT NULL, kind TEXT NOT NULL, actor TEXT NOT NULL, status TEXT NOT NULL, title TEXT NOT NULL, duration_ms INTEGER NOT NULL, detail TEXT NOT NULL CHECK(json_valid(detail)));
-CREATE TABLE connection_checks (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE maintenance_sources (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE maintenance_runs (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE maintenance_acceptance (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE maintenance_deliveries (server_id TEXT NOT NULL, provider TEXT NOT NULL, delivery_id TEXT NOT NULL, received_at TEXT NOT NULL, run_id TEXT NOT NULL, definition TEXT NOT NULL CHECK(json_valid(definition)), PRIMARY KEY(server_id,provider,delivery_id));
-INSERT INTO servers(id, definition) VALUES('svc', '{"id":"svc","name":"Svc","description":"legacy","kind":"http","endpoint":"http://127.0.0.1:9999","enabled":true}');
-INSERT INTO settings(id, definition) VALUES(1, '{"base_url":"https://api.openai.com/v1","model":"gpt-6-luna","max_tools":4,"timeout_seconds":45}');
-PRAGMA user_version=5;`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := rawDB.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	g, err := New(dir, "http://127.0.0.1:8789")
-	if err != nil {
-		t.Fatalf("New over v5 db: %v", err)
 	}
 	defer g.Close()
-
-	var version int
-	if err := g.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+	if err := g.SaveServer(Server{ID: "svc", Name: "Svc", Description: "legacy", Kind: "http", Endpoint: "http://127.0.0.1:9999", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if version != 6 {
-		t.Fatalf("expected PRAGMA user_version=6, got %d", version)
-	}
-
 	overview := g.ScopeOverview()
 	if overview.Enforce {
 		t.Fatal("default enforce must be false")
@@ -202,8 +163,8 @@ PRAGMA user_version=5;`)
 		t.Fatalf("expected out-of-the-box (*,*) -> [] rule, got %+v", overview.Rules)
 	}
 
-	// 2. Bind a repo + rule referencing 'svc', then rewrite servers/tools via SaveServer/SaveTool
-	// (which runs DELETE FROM tools; DELETE FROM servers in writeRegistry) and confirm rules survive!
+	// Bind a repo + rule referencing 'svc', then reconcile servers/tools via SaveServer/SaveTool
+	// and confirm rules survive reconciliation.
 	repoDir := initGitRepoForScopeTest(t, filepath.Join(t.TempDir(), "app"), "", false)
 	repo, err := g.SaveRepository(context.Background(), SaveRepositoryRequest{Name: "app", Path: repoDir})
 	if err != nil {

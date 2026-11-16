@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"gatewaylab/internal/store"
 	"gatewaylab/internal/workspace"
 
 	"golang.org/x/oauth2"
@@ -115,22 +116,22 @@ func (g *Gateway) saveCheck(id, fingerprint string, check ConnectionCheck) error
 	if err != nil {
 		return fmt.Errorf("encode connection check: %w", err)
 	}
-	if _, err := g.db.Exec("INSERT INTO connection_checks(id,fingerprint,definition) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET fingerprint=excluded.fingerprint,definition=excluded.definition", id, fingerprint, string(b)); err != nil {
+	if err := store.ConnectionChecks[json.RawMessage](g.db).Put(id, fingerprint, b); err != nil {
 		return fmt.Errorf("save connection check: %w", err)
 	}
 	return nil
 }
 
 func (g *Gateway) loadCheck(id, fingerprint string) (*ConnectionCheck, error) {
-	var stored, raw string
-	if err := g.db.QueryRow("SELECT fingerprint,definition FROM connection_checks WHERE id=?", id).Scan(&stored, &raw); err != nil {
+	raw, stored, err := store.ConnectionChecks[json.RawMessage](g.db).Get(id)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("read connection check: %w", err)
 	}
 	var check ConnectionCheck
-	if err := json.Unmarshal([]byte(raw), &check); err != nil {
+	if err := json.Unmarshal(raw, &check); err != nil {
 		return nil, fmt.Errorf("decode connection check: %w", err)
 	}
 	check.Stale = stored != fingerprint
@@ -168,18 +169,12 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 		return out, err
 	}
 	out.ModelReady = out.ModelCheck != nil && out.ModelCheck.Status == "success" && !out.ModelCheck.Stale && out.ToolsReady
-	var ev Event
-	var stamp, detail string
-	err = g.db.QueryRow("SELECT id,time,kind,actor,status,title,duration_ms,detail FROM activity WHERE kind='agent' ORDER BY time DESC LIMIT 1").Scan(&ev.ID, &stamp, &ev.Kind, &ev.Actor, &ev.Status, &ev.Title, &ev.DurationMS, &detail)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return out, fmt.Errorf("read agent connection activity: %w", err)
+	latest, err := store.Activity(g.db).LatestAgent()
+	if err != nil {
+		return out, err
 	}
-	if err == nil {
-		ev.Time, err = time.Parse(time.RFC3339Nano, stamp)
-		if err != nil {
-			return out, fmt.Errorf("parse agent connection time: %w", err)
-		}
-		ev.Detail = json.RawMessage(detail)
+	if latest != nil {
+		ev := Event(*latest)
 		out.AgentLastRequest = &ev
 	}
 	return out, nil
@@ -242,27 +237,23 @@ func (g *Gateway) TestSource(ctx context.Context, s Server) (check ConnectionChe
 }
 
 func (g *Gateway) EnableTools(id string, ids []string) error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if !slices.ContainsFunc(g.registry.Servers, func(s Server) bool { return s.ID == id }) {
-		return invalid("服务不存在")
-	}
-	for _, toolID := range ids {
-		if !slices.ContainsFunc(g.registry.Tools, func(t Tool) bool { return t.ID == toolID && t.ServerID == id }) {
-			return invalid("工具不属于当前服务")
+	return g.registry.Update(func(current Registry) (Registry, error) {
+		if !slices.ContainsFunc(current.Servers, func(s Server) bool { return s.ID == id }) {
+			return Registry{}, invalid("服务不存在")
 		}
-	}
-	updated := Registry{Servers: g.registry.Servers, Tools: slices.Clone(g.registry.Tools)}
-	for i, t := range updated.Tools {
-		if t.ServerID == id {
-			updated.Tools[i].Enabled = slices.Contains(ids, t.ID)
+		for _, toolID := range ids {
+			if !slices.ContainsFunc(current.Tools, func(t Tool) bool { return t.ID == toolID && t.ServerID == id }) {
+				return Registry{}, invalid("工具不属于当前服务")
+			}
 		}
-	}
-	if err := g.persistRegistry(updated); err != nil {
-		return err
-	}
-	g.registry = updated
-	return nil
+		updated := Registry{Servers: current.Servers, Tools: slices.Clone(current.Tools)}
+		for i, t := range updated.Tools {
+			if t.ServerID == id {
+				updated.Tools[i].Enabled = slices.Contains(ids, t.ID)
+			}
+		}
+		return updated, nil
+	})
 }
 
 func (g *Gateway) PingModel(ctx context.Context, s Settings, profileID, apiKey string, clearKey bool) (PingModelResult, error) {

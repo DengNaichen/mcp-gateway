@@ -16,6 +16,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"gatewaylab/internal/store"
 )
 
 var deliveryName = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,200}$`)
@@ -184,8 +186,7 @@ func (g *Gateway) registerSourceEvents(mux *http.ServeMux) {
 			fail(w, problem(409, "来源配置已变化，请重新投递事件", nil))
 			return
 		}
-		var runID string
-		err = m.g.db.QueryRow("SELECT run_id FROM maintenance_deliveries WHERE server_id=? AND provider=? AND delivery_id=?", source.ServerID, trigger.Provider, trigger.DeliveryID).Scan(&runID)
+		runID, err := store.MaintenanceDeliveries[sourceSignal](m.g.db).RunID(source.ServerID, trigger.Provider, trigger.DeliveryID)
 		if err == nil {
 			respond(w, 200, map[string]any{"accepted": true, "duplicate": true, "run_id": runID})
 			return
@@ -200,7 +201,7 @@ func (g *Gateway) registerSourceEvents(mux *http.ServeMux) {
 			fail(w, fmt.Errorf("encode source signal: %w", err))
 			return
 		}
-		if _, err := m.g.db.Exec("INSERT INTO maintenance_deliveries(server_id,provider,delivery_id,received_at,run_id,definition) VALUES(?,?,?,?,'',?)", source.ServerID, trigger.Provider, trigger.DeliveryID, signal.ReceivedAt.Format(time.RFC3339Nano), string(encoded)); err != nil {
+		if err := store.MaintenanceDeliveries[json.RawMessage](m.g.db).Insert(source.ServerID, trigger.Provider, trigger.DeliveryID, signal.ReceivedAt.Format(time.RFC3339Nano), encoded); err != nil {
 			fail(w, fmt.Errorf("persist source signal: %w", err))
 			return
 		}
@@ -212,35 +213,20 @@ func (g *Gateway) registerSourceEvents(mux *http.ServeMux) {
 // Called under m.mu. Deliveries persist before acknowledgement. A single follow-up
 // job consumes all pending events for a source after its active job completes.
 func (m *Maintainer) dispatchSignals() error {
-	rows, err := m.g.db.Query("SELECT definition FROM maintenance_deliveries WHERE run_id='' ORDER BY received_at DESC")
+	signals, err := store.MaintenanceDeliveries[sourceSignal](m.g.db).Pending()
 	if err != nil {
-		return fmt.Errorf("read pending signals: %w", err)
+		return err
 	}
 	latest := map[string]sourceSignal{}
-	for rows.Next() {
-		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
-			closeRows(rows)
-			return fmt.Errorf("read signal: %w", err)
-		}
-		var signal sourceSignal
-		if err := json.Unmarshal(raw, &signal); err != nil {
-			closeRows(rows)
-			return fmt.Errorf("decode signal: %w", err)
-		}
+	for _, signal := range signals {
 		if _, exists := latest[signal.ServerID]; !exists {
 			latest[signal.ServerID] = signal
 		}
 	}
-	err = rows.Err()
-	closeRows(rows)
-	if err != nil {
-		return fmt.Errorf("iterate signals: %w", err)
-	}
 	for _, id := range sortedKeys(latest) {
 		source, ok := m.sources[id]
 		if !ok || source.Repository == nil || !source.Repository.EventsEnabled {
-			if _, err := m.g.db.Exec("UPDATE maintenance_deliveries SET run_id='disabled' WHERE server_id=? AND run_id=''", id); err != nil {
+			if err := store.MaintenanceDeliveries[sourceSignal](m.g.db).Assign(id, "disabled"); err != nil {
 				return fmt.Errorf("retire disabled signals: %w", err)
 			}
 			continue
@@ -278,10 +264,10 @@ func (m *Maintainer) assignSignals(run MaintenanceRun) error {
 			}
 		}
 	}()
-	if _, err := tx.Exec("INSERT INTO maintenance_runs(id,definition) VALUES(?,?)", run.ID, string(encoded)); err != nil {
+	if err := store.MaintenanceRuns[json.RawMessage](tx).Insert(run.ID, encoded); err != nil {
 		return fmt.Errorf("persist signal job: %w", err)
 	}
-	if _, err := tx.Exec("UPDATE maintenance_deliveries SET run_id=? WHERE server_id=? AND run_id=''", run.ID, run.ServerID); err != nil {
+	if err := store.MaintenanceDeliveries[sourceSignal](tx).Assign(run.ServerID, run.ID); err != nil {
 		return fmt.Errorf("assign pending signals: %w", err)
 	}
 	if err := tx.Commit(); err != nil {

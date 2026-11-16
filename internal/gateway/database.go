@@ -1,323 +1,81 @@
 package gateway
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
-	"net/url"
-	"os"
-	"path/filepath"
-	"time"
+
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/store"
 )
-
-func openDatabase(path string) (*sql.DB, error) {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return nil, fmt.Errorf("resolve sqlite path: %w", err)
-	}
-	path = absolute
-	u := url.URL{Scheme: "file", Path: path}
-	query := u.Query()
-	query.Add("_pragma", "busy_timeout(5000)")
-	query.Add("_pragma", "foreign_keys(1)")
-	u.RawQuery = query.Encode()
-	db, err := sql.Open("sqlite", u.String())
-	if err != nil {
-		return nil, fmt.Errorf("open sqlite: %w", err)
-	}
-	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(`PRAGMA journal_mode=WAL;
-CREATE TABLE IF NOT EXISTS servers (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE IF NOT EXISTS tools (id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES servers(id), definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE IF NOT EXISTS model_profiles (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE IF NOT EXISTS activity (id TEXT PRIMARY KEY, time TEXT NOT NULL, kind TEXT NOT NULL, actor TEXT NOT NULL, status TEXT NOT NULL, title TEXT NOT NULL, duration_ms INTEGER NOT NULL, detail TEXT NOT NULL CHECK(json_valid(detail)));
-CREATE INDEX IF NOT EXISTS activity_by_time ON activity(time DESC);
-CREATE TABLE IF NOT EXISTS connection_checks (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE IF NOT EXISTS maintenance_sources (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE IF NOT EXISTS maintenance_runs (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE IF NOT EXISTS maintenance_acceptance (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
-CREATE TABLE IF NOT EXISTS maintenance_deliveries (server_id TEXT NOT NULL, provider TEXT NOT NULL, delivery_id TEXT NOT NULL, received_at TEXT NOT NULL, run_id TEXT NOT NULL, definition TEXT NOT NULL CHECK(json_valid(definition)), PRIMARY KEY(server_id,provider,delivery_id));
-CREATE INDEX IF NOT EXISTS maintenance_pending_deliveries ON maintenance_deliveries(run_id,received_at);`); err != nil {
-		if closeErr := db.Close(); closeErr != nil {
-			slog.Warn("close failed database", "error", closeErr)
-		}
-		return nil, fmt.Errorf("initialize sqlite schema: %w", err)
-	}
-	if err := migrateDatabase(db); err != nil {
-		if closeErr := db.Close(); closeErr != nil {
-			slog.Warn("close failed database after migration", "error", closeErr)
-		}
-		return nil, fmt.Errorf("migrate sqlite schema: %w", err)
-	}
-	if err := os.Chmod(path, 0600); err != nil {
-		if closeErr := db.Close(); closeErr != nil {
-			slog.Warn("close database", "error", closeErr)
-		}
-		return nil, fmt.Errorf("restrict sqlite file permissions: %w", err)
-	}
-	return db, nil
-}
-
-func migrateDatabase(db *sql.DB) error {
-	var version int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
-		return fmt.Errorf("read sqlite user_version: %w", err)
-	}
-	if version < 5 {
-		if _, err := db.Exec("PRAGMA user_version=5"); err != nil {
-			return fmt.Errorf("set sqlite user_version=5: %w", err)
-		}
-		version = 5
-	}
-	if version < 6 {
-		tx, err := db.Begin()
-		if err != nil {
-			return fmt.Errorf("begin v6 migration: %w", err)
-		}
-		committed := false
-		defer func() {
-			if !committed {
-				_ = tx.Rollback()
-			}
-		}()
-		// Intentionally NO foreign keys to servers/tools because writeRegistry
-		// replaces servers and tools via DELETE + INSERT inside persistRegistry.
-		if _, err := tx.Exec(`
-CREATE TABLE IF NOT EXISTS scope_state (
-	id INTEGER PRIMARY KEY CHECK(id=1),
-	definition TEXT NOT NULL CHECK(json_valid(definition))
-);
-CREATE TABLE IF NOT EXISTS repositories (
-	id TEXT PRIMARY KEY,
-	definition TEXT NOT NULL CHECK(json_valid(definition))
-);
-CREATE TABLE IF NOT EXISTS scope_rules (
-	repo_key TEXT NOT NULL,
-	agent_key TEXT NOT NULL,
-	definition TEXT NOT NULL CHECK(json_valid(definition)),
-	PRIMARY KEY(repo_key, agent_key)
-);
-CREATE TABLE IF NOT EXISTS scope_observations (
-	fingerprint TEXT PRIMARY KEY,
-	last_seen TEXT NOT NULL,
-	definition TEXT NOT NULL CHECK(json_valid(definition))
-);
-CREATE INDEX IF NOT EXISTS scope_observations_by_last_seen ON scope_observations(last_seen DESC);
-`); err != nil {
-			return fmt.Errorf("create v6 scope tables: %w", err)
-		}
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO scope_state(id, definition) VALUES(1, '{"enforce":false}')`); err != nil {
-			return fmt.Errorf("seed scope_state: %w", err)
-		}
-		defaultRule, err := json.Marshal(ScopeRule{
-			RepoKey:   "*",
-			AgentKey:  "*",
-			Grants:    []ServiceGrant{},
-			UpdatedAt: time.Now().UTC().Format(time.RFC3339),
-		})
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO scope_rules(repo_key, agent_key, definition) VALUES('*', '*', ?)`, string(defaultRule)); err != nil {
-			return fmt.Errorf("seed default scope rule: %w", err)
-		}
-		if _, err := tx.Exec("PRAGMA user_version=6"); err != nil {
-			return fmt.Errorf("set sqlite user_version=6: %w", err)
-		}
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit v6 migration: %w", err)
-		}
-		committed = true
-	}
-	return nil
-}
 
 func (g *Gateway) Close() error {
 	if g.maintenance != nil {
 		g.maintenance.Close()
 	}
 	result := g.closeDownstreams()
-	if err := g.db.Close(); err != nil {
+	if err := g.storage.Close(); err != nil {
 		result = errors.Join(result, fmt.Errorf("close sqlite: %w", err))
 	}
 	return result
 }
 
 func (g *Gateway) loadRegistry() error {
-	g.registry = Registry{Servers: []Server{}, Tools: []Tool{}}
-	for _, table := range []string{"servers", "tools"} {
-		rows, err := g.db.Query("SELECT definition FROM " + table + " ORDER BY rowid")
-		if err != nil {
-			return fmt.Errorf("query registry table %s: %w", table, err)
-		}
-		for rows.Next() {
-			var raw string
-			if err := rows.Scan(&raw); err != nil {
-				closeRows(rows)
-				return fmt.Errorf("read registry definition: %w", err)
-			}
-			if table == "servers" {
-				var s Server
-				if err := json.Unmarshal([]byte(raw), &s); err != nil {
-					closeRows(rows)
-					return fmt.Errorf("decode server definition: %w", err)
-				}
-				g.registry.Servers = append(g.registry.Servers, s)
-			} else {
-				var t Tool
-				if err := json.Unmarshal([]byte(raw), &t); err != nil {
-					closeRows(rows)
-					return fmt.Errorf("decode tool definition: %w", err)
-				}
-				g.registry.Tools = append(g.registry.Tools, t)
-			}
-		}
-		if err := rows.Err(); err != nil {
-			closeRows(rows)
-			return fmt.Errorf("iterate registry: %w", err)
-		}
-		closeRows(rows)
-	}
-	return nil
-}
-
-func closeRows(rows *sql.Rows) {
-	if err := rows.Close(); err != nil {
-		slog.Debug("close sqlite rows", "error", err)
-	}
-}
-
-func (g *Gateway) persistRegistry(reg Registry) error {
-	tx, err := g.db.Begin()
+	initial, err := store.Registry(g.db).Load()
 	if err != nil {
-		return fmt.Errorf("begin registry transaction: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			if err := tx.Rollback(); err != nil {
-				slog.Warn("rollback registry transaction", "error", err)
-			}
-		}
-	}()
-	if err := writeRegistry(tx, reg); err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit registry: %w", err)
-	}
-	committed = true
-	return nil
-}
-
-func writeRegistry(tx *sql.Tx, reg Registry) error {
-	for _, query := range []string{"DELETE FROM tools", "DELETE FROM servers"} {
-		if _, err := tx.Exec(query); err != nil {
-			return fmt.Errorf("replace registry: %w", err)
-		}
-	}
-	for _, s := range reg.Servers {
-		b, err := json.Marshal(s)
-		if err != nil {
-			return fmt.Errorf("encode server: %w", err)
-		}
-		if _, err := tx.Exec("INSERT INTO servers(id,definition) VALUES(?,?)", s.ID, string(b)); err != nil {
-			return fmt.Errorf("persist server: %w", err)
-		}
-	}
-	for _, t := range reg.Tools {
-		b, err := json.Marshal(t)
-		if err != nil {
-			return fmt.Errorf("encode tool: %w", err)
-		}
-		if _, err := tx.Exec("INSERT INTO tools(id,server_id,definition) VALUES(?,?,?)", t.ID, t.ServerID, string(b)); err != nil {
-			return fmt.Errorf("persist tool: %w", err)
-		}
-	}
+	g.registry = registry.New(initial, store.Registry(g.db).Save)
 	return nil
 }
 
 func (g *Gateway) persistSettings(s Settings) error {
-	b, err := json.Marshal(s)
-	if err != nil {
+	if _, err := json.Marshal(s); err != nil {
 		return fmt.Errorf("encode model settings: %w", err)
 	}
-	if _, err := g.db.Exec("INSERT INTO settings(id,definition) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET definition=excluded.definition", string(b)); err != nil {
+	if err := store.Settings[Settings](g.db).Save(s); err != nil {
 		return fmt.Errorf("persist model settings: %w", err)
 	}
 	return nil
 }
-
 func (g *Gateway) loadModelProfiles() ([]ModelProfile, error) {
-	rows, err := g.db.Query("SELECT definition FROM model_profiles ORDER BY rowid")
+	profiles, err := store.ModelProfiles[ModelProfile](g.db).List()
 	if err != nil {
-		return nil, fmt.Errorf("query model profiles: %w", err)
+		return nil, err
 	}
-	defer closeRows(rows)
-	var profiles []ModelProfile
-	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
-			return nil, fmt.Errorf("read model profile: %w", err)
-		}
-		var p ModelProfile
-		if err := json.Unmarshal([]byte(raw), &p); err != nil {
-			return nil, fmt.Errorf("decode model profile: %w", err)
-		}
-		p.KeyConfigured = false
-		profiles = append(profiles, p)
+	for i := range profiles {
+		profiles[i].KeyConfigured = false
 	}
-	return profiles, rows.Err()
+	return profiles, nil
 }
-
 func (g *Gateway) persistModelProfiles(profiles []ModelProfile) error {
 	tx, err := g.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin model profiles transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec("DELETE FROM model_profiles"); err != nil {
+	repo := store.ModelProfiles[ModelProfile](tx)
+	if err := repo.Clear(); err != nil {
 		return fmt.Errorf("clear model profiles: %w", err)
 	}
 	for _, p := range profiles {
-		stored := p
-		stored.KeyConfigured = false
-		b, err := json.Marshal(stored)
-		if err != nil {
+		p.KeyConfigured = false
+		if _, err := json.Marshal(p); err != nil {
 			return fmt.Errorf("encode model profile: %w", err)
 		}
-		if _, err := tx.Exec("INSERT INTO model_profiles(id,definition) VALUES(?,?)", stored.ID, string(b)); err != nil {
+		if err := repo.Insert(p.ID, p); err != nil {
 			return fmt.Errorf("persist model profile: %w", err)
 		}
 	}
 	return tx.Commit()
 }
-
 func (g *Gateway) loadEvents() error {
-	rows, err := g.db.Query("SELECT id,time,kind,actor,status,title,duration_ms,detail FROM activity ORDER BY time DESC LIMIT 100")
+	events, err := store.Activity(g.db).Recent(100)
 	if err != nil {
-		return fmt.Errorf("load activity: %w", err)
+		return err
 	}
-	defer closeRows(rows)
-	for rows.Next() {
-		var e Event
-		var timestamp, detail string
-		if err := rows.Scan(&e.ID, &timestamp, &e.Kind, &e.Actor, &e.Status, &e.Title, &e.DurationMS, &detail); err != nil {
-			return fmt.Errorf("read activity: %w", err)
-		}
-		t, err := time.Parse(time.RFC3339Nano, timestamp)
-		if err != nil {
-			return fmt.Errorf("parse activity time: %w", err)
-		}
-		e.Time = t
-		e.Detail = json.RawMessage(detail)
-		g.events = append(g.events, e)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate activity: %w", err)
+	for _, e := range events {
+		g.events = append(g.events, Event(e))
 	}
 	return nil
 }
