@@ -14,6 +14,10 @@ import (
 	"time"
 
 	"gatewaylab/internal/buildinfo"
+	"gatewaylab/internal/maintenance"
+	"gatewaylab/internal/maintenance/sandbox"
+	"gatewaylab/internal/openapi"
+	"gatewaylab/internal/registry"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -28,6 +32,37 @@ func respond(w http.ResponseWriter, status int, data any) {
 
 func fail(w http.ResponseWriter, err error) {
 	var app *appError
+	if !errors.As(err, &app) {
+		var domain *maintenance.Error
+		var validation *registry.ValidationError
+		var sandboxValidation *sandbox.ValidationError
+		var openapiValidation *openapi.ValidationError
+		if errors.As(err, &domain) {
+			status := 500
+			switch domain.Kind {
+			case maintenance.ErrInvalid:
+				status = 400
+			case maintenance.ErrNotFound:
+				status = 404
+			case maintenance.ErrConflict:
+				status = 409
+			case maintenance.ErrUnavailable:
+				status = 503
+			case maintenance.ErrUnauthorized:
+				status = 401
+			case maintenance.ErrForbidden:
+				status = 403
+			}
+			err = problem(status, domain.Message, domain.Cause)
+		} else if errors.As(err, &validation) {
+			err = problem(400, validation.Message, validation.Cause)
+		} else if errors.As(err, &openapiValidation) {
+			err = invalid(openapiValidation.Message)
+		} else if errors.As(err, &sandboxValidation) {
+			err = invalid(sandboxValidation.Message)
+		}
+
+	}
 	if errors.As(err, &app) {
 		if app.cause != nil {
 			slog.Warn("gateway operation failed", "status", app.status, "error", err)

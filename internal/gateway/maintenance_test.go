@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,11 +14,32 @@ import (
 	"time"
 )
 
-func testGateway(t *testing.T) (*Gateway, string) {
+func testGateway(t *testing.T) (*Gateway, string) { return testGatewayOptions(t, "", nil) }
+func testGatewayOptions(t *testing.T, command string, policy *executionPolicy) (*Gateway, string) {
 	t.Helper()
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("Node.js is required for adapter/process tests")
 	}
+	fixture, err := os.ReadFile("../maintenance/testdata/pi-worker.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command == "" {
+		command = filepath.Join(t.TempDir(), "pi-test")
+		if err := os.WriteFile(command, fixture, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mode := "local"
+	if os.Getenv("GATEWAY_AUTH_FILE") != "" {
+		mode = "docker"
+	}
+	t.Setenv("GATEWAY_EXECUTION_MODE", mode)
+	if policy != nil {
+		t.Setenv("GATEWAY_EXECUTION_MODE", policy.Mode)
+		t.Setenv("GATEWAY_SANDBOX_IMAGE", policy.Image)
+	}
+	t.Setenv("GATEWAY_PI_COMMAND", command)
 	g, err := New(t.TempDir(), "http://localhost:8788")
 	if err != nil {
 		t.Fatal(err)
@@ -30,16 +50,6 @@ func testGateway(t *testing.T) (*Gateway, string) {
 		}
 	})
 	useKeywordModel(t, g)
-	fixture, err := os.ReadFile("testdata/pi-worker.mjs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	command := filepath.Join(t.TempDir(), "pi-test")
-	if err := os.WriteFile(command, fixture, 0700); err != nil {
-		t.Fatal(err)
-	}
-	g.execution.Mode = "local"
-	g.maintenance.command = command
 	if err := g.SaveServer(Server{ID: "service", Name: "Service", Kind: "http", Endpoint: "http://127.0.0.1:1", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -61,9 +71,7 @@ func waitRun(t *testing.T, m *Maintainer, id string, status ...string) Maintenan
 	t.Helper()
 	deadline := time.Now().Add(12 * time.Second)
 	for time.Now().Before(deadline) {
-		m.mu.Lock()
-		r := m.runs[id]
-		m.mu.Unlock()
+		r, _ := m.GetRun(id)
 		if slices.Contains(status, r.Status) {
 			return r
 		}
@@ -72,9 +80,7 @@ func waitRun(t *testing.T, m *Maintainer, id string, status ...string) Maintenan
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	m.mu.Lock()
-	r := m.runs[id]
-	m.mu.Unlock()
+	r, _ := m.GetRun(id)
 	t.Fatalf("timeout: %+v", r)
 	return r
 }
@@ -139,9 +145,7 @@ func TestMaintenanceLifecycleAndRollback(t *testing.T) {
 func TestMaintenanceConflictInvalidAndCancellation(t *testing.T) {
 	g, reference := testGateway(t)
 	m := g.maintenance
-	m.mu.Lock()
-	s := m.sources["service"]
-	m.mu.Unlock()
+	s, _ := m.Source("service")
 	s.AutoPublish = false
 	if err := m.SaveSource(s); err != nil {
 		t.Fatal(err)
@@ -219,96 +223,6 @@ func mustJSON(t *testing.T, v any) []byte {
 	return b
 }
 
-func TestMaintenanceRecoveryAndSchedule(t *testing.T) {
-	g, _ := testGateway(t)
-	m := g.maintenance
-	r := enqueueTest(t, m, false)
-	m.mu.Lock()
-	r.Status = "running"
-	if err := m.saveRun(r); err != nil {
-		t.Fatal(err)
-	}
-	m.mu.Unlock()
-	reloaded, err := newMaintainer(g)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reloaded.Close()
-	if reloaded.runs[r.ID].Status != "interrupted" {
-		t.Fatal("running task was not interrupted on restart")
-	}
-	m.mu.Lock()
-	m.runs[r.ID] = reloaded.runs[r.ID]
-	s := m.sources["service"]
-	s.Enabled = true
-	s.NextRunAt = time.Now().Add(-time.Minute)
-	if err := m.saveSource(s); err != nil {
-		t.Fatal(err)
-	}
-	m.mu.Unlock()
-	g.StartMaintenance(context.Background())
-	deadline := time.Now().Add(12 * time.Second)
-	found := ""
-	for time.Now().Before(deadline) {
-		m.mu.Lock()
-		for id, run := range m.runs {
-			if id != r.ID && run.ServerID == "service" {
-				found = id
-			}
-		}
-		m.mu.Unlock()
-		if found != "" {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if found == "" {
-		t.Fatal("due schedule did not create task")
-	}
-	waitRun(t, m, found, "ready")
-}
-func TestPiErrorAndTimeout(t *testing.T) {
-	for _, mode := range []string{"error", "crash", "hang"} {
-		t.Run(mode, func(t *testing.T) {
-			g, reference := testGateway(t)
-			putSource(t, reference, "v1", mode)
-			m := g.maintenance
-			r := enqueueTest(t, m, true)
-			r.Status = "running"
-			m.mu.Lock()
-			if err := m.saveRun(r); err != nil {
-				t.Fatal(err)
-			}
-			m.mu.Unlock()
-			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-			defer cancel()
-			err := m.build(ctx, &r)
-			if err == nil {
-				t.Fatal("worker failure was accepted")
-			}
-			if mode == "hang" && !errors.Is(err, context.DeadlineExceeded) {
-				t.Fatalf("wrong timeout error: %v", err)
-			}
-		})
-	}
-}
-func TestArtifactTraversalAndSymlink(t *testing.T) {
-	dir := t.TempDir()
-	if _, err := regularArtifact(dir, "../secret"); err == nil {
-		t.Fatal("traversal accepted")
-	}
-	outside := filepath.Join(t.TempDir(), "secret")
-	if err := os.WriteFile(outside, []byte("secret"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(outside, filepath.Join(dir, "adapter.mjs")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := regularArtifact(dir, "adapter.mjs"); err == nil {
-		t.Fatal("symlink accepted")
-	}
-}
-
 func TestNativeMCPMaintenance(t *testing.T) {
 	g, _ := testGateway(t)
 	upstream := httptest.NewServer(g.Handler())
@@ -337,9 +251,7 @@ func TestNativeMCPMaintenance(t *testing.T) {
 func TestArtifactIntegrityAndRestart(t *testing.T) {
 	g, reference := testGateway(t)
 	m := g.maintenance
-	m.mu.Lock()
-	source := m.sources["service"]
-	m.mu.Unlock()
+	source, _ := m.Source("service")
 	source.AutoPublish = false
 	if err := m.SaveSource(source); err != nil {
 		t.Fatal(err)
@@ -353,10 +265,11 @@ func TestArtifactIntegrityAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reloaded.Close()
-	if reloaded.runs[r.ID].Status != "ready" || len(reloaded.runs[r.ID].Artifacts) == 0 {
+	reloadedRun, _ := reloaded.GetRun(r.ID)
+	if reloadedRun.Status != "ready" || len(reloadedRun.Artifacts) == 0 {
 		t.Fatal("validated draft did not survive reload")
 	}
-	path := filepath.Join(m.directory(r.ID), "revision", "adapter.mjs")
+	path := filepath.Join(filepath.Join(g.dir, "maintenance", r.ID), "revision", "adapter.mjs")
 	if err := os.Chmod(path, 0600); err != nil {
 		t.Fatal(err)
 	}

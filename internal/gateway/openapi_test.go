@@ -98,7 +98,7 @@ func TestOpenAPIWireContract(t *testing.T) {
 		respond(w, 200, map[string]any{"id": 12, "parent": map[string]any{"id": 9}})
 	}))
 	defer upstream.Close()
-	result, err := callHTTP(context.Background(), Server{Endpoint: upstream.URL}, tool, args)
+	result, err := upstreamclient.CallHTTP(context.Background(), Server{Endpoint: upstream.URL}, tool, args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,16 +125,13 @@ func TestOpenAPIWireContract(t *testing.T) {
 	}
 }
 func TestOpenAPIMaintenanceWithoutPi(t *testing.T) {
-	g, reference := testGateway(t)
+	g, reference := testGatewayOptions(t, "nonexistent-pi-binary", nil)
 	if err := os.WriteFile(reference, []byte(openAPIFixture), 0600); err != nil {
 		t.Fatal(err)
 	}
 	m := g.maintenance
 	setLogsAcceptance(t, g, "v1", "openapi")
-	m.command = "nonexistent-pi-binary"
-	m.mu.Lock()
-	source := m.sources["service"]
-	m.mu.Unlock()
+	source, _ := m.Source("service")
 	source.Format = "openapi"
 	source.OperationIDs = []string{"logs"}
 	if err := m.SaveSource(source); err != nil {
@@ -170,7 +167,7 @@ func TestLiveBackendOpenAPI(t *testing.T) {
 	}
 	for _, tool := range tools {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		result, err := callHTTP(ctx, Server{Endpoint: endpoint}, tool, map[string]any{})
+		result, err := upstreamclient.CallHTTP(ctx, Server{Endpoint: endpoint}, tool, map[string]any{})
 		cancel()
 		if err != nil {
 			t.Fatal(err)

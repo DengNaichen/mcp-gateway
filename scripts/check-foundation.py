@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify foundation, policy, routing and upstream package boundaries using Go's actual dependency graph."""
+"""Verify foundation, policy, routing, upstream and maintenance package boundaries using Go's actual dependency graph."""
 import json
 from pathlib import Path
 import re
@@ -7,7 +7,7 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 output = subprocess.check_output(
-    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream"],
+    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox"],
     cwd=root, text=True,
 )
 allowed = {
@@ -25,6 +25,13 @@ allowed.update({
     "gatewaylab/internal/model": {"gatewaylab/internal/registry", "gatewaylab/internal/store", "gatewaylab/internal/secrets"},
     "gatewaylab/internal/scope": {"gatewaylab/internal/registry", "gatewaylab/internal/store", "gatewaylab/internal/workspace", "gatewaylab/internal/buildinfo"},
 })
+allowed.update({
+    "gatewaylab/internal/maintenance": {
+        "gatewaylab/internal/maintenance/sandbox", "gatewaylab/internal/registry",
+        "gatewaylab/internal/store", "gatewaylab/internal/upstream",
+    },
+    "gatewaylab/internal/maintenance/sandbox": {"gatewaylab/internal/registry", "gatewaylab/internal/upstream"},
+})
 decoder = json.JSONDecoder()
 while output.strip():
     package, end = decoder.raw_decode(output.lstrip())
@@ -38,15 +45,15 @@ while output.strip():
     print(f'{package["ImportPath"]} -> {", ".join(sorted(internal)) or "no internal dependencies"}')
 
 # SQLite ownership stays in store as the remaining domains are extracted.
-for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "model", "scope", "routing", "upstream")
+for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "model", "scope", "routing", "upstream", "maintenance", "maintenance/sandbox")
                    for p in (root / "internal" / name).glob("*.go")):
     if path.name.endswith("_test.go"):
         continue
     assert not re.search(r'\b(?:SELECT|INSERT INTO|UPDATE|DELETE FROM|CREATE TABLE|ALTER TABLE|PRAGMA)\b', path.read_text()), f"SQL outside store: {path.relative_to(root)}"
-print("PASS: foundation/policy/routing/upstream dependency direction; SQL stays in store")
+print("PASS: foundation/policy/routing/upstream/maintenance dependency direction; SQL stays in store")
 
 # Domain errors carry classifications; only transport adapters choose HTTP status.
-for name in ("openapi", "model", "scope", "routing"):
+for name in ("openapi", "model", "scope", "routing", "maintenance", "maintenance/sandbox"):
     for path in (root / "internal" / name).glob("*.go"):
         if path.name.endswith("_test.go"):
             continue
@@ -65,3 +72,24 @@ for name in ("gateway", "routing"):
         if not path.name.endswith("_test.go"):
             assert not provider_function.search(path.read_text()), f"provider implementation outside model: {path.relative_to(root)}"
 print("PASS: provider request/parsing implementation stays in model")
+
+# Maintenance owns its state and depends on injected capabilities, never Gateway.
+for path in sorted((root / "internal/maintenance").rglob("*.go")):
+    if path.name.endswith("_test.go"):
+        continue
+    source = path.read_text()
+    assert not re.search(r"\*Gateway\b|\bappError\b|\bproblem\(|\.HandleFunc\(", source), path
+print("PASS: maintenance/sandbox contain no Gateway or HTTP handler coupling")
+
+# Exactly one implementation of each process primitive per target platform.
+process_definitions = {}
+for path in sorted((root / "internal").rglob("*.go")):
+    if path.name.endswith("_test.go"):
+        continue
+    for name in re.findall(r"^func (ProcessEnvironment|ConfigureProcess|processEnvironment|configureProcess)\(", path.read_text(), re.MULTILINE):
+        process_definitions.setdefault(name, []).append(str(path.relative_to(root)))
+assert process_definitions == {
+    "ProcessEnvironment": ["internal/upstream/environment.go"],
+    "ConfigureProcess": ["internal/upstream/process_other.go", "internal/upstream/process_unix.go"],
+}, process_definitions
+print("PASS: process environment and platform cancellation implementations stay in upstream")

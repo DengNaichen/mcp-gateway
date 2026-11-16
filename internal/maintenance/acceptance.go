@@ -1,4 +1,4 @@
-package gateway
+package maintenance
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gatewaylab/internal/maintenance/sandbox"
 	"gatewaylab/internal/store"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -105,7 +106,7 @@ func (m *Maintainer) SaveAcceptance(s AcceptanceSuite) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !slices.ContainsFunc(m.g.Snapshot().Servers, func(server Server) bool { return server.ID == s.ServerID }) {
+	if !slices.ContainsFunc(m.catalog.Snapshot().Servers, func(server Server) bool { return server.ID == s.ServerID }) {
 		return invalid("服务不存在")
 	}
 	b, err := json.Marshal(s)
@@ -119,41 +120,14 @@ func (m *Maintainer) SaveAcceptance(s AcceptanceSuite) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return fmt.Errorf("normalize acceptance suite: %w", err)
 	}
-	if err := store.MaintenanceAcceptance[json.RawMessage](m.g.db).Put(s.ServerID, b); err != nil {
+	if err := store.MaintenanceAcceptance[json.RawMessage](m.db).Put(s.ServerID, b); err != nil {
 		return fmt.Errorf("save acceptance suite: %w", err)
 	}
 	m.suites[s.ServerID] = s
 	return nil
 }
-func (g *Gateway) acceptanceRoutingFingerprint(serverID string) string {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return g.routingFingerprintLocked(serverID)
-}
-func (g *Gateway) routingFingerprintLocked(serverID string) string {
-	return g.routingFingerprintForRegistryLocked(serverID, g.Snapshot())
-}
-func (g *Gateway) routingFingerprintForRegistryLocked(serverID string, reg Registry) string {
-	other := Registry{Servers: []Server{}, Tools: []Tool{}}
-	for _, server := range reg.Servers {
-		if server.ID != serverID {
-			other.Servers = append(other.Servers, server)
-		}
-	}
-	for _, tool := range reg.Tools {
-		if tool.ServerID != serverID {
-			other.Tools = append(other.Tools, tool)
-		}
-	}
-	var principals any
-	if g.access != nil {
-		principals = g.access.principals
-	}
-	settings, key := g.model.RuntimeConfig()
-	return maintenanceDigest([]any{routingProtocol, settings, key, other, principals, g.execution})
-}
-func (m *Maintainer) evaluateAcceptance(ctx context.Context, r MaintenanceRun, dir string) AcceptanceReport {
-	report := AcceptanceReport{Results: []AcceptanceResult{}, MissingCoverage: []string{}, RoutingFingerprint: m.g.acceptanceRoutingFingerprint(r.ServerID)}
+func (m *Maintainer) EvaluateAcceptance(ctx context.Context, r MaintenanceRun, dir string) AcceptanceReport {
+	report := AcceptanceReport{Results: []AcceptanceResult{}, MissingCoverage: []string{}, RoutingFingerprint: m.router.RoutingFingerprint(r.ServerID)}
 	if r.AcceptanceInput == nil {
 		return report
 	}
@@ -168,14 +142,14 @@ func (m *Maintainer) evaluateAcceptance(ctx context.Context, r MaintenanceRun, d
 		err := m.checkContract(ctx, r, dir, c)
 		result := AcceptanceResult{Name: c.Name, Kind: "contract", Passed: err == nil, DurationMS: time.Since(start).Milliseconds()}
 		if err != nil {
-			result.Error = m.g.errorDetail(err)
+			result.Error = m.recorder.ErrorDetail(err)
 			report.Passed = false
 		} else if !c.ExpectError {
 			covered[c.ToolID] = true
 		}
 		report.Results = append(report.Results, result)
 	}
-	registry := m.g.Snapshot()
+	registry := m.catalog.Snapshot()
 	candidate := Registry{Servers: registry.Servers, Tools: []Tool{}}
 	for _, tool := range registry.Tools {
 		if tool.ServerID != r.ServerID {
@@ -192,30 +166,25 @@ func (m *Maintainer) evaluateAcceptance(ctx context.Context, r MaintenanceRun, d
 	}
 	for _, c := range suite.Routing {
 		start := time.Now()
-		routingCtx, actorErr := m.g.acceptanceActor(ctx, c.Actor)
-		var result DiscoverResult
-		err := actorErr
-		if err == nil {
-			result, err = m.g.discoverRegistry(withInternalScopeBypass(routingCtx), DiscoverRequest{Intent: c.Intent, Context: c.Context, Actor: c.Actor}, candidate, false)
-		}
+		result, err := m.router.Discover(ctx, c, candidate)
 		if err == nil {
 			if c.NoMatch && result.Status != "no_match" {
 				err = fmt.Errorf("expected no_match, got %s", result.Status)
 			}
 			for _, id := range c.Expected {
-				if !slices.ContainsFunc(result.Tools, func(t Selection) bool { return t.ID == id }) {
+				if !slices.ContainsFunc(result.Tools, func(t string) bool { return t == id }) {
 					err = fmt.Errorf("expected tool %s was not selected", id)
 				}
 			}
 			for _, id := range c.Forbidden {
-				if slices.ContainsFunc(result.Tools, func(t Selection) bool { return t.ID == id }) {
+				if slices.ContainsFunc(result.Tools, func(t string) bool { return t == id }) {
 					err = fmt.Errorf("forbidden tool %s was selected", id)
 				}
 			}
 		}
 		outcome := AcceptanceResult{Name: c.Name, Kind: "routing", Passed: err == nil, DurationMS: time.Since(start).Milliseconds()}
 		if err != nil {
-			outcome.Error = m.g.errorDetail(err)
+			outcome.Error = m.recorder.ErrorDetail(err)
 			report.Passed = false
 		} else {
 			for _, id := range c.Expected {
@@ -237,7 +206,7 @@ func (m *Maintainer) evaluateAcceptance(ctx context.Context, r MaintenanceRun, d
 	if len(report.MissingCoverage) > 0 {
 		report.Passed = false
 	}
-	if report.RoutingFingerprint != m.g.acceptanceRoutingFingerprint(r.ServerID) {
+	if report.RoutingFingerprint != m.router.RoutingFingerprint(r.ServerID) {
 		report.Passed = false
 		report.Results = append(report.Results, AcceptanceResult{Name: "routing-snapshot", Kind: "routing", Error: "路由配置或其他工具在验收期间变化，需要重新运行"})
 	}
@@ -297,7 +266,7 @@ func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir
 		defer mock.Close()
 		server.Endpoint = mock.URL
 		server.Transport = "http"
-		result, callErr = m.g.callMCP(ctx, server, tool, arguments)
+		result, callErr = m.upstream.CallMCP(ctx, server, tool, arguments)
 		if calls.Load() != 1 {
 			return fmt.Errorf("expected one native tool invocation, got %d", calls.Load())
 		}
@@ -362,9 +331,9 @@ func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir
 		defer mock.Close()
 		server.Endpoint = mock.URL
 		if tool.Adapter != "" {
-			result, callErr = callAdapterFile(ctx, m.g.execution, server, tool, arguments, filepath.Join(dir, tool.Adapter))
+			result, callErr = sandbox.CallAdapterFile(ctx, m.execution, server, tool, arguments, filepath.Join(dir, tool.Adapter))
 		} else {
-			result, callErr = callHTTP(ctx, server, tool, arguments)
+			result, callErr = m.upstream.CallHTTP(ctx, server, tool, arguments)
 		}
 		mu.Lock()
 		count := index
@@ -386,7 +355,7 @@ func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir
 	if callErr != nil {
 		return callErr
 	}
-	result = redactResponseWithLookup(result, server, m.g.lookupEnv)
+	result = m.upstream.RedactResponse(result, server)
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		return fmt.Errorf("encode acceptance result: %w", err)

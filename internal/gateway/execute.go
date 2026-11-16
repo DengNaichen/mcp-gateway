@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"gatewaylab/internal/upstream"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
@@ -133,23 +131,4 @@ func upstreamError(err error) error {
 		return problem(status, e.Message, e.Cause)
 	}
 	return err
-}
-func (g *Gateway) mcpSession(ctx context.Context, s Server) (*mcp.ClientSession, func(), error) {
-	return g.upstream.Session(ctx, s)
-}
-func (g *Gateway) forgetClosedSession(id string, s *mcp.ClientSession, err error) {
-	g.upstream.ForgetClosedSession(id, s, err)
-}
-func (g *Gateway) closeDownstreams() error { return g.upstream.Close() }
-
-// These forwarding functions support the maintenance adapter until B3 integration.
-func callHTTP(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
-	return upstream.CallHTTP(ctx, s, t, args)
-}
-func redactResponseWithLookup(data any, s Server, lookup func(string) string) any {
-	return upstream.RedactResponseWithLookup(data, s, lookup)
-}
-
-func (g *Gateway) callMCP(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
-	return g.upstream.CallMCP(ctx, s, t, args)
 }

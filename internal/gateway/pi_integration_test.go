@@ -23,17 +23,20 @@ func TestPiRealRPCContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, _ := testGateway(t)
+	var policy *executionPolicy
 	if os.Getenv("GATEWAY_TEST_DOCKER") == "1" {
-		g.execution = executionPolicy{Mode: "docker", Image: defaultSandboxImage}
+		policy = &executionPolicy{Mode: "docker", Image: "node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da"}
 	}
+	g, _ := testGatewayOptions(t, command, policy)
 	m := g.maintenance
 	setLogsAcceptance(t, g, "v1", "real-pi")
-	m.command = command
 	agentDir := t.TempDir()
 	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
 	t.Setenv("PI_TELEMETRY", "0")
-	manifest := maintenanceBundle{Summary: "真实 Pi 工具写入并通过本地模型契约检查", Tools: []Tool{{ID: "service.logs", ServerID: "service", Name: "logs", Description: "Search logs", Tags: []string{"logs"}, InputSchema: objectSchema(map[string]any{}), Method: "GET", Path: "/logs", ReadOnly: true}}}
+	manifest := struct {
+		Summary string `json:"summary"`
+		Tools   []Tool `json:"tools"`
+	}{Summary: "真实 Pi 工具写入并通过本地模型契约检查", Tools: []Tool{{ID: "service.logs", ServerID: "service", Name: "logs", Description: "Search logs", Tags: []string{"logs"}, InputSchema: objectSchema(map[string]any{}), Method: "GET", Path: "/logs", ReadOnly: true}}}
 	manifestJSON := string(mustJSON(t, manifest))
 	args := string(mustJSON(t, map[string]string{"path": "output/manifest.json", "content": manifestJSON}))
 	var requests atomic.Int32
@@ -97,9 +100,7 @@ func TestPiRealRPCContract(t *testing.T) {
 	if err := writeJSON(filepath.Join(agentDir, "models.json"), models); err != nil {
 		t.Fatal(err)
 	}
-	m.mu.Lock()
-	source := m.sources["service"]
-	m.mu.Unlock()
+	source, _ := m.Source("service")
 	source.Provider = "gateway-test"
 	source.Model = "fixture"
 	if err := m.SaveSource(source); err != nil {

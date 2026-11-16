@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"gatewaylab/internal/maintenance"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,7 +83,7 @@ func TestIndependentAcceptanceBlocksPublish(t *testing.T) {
 		t.Fatal("failed draft exposed tools")
 	}
 	// Prove fixtures did not enter the generation input.
-	input, err := os.ReadFile(filepath.Join(m.directory(run.ID), "input.json"))
+	input, err := os.ReadFile(filepath.Join(filepath.Join(g.dir, "maintenance", run.ID), "input.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +99,7 @@ func TestPublicationRequiresApprovalAndAcceptsCompatibleChanges(t *testing.T) {
 	if !first.Review.Required || first.Tools[0].Enabled {
 		t.Fatal("new capability was enabled automatically")
 	}
-	if err := m.publish(first.ID, false, false); err == nil {
+	if err := m.PublishAs(first.ID, false, false, "scheduler"); err == nil {
 		t.Fatal("automatic new capability publication accepted")
 	}
 	approveRun(t, m, first.ID)
@@ -110,22 +112,8 @@ func TestPublicationRequiresApprovalAndAcceptsCompatibleChanges(t *testing.T) {
 	if second.Review.Required || !second.Acceptance.Passed {
 		t.Fatal("compatible change did not pass policy")
 	}
-	// Required input widening and deletion require explicit review even if tests pass.
-	previous := second.Tools[0]
-	changed := previous
-	changed.InputSchema = objectSchema(map[string]any{"service": map[string]any{"type": "string"}, "region": map[string]any{"type": "string"}}, "service", "region")
-	if !publicationReview([]Tool{previous}, []Tool{changed}).Required {
-		t.Fatal("new required argument was considered compatible")
-	}
-	changed = previous
-	changed.ReadOnly = false
-	if !publicationReview([]Tool{previous}, []Tool{changed}).Required {
-		t.Fatal("write escalation allowed")
-	}
-	if !publicationReview([]Tool{previous}, nil).Required {
-		t.Fatal("removal did not require approval")
-	}
 }
+
 func TestAcceptanceChangeInvalidatesDraft(t *testing.T) {
 	g, _ := testGateway(t)
 	m := g.maintenance
@@ -141,46 +129,24 @@ func TestAcceptanceChangeInvalidatesDraft(t *testing.T) {
 	}
 }
 
-func TestMappingAndExecutableChangesRequireReview(t *testing.T) {
-	tools, err := ImportOpenAPI("ci", []byte(openAPIFixture), []string{"create_build"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	before := tools[0]
-	var after Tool
-	if err := json.Unmarshal(mustJSON(t, before), &after); err != nil {
-		t.Fatal(err)
-	}
-	// Serialization can change while the advertised input schema stays identical.
-	after.HTTP.Parameters[1].Explode = !after.HTTP.Parameters[1].Explode
-	if !publicationReview([]Tool{before}, []Tool{after}).Required {
-		t.Fatal("serialization change auto-published")
-	}
+func TestMaintenancePublicationRejectsChangedModelConfiguration(t *testing.T) {
 	g, _ := testGateway(t)
-	old := Tool{ID: "service.logs", Adapter: "adapter.mjs", Revision: "previous"}
-	g.maintenance.runs["previous"] = MaintenanceRun{Artifacts: map[string]string{"adapter.mjs": "old-hash"}}
-	r := MaintenanceRun{Before: []Tool{old}, Tools: []Tool{old}, Artifacts: map[string]string{"adapter.mjs": "changed-hash"}}
-	review := publicationReview(r.Before, r.Tools)
-	g.maintenance.reviewArtifacts(r, &review)
-	if !review.Required {
-		t.Fatal("changed executable published without owner review")
+	g.StartMaintenance(context.Background())
+	run := waitRun(t, g.maintenance, enqueueTest(t, g.maintenance, false).ID, "ready")
+	settings, _ := g.Config()
+	settings.Model = "changed-after-acceptance"
+	if err := g.SaveSettings(settings, "", false); err != nil {
+		t.Fatal(err)
 	}
-}
-func TestSchemaCompatibilityConservative(t *testing.T) {
-	old := objectSchema(map[string]any{"service": map[string]any{"type": "string"}}, "service")
-	next := objectSchema(map[string]any{"service": map[string]any{"type": "string", "description": "renamed description"}, "limit": map[string]any{"type": "integer"}}, "service")
-	if !inputCompatible(old, next) {
-		t.Fatal("optional extension should be compatible")
+	err := g.maintenance.Publish(run.ID, false)
+	if !errors.Is(err, maintenance.ErrConflict) || err.Error() != "路由配置已变化，请重新验收" {
+		t.Fatalf("draft accepted stale model evidence: %v", err)
 	}
-	if inputCompatible(next, old) {
-		t.Fatal("removed parameter considered compatible")
+	if len(serverTools(g.Snapshot(), "service")) != 0 {
+		t.Fatal("stale acceptance changed active tools")
 	}
-}
-
-func TestPropertyNamesAreNotSchemaAnnotations(t *testing.T) {
-	old := objectSchema(map[string]any{"description": map[string]any{"type": "string"}}, "description")
-	changed := objectSchema(map[string]any{"description": map[string]any{"type": "integer"}}, "description")
-	if inputCompatible(old, changed) {
-		t.Fatal("property named description was mistaken for annotation")
+	persisted, err := g.maintenance.GetRun(run.ID)
+	if err != nil || persisted.Status != "ready" {
+		t.Fatalf("rejected publication changed draft: %+v %v", persisted, err)
 	}
 }
