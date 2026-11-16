@@ -1,0 +1,268 @@
+package store
+
+import (
+	"database/sql"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"testing"
+
+	"gatewaylab/internal/registry"
+)
+
+func openTestStore(t *testing.T) *Store {
+	t.Helper()
+	db, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return db
+}
+
+func TestDataDirectoryLockHelper(t *testing.T) {
+	dir := os.Getenv("GATEWAY_STORE_LOCK_TEST_DIR")
+	if dir == "" {
+		return
+	}
+	db, err := Open(dir)
+	if db != nil {
+		_ = db.Close()
+	}
+	if !errors.Is(err, ErrLocked) {
+		t.Fatalf("expected process lock, got %v", err)
+	}
+}
+func TestDataDirectoryLockLifetime(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if other, err := Open(dir); !errors.Is(err, ErrLocked) {
+		if other != nil {
+			_ = other.Close()
+		}
+		t.Fatalf("duplicate open: %v", err)
+	}
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(dir, alias); err != nil {
+		t.Fatal(err)
+	}
+	if other, err := Open(alias); !errors.Is(err, ErrLocked) {
+		if other != nil {
+			_ = other.Close()
+		}
+		t.Fatalf("symlink duplicate open: %v", err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestDataDirectoryLockHelper$")
+	cmd.Env = append(os.Environ(), "GATEWAY_STORE_LOCK_TEST_DIR="+dir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("second process: %v\n%s", err, out)
+	}
+	independent, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = independent.Close()
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = reopened.Close()
+}
+func TestFailedOpenReleasesLock(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gateway.db")
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if db, err := Open(dir); err == nil {
+		_ = db.Close()
+		t.Fatal("expected open failure")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(dir)
+	if err != nil {
+		t.Fatalf("lock leaked after failure: %v", err)
+	}
+	_ = db.Close()
+}
+
+func sampleRegistry() registry.Registry {
+	return registry.Registry{Servers: []registry.Server{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}}, Tools: []registry.Tool{{ID: "a.one", ServerID: "a", Name: "one"}, {ID: "b.two", ServerID: "b", Name: "two"}}}
+}
+func TestRegistryUpsertRetainsRowsAndDoesNotTouchUnchangedDefinitions(t *testing.T) {
+	db := openTestStore(t)
+	repo := Registry(db.DB)
+	reg := sampleRegistry()
+	if err := repo.Save(reg); err != nil {
+		t.Fatal(err)
+	}
+	// A dependent table would make DELETE-all fail, even with the same IDs.
+	if _, err := db.Exec(`CREATE TABLE dependent(server_id TEXT REFERENCES servers(id));INSERT INTO dependent VALUES('a');
+ CREATE TABLE writes(kind TEXT);
+ CREATE TRIGGER server_deleted AFTER DELETE ON servers BEGIN INSERT INTO writes VALUES('delete');END;
+ CREATE TRIGGER server_updated AFTER UPDATE ON servers BEGIN INSERT INTO writes VALUES('server');END;
+ CREATE TRIGGER tool_updated AFTER UPDATE ON tools BEGIN INSERT INTO writes VALUES('tool');END;`); err != nil {
+		t.Fatal(err)
+	}
+	var rowid int64
+	if err := db.QueryRow("SELECT rowid FROM servers WHERE id='a'").Scan(&rowid); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Save(reg); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow("SELECT count(*) FROM writes").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("unchanged save touched rows: %d %v", count, err)
+	}
+	reg.Servers[0].Name = "Updated"
+	if err := repo.Save(reg); err != nil {
+		t.Fatal(err)
+	}
+	var after int64
+	if err := db.QueryRow("SELECT rowid FROM servers WHERE id='a'").Scan(&after); err != nil || after != rowid {
+		t.Fatalf("row identity changed: %d -> %d (%v)", rowid, after, err)
+	}
+	if err := db.QueryRow("SELECT count(*) FROM writes WHERE kind='server'").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("wanted one updated server: %d %v", count, err)
+	}
+	if err := db.QueryRow("SELECT count(*) FROM writes WHERE kind<>'server'").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("unrelated rows touched: %d %v", count, err)
+	}
+}
+func TestRegistryReconciliationOrderingDeletionAndRollback(t *testing.T) {
+	db := openTestStore(t)
+	repo := Registry(db.DB)
+	reg := sampleRegistry()
+	if err := repo.Save(reg); err != nil {
+		t.Fatal(err)
+	}
+	reg.Servers[0], reg.Servers[1] = reg.Servers[1], reg.Servers[0]
+	reg.Tools[0], reg.Tools[1] = reg.Tools[1], reg.Tools[0]
+	if err := repo.Save(reg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Load()
+	if err != nil || !reflect.DeepEqual(got, reg) {
+		t.Fatalf("ordering changed: %+v %v", got, err)
+	}
+	failed := registry.Clone(reg)
+	failed.Servers[0].Name = "must roll back"
+	failed.Tools[0].ServerID = "missing"
+	if err := repo.Save(failed); err == nil {
+		t.Fatal("expected foreign key failure")
+	}
+	got, err = repo.Load()
+	if err != nil || !reflect.DeepEqual(got, reg) {
+		t.Fatalf("failed save partially committed: %+v %v", got, err)
+	}
+	// A tool can move away from a removed parent within the same transaction.
+	reg.Servers = reg.Servers[:1]
+	reg.Tools[1].ServerID = reg.Servers[0].ID
+	if err := repo.Save(reg); err != nil {
+		t.Fatal(err)
+	}
+	reg.Tools = reg.Tools[:1]
+	if err := repo.Save(reg); err != nil {
+		t.Fatal(err)
+	}
+	got, err = repo.Load()
+	if err != nil || !reflect.DeepEqual(got, reg) {
+		t.Fatalf("reconciliation failed: %+v %v", got, err)
+	}
+	if err := repo.Save(registry.Registry{}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = repo.Load()
+	if err != nil || len(got.Servers) != 0 || len(got.Tools) != 0 {
+		t.Fatalf("clear registry: %+v %v", got, err)
+	}
+}
+func TestRegistrySharesAtomicPublicationTransaction(t *testing.T) {
+	db := openTestStore(t)
+	repo := Registry(db.DB)
+	reg := sampleRegistry()
+	if err := repo.Save(reg); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg.Servers[0].Name = "uncommitted"
+	if err := WriteRegistry(tx, reg); err != nil {
+		t.Fatal(err)
+	}
+	if err := MaintenanceRuns[map[string]string](tx).Insert("run", map[string]string{"status": "published"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Load()
+	if err != nil || got.Servers[0].Name != "A" {
+		t.Fatalf("rolled back registry visible: %+v %v", got, err)
+	}
+	runs, err := MaintenanceRuns[map[string]string](db.DB).List()
+	if err != nil || len(runs) != 0 {
+		t.Fatalf("rolled back job visible: %+v %v", runs, err)
+	}
+}
+
+func TestLegacyMigrationRetainsRegistryAndScopeData(t *testing.T) {
+	dir := t.TempDir()
+	raw, err := sql.Open("sqlite", filepath.Join(dir, "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`CREATE TABLE servers(id TEXT PRIMARY KEY,definition TEXT NOT NULL CHECK(json_valid(definition)));
+ CREATE TABLE tools(id TEXT PRIMARY KEY,server_id TEXT NOT NULL REFERENCES servers(id),definition TEXT NOT NULL CHECK(json_valid(definition)));
+ INSERT INTO servers VALUES('b','{"id":"b"}'),('a','{"id":"a"}');
+ INSERT INTO tools VALUES('two','b','{"id":"two","server_id":"b"}'),('one','a','{"id":"one","server_id":"a"}');
+ PRAGMA user_version=5;`); err != nil {
+		t.Fatal(err)
+	}
+	_ = raw.Close()
+	db, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Registry(db.DB).Load()
+	if err != nil || got.Servers[0].ID != "b" || got.Tools[0].ID != "two" {
+		t.Fatalf("migration reordered data: %+v %v", got, err)
+	}
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 7 {
+		t.Fatalf("version=%d, %v", version, err)
+	}
+	rules, err := ScopeRules[map[string]any](db.DB).List()
+	if err != nil || len(rules) != 1 || rules[0]["repo_key"] != "*" {
+		t.Fatalf("scope seed: %+v %v", rules, err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatalf("migration not idempotent: %v", err)
+	}
+	_ = reopened.Close()
+}

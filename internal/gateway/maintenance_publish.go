@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"gatewaylab/internal/store"
 )
 
 func sourceIdentity(s MaintenanceSource) string {
@@ -67,80 +69,82 @@ func (m *Maintainer) publishAs(id string, rollback, approved bool, actor string)
 	}
 	m.g.mu.Lock()
 	defer m.g.mu.Unlock()
-	if !rollback && m.g.routingFingerprintLocked(r.ServerID) != r.Acceptance.RoutingFingerprint {
-		return problem(409, "路由配置或候选工具已变化，请重新验收", nil)
-	}
-	reg := m.g.registry
-	i := slices.IndexFunc(reg.Servers, func(s Server) bool { return s.ID == r.ServerID })
-	if i < 0 {
-		return problem(409, "服务已被移除", nil)
-	}
-	if !rollback && approved {
-		r.Tools = slices.Clone(r.Tools)
-		for i, tool := range r.Tools {
-			if !slices.ContainsFunc(r.Before, func(old Tool) bool { return old.ID == tool.ID }) {
-				r.Tools[i].Enabled = true
+	return m.g.registry.UpdateWithCommit(func(reg Registry) (Registry, error) {
+		if !rollback && m.g.routingFingerprintForRegistryLocked(r.ServerID, reg) != r.Acceptance.RoutingFingerprint {
+			return Registry{}, problem(409, "路由配置或候选工具已变化，请重新验收", nil)
+		}
+		i := slices.IndexFunc(reg.Servers, func(s Server) bool { return s.ID == r.ServerID })
+		if i < 0 {
+			return Registry{}, problem(409, "服务已被移除", nil)
+		}
+		if !rollback && approved {
+			r.Tools = slices.Clone(r.Tools)
+			for i, tool := range r.Tools {
+				if !slices.ContainsFunc(r.Before, func(old Tool) bool { return old.ID == tool.ID }) {
+					r.Tools[i].Enabled = true
+				}
 			}
 		}
-	}
-	expected := r.Baseline
-	replacement := r.Tools
-	if rollback {
-		expected = catalogDigest(r.Server, r.Tools)
-		replacement = r.Before
-	}
-	if catalogDigest(reg.Servers[i], serverTools(reg, r.ServerID)) != expected {
-		return problem(409, "服务或工具已被修改；为避免覆盖，请重新检查来源", nil)
-	}
-	updated := Registry{Servers: reg.Servers, Tools: []Tool{}}
-	for _, t := range reg.Tools {
-		if t.ServerID != r.ServerID {
-			updated.Tools = append(updated.Tools, t)
+		expected := r.Baseline
+		replacement := r.Tools
+		if rollback {
+			expected = catalogDigest(r.Server, r.Tools)
+			replacement = r.Before
 		}
-	}
-	updated.Tools = append(updated.Tools, replacement...)
-	now := time.Now()
-	if rollback {
-		r.RolledBackBy = actor
-		r.RolledBackAt = &now
-		r.Status = "rolled_back"
-		r.Stage = "已回退到发布前版本"
-	} else {
-		r.PublishedBy = actor
-		r.PublishedAt = &now
-		r.Status = "published"
-		r.Stage = "已发布，路由候选已更新"
-	}
-	r.Error = ""
-	tx, err := m.g.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin maintenance publish: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			if err := tx.Rollback(); err != nil {
-				slog.Warn("rollback maintenance publish", "error", err)
+		if catalogDigest(reg.Servers[i], serverTools(reg, r.ServerID)) != expected {
+			return Registry{}, problem(409, "服务或工具已被修改；为避免覆盖，请重新检查来源", nil)
+		}
+		updated := Registry{Servers: reg.Servers, Tools: []Tool{}}
+		for _, t := range reg.Tools {
+			if t.ServerID != r.ServerID {
+				updated.Tools = append(updated.Tools, t)
 			}
 		}
-	}()
-	if err := writeRegistry(tx, updated); err != nil {
-		return err
-	}
-	b, err := json.Marshal(r)
-	if err != nil {
-		return fmt.Errorf("encode published run: %w", err)
-	}
-	if _, err := tx.Exec("UPDATE maintenance_runs SET definition=? WHERE id=?", string(b), r.ID); err != nil {
-		return fmt.Errorf("persist published run: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit maintenance publish: %w", err)
-	}
-	committed = true
-	m.g.registry = updated
-	m.runs[r.ID] = r
-	return nil
+		updated.Tools = append(updated.Tools, replacement...)
+		now := time.Now()
+		if rollback {
+			r.RolledBackBy = actor
+			r.RolledBackAt = &now
+			r.Status = "rolled_back"
+			r.Stage = "已回退到发布前版本"
+		} else {
+			r.PublishedBy = actor
+			r.PublishedAt = &now
+			r.Status = "published"
+			r.Stage = "已发布，路由候选已更新"
+		}
+		r.Error = ""
+		return updated, nil
+	}, func(updated Registry) error {
+		tx, err := m.g.db.Begin()
+		if err != nil {
+			return fmt.Errorf("begin maintenance publish: %w", err)
+		}
+		committed := false
+		defer func() {
+			if !committed {
+				if err := tx.Rollback(); err != nil {
+					slog.Warn("rollback maintenance publish", "error", err)
+				}
+			}
+		}()
+		if err := store.WriteRegistry(tx, updated); err != nil {
+			return err
+		}
+		b, err := json.Marshal(r)
+		if err != nil {
+			return fmt.Errorf("encode published run: %w", err)
+		}
+		if err := store.MaintenanceRuns[json.RawMessage](tx).Update(r.ID, b); err != nil {
+			return fmt.Errorf("persist published run: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit maintenance publish: %w", err)
+		}
+		committed = true
+		m.runs[r.ID] = r
+		return nil
+	})
 }
 
 type ToolChange struct {

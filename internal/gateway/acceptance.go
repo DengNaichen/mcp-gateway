@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gatewaylab/internal/store"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -117,7 +119,7 @@ func (m *Maintainer) SaveAcceptance(s AcceptanceSuite) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return fmt.Errorf("normalize acceptance suite: %w", err)
 	}
-	if _, err := m.g.db.Exec("INSERT INTO maintenance_acceptance(id,definition) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET definition=excluded.definition", s.ServerID, string(b)); err != nil {
+	if err := store.MaintenanceAcceptance[json.RawMessage](m.g.db).Put(s.ServerID, b); err != nil {
 		return fmt.Errorf("save acceptance suite: %w", err)
 	}
 	m.suites[s.ServerID] = s
@@ -129,13 +131,16 @@ func (g *Gateway) acceptanceRoutingFingerprint(serverID string) string {
 	return g.routingFingerprintLocked(serverID)
 }
 func (g *Gateway) routingFingerprintLocked(serverID string) string {
+	return g.routingFingerprintForRegistryLocked(serverID, g.Snapshot())
+}
+func (g *Gateway) routingFingerprintForRegistryLocked(serverID string, reg Registry) string {
 	other := Registry{Servers: []Server{}, Tools: []Tool{}}
-	for _, server := range g.registry.Servers {
+	for _, server := range reg.Servers {
 		if server.ID != serverID {
 			other.Servers = append(other.Servers, server)
 		}
 	}
-	for _, tool := range g.registry.Tools {
+	for _, tool := range reg.Tools {
 		if tool.ServerID != serverID {
 			other.Tools = append(other.Tools, tool)
 		}

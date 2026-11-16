@@ -5,26 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/store"
 	"gatewaylab/internal/workspace"
 
 	"github.com/google/uuid"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 	"golang.org/x/oauth2"
-	_ "modernc.org/sqlite"
 )
 
 type Gateway struct {
 	instanceID     string
 	mu             sync.RWMutex
-	registry       Registry
+	registry       *registry.Service
 	settings       Settings
 	apiKey         string
 	profiles       []ModelProfile
@@ -35,6 +33,7 @@ type Gateway struct {
 	dir            string
 	baseURL        string
 	db             *sql.DB
+	storage        *store.Store
 	sessionMu      sync.Mutex
 	sessions       map[string]stdioSession
 	access         *accessPolicy
@@ -60,22 +59,23 @@ func New(dir, baseURL string) (*Gateway, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
-	scopeKey, err := workspace.EnsureScopeKey(dir)
-	if err != nil {
-		return nil, fmt.Errorf("initialize scope key: %w", err)
-	}
-	db, err := openDatabase(filepath.Join(dir, "gateway.db"))
+	storage, err := store.Open(dir)
 	if err != nil {
 		return nil, err
 	}
 	ready := false
 	defer func() {
 		if !ready {
-			if err := db.Close(); err != nil {
+			if err := storage.Close(); err != nil {
 				slog.Warn("close database after initialization failure", "error", err)
 			}
 		}
 	}()
+	scopeKey, err := workspace.EnsureScopeKey(dir)
+	if err != nil {
+		return nil, fmt.Errorf("initialize scope key: %w", err)
+	}
+	db := storage.DB
 	g := &Gateway{
 		instanceID:     uuid.NewString(),
 		execution:      execution,
@@ -90,6 +90,7 @@ func New(dir, baseURL string) (*Gateway, error) {
 			BaseURL: "https://api.openai.com/v1", Model: "gpt-6-luna", MaxTools: 4, TimeoutSeconds: 45,
 		},
 		db:          db,
+		storage:     storage,
 		scopeKey:    scopeKey,
 		hookBinPath: workspace.ResolveHookBinary("", dir),
 		jtiReplay:   newJTICache(),
@@ -100,39 +101,40 @@ func New(dir, baseURL string) (*Gateway, error) {
 	if err := g.loadScopes(); err != nil {
 		return nil, err
 	}
-	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM settings").Scan(&count); err != nil {
+	count, err := store.Settings[Settings](db).Count()
+	if err != nil {
 		return nil, fmt.Errorf("read settings count: %w", err)
 	}
 	if count == 0 {
-		g.registry = seedRegistry(baseURL)
-		if err := g.persistRegistry(g.registry); err != nil {
+		if err := g.registry.Update(func(Registry) (Registry, error) { return seedRegistry(baseURL), nil }); err != nil {
 			return nil, err
 		}
 		if err := g.persistSettings(g.settings); err != nil {
 			return nil, err
 		}
 	}
-	var settingsJSON string
-	if err := db.QueryRow("SELECT definition FROM settings WHERE id=1").Scan(&settingsJSON); err != nil {
+	settings, err := store.Settings[json.RawMessage](db).Load()
+	if err != nil {
 		return nil, fmt.Errorf("load model settings: %w", err)
 	}
-	if err := json.Unmarshal([]byte(settingsJSON), &g.settings); err != nil {
+	if err := json.Unmarshal(settings, &g.settings); err != nil {
 		return nil, fmt.Errorf("decode model settings: %w", err)
 	}
 	if err := g.loadEvents(); err != nil {
 		return nil, err
 	}
 	// Relocate built-in demo endpoints when the listening port changes.
-	for i := range g.registry.Servers {
-		if g.registry.Servers[i].Demo {
-			if g.registry.Servers[i].Kind == "mcp" {
-				g.registry.Servers[i].Endpoint = baseURL + "/demo/mcp"
+	relocated := g.Snapshot()
+	for i := range relocated.Servers {
+		if relocated.Servers[i].Demo {
+			if relocated.Servers[i].Kind == "mcp" {
+				relocated.Servers[i].Endpoint = baseURL + "/demo/mcp"
 			} else {
-				g.registry.Servers[i].Endpoint = baseURL + "/demo/api"
+				relocated.Servers[i].Endpoint = baseURL + "/demo/api"
 			}
 		}
 	}
+	g.registry = registry.New(relocated, store.Registry(db).Save)
 	if v := os.Getenv("GATEWAY_MODEL_BASE_URL"); v != "" {
 		g.settings.BaseURL = v
 	}
@@ -157,11 +159,7 @@ func New(dir, baseURL string) (*Gateway, error) {
 	return g, nil
 }
 
-func (g *Gateway) Snapshot() Registry {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-	return Registry{Servers: slices.Clone(g.registry.Servers), Tools: slices.Clone(g.registry.Tools)}
-}
+func (g *Gateway) Snapshot() Registry { return g.registry.Snapshot() }
 
 func (g *Gateway) Config() (Settings, bool) {
 	g.mu.RLock()
@@ -199,17 +197,6 @@ func (g *Gateway) setRuntimeSecret(key, value string) {
 		g.runtimeSecrets[key] = value
 	}
 	g.mu.Unlock()
-}
-
-func validateURL(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("parse endpoint: %w", err)
-	}
-	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Fragment != "" {
-		return invalid("endpoint 必须是有效的 HTTP(S) 地址，凭据请使用环境变量请求头")
-	}
-	return nil
 }
 
 func validateSettings(s Settings) error {
@@ -458,112 +445,6 @@ func (g *Gateway) DeleteModelProfile(id string) error {
 	return nil
 }
 
-func compileSchema(schema map[string]any) (*jsonschema.Schema, error) {
-	if schema == nil {
-		return nil, invalid("工具需要 input_schema")
-	}
-	// The validator accepts JSON-native []any, not typed Go slices (e.g. the
-	// []string required lists built by deterministic importers and demo tools).
-	b, err := json.Marshal(schema)
-	if err != nil {
-		return nil, fmt.Errorf("encode input schema: %w", err)
-	}
-	var normalized map[string]any
-	if err := json.Unmarshal(b, &normalized); err != nil {
-		return nil, fmt.Errorf("normalize input schema: %w", err)
-	}
-	c := jsonschema.NewCompiler()
-	if err := c.AddResource("urn:gateway:input", normalized); err != nil {
-		return nil, fmt.Errorf("register input schema: %w", err)
-	}
-	s, err := c.Compile("urn:gateway:input")
-	if err != nil {
-		return nil, fmt.Errorf("compile input schema: %w", err)
-	}
-	return s, nil
-}
-
-func validID(s string) bool {
-	if s == "" || len(s) > 128 {
-		return false
-	}
-	return strings.IndexFunc(s, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-", r))
-	}) == -1
-}
-
-func (g *Gateway) SaveServer(s Server) error {
-	if !validID(s.ID) || s.Name == "" || (s.Kind != "http" && s.Kind != "mcp") {
-		return invalid("请提供合法 ID、名称及协议类型 http/mcp")
-	}
-	if s.Kind == "mcp" && s.Transport == "stdio" {
-		if strings.TrimSpace(s.Command) == "" {
-			return invalid("stdio 服务需要填写启动命令")
-		}
-	} else {
-		if s.Transport != "" && s.Transport != "http" {
-			return invalid("支持的 MCP 传输为 http 或 stdio")
-		}
-		if err := validateURL(s.Endpoint); err != nil {
-			return err
-		}
-	}
-	for _, value := range s.Headers {
-		if !strings.Contains(value, "${") || !strings.Contains(value, "}") {
-			return invalid("请求头的凭据请使用 ${ENV_VAR} 环境变量引用")
-		}
-	}
-	for _, value := range s.Env {
-		if !strings.Contains(value, "${") || !strings.Contains(value, "}") {
-			return invalid("环境变量值请使用 ${ENV_VAR} 引用，由网关启动环境提供")
-		}
-	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	r := Registry{Servers: slices.Clone(g.registry.Servers), Tools: g.registry.Tools}
-	i := slices.IndexFunc(r.Servers, func(old Server) bool { return old.ID == s.ID })
-	if i >= 0 {
-		s.Demo = r.Servers[i].Demo
-		r.Servers[i] = s
-	} else {
-		r.Servers = append(r.Servers, s)
-	}
-	if err := g.persistRegistry(r); err != nil {
-		return err
-	}
-	g.registry = r
-	return nil
-}
-
-func (g *Gateway) SaveTool(t Tool) error {
-	if err := validateMapping(t); err != nil {
-		return err
-	}
-	if !validID(t.ID) || t.Name == "" || t.Description == "" || len(t.Actors) == 0 {
-		return invalid("工具需要合法 ID、名称、描述及至少一个模拟身份")
-	}
-	if _, err := compileSchema(t.InputSchema); err != nil {
-		return problem(400, "input_schema 无效", err)
-	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if !slices.ContainsFunc(g.registry.Servers, func(s Server) bool { return s.ID == t.ServerID }) {
-		return invalid("server_id 不存在")
-	}
-	r := Registry{Servers: g.registry.Servers, Tools: slices.Clone(g.registry.Tools)}
-	i := slices.IndexFunc(r.Tools, func(old Tool) bool { return old.ID == t.ID })
-	if i >= 0 {
-		r.Tools[i] = t
-	} else {
-		r.Tools = append(r.Tools, t)
-	}
-	if err := g.persistRegistry(r); err != nil {
-		return err
-	}
-	g.registry = r
-	return nil
-}
-
 func actorName(actor string) string {
 	if actor == "" {
 		return "developer"
@@ -588,7 +469,7 @@ func (g *Gateway) record(kind, actor, status, title string, started time.Time, d
 	if len(g.events) > 100 {
 		g.events = g.events[:100]
 	}
-	if _, err := g.db.Exec("INSERT INTO activity(id,time,kind,actor,status,title,duration_ms,detail) VALUES(?,?,?,?,?,?,?,?)", e.ID, e.Time.Format(time.RFC3339Nano), e.Kind, e.Actor, e.Status, e.Title, e.DurationMS, string(e.Detail)); err != nil {
+	if err := store.Activity(g.db).Insert(store.ActivityRow(e)); err != nil {
 		slog.Error("persist activity log", "error", err)
 	}
 }

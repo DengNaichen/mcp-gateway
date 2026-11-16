@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gatewaylab/internal/store"
 )
 
 // MaintenanceSource is an owner's instruction to maintain one server's complete
@@ -87,51 +89,29 @@ func newMaintainer(g *Gateway) (*Maintainer, error) {
 	if m.command == "" {
 		m.command = "pi"
 	}
-	for _, table := range []string{"maintenance_sources", "maintenance_runs", "maintenance_acceptance"} {
-		rows, err := g.db.Query("SELECT definition FROM " + table)
-		if err != nil {
-			cancel()
-			return nil, fmt.Errorf("load maintenance: %w", err)
-		}
-		for rows.Next() {
-			var raw []byte
-			if err := rows.Scan(&raw); err != nil {
-				closeRows(rows)
-				cancel()
-				return nil, fmt.Errorf("read maintenance: %w", err)
-			}
-			if table == "maintenance_sources" {
-				var s MaintenanceSource
-				if err := json.Unmarshal(raw, &s); err != nil {
-					closeRows(rows)
-					cancel()
-					return nil, fmt.Errorf("decode maintenance source: %w", err)
-				}
-				m.sources[s.ServerID] = s
-			} else if table == "maintenance_acceptance" {
-				var suite AcceptanceSuite
-				if err := json.Unmarshal(raw, &suite); err != nil {
-					closeRows(rows)
-					cancel()
-					return nil, fmt.Errorf("decode acceptance suite: %w", err)
-				}
-				m.suites[suite.ServerID] = suite
-			} else {
-				var r MaintenanceRun
-				if err := json.Unmarshal(raw, &r); err != nil {
-					closeRows(rows)
-					cancel()
-					return nil, fmt.Errorf("decode maintenance run: %w", err)
-				}
-				m.runs[r.ID] = r
-			}
-		}
-		err = rows.Err()
-		closeRows(rows)
-		if err != nil {
-			cancel()
-			return nil, fmt.Errorf("iterate maintenance: %w", err)
-		}
+	sources, err := store.MaintenanceSources[MaintenanceSource](g.db).List()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	for _, source := range sources {
+		m.sources[source.ServerID] = source
+	}
+	runs, err := store.MaintenanceRuns[MaintenanceRun](g.db).List()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	for _, run := range runs {
+		m.runs[run.ID] = run
+	}
+	suites, err := store.MaintenanceAcceptance[AcceptanceSuite](g.db).List()
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	for _, suite := range suites {
+		m.suites[suite.ServerID] = suite
 	}
 	// Never replay a partially executed coding task after a process crash.
 	for _, r := range m.runs {
@@ -187,7 +167,7 @@ func (m *Maintainer) saveSource(s MaintenanceSource) error {
 	if err != nil {
 		return fmt.Errorf("encode maintenance source: %w", err)
 	}
-	if _, err = m.g.db.Exec("INSERT INTO maintenance_sources(id,definition) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET definition=excluded.definition", s.ServerID, string(b)); err != nil {
+	if err = store.MaintenanceSources[json.RawMessage](m.g.db).Put(s.ServerID, b); err != nil {
 		return fmt.Errorf("save maintenance source: %w", err)
 	}
 	m.sources[s.ServerID] = s
@@ -198,7 +178,7 @@ func (m *Maintainer) saveRun(r MaintenanceRun) error {
 	if err != nil {
 		return fmt.Errorf("encode maintenance run: %w", err)
 	}
-	if _, err = m.g.db.Exec("INSERT INTO maintenance_runs(id,definition) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET definition=excluded.definition", r.ID, string(b)); err != nil {
+	if err = store.MaintenanceRuns[json.RawMessage](m.g.db).Put(r.ID, b); err != nil {
 		return fmt.Errorf("save maintenance run: %w", err)
 	}
 	m.runs[r.ID] = r
