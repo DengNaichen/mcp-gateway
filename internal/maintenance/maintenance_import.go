@@ -1,4 +1,4 @@
-package gateway
+package maintenance
 
 import (
 	"encoding/json"
@@ -16,7 +16,7 @@ func maintenanceFormat(s MaintenanceSource, server Server) string {
 	}
 	return "pi"
 }
-func generateDefinitions(r MaintenanceRun, docs []sourceDocument, dir string) error {
+func (m *Maintainer) generateDefinitions(r MaintenanceRun, docs []sourceDocument, dir string) error {
 	var tools []Tool
 	var err error
 	format := maintenanceFormat(r.Source, r.Server)
@@ -25,7 +25,7 @@ func generateDefinitions(r MaintenanceRun, docs []sourceDocument, dir string) er
 		if len(docs) == 0 {
 			return invalid("OpenAPI 需要一个参考文档")
 		}
-		tools, err = ImportOpenAPI(r.ServerID, []byte(docs[0].Content), r.Source.OperationIDs)
+		tools, err = m.importOpenAPI(r.ServerID, []byte(docs[0].Content), r.Source.OperationIDs)
 		if err != nil {
 			return err
 		}

@@ -1,4 +1,4 @@
-package gateway
+package maintenance
 
 import (
 	"bytes"
@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"gatewaylab/internal/maintenance/sandbox"
 )
 
 type sourceDocument struct {
@@ -100,17 +102,17 @@ func (m *Maintainer) documents(ctx context.Context, r *MaintenanceRun) ([]source
 		total += len(b)
 	}
 	if r.Server.Kind == "mcp" {
-		session, release, err := m.g.mcpSession(ctx, r.Server)
+		tools, release, err := m.upstream.NativeTools(ctx, r.Server)
 		if err != nil {
 			return nil, err
 		}
 		defer release()
 		var definitions []any
-		for t, err := range session.Tools(ctx, nil) {
+		for tool, err := range tools {
 			if err != nil {
 				return nil, fmt.Errorf("read native tool definitions: %w", err)
 			}
-			definitions = append(definitions, t)
+			definitions = append(definitions, tool)
 		}
 		b, err := json.Marshal(definitions)
 		if err != nil {
@@ -149,7 +151,7 @@ func (m *Maintainer) build(ctx context.Context, r *MaintenanceRun) error {
 	}
 	unchanged := latest.ID != "" && latest.Status != "rolled_back" && latest.Fingerprint == r.Fingerprint && (latest.Status != "ready" || latest.Baseline == r.Baseline)
 	m.mu.Unlock()
-	if latest.Acceptance.Configured && (!latest.Acceptance.Passed || latest.Acceptance.RoutingFingerprint != m.g.acceptanceRoutingFingerprint(r.ServerID)) {
+	if latest.Acceptance.Configured && (!latest.Acceptance.Passed || latest.Acceptance.RoutingFingerprint != m.router.RoutingFingerprint(r.ServerID)) {
 		unchanged = false
 	}
 	if unchanged && !r.Force {
@@ -175,7 +177,7 @@ func (m *Maintainer) build(ctx context.Context, r *MaintenanceRun) error {
 		if t.Adapter == "" {
 			continue
 		}
-		p, err := m.g.adapterPath(t)
+		p, err := m.AdapterPath(t)
 		if err != nil {
 			return err
 		}
@@ -197,14 +199,14 @@ func (m *Maintainer) build(ctx context.Context, r *MaintenanceRun) error {
 		if err := m.update(r.ID, "Pi 正在维护工具与适配代码"); err != nil {
 			return err
 		}
-		if err := runPi(ctx, m.g.execution, m.command, dir, r.Source, func(stage string) error { return m.update(r.ID, stage) }); err != nil {
+		if err := sandbox.RunPi(ctx, m.execution, m.command, dir, sandbox.PiOptions{Provider: r.Source.Provider, Model: r.Source.Model}, func(stage string) error { return m.update(r.ID, stage) }); err != nil {
 			return err
 		}
 	} else {
 		if err := m.update(r.ID, "解析接口定义（无需模型）"); err != nil {
 			return err
 		}
-		if err := generateDefinitions(*r, docs, dir); err != nil {
+		if err := m.generateDefinitions(*r, docs, dir); err != nil {
 			return err
 		}
 	}
@@ -263,7 +265,7 @@ func (m *Maintainer) build(ctx context.Context, r *MaintenanceRun) error {
 	if err := m.update(r.ID, "运行独立契约与路由验收"); err != nil {
 		return err
 	}
-	r.Acceptance = m.evaluateAcceptance(ctx, *r, revision)
+	r.Acceptance = m.EvaluateAcceptance(ctx, *r, revision)
 	r.Review = publicationReview(r.Before, r.Tools)
 	m.reviewArtifacts(*r, &r.Review)
 	if err := checkArtifacts(revision, r.Artifacts); err != nil {
@@ -342,7 +344,7 @@ func (m *Maintainer) validateBundle(ctx context.Context, r MaintenanceRun, dir s
 			if _, err := regularArtifact(dir, t.Adapter); err != nil {
 				return bundle, err
 			}
-			if _, err := m.g.execution.runNode(ctx, dir, []string{"--check", t.Adapter}, nil, false, 64<<10); err != nil {
+			if _, err := m.execution.RunNode(ctx, dir, []string{"--check", t.Adapter}, nil, false, 64<<10); err != nil {
 				return bundle, fmt.Errorf("check adapter syntax: %w", err)
 			}
 			t.Revision = r.ID
@@ -359,19 +361,19 @@ func (m *Maintainer) validateBundle(ctx context.Context, r MaintenanceRun, dir s
 		}
 		verifyCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		defer cancel()
-		if _, err := m.g.execution.runNode(verifyCtx, dir, []string{"verify.mjs"}, nil, false, 64<<10); err != nil {
+		if _, err := m.execution.RunNode(verifyCtx, dir, []string{"verify.mjs"}, nil, false, 64<<10); err != nil {
 			return bundle, fmt.Errorf("adapter verification failed: %w", err)
 		}
 	}
 	if r.Server.Kind == "mcp" {
-		session, release, err := m.g.mcpSession(ctx, r.Server)
+		definitions, release, err := m.upstream.NativeTools(ctx, r.Server)
 		if err != nil {
 			return bundle, err
 		}
 		defer release()
 		live := map[string]string{}
 		readOnly := map[string]bool{}
-		for t, err := range session.Tools(ctx, nil) {
+		for t, err := range definitions {
 			if err != nil {
 				return bundle, fmt.Errorf("validate native tools: %w", err)
 			}

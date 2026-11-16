@@ -13,7 +13,7 @@ func (g *Gateway) Close() error {
 	if g.maintenance != nil {
 		g.maintenance.Close()
 	}
-	result := g.closeDownstreams()
+	result := g.upstream.Close()
 	if err := g.storage.Close(); err != nil {
 		result = errors.Join(result, fmt.Errorf("close sqlite: %w", err))
 	}

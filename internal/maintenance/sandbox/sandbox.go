@@ -1,4 +1,4 @@
-package gateway
+package sandbox
 
 import (
 	"context"
@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gatewaylab/internal/upstream"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -18,15 +21,15 @@ import (
 //go:embed runtime/pi-sandbox.ts
 var piSandboxExtension []byte
 
-const defaultSandboxImage = "node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da"
+const DefaultImage = "node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da"
 
-type executionPolicy struct {
+type Policy struct {
 	Mode  string `json:"mode"`
 	Image string `json:"image"`
 }
 
-func loadExecutionPolicy() (executionPolicy, error) {
-	p := executionPolicy{Mode: os.Getenv("GATEWAY_EXECUTION_MODE"), Image: os.Getenv("GATEWAY_SANDBOX_IMAGE")}
+func LoadPolicy() (Policy, error) {
+	p := Policy{Mode: os.Getenv("GATEWAY_EXECUTION_MODE"), Image: os.Getenv("GATEWAY_SANDBOX_IMAGE")}
 	if p.Mode == "" {
 		p.Mode = "docker"
 	}
@@ -37,7 +40,7 @@ func loadExecutionPolicy() (executionPolicy, error) {
 		return p, invalid("共享模式不允许 local 代码执行；请使用 Docker 隔离")
 	}
 	if p.Image == "" {
-		p.Image = defaultSandboxImage
+		p.Image = DefaultImage
 	}
 	if strings.HasPrefix(p.Image, "-") || strings.ContainsAny(p.Image, " \t\n") {
 		return p, invalid("沙箱镜像名称无效")
@@ -49,12 +52,12 @@ func containerName() string { return fmt.Sprintf("gateway-%x", rand.Text()) }
 func removeContainer(name string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if _, err := runCommand(ctx, "docker", []string{"rm", "-f", name}, "", nil, nil, 4096); err != nil {
+	if _, err := RunCommand(ctx, "docker", []string{"rm", "-f", name}, "", nil, nil, 4096); err != nil {
 		slog.Warn("remove sandbox container", "container", name, "error", err)
 	}
 }
 
-func (p executionPolicy) dockerArgs(name, dir string, writable, network bool) ([]string, error) {
+func (p Policy) dockerArgs(name, dir string, writable, network bool) ([]string, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve sandbox directory: %w", err)
@@ -79,9 +82,9 @@ func (p executionPolicy) dockerArgs(name, dir string, writable, network bool) ([
 	return args, nil
 }
 
-func (p executionPolicy) runNode(ctx context.Context, dir string, args []string, input []byte, network bool, limit int) ([]byte, error) {
+func (p Policy) RunNode(ctx context.Context, dir string, args []string, input []byte, network bool, limit int) ([]byte, error) {
 	if p.Mode == "local" {
-		return runCommand(ctx, "node", args, dir, input, nil, limit)
+		return RunCommand(ctx, "node", args, dir, input, nil, limit)
 	}
 	name := containerName()
 	dockerArgs, err := p.dockerArgs(name, dir, false, network)
@@ -96,14 +99,14 @@ func (p executionPolicy) runNode(ctx context.Context, dir string, args []string,
 		}
 		dockerArgs = append(dockerArgs, arg)
 	}
-	out, err := runCommand(ctx, "docker", dockerArgs, "", input, nil, limit)
+	out, err := RunCommand(ctx, "docker", dockerArgs, "", input, nil, limit)
 	if err != nil {
 		return nil, fmt.Errorf("sandbox execution failed (Docker and the configured image must be installed): %w", err)
 	}
 	return out, nil
 }
 
-func (p executionPolicy) preparePi(ctx context.Context, dir string) ([]string, map[string]string, func() error, func(), error) {
+func (p Policy) preparePi(ctx context.Context, dir string) ([]string, map[string]string, func() error, func(), error) {
 	if p.Mode == "local" {
 		return []string{"--tools", "read,write,edit,bash"}, nil, func() error { return nil }, func() {}, nil
 	}
@@ -117,11 +120,11 @@ func (p executionPolicy) preparePi(ctx context.Context, dir string) ([]string, m
 		ttl = max(1, int(time.Until(deadline).Seconds())+60)
 	}
 	args = append(args, "--rm", "-d", p.Image, "sleep", fmt.Sprint(ttl))
-	if _, err := runCommand(ctx, "docker", args, "", nil, nil, 4096); err != nil {
+	if _, err := RunCommand(ctx, "docker", args, "", nil, nil, 4096); err != nil {
 		removeContainer(name)
 		return nil, nil, nil, nil, fmt.Errorf("start coding sandbox (install Docker and pull the configured image): %w", err)
 	}
-	if _, err := runCommand(ctx, "docker", []string{"exec", name, "cp", "-R", "/input/.", "/job/"}, "", nil, nil, 4096); err != nil {
+	if _, err := RunCommand(ctx, "docker", []string{"exec", name, "cp", "-R", "/input/.", "/job/"}, "", nil, nil, 4096); err != nil {
 		removeContainer(name)
 		return nil, nil, nil, nil, fmt.Errorf("copy isolated job inputs: %w", err)
 	}
@@ -150,7 +153,7 @@ func (p executionPolicy) preparePi(ctx context.Context, dir string) ([]string, m
 if(!fs.lstatSync('/job/output').isDirectory()) throw Error('output must be a directory');
 const names=fs.readdirSync('/job/output'); if(names.length>64) throw Error('too many artifacts');
 const files={};let total=0;for(const name of names){const p='/job/output/'+name,s=fs.lstatSync(p);if(!s.isFile()||s.size>1048576)throw Error('invalid artifact');total+=s.size;if(total>8388608)throw Error('artifacts too large');files[name]=fs.readFileSync(p).toString('base64');} console.log(JSON.stringify(files));`
-		b, err := runCommand(ctx, "docker", []string{"exec", name, "node", "-e", program}, "", nil, nil, 12<<20)
+		b, err := RunCommand(ctx, "docker", []string{"exec", name, "node", "-e", program}, "", nil, nil, 12<<20)
 		if err != nil {
 			return fmt.Errorf("export sandbox artifacts: %w", err)
 		}
@@ -172,7 +175,7 @@ const files={};let total=0;for(const name of names){const p='/job/output/'+name,
 }
 
 // Loopback in generated adapters means the gateway host, not the container.
-func (p executionPolicy) adapterEndpoint(endpoint string) string {
+func (p Policy) AdapterEndpoint(endpoint string) string {
 	if p.Mode == "local" {
 		return endpoint
 	}
@@ -202,5 +205,15 @@ func piEnvironment(extra map[string]string) []string {
 			}
 		}
 	}
-	return processEnvironment(extra)
+	return upstream.ProcessEnvironment(extra)
 }
+
+func loopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+var secretEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)

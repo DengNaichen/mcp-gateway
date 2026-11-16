@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"gatewaylab/internal/activity"
+	"gatewaylab/internal/maintenance"
 	"gatewaylab/internal/model"
 	"gatewaylab/internal/registry"
 )
@@ -16,27 +17,21 @@ type HTTPParameter = registry.HTTPParameter
 type HTTPResponse = registry.HTTPResponse
 type Registry = registry.Registry
 
-type RepositorySource struct {
-	URL              string   `json:"url"`
-	Ref              string   `json:"ref"`
-	Files            []string `json:"files"`
-	Project          string   `json:"project,omitempty"`
-	EventsEnabled    bool     `json:"events_enabled"`
-	WebhookSecretEnv string   `json:"webhook_secret_env,omitempty"`
-}
-type MaintenanceTrigger struct {
-	Kind       string `json:"kind"`
-	Provider   string `json:"provider,omitempty"`
-	DeliveryID string `json:"delivery_id,omitempty"`
-	Commit     string `json:"commit,omitempty"`
-	Ref        string `json:"ref,omitempty"`
-}
-type SourceProvenance struct {
-	Repository string            `json:"repository,omitempty"`
-	Ref        string            `json:"ref,omitempty"`
-	Commit     string            `json:"commit,omitempty"`
-	Documents  map[string]string `json:"documents"`
-}
+type RepositorySource = maintenance.RepositorySource
+type MaintenanceTrigger = maintenance.MaintenanceTrigger
+type SourceProvenance = maintenance.SourceProvenance
+type MaintenanceSource = maintenance.MaintenanceSource
+type MaintenanceRun = maintenance.MaintenanceRun
+type Maintainer = maintenance.Maintainer
+type AcceptanceSuite = maintenance.AcceptanceSuite
+type ContractCase = maintenance.ContractCase
+type HTTPExchange = maintenance.HTTPExchange
+type RoutingCase = maintenance.RoutingCase
+type AcceptanceResult = maintenance.AcceptanceResult
+type AcceptanceReport = maintenance.AcceptanceReport
+type ToolChange = maintenance.ToolChange
+type ReviewReason = maintenance.ReviewReason
+type PublicationReview = maintenance.PublicationReview
 
 type Settings = model.Settings
 

@@ -1,8 +1,9 @@
-package gateway
+package maintenance
 
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"gatewaylab/internal/maintenance/sandbox"
 	"gatewaylab/internal/store"
 )
 
@@ -68,28 +70,35 @@ type MaintenanceRun struct {
 }
 
 type Maintainer struct {
-	g       *Gateway
-	mu      sync.Mutex
-	sources map[string]MaintenanceSource
-	suites  map[string]AcceptanceSuite
-	runs    map[string]MaintenanceRun
-	ctx     context.Context
-	stop    context.CancelFunc
-	active  map[string]context.CancelFunc
-	wake    chan struct{}
-	done    chan struct{}
-	started bool
-	closed  bool
-	command string
+	db            *sql.DB
+	dir           string
+	catalog       Catalog
+	router        Router
+	upstream      Upstream
+	recorder      Recorder
+	importOpenAPI OpenAPIImporter
+	execution     sandbox.Policy
+	mu            sync.Mutex
+	sources       map[string]MaintenanceSource
+	suites        map[string]AcceptanceSuite
+	runs          map[string]MaintenanceRun
+	ctx           context.Context
+	stop          context.CancelFunc
+	active        map[string]context.CancelFunc
+	wake          chan struct{}
+	done          chan struct{}
+	started       bool
+	closed        bool
+	command       string
 }
 
-func newMaintainer(g *Gateway) (*Maintainer, error) {
+func New(options Options) (*Maintainer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	m := &Maintainer{g: g, sources: map[string]MaintenanceSource{}, suites: map[string]AcceptanceSuite{}, runs: map[string]MaintenanceRun{}, ctx: ctx, stop: cancel, active: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), done: make(chan struct{}), command: os.Getenv("GATEWAY_PI_COMMAND")}
+	m := &Maintainer{db: options.DB, dir: options.Dir, catalog: options.Catalog, router: options.Router, upstream: options.Upstream, recorder: options.Recorder, importOpenAPI: options.ImportOpenAPI, execution: options.Execution, sources: map[string]MaintenanceSource{}, suites: map[string]AcceptanceSuite{}, runs: map[string]MaintenanceRun{}, ctx: ctx, stop: cancel, active: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), done: make(chan struct{}), command: os.Getenv("GATEWAY_PI_COMMAND")}
 	if m.command == "" {
 		m.command = "pi"
 	}
-	sources, err := store.MaintenanceSources[MaintenanceSource](g.db).List()
+	sources, err := store.MaintenanceSources[MaintenanceSource](options.DB).List()
 	if err != nil {
 		cancel()
 		return nil, err
@@ -97,7 +106,7 @@ func newMaintainer(g *Gateway) (*Maintainer, error) {
 	for _, source := range sources {
 		m.sources[source.ServerID] = source
 	}
-	runs, err := store.MaintenanceRuns[MaintenanceRun](g.db).List()
+	runs, err := store.MaintenanceRuns[MaintenanceRun](options.DB).List()
 	if err != nil {
 		cancel()
 		return nil, err
@@ -105,7 +114,7 @@ func newMaintainer(g *Gateway) (*Maintainer, error) {
 	for _, run := range runs {
 		m.runs[run.ID] = run
 	}
-	suites, err := store.MaintenanceAcceptance[AcceptanceSuite](g.db).List()
+	suites, err := store.MaintenanceAcceptance[AcceptanceSuite](options.DB).List()
 	if err != nil {
 		cancel()
 		return nil, err
@@ -129,7 +138,6 @@ func newMaintainer(g *Gateway) (*Maintainer, error) {
 	return m, nil
 }
 
-func (g *Gateway) StartMaintenance(ctx context.Context) { g.maintenance.Start(ctx) }
 func (m *Maintainer) Start(parent context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -167,7 +175,7 @@ func (m *Maintainer) saveSource(s MaintenanceSource) error {
 	if err != nil {
 		return fmt.Errorf("encode maintenance source: %w", err)
 	}
-	if err = store.MaintenanceSources[json.RawMessage](m.g.db).Put(s.ServerID, b); err != nil {
+	if err = store.MaintenanceSources[json.RawMessage](m.db).Put(s.ServerID, b); err != nil {
 		return fmt.Errorf("save maintenance source: %w", err)
 	}
 	m.sources[s.ServerID] = s
@@ -178,7 +186,7 @@ func (m *Maintainer) saveRun(r MaintenanceRun) error {
 	if err != nil {
 		return fmt.Errorf("encode maintenance run: %w", err)
 	}
-	if err = store.MaintenanceRuns[json.RawMessage](m.g.db).Put(r.ID, b); err != nil {
+	if err = store.MaintenanceRuns[json.RawMessage](m.db).Put(r.ID, b); err != nil {
 		return fmt.Errorf("save maintenance run: %w", err)
 	}
 	m.runs[r.ID] = r
@@ -222,7 +230,7 @@ func (m *Maintainer) SaveSource(s MaintenanceSource) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	reg := m.g.Snapshot()
+	reg := m.catalog.Snapshot()
 	i := slices.IndexFunc(reg.Servers, func(v Server) bool { return v.ID == s.ServerID })
 	if i < 0 || reg.Servers[i].Demo {
 		return invalid("请选择已接入的非演示服务")
@@ -267,7 +275,7 @@ func catalogDigest(s Server, ts []Tool) string {
 }
 func (m *Maintainer) makeRun(id string, force bool) (MaintenanceRun, error) {
 	if m.closed {
-		return MaintenanceRun{}, problem(503, "维护运行时正在停止", nil)
+		return MaintenanceRun{}, domainError(ErrUnavailable, "维护运行时正在停止", nil)
 	}
 	s, ok := m.sources[id]
 	if !ok {
@@ -275,10 +283,10 @@ func (m *Maintainer) makeRun(id string, force bool) (MaintenanceRun, error) {
 	}
 	for _, r := range m.runs {
 		if r.ServerID == id && (r.Status == "running" || r.Status == "queued") {
-			return MaintenanceRun{}, problem(409, "该服务已有维护任务", nil)
+			return MaintenanceRun{}, domainError(ErrConflict, "该服务已有维护任务", nil)
 		}
 	}
-	reg := m.g.Snapshot()
+	reg := m.catalog.Snapshot()
 	i := slices.IndexFunc(reg.Servers, func(v Server) bool { return v.ID == id })
 	if i < 0 {
 		return MaintenanceRun{}, invalid("服务不存在")
@@ -316,10 +324,10 @@ func (m *Maintainer) Cancel(id string) error {
 	defer m.mu.Unlock()
 	r, ok := m.runs[id]
 	if !ok {
-		return problem(404, "任务不存在", nil)
+		return domainError(ErrNotFound, "任务不存在", nil)
 	}
 	if r.Status != "queued" && r.Status != "running" {
-		return problem(409, "任务已经结束", nil)
+		return domainError(ErrConflict, "任务已经结束", nil)
 	}
 	now := time.Now()
 	r.Status = "cancelled"
@@ -356,8 +364,7 @@ func (m *Maintainer) loop() {
 				continue
 			}
 			if _, err := m.enqueueTriggered(s.ServerID, false, "schedule"); err != nil {
-				var app *appError
-				if !errors.As(err, &app) || app.status != 409 {
+				if !errors.Is(err, ErrConflict) {
 					slog.Error("enqueue maintenance", "error", err)
 				}
 			}
@@ -427,7 +434,7 @@ func (m *Maintainer) execute(r MaintenanceRun) {
 	if err != nil {
 		r.Status = "failed"
 		r.Stage = "维护失败"
-		r.Error = m.g.errorDetail(err)
+		r.Error = m.recorder.ErrorDetail(err)
 		if m.ctx.Err() != nil {
 			r.Status = "interrupted"
 			r.Stage = "运行时已停止"
@@ -450,7 +457,7 @@ func (m *Maintainer) execute(r MaintenanceRun) {
 				m.mu.Unlock()
 				return
 			}
-			r.Error = m.g.errorDetail(err)
+			r.Error = m.recorder.ErrorDetail(err)
 			if saveErr := m.saveRun(r); saveErr != nil {
 				slog.Error("save publish error", "error", saveErr)
 			}
@@ -460,10 +467,10 @@ func (m *Maintainer) execute(r MaintenanceRun) {
 	m.mu.Lock()
 	r = m.runs[r.ID]
 	m.mu.Unlock()
-	m.g.record("maintenance", "developer", r.Status, r.ServerID, r.CreatedAt, map[string]any{"run_id": r.ID, "summary": r.Summary, "error": r.Error})
+	m.recorder.Record("maintenance", "developer", r.Status, r.ServerID, r.CreatedAt, map[string]any{"run_id": r.ID, "summary": r.Summary, "error": r.Error})
 }
-func (m *Maintainer) directory(id string) string { return filepath.Join(m.g.dir, "maintenance", id) }
+func (m *Maintainer) directory(id string) string { return filepath.Join(m.dir, "maintenance", id) }
 func (m *Maintainer) runtimeStatus() map[string]any {
 	_, err := exec.LookPath(m.command)
-	return map[string]any{"execution": m.g.execution, "command": m.command, "available": err == nil, "started": m.started && !m.closed && m.ctx.Err() == nil, "model_source": "使用本机 pi 的模型与登录配置；可按服务覆盖 provider/model"}
+	return map[string]any{"execution": m.execution, "command": m.command, "available": err == nil, "started": m.started && !m.closed && m.ctx.Err() == nil, "model_source": "使用本机 pi 的模型与登录配置；可按服务覆盖 provider/model"}
 }

@@ -584,7 +584,7 @@ func TestSingleServiceScopeSkipsHierarchicalSelectServices(t *testing.T) {
 	if _, err := g.TestModel(context.Background(), "list github items"); err != nil {
 		t.Fatalf("TestModel blocked by repo scope enforce: %v", err)
 	}
-	report := g.maintenance.evaluateAcceptance(context.Background(), MaintenanceRun{
+	report := g.maintenance.EvaluateAcceptance(context.Background(), MaintenanceRun{
 		ServerID: "github",
 		Server:   Server{ID: "github", Name: "GitHub", Kind: "http", Endpoint: "http://127.0.0.1:9", Enabled: true},
 		Tools: []Tool{

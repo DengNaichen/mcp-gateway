@@ -1,4 +1,4 @@
-package gateway
+package maintenance
 
 import (
 	"encoding/json"
@@ -30,52 +30,51 @@ func (m *Maintainer) publish(id string, rollback, approved bool) error {
 	if approved {
 		actor = "local-owner"
 	}
-	return m.publishAs(id, rollback, approved, actor)
+	return m.PublishAs(id, rollback, approved, actor)
 }
-func (m *Maintainer) publishAs(id string, rollback, approved bool, actor string) error {
+func (m *Maintainer) PublishAs(id string, rollback, approved bool, actor string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
-		return problem(503, "维护运行时正在停止", nil)
+		return domainError(ErrUnavailable, "维护运行时正在停止", nil)
 	}
 	r, ok := m.runs[id]
 	if !ok {
-		return problem(404, "任务不存在", nil)
+		return domainError(ErrNotFound, "任务不存在", nil)
 	}
 	if (!rollback && r.Status != "ready") || (rollback && r.Status != "published") {
-		return problem(409, "当前版本不能执行此操作", nil)
+		return domainError(ErrConflict, "当前版本不能执行此操作", nil)
 	}
 	if !rollback {
 		if !r.Acceptance.Configured || !r.Acceptance.Passed {
-			return problem(409, "独立契约与路由验收未通过，不能发布", nil)
+			return domainError(ErrConflict, "独立契约与路由验收未通过，不能发布", nil)
 		}
 		suite, ok := m.suites[r.ServerID]
 		if !ok || maintenanceDigest(suite) != r.Acceptance.Fingerprint {
-			return problem(409, "验收用例已变化，请重新检查", nil)
+			return domainError(ErrConflict, "验收用例已变化，请重新检查", nil)
 		}
-		if m.g.acceptanceRoutingFingerprint(r.ServerID) != r.Acceptance.RoutingFingerprint {
-			return problem(409, "路由配置已变化，请重新验收", nil)
+		if m.router.RoutingFingerprint(r.ServerID) != r.Acceptance.RoutingFingerprint {
+			return domainError(ErrConflict, "路由配置已变化，请重新验收", nil)
 		}
 		if r.Review.Required && !approved {
-			return problem(409, "此变更需要负责人确认", nil)
+			return domainError(ErrConflict, "此变更需要负责人确认", nil)
 		}
 		s, ok := m.sources[r.ServerID]
 		if !ok || sourceIdentity(s) != sourceIdentity(r.Source) {
-			return problem(409, "维护配置已变化，请重新检查来源", nil)
+			return domainError(ErrConflict, "维护配置已变化，请重新检查来源", nil)
 		}
 		if err := checkArtifacts(filepath.Join(m.directory(r.ID), "revision"), r.Artifacts); err != nil {
 			return err
 		}
 	}
-	m.g.mu.Lock()
-	defer m.g.mu.Unlock()
-	return m.g.registry.UpdateWithCommit(func(reg Registry) (Registry, error) {
-		if !rollback && m.g.routingFingerprintForRegistryLocked(r.ServerID, reg) != r.Acceptance.RoutingFingerprint {
-			return Registry{}, problem(409, "路由配置或候选工具已变化，请重新验收", nil)
-		}
+	fingerprint := ""
+	if !rollback {
+		fingerprint = r.Acceptance.RoutingFingerprint
+	}
+	return m.catalog.UpdateCatalog(r.ServerID, fingerprint, func(reg Registry) (Registry, error) {
 		i := slices.IndexFunc(reg.Servers, func(s Server) bool { return s.ID == r.ServerID })
 		if i < 0 {
-			return Registry{}, problem(409, "服务已被移除", nil)
+			return Registry{}, domainError(ErrConflict, "服务已被移除", nil)
 		}
 		if !rollback && approved {
 			r.Tools = slices.Clone(r.Tools)
@@ -92,7 +91,7 @@ func (m *Maintainer) publishAs(id string, rollback, approved bool, actor string)
 			replacement = r.Before
 		}
 		if catalogDigest(reg.Servers[i], serverTools(reg, r.ServerID)) != expected {
-			return Registry{}, problem(409, "服务或工具已被修改；为避免覆盖，请重新检查来源", nil)
+			return Registry{}, domainError(ErrConflict, "服务或工具已被修改；为避免覆盖，请重新检查来源", nil)
 		}
 		updated := Registry{Servers: reg.Servers, Tools: []Tool{}}
 		for _, t := range reg.Tools {
@@ -116,7 +115,7 @@ func (m *Maintainer) publishAs(id string, rollback, approved bool, actor string)
 		r.Error = ""
 		return updated, nil
 	}, func(updated Registry) error {
-		tx, err := m.g.db.Begin()
+		tx, err := m.db.Begin()
 		if err != nil {
 			return fmt.Errorf("begin maintenance publish: %w", err)
 		}
@@ -179,19 +178,19 @@ func checkArtifacts(dir string, artifacts map[string]string) error {
 		return fmt.Errorf("read revision: %w", err)
 	}
 	if len(entries) != len(artifacts) || len(artifacts) == 0 {
-		return problem(409, "版本文件集合已变化，请重新生成", nil)
+		return domainError(ErrConflict, "版本文件集合已变化，请重新生成", nil)
 	}
 	for _, entry := range entries {
 		want, ok := artifacts[entry.Name()]
 		if !ok {
-			return problem(409, "版本中出现未验证的文件", nil)
+			return domainError(ErrConflict, "版本中出现未验证的文件", nil)
 		}
 		b, err := regularArtifact(dir, entry.Name())
 		if err != nil {
 			return err
 		}
 		if maintenanceDigest(string(b)) != want {
-			return problem(409, "版本文件已被修改，请重新生成", nil)
+			return domainError(ErrConflict, "版本文件已被修改，请重新生成", nil)
 		}
 	}
 	return nil

@@ -1,4 +1,4 @@
-package gateway
+package maintenance
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"gatewaylab/internal/maintenance/sandbox"
 )
 
 var branchName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
@@ -50,7 +52,7 @@ func (m *Maintainer) repositoryDocuments(ctx context.Context, r *MaintenanceRun)
 	if source == nil {
 		return nil, nil
 	}
-	dir, err := filepath.Abs(filepath.Join(m.g.dir, "maintenance", "repositories", maintenanceDigest(source.URL)[:24]))
+	dir, err := filepath.Abs(filepath.Join(m.dir, "maintenance", "repositories", maintenanceDigest(source.URL)[:24]))
 	if err != nil {
 		return nil, fmt.Errorf("resolve repository cache: %w", err)
 	}
@@ -59,7 +61,7 @@ func (m *Maintainer) repositoryDocuments(ctx context.Context, r *MaintenanceRun)
 	}
 	base := []string{"-c", "core.hooksPath=/dev/null", "-c", "protocol.ext.allow=never", "-c", "protocol.file.allow=always"}
 	git := func(args ...string) ([]byte, error) {
-		return runCommand(ctx, "git", append(append([]string{}, base...), args...), dir, nil, map[string]string{"GIT_TERMINAL_PROMPT": "0"}, 2<<20)
+		return sandbox.RunCommand(ctx, "git", append(append([]string{}, base...), args...), dir, nil, map[string]string{"GIT_TERMINAL_PROMPT": "0"}, 2<<20)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "HEAD")); os.IsNotExist(err) {
 		if _, err := git("init", "--bare", "--template=", dir); err != nil {

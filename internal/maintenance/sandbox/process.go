@@ -1,4 +1,4 @@
-package gateway
+package sandbox
 
 import (
 	"bufio"
@@ -11,9 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
+	"gatewaylab/internal/registry"
 	"gatewaylab/internal/upstream"
 )
 
@@ -37,17 +37,15 @@ func (w *limitedOutput) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func processEnvironment(extra map[string]string) []string { return upstream.ProcessEnvironment(extra) }
-func configureProcess(cmd *exec.Cmd)                      { upstream.ConfigureProcess(cmd) }
-func runCommand(ctx context.Context, name string, args []string, dir string, input []byte, env map[string]string, limit int) ([]byte, error) {
+func RunCommand(ctx context.Context, name string, args []string, dir string, input []byte, env map[string]string, limit int) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	cmd.Env = processEnvironment(env)
+	cmd.Env = upstream.ProcessEnvironment(env)
 	cmd.Stdin = bytes.NewReader(input)
 	out := &limitedOutput{limit: limit}
 	cmd.Stdout = out
 	cmd.Stderr = &limitedOutput{limit: 4096}
-	configureProcess(cmd)
+	upstream.ConfigureProcess(cmd)
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -59,7 +57,7 @@ func runCommand(ctx context.Context, name string, args []string, dir string, inp
 	}
 	return out.Bytes(), nil
 }
-func runPi(ctx context.Context, policy executionPolicy, command, dir string, s MaintenanceSource, progress func(string) error) error {
+func RunPi(ctx context.Context, policy Policy, command, dir string, s PiOptions, progress func(string) error) error {
 	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	args := []string{"--mode", "rpc", "--session-dir", filepath.Join(dir, "sessions"), "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-mcp", "--no-approve", "--offline"}
@@ -81,7 +79,7 @@ func runPi(ctx context.Context, policy executionPolicy, command, dir string, s M
 	// argv, the job's JSON artifacts, or event logs.
 	cmd.Env = piEnvironment(sandboxEnv)
 	cmd.Stderr = &limitedOutput{limit: 8192}
-	configureProcess(cmd)
+	upstream.ConfigureProcess(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("open pi output: %w", err)
@@ -190,38 +188,7 @@ func runPi(ctx context.Context, policy executionPolicy, command, dir string, s M
 	}
 	return export()
 }
-func (g *Gateway) adapterPath(t Tool) (string, error) {
-	if !validID(t.Revision) || t.Adapter == "" || filepath.Base(t.Adapter) != t.Adapter || !strings.HasSuffix(t.Adapter, ".mjs") {
-		return "", invalid("适配器版本或路径无效")
-	}
-	dir, err := filepath.Abs(filepath.Join(g.dir, "maintenance", t.Revision, "revision"))
-	if err != nil {
-		return "", fmt.Errorf("resolve adapter: %w", err)
-	}
-	b, err := regularArtifact(dir, t.Adapter)
-	if err != nil {
-		return "", err
-	}
-	g.maintenance.mu.Lock()
-	run, ok := g.maintenance.runs[t.Revision]
-	want := run.Artifacts[t.Adapter]
-	g.maintenance.mu.Unlock()
-	if !ok || run.ServerID != t.ServerID || want == "" || maintenanceDigest(string(b)) != want {
-		return "", invalid("适配器文件与已验证版本不一致")
-	}
-	return filepath.Join(dir, t.Adapter), nil
-}
-func (g *Gateway) callAdapter(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
-	if err := checkEnvironment(s); err != nil {
-		return nil, err
-	}
-	p, err := g.adapterPath(t)
-	if err != nil {
-		return nil, err
-	}
-	return callAdapterFile(ctx, g.execution, s, t, args, p)
-}
-func callAdapterFile(ctx context.Context, policy executionPolicy, s Server, t Tool, args map[string]any, p string) (any, error) {
+func CallAdapterFile(ctx context.Context, policy Policy, s registry.Server, t registry.Tool, args map[string]any, p string) (any, error) {
 	headers := map[string]string{}
 	env := map[string]string{}
 	for k, v := range s.Headers {
@@ -230,11 +197,11 @@ func callAdapterFile(ctx context.Context, policy executionPolicy, s Server, t To
 	for k, v := range s.Env {
 		env[k] = os.ExpandEnv(v)
 	}
-	input, err := json.Marshal(map[string]any{"tool": t.Name, "arguments": args, "endpoint": policy.adapterEndpoint(s.Endpoint), "headers": headers, "env": env})
+	input, err := json.Marshal(map[string]any{"tool": t.Name, "arguments": args, "endpoint": policy.AdapterEndpoint(s.Endpoint), "headers": headers, "env": env})
 	if err != nil {
 		return nil, fmt.Errorf("encode adapter input: %w", err)
 	}
-	b, err := policy.runNode(ctx, filepath.Dir(p), []string{p}, input, true, 8<<20)
+	b, err := policy.RunNode(ctx, filepath.Dir(p), []string{p}, input, true, 8<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -251,3 +218,16 @@ func callAdapterFile(ctx context.Context, policy executionPolicy, s Server, t To
 
 // limitedOutput must keep draining the pipe even when its capture buffer is full.
 var _ io.Writer = (*limitedOutput)(nil)
+
+type PiOptions struct {
+	Provider string
+	Model    string
+}
+
+func ensureJSONEnd(dec *json.Decoder) error {
+	var more any
+	if err := dec.Decode(&more); !errors.Is(err, io.EOF) {
+		return invalid("产物必须是单个 JSON 对象")
+	}
+	return nil
+}
