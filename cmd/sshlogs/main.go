@@ -192,7 +192,7 @@ func run() error {
 		}
 		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "/usr/bin/ssh", "-F", "/dev/null", "-T", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2", "-i", *identity, *user+"@"+*host, remoteCommand(services[a.Service], a))
+		cmd := exec.CommandContext(ctx, "/usr/bin/ssh", "-F", "/dev/null", "-T", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2", "-i", *identity, *user+"@"+*host, remoteCommand(services[a.Service], a)) //nolint:gosec // G204: command and arguments are fixed or come from the user's own local configuration; launching them is this component's purpose
 		var output boundedBuffer
 		cmd.Stdout = &output
 		cmd.Stderr = &output

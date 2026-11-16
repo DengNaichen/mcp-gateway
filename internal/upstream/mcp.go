@@ -44,7 +44,7 @@ func (u *Service) connectMCP(ctx, processContext context.Context, s Server) (*mc
 		return nil, err
 	}
 	if s.Transport == "stdio" {
-		command := exec.CommandContext(processContext, s.Command, s.Args...)
+		command := exec.CommandContext(processContext, s.Command, s.Args...) //nolint:gosec // G204: command and arguments are fixed or come from the user's own local configuration; launching them is this component's purpose
 		command.Dir = s.WorkDir
 		command.Env = procutil.ProcessEnvironment(nil)
 		for key, value := range s.Env {

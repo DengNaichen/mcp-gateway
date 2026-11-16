@@ -254,7 +254,7 @@ func runSafeGit(parent context.Context, dir string, gitArgs ...string) (string, 
 	)
 	args = append(args, gitArgs...)
 
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // G204: fixed git binary with internally built arguments
 	cmd.WaitDelay = 100 * time.Millisecond
 	cmd.Env = cleanGitEnv(os.Environ())
 

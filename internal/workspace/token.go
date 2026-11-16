@@ -478,7 +478,7 @@ func EnsureScopeKey(dataDir string) ([]byte, error) {
 	}
 
 	// Exclusive create avoids clobbering a concurrent process's newly created key.
-	f, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	f, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600) //nolint:gosec // G304: path is built from the user's own local config/data directories, not from remote input
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return readExistingScopeKey(keyPath)
@@ -542,7 +542,7 @@ func readExistingScopeKey(keyPath string) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("scope.key is not a regular file")
 	}
-	raw, err := os.ReadFile(keyPath)
+	raw, err := os.ReadFile(keyPath) //nolint:gosec // G304: path is built from the user's own local config/data directories, not from remote input
 	if err != nil {
 		return nil, fmt.Errorf("read scope.key: %w", err)
 	}

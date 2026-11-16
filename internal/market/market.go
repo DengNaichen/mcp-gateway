@@ -676,8 +676,8 @@ func (g *Service) MarketIcon(ctx context.Context, id, rawURL string) ([]byte, st
 	dataPath := filepath.Join(cacheDir, cacheKey+".bin")
 	typePath := filepath.Join(cacheDir, cacheKey+".type")
 
-	if b, err := os.ReadFile(dataPath); err == nil && len(b) > 0 {
-		ctBytes, _ := os.ReadFile(typePath)
+	if b, err := os.ReadFile(dataPath); err == nil && len(b) > 0 { //nolint:gosec // G304: path is built from the user's own local config/data directories, not from remote input
+		ctBytes, _ := os.ReadFile(typePath) //nolint:gosec // G304: path is built from the user's own local config/data directories, not from remote input
 		ct := strings.TrimSpace(string(ctBytes))
 		if ct == "" {
 			ct = http.DetectContentType(b)

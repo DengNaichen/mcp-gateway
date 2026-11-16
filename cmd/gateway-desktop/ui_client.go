@@ -162,7 +162,7 @@ func (c *APIClient) doJSON(ctx context.Context, method, path string, body any, o
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
@@ -543,7 +543,7 @@ func (c *APIClient) ImportOpenAPI(ctx context.Context, server registry.Server, s
 		if err != nil {
 			return 0, fmt.Errorf("下载 OpenAPI 文档失败: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return 0, fmt.Errorf("下载 OpenAPI 文档失败: HTTP %d", resp.StatusCode)
 		}

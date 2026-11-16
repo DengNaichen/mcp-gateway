@@ -41,7 +41,7 @@ func main() {
 	}
 	for _, s := range m.Statuses(*endpoint) {
 		if *client == "" || s.ID == *client {
-			json.NewEncoder(os.Stdout).Encode(s)
+			_ = json.NewEncoder(os.Stdout).Encode(s)
 		}
 	}
 }

@@ -143,7 +143,7 @@ func readLoginShellPATH(timeout time.Duration) string {
 func runShellProbe(shell string, args []string, timeout time.Duration) string {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, shell, args...)
+	cmd := exec.CommandContext(ctx, shell, args...) //nolint:gosec // G204: opens the URL the user clicked with the OS default handler
 	cmd.Env = append(os.Environ(), "TERM=dumb")
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
