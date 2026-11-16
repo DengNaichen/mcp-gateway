@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -171,7 +170,7 @@ func (g *Gateway) mcpServer() *mcp.Server {
 	return s
 }
 
-func (g *Gateway) Handler(assets fs.FS) http.Handler {
+func (g *Gateway) Handler() http.Handler {
 	mux := http.NewServeMux()
 	g.registerSetup(mux)
 	g.registerMaintenance(mux)
@@ -361,42 +360,22 @@ func (g *Gateway) Handler(assets fs.FS) http.Handler {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 404, map[string]string{"error": "API endpoint not found"})
 	})
-	files := http.FileServerFS(assets)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		if strings.Contains(r.URL.Path, "..") {
-			http.NotFound(w, r)
-			return
-		}
-		if _, err := fs.Stat(assets, strings.TrimPrefix(r.URL.Path, "/")); err != nil && r.URL.Path != "/" {
-			if !errors.Is(err, fs.ErrNotExist) {
-				slog.Debug("inspect frontend asset", "error", err)
-			}
-			r.URL.Path = "/"
-		}
-		files.ServeHTTP(w, r)
+		respond(w, 404, map[string]string{"error": "not found", "mcp": "/mcp", "health": "/api/health"})
 	})
 	protection := http.NewCrossOriginProtection()
 	origins := []string{}
-	if g.access == nil {
-		origins = append(origins, "http://127.0.0.1:5173", "http://localhost:5173")
-	}
 	if configured := os.Getenv("GATEWAY_TRUSTED_ORIGINS"); configured != "" {
 		origins = append(origins, strings.Split(configured, ",")...)
 	}
 	for _, origin := range origins {
 		if err := protection.AddTrustedOrigin(origin); err != nil {
-			slog.Error("configure local development origin", "error", err)
+			slog.Error("configure trusted origin", "error", err)
 		}
 	}
 	return protection.Handler(g.protectAccess(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		mux.ServeHTTP(w, r)
-		if !strings.HasPrefix(r.URL.Path, "/assets/") {
-			slog.Info("http request", "method", r.Method, "path", r.URL.Path, "duration_ms", time.Since(start).Milliseconds())
-		}
+		slog.Info("http request", "method", r.Method, "path", r.URL.Path, "duration_ms", time.Since(start).Milliseconds())
 	})))
 }

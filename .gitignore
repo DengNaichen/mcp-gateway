@@ -2,7 +2,6 @@
 /build/
 /.mygo/
 /data/
-/web/node_modules/
 .DS_Store
 *.log
 

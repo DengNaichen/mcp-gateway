@@ -95,7 +95,7 @@ func TestSourceWebhookAuthenticationCoalescingAndReplay(t *testing.T) {
 	if err := m.SaveSource(source); err != nil {
 		t.Fatal(err)
 	}
-	handler := g.Handler(os.DirFS(t.TempDir()))
+	handler := g.Handler()
 	send := func(id, signature, ref string) *httptest.ResponseRecorder {
 		body := mustJSON(t, map[string]any{"ref": ref, "after": sha, "repository": map[string]string{"full_name": "team/service"}})
 		req := httptest.NewRequest(http.MethodPost, "/api/maintenance/sources/service/webhook/github", bytes.NewReader(body))

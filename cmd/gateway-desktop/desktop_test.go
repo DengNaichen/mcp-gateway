@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +14,6 @@ import (
 
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/gateway"
-	"gatewaylab/web"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -82,13 +80,9 @@ func TestMergePATHAndMarkers(t *testing.T) {
 }
 
 func TestStartAttachAndPortConflict(t *testing.T) {
-	assets, err := fs.Sub(web.Assets, "dist")
-	if err != nil {
-		t.Fatalf("load assets: %v", err)
-	}
 
 	ctx := context.Background()
-	owned, conflict, err := startOrAttachGateway(ctx, "127.0.0.1:0", t.TempDir(), assets)
+	owned, conflict, err := startOrAttachGateway(ctx, "127.0.0.1:0", t.TempDir())
 	if err != nil || conflict != nil {
 		t.Fatalf("start owned gateway failed: conflict=%v err=%v", conflict, err)
 	}
@@ -103,12 +97,12 @@ func TestStartAttachAndPortConflict(t *testing.T) {
 	}
 
 	// An unrelated data directory must not silently attach to this backend.
-	foreign, foreignConflict, foreignErr := startOrAttachGateway(ctx, owned.ListenAddr, t.TempDir(), assets)
+	foreign, foreignConflict, foreignErr := startOrAttachGateway(ctx, owned.ListenAddr, t.TempDir())
 	if foreign != nil || foreignConflict == nil || foreignErr != nil {
 		t.Fatalf("foreign data dir attached: %v %v", foreignConflict, foreignErr)
 	}
 	// Starting the same identity and data directory should detect /api/health and attach.
-	attached, conflict, err := startOrAttachGateway(ctx, owned.ListenAddr, owned.DataDir, assets)
+	attached, conflict, err := startOrAttachGateway(ctx, owned.ListenAddr, owned.DataDir)
 	if err != nil || conflict != nil {
 		t.Fatalf("attach gateway failed: conflict=%v err=%v", conflict, err)
 	}
@@ -174,7 +168,7 @@ func TestStartAttachAndPortConflict(t *testing.T) {
 	go func() { _ = otherSrv.Serve(otherLn) }()
 	defer func() { _ = otherSrv.Close() }()
 
-	rt, conflict, err := startOrAttachGateway(ctx, otherLn.Addr().String(), t.TempDir(), assets)
+	rt, conflict, err := startOrAttachGateway(ctx, otherLn.Addr().String(), t.TempDir())
 	if err != nil || rt != nil || conflict == nil {
 		t.Fatalf("expected portConflictError, got rt=%v conflict=%v err=%v", rt, conflict, err)
 	}

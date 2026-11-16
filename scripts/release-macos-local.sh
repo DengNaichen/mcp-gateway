@@ -82,9 +82,6 @@ if [[ "$UPLOAD" == true && -z "${MYGO_UPDATER_PRIVATE_KEY:-}" ]]; then
   exit 1
 fi
 
-echo "==> Building web frontend..."
-(cd web && npm ci && npm run build)
-
 echo "==> Running Go tests..."
 CGO_ENABLED=0 go test -count=1 ./...
 

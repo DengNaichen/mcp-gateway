@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -16,7 +15,6 @@ import (
 
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/gateway"
-	"gatewaylab/web"
 )
 
 func run() error {
@@ -50,11 +48,7 @@ func run() error {
 			slog.Error("close gateway database", "error", err)
 		}
 	}()
-	assets, err := fs.Sub(web.Assets, "dist")
-	if err != nil {
-		return fmt.Errorf("load frontend: %w", err)
-	}
-	server := &http.Server{Addr: *addr, Handler: g.Handler(assets), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
+	server := &http.Server{Addr: *addr, Handler: g.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	g.StartMaintenance(ctx)

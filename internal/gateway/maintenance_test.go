@@ -311,7 +311,7 @@ func TestArtifactTraversalAndSymlink(t *testing.T) {
 
 func TestNativeMCPMaintenance(t *testing.T) {
 	g, _ := testGateway(t)
-	upstream := httptest.NewServer(g.Handler(os.DirFS(t.TempDir())))
+	upstream := httptest.NewServer(g.Handler())
 	defer upstream.Close()
 	if err := g.SaveServer(Server{ID: "native", Name: "Native", Kind: "mcp", Endpoint: upstream.URL + "/demo/mcp", Enabled: true}); err != nil {
 		t.Fatal(err)

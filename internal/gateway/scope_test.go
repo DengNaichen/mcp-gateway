@@ -234,7 +234,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	useKeywordModel(t, g)
 	registerMultiServiceUpstream(t, g)
 
-	host := httptest.NewServer(g.Handler(os.DirFS(t.TempDir())))
+	host := httptest.NewServer(g.Handler())
 	defer host.Close()
 
 	// Create repos:
@@ -649,7 +649,7 @@ func TestSingleServiceScopeSkipsHierarchicalSelectServices(t *testing.T) {
 func TestSharedModeRESTNonAdminGuardSimScopeAndHTTPAPIs(t *testing.T) {
 	g := sharedGateway(t)
 	useKeywordModel(t, g)
-	handler := g.Handler(os.DirFS(t.TempDir()))
+	handler := g.Handler()
 
 	doReq := func(method, path, bearer, scopeHdr string, body any) *httptest.ResponseRecorder {
 		t.Helper()
@@ -876,7 +876,7 @@ func TestEndToEndGatewayHookBinaryToGatewayMCP(t *testing.T) {
 		t.Fatalf("decode hook stdout: %v\n%s", err, hookOut)
 	}
 
-	host := httptest.NewServer(g.Handler(os.DirFS(t.TempDir())))
+	host := httptest.NewServer(g.Handler())
 	defer host.Close()
 
 	cl := mcp.NewClient(&mcp.Implementation{Name: "claude-code", Version: "1"}, nil)
