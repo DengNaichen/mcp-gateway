@@ -41,6 +41,12 @@ jobs:
       - name: Run Go tests
         run: CGO_ENABLED=0 go test -count=1 ./...
 
+      - name: Run Go tests with race detector
+        run: CGO_ENABLED=1 go test -race -count=1 ./internal/... ./cmd/...
+
+      - name: Check package boundaries
+        run: python3 scripts/check-foundation.py
+
       - name: Test stable channel
         run: CGO_ENABLED=0 go test -ldflags="-X gatewaylab/internal/buildinfo.channel=stable" ./...
 
