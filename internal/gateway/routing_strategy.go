@@ -299,14 +299,21 @@ type choiceAnswer struct {
 // askChoice sends one choice question over input and returns the pick and, when
 // the provider reports it, the probability of every option.
 func askChoice(ctx context.Context, s Settings, key, input, instructions string, choices []decisionChoice) (choiceAnswer, modelUsage, error) {
+	proto, endpoint, err := resolveDecisionProtocol(s)
+	if err != nil {
+		return choiceAnswer{}, modelUsage{}, err
+	}
 	var call decisionsCall
 	var parse func([]byte) (choiceAnswer, modelUsage, error)
-	var err error
-	if isGeminiModel(s.Model) {
-		call, err = geminiChoiceCall(s, input, instructions, choices)
-		parse = parseGeminiChoice
-	} else {
-		call, err = openAIChoiceCall(s, input, instructions, choices)
+	switch proto {
+	case protocolGemini:
+		call, err = geminiChoiceCall(endpoint, s.Model, input, instructions, choices)
+		parse = func(b []byte) (choiceAnswer, modelUsage, error) { return parseMapChoice(b, true) }
+	case protocolSystemOne:
+		call, err = systemOneChoiceCall(endpoint, s.Model, input, instructions, choices)
+		parse = func(b []byte) (choiceAnswer, modelUsage, error) { return parseMapChoice(b, false) }
+	default:
+		call, err = openAIChoiceCall(endpoint, s.Model, input, instructions, choices)
 		parse = parseOpenAIChoice
 	}
 	if err != nil {
@@ -330,42 +337,53 @@ func askChoice(ctx context.Context, s Settings, key, input, instructions string,
 
 const choiceQuestionName = "best"
 
-func geminiChoiceCall(s Settings, input, instructions string, choices []decisionChoice) (decisionsCall, error) {
-	endpoint := strings.TrimRight(s.BaseURL, "/")
-	if !strings.HasSuffix(endpoint, "/decisions") {
-		endpoint += "/decisions"
+func buildChoiceQuestions(instructions string, choices []decisionChoice) map[string]any {
+	return map[string]any{
+		choiceQuestionName: map[string]any{
+			"type":         "choice",
+			"instructions": instructions,
+			"criteria":     buildChoiceCriteria(choices),
+		},
 	}
-	criteria := make(map[string]string, len(choices))
-	for _, c := range choices {
-		criteria[c.Value] = c.Description
-	}
-	body, err := json.Marshal(map[string]any{
-		"model":     s.Model,
-		"input":     []map[string]string{{"type": "text", "text": input}},
-		"questions": map[string]any{choiceQuestionName: map[string]any{"type": "choice", "instructions": instructions, "criteria": criteria}},
+}
+
+func geminiChoiceCall(endpoint, model, input, instructions string, choices []decisionChoice) (decisionsCall, error) {
+	body, err := json.Marshal(geminiRequest{
+		Model:     model,
+		Input:     []map[string]string{{"type": "text", "text": input}},
+		Questions: buildChoiceQuestions(instructions, choices),
 	})
 	if err != nil {
 		return decisionsCall{}, fmt.Errorf("encode decisions request: %w", err)
 	}
-	return decisionsCall{endpoint: endpoint, keyHeader: "x-goog-api-key", maxTools: geminiMaxTools, body: body}, nil
+	return decisionsCall{endpoint: endpoint, keyHeader: "x-goog-api-key", body: body}, nil
 }
 
-func parseGeminiChoice(b []byte) (choiceAnswer, modelUsage, error) {
+func systemOneChoiceCall(endpoint, model, input, instructions string, choices []decisionChoice) (decisionsCall, error) {
+	body, err := json.Marshal(systemOneRequest{
+		Model:     model,
+		State:     input,
+		Questions: buildChoiceQuestions(instructions, choices),
+	})
+	if err != nil {
+		return decisionsCall{}, fmt.Errorf("encode systemone request: %w", err)
+	}
+	return decisionsCall{endpoint: endpoint, keyHeader: "Authorization", keyPrefix: "Bearer ", body: body}, nil
+}
+
+func parseMapChoice(b []byte, geminiUsage bool) (choiceAnswer, modelUsage, error) {
 	var response struct {
 		Answers map[string]struct {
 			Type          string             `json:"type"`
 			Choice        string             `json:"choice"`
 			Probabilities map[string]float64 `json:"probabilities"`
 		} `json:"answers"`
-		Usage struct {
-			InputTokens  int `json:"total_input_tokens"`
-			OutputTokens int `json:"total_output_tokens"`
-		} `json:"usage"`
+		Usage mapUsage `json:"usage"`
 	}
 	if err := json.Unmarshal(b, &response); err != nil {
 		return choiceAnswer{}, modelUsage{}, problem(502, "Decisions 响应格式无效", err)
 	}
-	usage := modelUsage{PromptTokens: response.Usage.InputTokens, CompletionTokens: response.Usage.OutputTokens}
+	usage := response.Usage.toModelUsage(geminiUsage)
 	answer, ok := response.Answers[choiceQuestionName]
 	if !ok || answer.Type != "choice" {
 		return choiceAnswer{}, usage, problem(502, "Decisions 回答名称、顺序或类型不匹配", nil)
@@ -373,19 +391,12 @@ func parseGeminiChoice(b []byte) (choiceAnswer, modelUsage, error) {
 	return choiceAnswer{choice: answer.Choice, probabilities: answer.Probabilities}, usage, nil
 }
 
-func openAIChoiceCall(s Settings, input, instructions string, choices []decisionChoice) (decisionsCall, error) {
-	endpoint := strings.TrimRight(s.BaseURL, "/")
-	if strings.HasSuffix(endpoint, "/chat/completions") || strings.HasSuffix(endpoint, "/responses") {
-		return decisionsCall{}, invalid("当前使用 Decisions API，请将 Base URL 改为 https://api.openai.com/v1 或完整 /decisions 地址")
-	}
-	if !strings.HasSuffix(endpoint, "/decisions") {
-		endpoint += "/decisions"
-	}
-	body, err := json.Marshal(map[string]any{"model": s.Model, "input": input, "questions": []decisionQuestion{{Type: "choice", Name: choiceQuestionName, Instructions: instructions, Choices: choices}}})
+func openAIChoiceCall(endpoint, model, input, instructions string, choices []decisionChoice) (decisionsCall, error) {
+	body, err := json.Marshal(map[string]any{"model": model, "input": input, "questions": []decisionQuestion{{Type: "choice", Name: choiceQuestionName, Instructions: instructions, Choices: choices}}})
 	if err != nil {
 		return decisionsCall{}, fmt.Errorf("encode decisions request: %w", err)
 	}
-	return decisionsCall{endpoint: endpoint, keyHeader: "Authorization", keyPrefix: "Bearer ", maxTools: openAIMaxTools, body: body}, nil
+	return decisionsCall{endpoint: endpoint, keyHeader: "Authorization", keyPrefix: "Bearer ", body: body}, nil
 }
 
 func parseOpenAIChoice(b []byte) (choiceAnswer, modelUsage, error) {
