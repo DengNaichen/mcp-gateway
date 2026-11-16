@@ -6,6 +6,7 @@ import (
 	"html"
 	"net"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"runtime"
 	"sync"
@@ -16,15 +17,36 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// checkBrowserURL only lets OAuth authorization URLs reach the OS opener. The URL
+// comes from the remote server's OAuth metadata, so without this a malicious
+// server could make the OS open file:// paths or other registered app schemes.
+func checkBrowserURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("OAuth 授权地址无效")
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if host := u.Hostname(); host == "localhost" || net.ParseIP(host).IsLoopback() {
+			return nil
+		}
+	}
+	return fmt.Errorf("OAuth 授权地址必须使用 https（本机地址可用 http）：%s", u.Redacted())
+}
+
 func defaultOpenBrowserURL(rawURL string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", rawURL) //nolint:gosec // G204: command and arguments are fixed or come from the user's own local configuration; launching them is this component's purpose
+		cmd = exec.Command("open", rawURL) //nolint:gosec // G204: fixed binary; rawURL is the remote OAuth authorization URL, restricted to http(s) by checkBrowserURL
 	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", rawURL) //nolint:gosec // G204: command and arguments are fixed or come from the user's own local configuration; launching them is this component's purpose
+		// rundll32 hands the URL to the protocol handler without cmd.exe parsing,
+		// so characters such as & in the query cannot start another command.
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL) //nolint:gosec // G204: fixed binary; rawURL restricted to http(s) by checkBrowserURL
 	default:
-		cmd = exec.Command("xdg-open", rawURL) //nolint:gosec // G204: command and arguments are fixed or come from the user's own local configuration; launching them is this component's purpose
+		cmd = exec.Command("xdg-open", rawURL) //nolint:gosec // G204: fixed binary; rawURL restricted to http(s) by checkBrowserURL
 	}
 	return cmd.Start()
 }
@@ -139,6 +161,9 @@ func (u *Service) oauthHandlerForServer(serverID string) (*auth.AuthorizationCod
 		AcceptUnadvertisedIss: true,
 		Client:                &http.Client{Timeout: 30 * time.Second},
 		AuthorizationCodeFetcher: func(ctx context.Context, args *auth.AuthorizationArgs) (*auth.AuthorizationResult, error) {
+			if err := checkBrowserURL(args.URL); err != nil {
+				return nil, err
+			}
 			if err := u.openBrowser(args.URL); err != nil {
 				return nil, fmt.Errorf("打开浏览器进行 OAuth 登录失败: %w", err)
 			}
