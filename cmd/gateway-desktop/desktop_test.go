@@ -419,6 +419,41 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(boot)
 		case r.URL.Path == "/api/auth/me":
 			_ = json.NewEncoder(w).Encode(AuthMeResponse{Authenticated: true, Shared: false})
+		case r.URL.Path == "/api/market":
+			_ = json.NewEncoder(w).Encode(gateway.MarketSearchResult{
+				Items: []gateway.MarketServer{
+					{
+						ID:          "context7",
+						ServerID:    "context7",
+						Title:       "Context7",
+						Publisher:   "Upstash",
+						Transport:   "http",
+						Runs:        "远程",
+						Endpoint:    "https://mcp.context7.com/mcp",
+						Description: "任意库的最新文档与代码示例。",
+						Featured:    true,
+						Inputs:      []gateway.MarketInput{},
+					},
+					{
+						ID:          "brave-search",
+						ServerID:    "brave-search",
+						Title:       "Brave Search",
+						Publisher:   "Brave",
+						Transport:   "stdio",
+						Runs:        "npx",
+						Command:     "npx",
+						Args:        []string{"-y", "@brave/brave-search-mcp-server"},
+						Description: "基于 Brave 独立索引的网页搜索。",
+						Featured:    true,
+						Inputs: []gateway.MarketInput{
+							{Key: "BRAVE_API_KEY", Where: "env", Label: "Brave Search API Key", Secret: true, Required: true},
+						},
+					},
+				},
+			})
+		case r.URL.Path == "/api/market/icon":
+			w.Header().Set("Content-Type", "image/svg+xml")
+			_, _ = w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>`))
 		case r.URL.Path == "/api/maintenance" || strings.HasSuffix(r.URL.Path, "/maintenance"):
 			_ = json.NewEncoder(w).Encode(MaintenanceOverview{
 				Runtime: map[string]any{"status": "ok"},
@@ -488,6 +523,82 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 	tester.Advance(50 * time.Millisecond)
 	if err := tester.Click("← 返回上游服务列表"); err != nil {
 		t.Fatalf("back from service detail: %v", err)
+	}
+
+	// 2b. MCP Market.
+	mktState := getMarketState(uiApp)
+	mktState.loaded = true
+	mktState.items = []gateway.MarketServer{
+		{
+			ID:          "notion",
+			ServerID:    "notion",
+			Title:       "Notion",
+			Publisher:   "Notion",
+			Transport:   "http",
+			Runs:        "远程",
+			Endpoint:    "https://mcp.notion.com/mcp",
+			Description: "检索并更新 Notion 工作区页面与数据库。",
+			SignIn:      true,
+			Featured:    true,
+			Inputs:      []gateway.MarketInput{},
+		},
+		{
+			ID:          "context7",
+			ServerID:    "context7",
+			Title:       "Context7",
+			Publisher:   "Upstash",
+			Transport:   "http",
+			Runs:        "远程",
+			Endpoint:    "https://mcp.context7.com/mcp",
+			Description: "任意库的最新文档与代码示例。",
+			Featured:    true,
+			Inputs:      []gateway.MarketInput{},
+		},
+		{
+			ID:          "github",
+			ServerID:    "github",
+			Title:       "GitHub",
+			Publisher:   "GitHub",
+			Transport:   "http",
+			Runs:        "远程",
+			Endpoint:    "https://api.githubcopilot.com/mcp/",
+			Description: "GitHub 仓库、Issue 与 PR。",
+			Featured:    true,
+			Installed:   true,
+			Inputs: []gateway.MarketInput{
+				{Key: "Authorization", Where: "header", Label: "Personal Access Token", Secret: true, Required: true},
+			},
+		},
+		{
+			ID:          "brave-search",
+			ServerID:    "brave-search",
+			Title:       "Brave Search",
+			Publisher:   "Brave",
+			Transport:   "stdio",
+			Runs:        "npx",
+			Command:     "npx",
+			Args:        []string{"-y", "@brave/brave-search-mcp-server"},
+			Description: "基于 Brave 独立索引的网页搜索。",
+			Featured:    true,
+			Inputs: []gateway.MarketInput{
+				{Key: "BRAVE_API_KEY", Where: "env", Label: "Brave Search API Key", Secret: true, Required: true},
+			},
+		},
+	}
+	if err := tester.Click("MCP 市场"); err != nil {
+		t.Fatalf("nav market: %v", err)
+	}
+	if !tester.HasText("Notion") || !tester.HasText("需登录") || !tester.HasText("云端 SaaS") || !tester.HasText("Context7") || !tester.HasText("Brave Search") || !tester.HasText("需凭据") {
+		t.Fatal("expected market SaaS/local curated cards and auth tags to render")
+	}
+	if err := tester.Click("添加..."); err != nil {
+		t.Fatalf("open market install modal: %v", err)
+	}
+	if !tester.HasText("添加 Brave Search") || !tester.HasText("Brave Search API Key *") {
+		t.Fatal("expected market install modal with required input")
+	}
+	if err := tester.Click("关闭"); err != nil {
+		t.Fatalf("close market install modal: %v", err)
 	}
 
 	// 3. Catalog & Tool Detail Inspector Panel.

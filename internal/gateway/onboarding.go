@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
 type ConnectionCheck struct {
@@ -44,15 +46,22 @@ func digest(v any) (string, error) {
 	return fmt.Sprintf("%x", sha256.Sum256(b)), nil
 }
 
-func sourceFingerprint(s Server) (string, error) {
+func sourceFingerprintWithLookup(s Server, lookup func(string) string) (string, error) {
+	if lookup == nil {
+		lookup = os.Getenv
+	}
 	values := map[string]string{}
 	for k, v := range s.Headers {
-		values["header:"+k] = os.ExpandEnv(v)
+		values["header:"+k] = os.Expand(v, lookup)
 	}
 	for k, v := range s.Env {
-		values["env:"+k] = os.ExpandEnv(v)
+		values["env:"+k] = os.Expand(v, lookup)
 	}
 	return digest([]any{s, values})
+}
+
+func sourceFingerprint(s Server) (string, error) {
+	return sourceFingerprintWithLookup(s, os.Getenv)
 }
 
 func (g *Gateway) modelFingerprint() (string, error) {
@@ -73,12 +82,15 @@ func (g *Gateway) realTools() []Tool {
 	return out
 }
 
-func checkEnvironment(s Server) error {
+func checkEnvironmentWithLookup(s Server, lookup func(string) string) error {
+	if lookup == nil {
+		lookup = os.Getenv
+	}
 	for _, values := range []map[string]string{s.Headers, s.Env} {
 		for _, value := range values {
 			missing := []string{}
 			os.Expand(value, func(key string) string {
-				v := os.Getenv(key)
+				v := lookup(key)
 				if v == "" {
 					missing = append(missing, key)
 				}
@@ -90,6 +102,10 @@ func checkEnvironment(s Server) error {
 		}
 	}
 	return nil
+}
+
+func checkEnvironment(s Server) error {
+	return checkEnvironmentWithLookup(s, os.Getenv)
 }
 
 func (g *Gateway) saveCheck(id, fingerprint string, check ConnectionCheck) error {
@@ -127,7 +143,7 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 			continue
 		}
 		out.Sources++
-		fingerprint, err := sourceFingerprint(s)
+		fingerprint, err := sourceFingerprintWithLookup(s, g.lookupEnv)
 		if err != nil {
 			return out, err
 		}
@@ -171,7 +187,7 @@ func (g *Gateway) TestSource(ctx context.Context, s Server) (check ConnectionChe
 	if err := g.SaveServer(s); err != nil {
 		return check, err
 	}
-	fingerprint, err := sourceFingerprint(s)
+	fingerprint, err := sourceFingerprintWithLookup(s, g.lookupEnv)
 	if err != nil {
 		return check, err
 	}
@@ -195,7 +211,7 @@ func (g *Gateway) TestSource(ctx context.Context, s Server) (check ConnectionChe
 		check.Message = fmt.Sprintf("MCP 已连接，读取到 %d 个工具。请选择需要开放给 Agent 的工具。", count)
 		return check, nil
 	}
-	if err := checkEnvironment(s); err != nil {
+	if err := checkEnvironmentWithLookup(s, g.lookupEnv); err != nil {
 		return check, problem(400, "请求头引用的环境变量尚未设置", err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -205,7 +221,7 @@ func (g *Gateway) TestSource(ctx context.Context, s Server) (check ConnectionChe
 		return check, fmt.Errorf("create api connectivity request: %w", err)
 	}
 	for k, v := range s.Headers {
-		req.Header.Set(k, os.ExpandEnv(v))
+		req.Header.Set(k, g.expandEnv(v))
 	}
 	response, err := (&http.Client{CheckRedirect: noRedirect}).Do(req)
 	if err != nil {
@@ -324,15 +340,24 @@ func (g *Gateway) errorDetail(err error) string {
 	message := err.Error()
 	g.mu.RLock()
 	key := g.apiKey
+	tokenSources := make([]oauth2.TokenSource, 0, len(g.oauthTokens))
+	for _, ts := range g.oauthTokens {
+		tokenSources = append(tokenSources, ts)
+	}
 	g.mu.RUnlock()
 	secrets := []string{key}
+	for _, ts := range tokenSources {
+		if tok, err := ts.Token(); err == nil && tok != nil && tok.AccessToken != "" {
+			secrets = append(secrets, tok.AccessToken)
+		}
+	}
 	for _, s := range g.Snapshot().Servers {
 		for _, v := range s.Headers {
-			expanded := os.ExpandEnv(v)
+			expanded := g.expandEnv(v)
 			secrets = append(secrets, expanded, strings.TrimPrefix(expanded, "Bearer "))
 		}
 		for _, v := range s.Env {
-			secrets = append(secrets, os.ExpandEnv(v))
+			secrets = append(secrets, g.expandEnv(v))
 		}
 	}
 	for _, secret := range secrets {

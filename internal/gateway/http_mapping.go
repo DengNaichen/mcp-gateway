@@ -123,6 +123,10 @@ func addQuery(q url.Values, p HTTPParameter, v any) error {
 	return nil
 }
 func buildMappedRequest(ctx context.Context, s Server, t Tool, args map[string]any) (*http.Request, error) {
+	return buildMappedRequestWithLookup(ctx, s, t, args, os.Getenv)
+}
+
+func buildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args map[string]any, lookup func(string) string) (*http.Request, error) {
 	if t.HTTP == nil {
 		return nil, invalid("缺少 HTTP 映射")
 	}
@@ -223,8 +227,11 @@ func buildMappedRequest(ctx context.Context, s Server, t Tool, args map[string]a
 	for _, cookie := range cookies {
 		req.AddCookie(cookie)
 	}
+	if lookup == nil {
+		lookup = os.Getenv
+	}
 	for key, value := range s.Headers {
-		req.Header.Set(key, os.ExpandEnv(value))
+		req.Header.Set(key, os.Expand(value, lookup))
 	}
 	return req, nil
 }
@@ -270,10 +277,17 @@ func mappedResponse(t Tool, status int, b []byte) (any, error) {
 	return data, nil
 }
 func callMappedHTTP(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
-	if err := checkEnvironment(s); err != nil {
+	return callMappedHTTPWithLookup(ctx, s, t, args, os.Getenv)
+}
+
+func callMappedHTTPWithLookup(ctx context.Context, s Server, t Tool, args map[string]any, lookup func(string) string) (any, error) {
+	if lookup == nil {
+		lookup = os.Getenv
+	}
+	if err := checkEnvironmentWithLookup(s, lookup); err != nil {
 		return nil, err
 	}
-	req, err := buildMappedRequest(ctx, s, t, args)
+	req, err := buildMappedRequestWithLookup(ctx, s, t, args, lookup)
 	if err != nil {
 		return nil, err
 	}

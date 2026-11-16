@@ -16,25 +16,34 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type headerTransport struct {
 	headers map[string]string
+	expand  func(string) string
 	base    http.RoundTripper
 }
 
 func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	r := req.Clone(req.Context())
+	expand := t.expand
+	if expand == nil {
+		expand = os.ExpandEnv
+	}
 	for k, v := range t.headers {
-		r.Header.Set(k, os.ExpandEnv(v))
+		r.Header.Set(k, expand(v))
 	}
 	return t.base.RoundTrip(r)
 }
 
-func connectMCP(ctx, processContext context.Context, s Server) (*mcp.ClientSession, error) {
+func (g *Gateway) connectMCP(ctx, processContext context.Context, s Server) (*mcp.ClientSession, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "gateway-lab", Version: "0.0.1"}, nil)
-	if err := checkEnvironment(s); err != nil {
+	if err := checkEnvironmentWithLookup(s, g.lookupEnv); err != nil {
 		return nil, err
 	}
 	if s.Transport == "stdio" {
@@ -42,7 +51,7 @@ func connectMCP(ctx, processContext context.Context, s Server) (*mcp.ClientSessi
 		command.Dir = s.WorkDir
 		command.Env = processEnvironment(nil)
 		for key, value := range s.Env {
-			command.Env = append(command.Env, key+"="+os.ExpandEnv(value))
+			command.Env = append(command.Env, key+"="+g.expandEnv(value))
 		}
 		command.Stderr = os.Stderr
 		session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
@@ -51,8 +60,23 @@ func connectMCP(ctx, processContext context.Context, s Server) (*mcp.ClientSessi
 		}
 		return session, nil
 	}
-	httpClient := &http.Client{Transport: headerTransport{headers: s.Headers, base: http.DefaultTransport}, CheckRedirect: noRedirect}
-	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: s.Endpoint, HTTPClient: httpClient, DisableStandaloneSSE: true, MaxRetries: -1}, nil)
+	httpClient := &http.Client{Transport: headerTransport{headers: s.Headers, expand: g.expandEnv, base: http.DefaultTransport}, CheckRedirect: noRedirect}
+	var oauthHandler auth.OAuthHandler
+	if s.OAuth && s.Headers["Authorization"] == "" {
+		h, cleanup, err := g.oauthHandlerForServer(s.ID)
+		if err != nil {
+			return nil, fmt.Errorf("setup oauth handler: %w", err)
+		}
+		defer cleanup()
+		oauthHandler = h
+	}
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
+		Endpoint:             s.Endpoint,
+		HTTPClient:           httpClient,
+		OAuthHandler:         oauthHandler,
+		DisableStandaloneSSE: true,
+		MaxRetries:           -1,
+	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connect native mcp server: %w", err)
 	}
@@ -75,13 +99,13 @@ type stdioSession struct {
 // preserve their session. Reconfiguration or gateway shutdown closes it.
 func (g *Gateway) mcpSession(ctx context.Context, s Server) (*mcp.ClientSession, func(), error) {
 	if s.Transport != "stdio" {
-		session, err := connectMCP(ctx, ctx, s)
+		session, err := g.connectMCP(ctx, ctx, s)
 		if err != nil {
 			return nil, nil, err
 		}
 		return session, func() { closeSession(session) }, nil
 	}
-	fingerprint, err := sourceFingerprint(s)
+	fingerprint, err := sourceFingerprintWithLookup(s, g.lookupEnv)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -99,7 +123,7 @@ func (g *Gateway) mcpSession(ctx context.Context, s Server) (*mcp.ClientSession,
 		delete(g.sessions, s.ID)
 	}
 	processContext, cancel := context.WithCancel(context.Background())
-	session, err := connectMCP(ctx, processContext, s)
+	session, err := g.connectMCP(ctx, processContext, s)
 	if err != nil {
 		cancel()
 		return nil, nil, err
@@ -141,7 +165,11 @@ func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
 	if i < 0 || r.Servers[i].Kind != "mcp" {
 		return 0, invalid("请选择已注册的 MCP 服务")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	timeout := 30 * time.Second
+	if r.Servers[i].OAuth {
+		timeout = 120 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	session, release, err := g.mcpSession(ctx, r.Servers[i])
 	if err != nil {
@@ -251,12 +279,12 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	} else if s.Kind == "mcp" {
 		data, err = g.callMCP(ctx, s, t, req.Arguments)
 	} else {
-		data, err = callHTTP(ctx, s, t, req.Arguments)
+		data, err = callHTTPWithLookup(ctx, s, t, req.Arguments, g.lookupEnv)
 	}
 	if err != nil {
 		return result, problem(502, "下游工具调用失败", err)
 	}
-	data = redactResponse(data, s)
+	data = redactResponseWithLookup(data, s, g.lookupEnv)
 	if len(req.Fields) > 0 {
 		data = project(data, req.Fields)
 	}
@@ -264,10 +292,17 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 }
 
 func callHTTP(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
-	if t.HTTP != nil {
-		return callMappedHTTP(ctx, s, t, args)
+	return callHTTPWithLookup(ctx, s, t, args, os.Getenv)
+}
+
+func callHTTPWithLookup(ctx context.Context, s Server, t Tool, args map[string]any, lookup func(string) string) (any, error) {
+	if lookup == nil {
+		lookup = os.Getenv
 	}
-	if err := checkEnvironment(s); err != nil {
+	if t.HTTP != nil {
+		return callMappedHTTPWithLookup(ctx, s, t, args, lookup)
+	}
+	if err := checkEnvironmentWithLookup(s, lookup); err != nil {
 		return nil, err
 	}
 	endpoint := strings.TrimRight(s.Endpoint, "/") + "/" + strings.TrimLeft(t.Path, "/")
@@ -308,7 +343,7 @@ func callHTTP(ctx context.Context, s Server, t Tool, args map[string]any) (any, 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	for k, v := range s.Headers {
-		req.Header.Set(k, os.ExpandEnv(v))
+		req.Header.Set(k, os.Expand(v, lookup))
 	}
 	resp, err := (&http.Client{CheckRedirect: noRedirect}).Do(req)
 	if err != nil {

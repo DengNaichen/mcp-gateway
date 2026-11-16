@@ -276,6 +276,49 @@ func (c *APIClient) TestModel(ctx context.Context, settings gateway.Settings, ap
 	return out, err
 }
 
+func (c *APIClient) MarketServers(ctx context.Context, query string) (gateway.MarketSearchResult, error) {
+	path := "/market"
+	if strings.TrimSpace(query) != "" {
+		path += "?q=" + url.QueryEscape(strings.TrimSpace(query))
+	}
+	var out gateway.MarketSearchResult
+	err := c.doJSON(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
+func (c *APIClient) InstallMarketServer(ctx context.Context, req gateway.InstallMarketRequest) (gateway.InstallMarketResult, error) {
+	var out gateway.InstallMarketResult
+	err := c.doJSON(ctx, http.MethodPost, "/market/install", req, &out)
+	return out, err
+}
+
+func (c *APIClient) MarketIcon(ctx context.Context, id, iconURL string) ([]byte, string, error) {
+	q := url.Values{}
+	if id != "" {
+		q.Set("id", id)
+	}
+	if iconURL != "" {
+		q.Set("url", iconURL)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/market/icon?"+q.Encode(), nil)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, "", err
+	}
+	return b, resp.Header.Get("Content-Type"), nil
+}
+
 func (c *APIClient) TestSource(ctx context.Context, server gateway.Server) (gateway.ConnectionCheck, error) {
 	var out gateway.ConnectionCheck
 	err := c.doJSON(ctx, http.MethodPost, "/setup/source", server, &out)

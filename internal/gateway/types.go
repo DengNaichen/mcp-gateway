@@ -17,6 +17,7 @@ type Server struct {
 	Enabled      bool              `json:"enabled"`
 	Demo         bool              `json:"demo,omitempty"`
 	Transport    string            `json:"transport,omitempty"`
+	OAuth        bool              `json:"oauth,omitempty"`
 	Command      string            `json:"command,omitempty"`
 	Args         []string          `json:"args,omitempty"`
 	Env          map[string]string `json:"env,omitempty"`

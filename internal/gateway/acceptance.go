@@ -380,7 +380,7 @@ func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir
 	if callErr != nil {
 		return callErr
 	}
-	result = redactResponse(result, server)
+	result = redactResponseWithLookup(result, server, m.g.lookupEnv)
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		return fmt.Errorf("encode acceptance result: %w", err)
