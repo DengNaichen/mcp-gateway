@@ -51,6 +51,104 @@ type AccessInfo struct {
 	Actor  string `json:"actor"`
 }
 
+// ScopeRepository mirrors a registered repository anchor in GET /api/scopes.
+type ScopeRepository struct {
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	GitCommonDirs []string `json:"git_common_dirs"`
+	RootPaths     []string `json:"root_paths"`
+	RemoteHint    string   `json:"remote_hint"`
+	CreatedAt     string   `json:"created_at"`
+}
+
+// ScopeServiceGrant defines per-service access ("rw" | "ro") and optional tool subset.
+type ScopeServiceGrant struct {
+	ServerID string   `json:"server_id"`
+	Access   string   `json:"access"`
+	ToolIDs  []string `json:"tool_ids,omitempty"`
+}
+
+// ScopeRule binds (RepoKey, AgentKey) to an explicit list of service grants.
+type ScopeRule struct {
+	RepoKey   string              `json:"repo_key"`
+	AgentKey  string              `json:"agent_key"`
+	Grants    []ScopeServiceGrant `json:"grants"`
+	UpdatedAt string              `json:"updated_at,omitempty"`
+}
+
+// ObservedRepo represents an unconfigured repository recently seen via verified hook context.
+type ObservedRepo struct {
+	Fingerprint  string `json:"fingerprint"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	Root         string `json:"root"`
+	GitCommonDir string `json:"git_common_dir"`
+	RemoteHint   string `json:"remote_hint"`
+	LastAgent    string `json:"last_agent"`
+	LastSeen     string `json:"last_seen"`
+	RequestCount int    `json:"request_count"`
+}
+
+// ScopeOverview mirrors the scopes block of GET /api/bootstrap and GET /api/scopes.
+type ScopeOverview struct {
+	Enforce      bool              `json:"enforce"`
+	HookBinPath  string            `json:"hook_bin_path"`
+	Repositories []ScopeRepository `json:"repositories"`
+	Rules        []ScopeRule       `json:"rules"`
+	Observed     []ObservedRepo    `json:"observed"`
+}
+
+// ScopeServerSummary describes effective per-server tool access inside ScopeAgentPreview.
+type ScopeServerSummary struct {
+	ServerID  string `json:"server_id"`
+	Access    string `json:"access"`
+	ToolCount int    `json:"tool_count"`
+}
+
+// ScopeAgentPreview describes effective scope resolution for one coding agent.
+type ScopeAgentPreview struct {
+	Agent           string               `json:"agent"`
+	MatchedRepoKey  string               `json:"matched_repo_key"`
+	MatchedAgentKey string               `json:"matched_agent_key"`
+	SourceLabel     string               `json:"source_label"`
+	ServerCount     int                  `json:"server_count"`
+	ToolCount       int                  `json:"tool_count"`
+	HasWrite        bool                 `json:"has_write"`
+	Servers         []ScopeServerSummary `json:"servers"`
+}
+
+// ScopePreviewResponse mirrors POST /api/scopes/preview.
+type ScopePreviewResponse struct {
+	RepoKey string              `json:"repo_key"`
+	Agents  []ScopeAgentPreview `json:"agents"`
+}
+
+// ScopeSnippetResponse mirrors GET /api/scopes/snippets?agent=...
+type ScopeSnippetResponse struct {
+	Agent        string `json:"agent"`
+	ConfigPath   string `json:"config_path"`
+	MCPURL       string `json:"mcp_url"`
+	HookBinPath  string `json:"hook_bin_path"`
+	Instructions string `json:"instructions"`
+	Snippet      string `json:"snippet"`
+}
+
+// SimScope simulates a (repo_key, agent_key) scope in admin Playground requests.
+type SimScope struct {
+	RepoKey  string `json:"repo_key"`
+	AgentKey string `json:"agent_key"`
+}
+
+// SaveRepositoryInput is the request payload for PUT /api/scopes/repositories.
+type SaveRepositoryInput struct {
+	ID            string   `json:"id,omitempty"`
+	Name          string   `json:"name,omitempty"`
+	Path          string   `json:"path,omitempty"`
+	GitCommonDirs []string `json:"git_common_dirs,omitempty"`
+	RootPaths     []string `json:"root_paths,omitempty"`
+	RemoteHint    string   `json:"remote_hint,omitempty"`
+}
+
 // Bootstrap mirrors the JSON response of GET /api/bootstrap.
 type Bootstrap struct {
 	Access        AccessInfo             `json:"access"`
@@ -61,6 +159,7 @@ type Bootstrap struct {
 	Events        []gateway.Event        `json:"events"`
 	MCPURL        string                 `json:"mcp_url"`
 	Setup         gateway.SetupStatus    `json:"setup"`
+	Scopes        ScopeOverview          `json:"scopes"`
 }
 
 // AuthMeResponse mirrors GET /api/auth/me.
@@ -352,15 +451,111 @@ func (c *APIClient) SaveTool(ctx context.Context, tool gateway.Tool) (gateway.To
 	return out, err
 }
 
+type discoverPayload struct {
+	Intent      string    `json:"intent"`
+	Context     string    `json:"context,omitempty"`
+	Services    []string  `json:"services,omitempty"`
+	Actor       string    `json:"actor,omitempty"`
+	IncludeDemo bool      `json:"include_demo,omitempty"`
+	SummaryOnly bool      `json:"summary_only,omitempty"`
+	SimScope    *SimScope `json:"sim_scope,omitempty"`
+}
+
+type invokePayload struct {
+	ToolID    string         `json:"tool_id"`
+	Arguments map[string]any `json:"arguments"`
+	Fields    []string       `json:"fields,omitempty"`
+	Actor     string         `json:"actor,omitempty"`
+	SimScope  *SimScope      `json:"sim_scope,omitempty"`
+}
+
 func (c *APIClient) Discover(ctx context.Context, req gateway.DiscoverRequest) (gateway.DiscoverResult, error) {
+	return c.DiscoverScoped(ctx, req, nil)
+}
+
+func (c *APIClient) DiscoverScoped(ctx context.Context, req gateway.DiscoverRequest, sim *SimScope) (gateway.DiscoverResult, error) {
+	payload := discoverPayload{
+		Intent:      req.Intent,
+		Context:     req.Context,
+		Services:    req.Services,
+		Actor:       req.Actor,
+		IncludeDemo: req.IncludeDemo,
+		SummaryOnly: req.SummaryOnly,
+		SimScope:    sim,
+	}
 	var out gateway.DiscoverResult
-	err := c.doJSON(ctx, http.MethodPost, "/discover", req, &out)
+	err := c.doJSON(ctx, http.MethodPost, "/discover", payload, &out)
 	return out, err
 }
 
 func (c *APIClient) Invoke(ctx context.Context, req gateway.InvokeRequest) (gateway.InvokeResult, error) {
+	return c.InvokeScoped(ctx, req, nil)
+}
+
+func (c *APIClient) InvokeScoped(ctx context.Context, req gateway.InvokeRequest, sim *SimScope) (gateway.InvokeResult, error) {
+	payload := invokePayload{
+		ToolID:    req.ToolID,
+		Arguments: req.Arguments,
+		Fields:    req.Fields,
+		Actor:     req.Actor,
+		SimScope:  sim,
+	}
 	var out gateway.InvokeResult
-	err := c.doJSON(ctx, http.MethodPost, "/invoke", req, &out)
+	err := c.doJSON(ctx, http.MethodPost, "/invoke", payload, &out)
+	return out, err
+}
+
+func (c *APIClient) GetScopes(ctx context.Context) (ScopeOverview, error) {
+	var out ScopeOverview
+	err := c.doJSON(ctx, http.MethodGet, "/scopes", nil, &out)
+	return out, err
+}
+
+func (c *APIClient) SetScopeMode(ctx context.Context, enforce bool) error {
+	return c.doJSON(ctx, http.MethodPut, "/scopes/mode", map[string]bool{"enforce": enforce}, nil)
+}
+
+func (c *APIClient) SaveRepository(ctx context.Context, in SaveRepositoryInput) (ScopeRepository, error) {
+	var out ScopeRepository
+	err := c.doJSON(ctx, http.MethodPut, "/scopes/repositories", in, &out)
+	return out, err
+}
+
+func (c *APIClient) DeleteRepository(ctx context.Context, id string) error {
+	return c.doJSON(ctx, http.MethodDelete, "/scopes/repositories/"+url.PathEscape(id), nil, nil)
+}
+
+func (c *APIClient) SaveScopeRule(ctx context.Context, rule ScopeRule) (ScopeRule, error) {
+	if rule.Grants == nil {
+		rule.Grants = []ScopeServiceGrant{}
+	}
+	var out ScopeRule
+	err := c.doJSON(ctx, http.MethodPut, "/scopes/rules", rule, &out)
+	return out, err
+}
+
+func (c *APIClient) DeleteScopeRule(ctx context.Context, repoKey, agentKey string) error {
+	q := url.Values{}
+	q.Set("repo_key", repoKey)
+	q.Set("agent_key", agentKey)
+	return c.doJSON(ctx, http.MethodDelete, "/scopes/rules?"+q.Encode(), nil, nil)
+}
+
+func (c *APIClient) PreviewScope(ctx context.Context, repoKey, actor string) (ScopePreviewResponse, error) {
+	payload := map[string]string{
+		"repo_key": repoKey,
+		"actor":    actor,
+	}
+	var out ScopePreviewResponse
+	err := c.doJSON(ctx, http.MethodPost, "/scopes/preview", payload, &out)
+	return out, err
+}
+
+func (c *APIClient) GetHookSnippet(ctx context.Context, agent string) (ScopeSnippetResponse, error) {
+	q := url.Values{}
+	q.Set("agent", agent)
+	var out ScopeSnippetResponse
+	err := c.doJSON(ctx, http.MethodGet, "/scopes/snippets?"+q.Encode(), nil, &out)
 	return out, err
 }
 
@@ -703,7 +898,7 @@ func ComputeGatewayTelemetry(state Bootstrap) GatewayTelemetry {
 	}
 	var compressionPct *float64
 	if avgEligible != nil && *avgEligible > 0 && avgSelectedOnHit != nil {
-		v := math.Max(0, (1.0-*avgSelectedOnHit / *avgEligible)*100)
+		v := math.Max(0, (1.0 - *avgSelectedOnHit / *avgEligible)*100)
 		compressionPct = &v
 	}
 	var avgInvokeMs *int64

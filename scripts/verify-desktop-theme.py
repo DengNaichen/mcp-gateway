@@ -20,14 +20,14 @@ try:
  else:raise RuntimeError('app did not start')
  for mode in ['light','dark']:
   call('/theme',{'source':mode})
-  for view in ['overview','services','catalog','playground','logs','settings','clients']:
+  for view in ['overview','services','market','catalog','repos','playground','logs','settings','clients']:
    call('/view',{'view':view});time.sleep(.15)
    subprocess.run(['curl','-fsS','--unix-socket',sock,'http://localhost/screenshot','-o',str(root/(mode+'-'+view+'.png'))],check=True,stdout=subprocess.DEVNULL)
   assert call('/status')['dark']==(mode=='dark')
  call('/theme',{'source':'light'});assert not call('/status')['dark']
  call('/theme',{'source':'system'})
  (root/'metadata.json').write_text(json.dumps({'git_head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'git_dirty':bool(subprocess.check_output(['git','status','--porcelain'],text=True).strip()),'workspace':str(ROOT)}))
- print('PASS: native light/dark transitions and seven pages per theme');print('Artifacts:',root)
+ print('PASS: native light/dark transitions and nine pages per theme');print('Artifacts:',root)
 finally:
  try:call('/tray/quit',{})
  except Exception:p.terminate()

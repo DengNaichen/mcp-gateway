@@ -77,6 +77,8 @@ func (u *DesktopUI) runClientConfig(id, action string) {
 	})
 }
 func (u *DesktopUI) renderClients(c *ui.Context) {
+	u.renderHookSnippetModal(c)
+
 	note := ""
 	if u.State != nil && u.State.Access.Shared {
 		note = "共享网关需在客户端补充 Bearer Token"
@@ -117,6 +119,12 @@ func (u *DesktopUI) renderClientRow(c *ui.Context, row clientconfig.Status, divi
 			}
 		})
 		ui.Row(c).AlignItems(ui.Center).Gap(8).Shrink(0).Children(func() {
+			if SailSmallButton(c.Key("hook-snippet"), "Hook 配置").
+				Label(row.Name + " Hook 配置").
+				Tooltip("查看并复制 " + row.Name + " 手动 Hook 配置片段").
+				Clicked() {
+				u.OpenHookSnippetModal(row.ID)
+			}
 			switch {
 			case row.CanUpdate:
 				if SailSmallButton(c.Key("update"), "更新配置").Disabled(u.ClientsBusy).Clicked() {
@@ -141,6 +149,9 @@ func (u *DesktopUI) renderClientRow(c *ui.Context, row clientconfig.Status, divi
 				}
 				more.Children(func() { ui.Text(c, "⋯").FontSize(18).TextColor(SailInkMuted) })
 				more.PopoverMenuButton(func(menu *ui.Menu) {
+					if menu.Item("查看 Hook 配置").Chosen() {
+						u.OpenHookSnippetModal(row.ID)
+					}
 					if menu.Item("撤回配置").Chosen() {
 						u.runClientConfig(row.ID, "revoke")
 					}
