@@ -44,6 +44,9 @@ func discoveryPresentation(result DiscoverResult, summary bool) any {
 	return out
 }
 func (g *Gateway) ToolSchema(ctx context.Context, id, actor string) (Tool, error) {
+	if err := g.checkExecutionScope(ctx); err != nil {
+		return Tool{}, err
+	}
 	reg := g.Snapshot()
 	i := slices.IndexFunc(reg.Tools, func(t Tool) bool { return t.ID == id })
 	if i < 0 {
@@ -58,10 +61,20 @@ func (g *Gateway) ToolSchema(ctx context.Context, id, actor string) (Tool, error
 }
 func (g *Gateway) registerCapabilities(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/catalog", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 200, g.Catalog(r.Context(), r.URL.Query().Get("actor"), r.URL.Query().Get("include_demo") == "true"))
+		ctx, err := g.resolveRESTScope(r.Context(), r, "catalog", nil, nil)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		respond(w, 200, g.Catalog(ctx, r.URL.Query().Get("actor"), r.URL.Query().Get("include_demo") == "true"))
 	})
 	mux.HandleFunc("GET /api/tools/{id}/schema", func(w http.ResponseWriter, r *http.Request) {
-		tool, err := g.ToolSchema(r.Context(), r.PathValue("id"), r.URL.Query().Get("actor"))
+		ctx, err := g.resolveRESTScope(r.Context(), r, "get_tool_schema", nil, nil)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		tool, err := g.ToolSchema(ctx, r.PathValue("id"), r.URL.Query().Get("actor"))
 		if err != nil {
 			fail(w, err)
 			return

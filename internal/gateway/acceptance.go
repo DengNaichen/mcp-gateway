@@ -190,7 +190,7 @@ func (m *Maintainer) evaluateAcceptance(ctx context.Context, r MaintenanceRun, d
 		var result DiscoverResult
 		err := actorErr
 		if err == nil {
-			result, err = m.g.discoverRegistry(routingCtx, DiscoverRequest{Intent: c.Intent, Context: c.Context, Actor: c.Actor}, candidate, false)
+			result, err = m.g.discoverRegistry(withInternalScopeBypass(routingCtx), DiscoverRequest{Intent: c.Intent, Context: c.Context, Actor: c.Actor}, candidate, false)
 		}
 		if err == nil {
 			if c.NoMatch && result.Status != "no_match" {

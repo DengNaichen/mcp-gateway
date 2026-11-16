@@ -145,7 +145,7 @@ func requestActor(ctx context.Context, actor string) string {
 	}
 	return actorName(actor)
 }
-func (g *Gateway) authorizedTool(ctx context.Context, t Tool, actor string) bool {
+func (g *Gateway) identityAllowsTool(ctx context.Context, t Tool, actor string) bool {
 	if p, ok := principalFrom(ctx); ok {
 		if !t.Enabled || !p.AllowWrite && !t.ReadOnly {
 			return false
@@ -157,13 +157,16 @@ func (g *Gateway) authorizedTool(ctx context.Context, t Tool, actor string) bool
 			return false
 		}
 		for _, group := range p.Groups {
-			if slices.Contains(t.Actors, group) {
+			if slices.Contains(t.Actors, "*") || slices.Contains(t.Actors, group) {
 				return true
 			}
 		}
 		return false
 	}
 	return g.access == nil && allowed(t, actor)
+}
+func (g *Gateway) authorizedTool(ctx context.Context, t Tool, actor string) bool {
+	return g.identityAllowsTool(ctx, t, actor) && g.scopeAllowsTool(ctx, t)
 }
 func invocationEndpoint(r *http.Request) bool {
 	if r.URL.Path == "/mcp" {

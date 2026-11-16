@@ -78,8 +78,20 @@ func (m *Manager) client(id string) (Client, error) {
 	}
 	return Client{}, errors.New("未知客户端")
 }
+func ClientEndpoint(endpoint, clientID string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" {
+		return endpoint
+	}
+	if clientID != "" {
+		q := u.Query()
+		q.Set("agent", clientID)
+		u.RawQuery = q.Encode()
+	}
+	return u.String()
+}
 func desired(c Client, endpoint string) map[string]any {
-	e := map[string]any{"url": endpoint}
+	e := map[string]any{"url": ClientEndpoint(endpoint, c.ID)}
 	switch c.ID {
 	case "claude":
 		e["type"] = "http"
@@ -287,7 +299,7 @@ func (m *Manager) write(id, endpoint string, update bool) error {
 
 	var next []byte
 	if c.TOML {
-		encoded, _ := json.Marshal(endpoint)
+		encoded, _ := json.Marshal(want["url"])
 		rec.Block = "\n[mcp_servers." + serverName + "]\nurl = " + string(encoded) + "\n"
 		if got != nil {
 			if r.Block == "" || bytes.Count(b, []byte(r.Block)) != 1 {
