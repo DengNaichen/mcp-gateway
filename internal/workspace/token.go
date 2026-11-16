@@ -156,7 +156,8 @@ func VerifyToken(key []byte, token string, expected VerifyParams, now time.Time)
 	if len(parts) != 3 || parts[0] != "v1" || parts[1] == "" || parts[2] == "" {
 		return Claims{}, fmt.Errorf("%w: malformed token envelope", ErrTokenInvalid)
 	}
-	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	// Strict rejects non-zero trailing bits, so each signature has exactly one encoding.
+	sig, err := base64.RawURLEncoding.Strict().DecodeString(parts[2])
 	if err != nil || len(sig) != sha256.Size {
 		return Claims{}, fmt.Errorf("%w: invalid signature encoding", ErrTokenInvalid)
 	}
