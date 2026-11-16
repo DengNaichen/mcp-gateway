@@ -1,4 +1,4 @@
-package gateway
+package upstream
 
 import (
 	"bytes"
@@ -9,9 +9,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
+
+	"gatewaylab/internal/registry"
 )
 
 func argumentGroup(in string) string {
@@ -122,11 +126,11 @@ func addQuery(q url.Values, p HTTPParameter, v any) error {
 	q.Add(p.Name, strings.Join(parts, delimiter))
 	return nil
 }
-func buildMappedRequest(ctx context.Context, s Server, t Tool, args map[string]any) (*http.Request, error) {
-	return buildMappedRequestWithLookup(ctx, s, t, args, os.Getenv)
+func BuildMappedRequest(ctx context.Context, s Server, t Tool, args map[string]any) (*http.Request, error) {
+	return BuildMappedRequestWithLookup(ctx, s, t, args, os.Getenv)
 }
 
-func buildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args map[string]any, lookup func(string) string) (*http.Request, error) {
+func BuildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args map[string]any, lookup func(string) string) (*http.Request, error) {
 	if t.HTTP == nil {
 		return nil, invalid("缺少 HTTP 映射")
 	}
@@ -141,7 +145,7 @@ func buildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args ma
 	headers := http.Header{}
 	cookies := []*http.Cookie{}
 	for _, p := range t.HTTP.Parameters {
-		if !supportedParameterStyle(p.In, p.Style, p.Explode) {
+		if !registry.SupportedParameterStyle(p.In, p.Style, p.Explode) {
 			return nil, invalid("HTTP 参数序列化无效")
 		}
 		group, _ := args[argumentGroup(p.In)].(map[string]any)
@@ -235,7 +239,7 @@ func buildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args ma
 	}
 	return req, nil
 }
-func mappedResponse(t Tool, status int, b []byte) (any, error) {
+func MappedResponse(t Tool, status int, b []byte) (any, error) {
 	binding, known := t.HTTP.Responses[strconv.Itoa(status)]
 	if !known {
 		binding, known = t.HTTP.Responses[strconv.Itoa(status/100)+"XX"]
@@ -263,7 +267,7 @@ func mappedResponse(t Tool, status int, b []byte) (any, error) {
 		return nil, fmt.Errorf("unsupported response media type %q", binding.MediaType)
 	}
 	if binding.Schema != nil {
-		schema, err := compileSchema(binding.Schema)
+		schema, err := registry.CompileSchema(binding.Schema)
 		if err != nil {
 			return nil, err
 		}
@@ -284,10 +288,10 @@ func callMappedHTTPWithLookup(ctx context.Context, s Server, t Tool, args map[st
 	if lookup == nil {
 		lookup = os.Getenv
 	}
-	if err := checkEnvironmentWithLookup(s, lookup); err != nil {
+	if err := CheckEnvironment(s, lookup); err != nil {
 		return nil, err
 	}
-	req, err := buildMappedRequestWithLookup(ctx, s, t, args, lookup)
+	req, err := BuildMappedRequestWithLookup(ctx, s, t, args, lookup)
 	if err != nil {
 		return nil, err
 	}
@@ -303,5 +307,16 @@ func callMappedHTTPWithLookup(ctx context.Context, s Server, t Tool, args map[st
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("downstream returned http %d", resp.StatusCode)
 	}
-	return mappedResponse(t, resp.StatusCode, b)
+	return MappedResponse(t, resp.StatusCode, b)
+}
+
+var pathVariable = regexp.MustCompile(`\{([^{}]+)\}`)
+
+func sortedKeys[T any](m map[string]T) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

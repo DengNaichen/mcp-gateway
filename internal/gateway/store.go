@@ -16,10 +16,10 @@ import (
 	"gatewaylab/internal/scope"
 	"gatewaylab/internal/secrets"
 	"gatewaylab/internal/store"
+	"gatewaylab/internal/upstream"
 	"gatewaylab/internal/workspace"
 
 	"github.com/google/uuid"
-	"golang.org/x/oauth2"
 )
 
 type Gateway struct {
@@ -28,14 +28,12 @@ type Gateway struct {
 	registry       *registry.Service
 	model          *model.Service
 	runtimeSecrets secrets.Store
-	oauthTokens    map[string]oauth2.TokenSource
 	activity       *activity.Service
 	dir            string
 	baseURL        string
 	db             *sql.DB
 	storage        *store.Store
-	sessionMu      sync.Mutex
-	sessions       map[string]stdioSession
+	upstream       *upstream.Service
 	access         *accessPolicy
 	execution      executionPolicy
 	routing        routingOptions
@@ -75,16 +73,16 @@ func New(dir, baseURL string) (*Gateway, error) {
 	}
 	db := storage.DB
 	g := &Gateway{
-		instanceID:  uuid.NewString(),
-		execution:   execution,
-		access:      access,
-		dir:         dir,
-		baseURL:     baseURL,
-		oauthTokens: map[string]oauth2.TokenSource{},
-		db:          db,
-		storage:     storage,
-		scopeKey:    scopeKey,
+		instanceID: uuid.NewString(),
+		execution:  execution,
+		access:     access,
+		dir:        dir,
+		baseURL:    baseURL,
+		db:         db,
+		storage:    storage,
+		scopeKey:   scopeKey,
 	}
+	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupEnv})
 	if err := g.loadRegistry(); err != nil {
 		return nil, err
 	}

@@ -1,10 +1,8 @@
-package gateway
+package routing
 
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -24,20 +22,12 @@ func TestSelectServicesNarrowsToConfidentServices(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var input string
 			var questions int
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				var payload struct {
-					Input     []map[string]string `json:"input"`
-					Questions map[string]any      `json:"questions"`
-				}
-				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-					t.Error(err)
-				}
-				input = payload.Input[0]["text"]
-				questions = len(payload.Questions) - 1
-				respond(w, 200, geminiFixture("selected", tc.probabilities...))
-			}))
-			defer server.Close()
-			chosen, usage, err := selectServices(context.Background(), Settings{BaseURL: server.URL, Model: "gemini-decision-1", MaxTools: 4, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "do it", Context: "known"}, servers, tools)
+			client := stubClient{decisions: func(_ context.Context, in string, instructions []string) (Answers, error) {
+				input = in
+				questions = len(instructions)
+				return Answers{Status: "selected", Relevance: tc.probabilities, Usage: Usage{PromptTokens: 77}}, nil
+			}}
+			chosen, usage, err := SelectServices(context.Background(), client, Request{Intent: "do it", Context: "known"}, servers, tools)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -54,9 +44,8 @@ func TestSelectServicesNarrowsToConfidentServices(t *testing.T) {
 
 func TestSelectServicesSkipsSingleService(t *testing.T) {
 	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++ }))
-	defer server.Close()
-	chosen, _, err := selectServices(context.Background(), Settings{BaseURL: server.URL, Model: "gemini-decision-1", MaxTools: 4, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "x"}, map[string]Server{"a": {ID: "a"}}, []Tool{{ID: "a.one", ServerID: "a"}, {ID: "a.two", ServerID: "a"}})
+	client := stubClient{decisions: func(context.Context, string, []string) (Answers, error) { calls++; return Answers{}, nil }}
+	chosen, _, err := SelectServices(context.Background(), client, Request{Intent: "x"}, map[string]Server{"a": {ID: "a"}}, []Tool{{ID: "a.one", ServerID: "a"}, {ID: "a.two", ServerID: "a"}})
 	if err != nil || chosen != nil || calls != 0 {
 		t.Fatalf("one service must not be routed: chosen=%v calls=%d err=%v", chosen, calls, err)
 	}
@@ -78,22 +67,18 @@ func TestRoutingCandidatesCarryParameterNamesOnlyWhenEnabled(t *testing.T) {
 }
 
 func TestLoadRoutingOptions(t *testing.T) {
-	t.Setenv("GATEWAY_ROUTING", "")
-	o, err := loadRoutingOptions()
-	if err != nil || !o.hierarchical || !o.refine || o.params {
+	o, err := ParseOptions("")
+	if err != nil || !o.Hierarchical || !o.Refine || o.Params {
 		t.Fatalf("default must be hierarchical with refine: options=%+v err=%v", o, err)
 	}
-	t.Setenv("GATEWAY_ROUTING", "flat")
-	if o, err = loadRoutingOptions(); err != nil || o != (routingOptions{}) {
+	if o, err = ParseOptions("flat"); err != nil || o != (Options{}) {
 		t.Fatalf("flat must disable every stage: options=%+v err=%v", o, err)
 	}
-	t.Setenv("GATEWAY_ROUTING", "hierarchical, params")
-	o, err = loadRoutingOptions()
-	if err != nil || !o.hierarchical || !o.params || o.refine {
+	o, err = ParseOptions("hierarchical, params")
+	if err != nil || !o.Hierarchical || !o.Params || o.Refine {
 		t.Fatalf("options=%+v err=%v", o, err)
 	}
-	t.Setenv("GATEWAY_ROUTING", "bm25")
-	if _, err := loadRoutingOptions(); err == nil {
+	if _, err := ParseOptions("bm25"); err == nil {
 		t.Fatal("unknown option must be rejected")
 	}
 }
@@ -119,25 +104,19 @@ func TestRefineSelectionMakesSurvivorsCompete(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var choiceInput string
 			var criteria map[string]string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				var payload struct {
-					Input     []map[string]string       `json:"input"`
-					Questions map[string]map[string]any `json:"questions"`
-				}
-				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-					t.Error(err)
-				}
-				if _, ok := payload.Questions["route_status"]; ok {
-					respond(w, 200, geminiFixture("selected", tc.relevance...))
-					return
-				}
-				choiceInput = payload.Input[0]["text"]
-				raw, _ := json.Marshal(payload.Questions[choiceQuestionName]["criteria"])
-				_ = json.Unmarshal(raw, &criteria)
-				respond(w, 200, map[string]any{"answers": map[string]any{choiceQuestionName: map[string]any{"type": "choice", "choice": tc.choice, "probabilities": tc.probabilities}}, "usage": map[string]int{"total_input_tokens": 5}})
-			}))
-			defer server.Close()
-			d, usage, err := selectTools(context.Background(), Settings{BaseURL: server.URL, Model: "gemini-decision-1", MaxTools: 4, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "500 errors"}, tools, routingOptions{refine: true})
+			client := stubClient{
+				decisions: func(context.Context, string, []string) (Answers, error) {
+					return Answers{Status: "selected", Relevance: tc.relevance, Usage: Usage{PromptTokens: 77}}, nil
+				},
+				choose: func(_ context.Context, input, instructions string, choices []Choice) (ChoiceAnswer, Usage, error) {
+					choiceInput = input
+					criteria = map[string]string{}
+					for _, c := range choices {
+						criteria[c.Value] = c.Description
+					}
+					return ChoiceAnswer{Choice: tc.choice, Probabilities: tc.probabilities}, Usage{PromptTokens: 5}, nil
+				}}
+			d, usage, err := SelectTools(context.Background(), client, 4, Request{Intent: "500 errors"}, tools, Options{Refine: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -160,4 +139,16 @@ func TestRefineSelectionMakesSurvivorsCompete(t *testing.T) {
 			}
 		})
 	}
+}
+
+type stubClient struct {
+	decisions func(context.Context, string, []string) (Answers, error)
+	choose    func(context.Context, string, string, []Choice) (ChoiceAnswer, Usage, error)
+}
+
+func (c stubClient) Decisions(ctx context.Context, input string, instructions []string) (Answers, error) {
+	return c.decisions(ctx, input, instructions)
+}
+func (c stubClient) Choose(ctx context.Context, input, instructions string, choices []Choice) (ChoiceAnswer, Usage, error) {
+	return c.choose(ctx, input, instructions, choices)
 }

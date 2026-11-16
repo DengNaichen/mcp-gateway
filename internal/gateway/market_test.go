@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"gatewaylab/internal/upstream"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -187,8 +189,6 @@ func TestMarketIconCacheAndAllowlist(t *testing.T) {
 }
 
 func TestOAuthBrowserSignInAndImportMCP(t *testing.T) {
-	origOpen := openBrowserURL
-	defer func() { openBrowserURL = origOpen }()
 
 	mcpSrv := mcp.NewServer(&mcp.Implementation{Name: "saas-oauth-mcp", Version: "1.0.0"}, nil)
 	mcp.AddTool(mcpSrv, &mcp.Tool{
@@ -211,13 +211,13 @@ func TestOAuthBrowserSignInAndImportMCP(t *testing.T) {
 		case "/.well-known/oauth-authorization-server":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"issuer":                            authSrv.URL,
-				"authorization_endpoint":            authSrv.URL + "/authorize",
-				"token_endpoint":                    authSrv.URL + "/token",
-				"registration_endpoint":             authSrv.URL + "/register",
-				"code_challenge_methods_supported":  []string{"S256"},
-				"grant_types_supported":             []string{"authorization_code", "refresh_token"},
-				"response_types_supported":          []string{"code"},
+				"issuer":                                authSrv.URL,
+				"authorization_endpoint":                authSrv.URL + "/authorize",
+				"token_endpoint":                        authSrv.URL + "/token",
+				"registration_endpoint":                 authSrv.URL + "/register",
+				"code_challenge_methods_supported":      []string{"S256"},
+				"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
+				"response_types_supported":              []string{"code"},
 				"token_endpoint_auth_methods_supported": []string{"none"},
 			})
 		case "/register":
@@ -248,7 +248,7 @@ func TestOAuthBrowserSignInAndImportMCP(t *testing.T) {
 	defer authSrv.Close()
 
 	// Simulate user completing browser login on the redirect callback.
-	openBrowserURL = func(rawURL string) error {
+	openBrowserURL := func(rawURL string) error {
 		u, err := url.Parse(rawURL)
 		if err != nil {
 			return err
@@ -272,6 +272,7 @@ func TestOAuthBrowserSignInAndImportMCP(t *testing.T) {
 	}
 	defer g.Close()
 
+	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupEnv, OpenBrowser: openBrowserURL})
 	res, err := g.InstallMarketServer(context.Background(), InstallMarketRequest{
 		ID: "custom-saas",
 		Server: &MarketServer{

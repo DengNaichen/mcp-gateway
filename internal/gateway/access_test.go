@@ -3,7 +3,6 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -167,17 +166,5 @@ func TestPublicListenerRequiresAuthentication(t *testing.T) {
 	g.Handler().ServeHTTP(out, req)
 	if out.Code != 403 {
 		t.Fatal("local mode accepted a rebinding host")
-	}
-}
-func TestCredentialsAreRedactedBeforeProjection(t *testing.T) {
-	t.Setenv("UPSTREAM_SECRET", "secret-value-12345")
-	data := map[string]any{"message": "Bearer secret-value-12345", "nested": map[string]any{"apiKey": "another secret"}}
-	redacted := redactResponse(data, Server{Headers: map[string]string{"Authorization": "Bearer ${UPSTREAM_SECRET}"}})
-	b, err := json.Marshal(redacted)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(b), "secret-value") || strings.Contains(string(b), "another secret") {
-		t.Fatal("credential leaked")
 	}
 }

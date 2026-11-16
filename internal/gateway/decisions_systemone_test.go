@@ -178,7 +178,7 @@ func TestSystemOneRefineSelection(t *testing.T) {
 	}))
 	defer server.Close()
 
-	d, usage, err := selectTools(context.Background(), Settings{BaseURL: server.URL + "/v1", Model: "jev", MaxTools: 4, TimeoutSeconds: 5}, "k", DiscoverRequest{Intent: "500 errors"}, tools, routingOptions{refine: true})
+	d, usage, err := selectTools(context.Background(), Settings{BaseURL: server.URL + "/v1", Model: "jev", MaxTools: 4, TimeoutSeconds: 5}, "k", DiscoverRequest{Intent: "500 errors"}, tools, routingOptions{Refine: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestLiveSystemOneRouting(t *testing.T) {
 		Model:          model,
 		MaxTools:       4,
 		TimeoutSeconds: 30,
-	}, key, DiscoverRequest{Intent: "list open GitHub issues in mcp-gateway"}, tools, routingOptions{hierarchical: true, refine: true})
+	}, key, DiscoverRequest{Intent: "list open GitHub issues in mcp-gateway"}, tools, routingOptions{Hierarchical: true, Refine: true})
 	if err != nil {
 		t.Fatalf("live SystemOne selectTools failed: %v", err)
 	}

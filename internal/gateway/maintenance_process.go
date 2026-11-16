@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gatewaylab/internal/upstream"
 )
 
 // limitedOutput keeps draining a child after reaching the capture limit.
@@ -35,18 +37,8 @@ func (w *limitedOutput) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func processEnvironment(extra map[string]string) []string {
-	env := []string{}
-	for _, key := range []string{"PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "SYSTEMROOT"} {
-		if v, ok := os.LookupEnv(key); ok {
-			env = append(env, key+"="+v)
-		}
-	}
-	for k, v := range extra {
-		env = append(env, k+"="+v)
-	}
-	return env
-}
+func processEnvironment(extra map[string]string) []string { return upstream.ProcessEnvironment(extra) }
+func configureProcess(cmd *exec.Cmd)                      { upstream.ConfigureProcess(cmd) }
 func runCommand(ctx context.Context, name string, args []string, dir string, input []byte, env map[string]string, limit int) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir

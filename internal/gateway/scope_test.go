@@ -498,7 +498,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 
 func TestSingleServiceScopeSkipsHierarchicalSelectServices(t *testing.T) {
 	g, _ := testGateway(t)
-	g.routing = routingOptions{hierarchical: true, refine: false}
+	g.routing = routingOptions{Hierarchical: true, Refine: false}
 	registerMultiServiceUpstream(t, g)
 
 	var serviceStageCalls atomic.Int32

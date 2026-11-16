@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	upstreamclient "gatewaylab/internal/upstream"
 )
 
 const openAPIFixture = `openapi: 3.0.3
@@ -103,21 +105,21 @@ func TestOpenAPIWireContract(t *testing.T) {
 	if result.(map[string]any)["id"] != float64(12) {
 		t.Fatal(result)
 	}
-	if _, err := mappedResponse(tool, 200, []byte(`{"id":"wrong"}`)); err == nil {
+	if _, err := upstreamclient.MappedResponse(tool, 200, []byte(`{"id":"wrong"}`)); err == nil {
 		t.Fatal("response schema violation accepted")
 	}
-	if _, err := mappedResponse(tool, 201, []byte(`{"id":12}`)); err == nil {
+	if _, err := upstreamclient.MappedResponse(tool, 201, []byte(`{"id":12}`)); err == nil {
 		t.Fatal("undeclared status accepted")
 	}
 	logs := tools[1]
-	request, err := buildMappedRequest(context.Background(), Server{Endpoint: upstream.URL}, logs, map[string]any{"query": map[string]any{"filter": map[string]any{"service": "billing"}}})
+	request, err := upstreamclient.BuildMappedRequest(context.Background(), Server{Endpoint: upstream.URL}, logs, map[string]any{"query": map[string]any{"filter": map[string]any{"service": "billing"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if request.URL.Query().Get("filter[service]") != "billing" {
 		t.Fatal(request.URL)
 	}
-	text, err := mappedResponse(logs, 200, []byte("hello logs"))
+	text, err := upstreamclient.MappedResponse(logs, 200, []byte("hello logs"))
 	if err != nil || text.(map[string]any)["text"] != "hello logs" {
 		t.Fatalf("text response: %v %v", text, err)
 	}

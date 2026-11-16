@@ -2,302 +2,51 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+	"errors"
 	"os"
-	"slices"
-	"sort"
-	"strings"
 
 	"gatewaylab/internal/model"
+	"gatewaylab/internal/routing"
 )
 
-// Routing variants under evaluation, selected with GATEWAY_ROUTING as a
-// comma-separated list. Both borrow from pi's tool discovery: pi tells the model
-// which MCP servers exist with a one-line summary and lets scripts list a
-// server's tool names (describeNamespace), and its tool ranker reads the schema
-// property names next to the description.
-type routingOptions struct {
-	// hierarchical asks the model which services fit the task before asking about
-	// their tools, so a call never carries more candidates than the largest service.
-	hierarchical bool
-	// params adds each tool's input parameter names to its candidate summary.
-	params bool
-	// refine asks one choice question over the tools that passed the yes/no stage,
-	// so near-duplicates compete for one probability mass instead of each passing.
-	refine bool
+const routingProtocol = routing.Protocol
+
+type routingOptions = routing.Options
+
+func loadRoutingOptions() (routing.Options, error) {
+	return routing.ParseOptions(os.Getenv("GATEWAY_ROUTING"))
 }
 
-// loadRoutingOptions reads GATEWAY_ROUTING. Unset, routing is hierarchical with
-// refinement, the configuration that measured best (see evals/routing/NOTES.md).
-// `flat` turns both off; named options then add stages back.
-func loadRoutingOptions() (routingOptions, error) {
-	value, set := os.LookupEnv("GATEWAY_ROUTING")
-	if !set || strings.TrimSpace(value) == "" {
-		return routingOptions{hierarchical: true, refine: true}, nil
+type routingModel struct {
+	settings model.Settings
+	key      string
+}
+
+var _ routing.Client = routingModel{}
+
+func (m routingModel) Decisions(ctx context.Context, input string, instructions []string) (routing.Answers, error) {
+	a, err := model.AskDecisions(ctx, m.settings, m.key, input, instructions)
+	return routing.Answers{Status: a.Status, Relevance: a.Relevance, Usage: routing.Usage(a.Usage)}, err
+}
+func (m routingModel) Choose(ctx context.Context, input, instructions string, choices []routing.Choice) (routing.ChoiceAnswer, routing.Usage, error) {
+	cs := make([]model.Choice, len(choices))
+	for i, c := range choices {
+		cs[i] = model.Choice(c)
 	}
-	var o routingOptions
-	for _, name := range strings.Split(value, ",") {
-		switch strings.TrimSpace(name) {
-		case "", "flat":
-		case "hierarchical":
-			o.hierarchical = true
-		case "params":
-			o.params = true
-		case "refine":
-			o.refine = true
-		default:
-			return o, fmt.Errorf("unknown GATEWAY_ROUTING option %q (use flat, hierarchical, refine, params)", name)
+	a, usage, err := model.AskChoice(ctx, m.settings, m.key, input, instructions, cs)
+	return routing.ChoiceAnswer{Choice: a.Choice, Probabilities: a.Probabilities}, routing.Usage(usage), err
+}
+func routingRequest(req DiscoverRequest) routing.Request {
+	return routing.Request{Intent: req.Intent, Context: req.Context, Services: req.Services}
+}
+func routingError(err error) error {
+	var e *routing.Error
+	if errors.As(err, &e) {
+		status := 502
+		if errors.Is(e, routing.ErrInvalid) {
+			status = 400
 		}
+		return problem(status, e.Message, e.Cause)
 	}
-	return o, nil
-}
-
-// routingCandidate is what the model sees of a tool: the capability summary and,
-// with the params option, the names of its input parameters.
-type routingCandidate struct {
-	Capability
-	Params []string `json:"params,omitempty"`
-}
-
-func routingCandidates(tools []Tool, params bool) []routingCandidate {
-	result := make([]routingCandidate, 0, len(tools))
-	for _, t := range tools {
-		c := routingCandidate{Capability: capability(t)}
-		if params {
-			c.Params = parameterNames(t.InputSchema)
-		}
-		result = append(result, c)
-	}
-	return result
-}
-
-// parameterNames lists the top-level property names of a JSON Schema object, sorted.
-func parameterNames(schema map[string]any) []string {
-	properties, _ := schema["properties"].(map[string]any)
-	names := make([]string, 0, len(properties))
-	for name := range properties {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
-// At most this many services continue to the tool stage.
-const maxRoutedServices = 3
-
-type serviceSummary struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Tools       []string `json:"tools"`
-}
-
-func serviceInstructions(id string) string {
-	return routeRules + fmt.Sprintf("Does the service %q offer a tool directly useful for the current task, including necessary identifier lookups? Judge by its description and its tool names.", id)
-}
-
-// selectServices is the first stage of hierarchical routing. It describes every
-// service with its tool names and asks one yes/no question per service. Services
-// at or above the threshold continue, best first and at most maxRoutedServices;
-// when none reaches it, the best one continues so the tool stage still decides.
-// Returns nil when fewer than two services are eligible, since nothing would
-// be narrowed.
-func selectServices(ctx context.Context, s Settings, key string, req DiscoverRequest, servers map[string]Server, tools []Tool) ([]string, modelUsage, error) {
-	byServer := map[string][]string{}
-	for _, t := range tools {
-		byServer[t.ServerID] = append(byServer[t.ServerID], t.Name)
-	}
-	if len(byServer) < 2 {
-		return nil, modelUsage{}, nil
-	}
-	ids := make([]string, 0, len(byServer))
-	for id := range byServer {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	summaries := make([]serviceSummary, 0, len(ids))
-	instructions := make([]string, 0, len(ids))
-	for _, id := range ids {
-		names := byServer[id]
-		sort.Strings(names)
-		summaries = append(summaries, serviceSummary{ID: id, Name: servers[id].Name, Description: servers[id].Description, Tools: names})
-		instructions = append(instructions, serviceInstructions(id))
-	}
-	input, err := json.Marshal(struct {
-		Intent   string           `json:"intent"`
-		Context  string           `json:"context"`
-		Services []serviceSummary `json:"services"`
-	}{req.Intent, req.Context, summaries})
-	if err != nil {
-		return nil, modelUsage{}, fmt.Errorf("encode service routing context: %w", err)
-	}
-	answers, err := askDecisions(ctx, s, key, string(input), instructions)
-	if err != nil {
-		return nil, answers.usage, err
-	}
-	order := make([]int, len(ids))
-	for i := range order {
-		order[i] = i
-	}
-	sort.SliceStable(order, func(a, b int) bool { return answers.relevance[order[a]] > answers.relevance[order[b]] })
-	chosen := []string{ids[order[0]]}
-	for _, i := range order[1:] {
-		if answers.relevance[i] < decisionThreshold || len(chosen) >= maxRoutedServices {
-			break
-		}
-		chosen = append(chosen, ids[i])
-	}
-	return chosen, answers.usage, nil
-}
-
-func toolsOfServices(tools []Tool, ids []string) []Tool {
-	var result []Tool
-	for _, t := range tools {
-		if slices.Contains(ids, t.ServerID) {
-			result = append(result, t)
-		}
-	}
-	return result
-}
-
-// Refinement: the yes/no stage judges every tool on its own, so a tool that is
-// merely adjacent to the right one (a trace tool next to an error tool, a schema
-// tool next to a query tool) passes the threshold too. A choice question over the
-// survivors makes them compete: the model distributes one probability mass over
-// them and a "none" option, like pi's main model picking from tool_search results.
-
-// At most this many survivors of the yes/no stage enter the choice question.
-const refineCandidates = 8
-
-// Survivors whose share of the choice distribution is at least this fraction of
-// the winner's share are returned next to it, so two equally direct tools can both
-// be returned while a distant runner-up is not.
-const refineShare = 0.5
-
-// "none" wins only when no survivor reached this relevance in the yes/no stage.
-// The choice question asks for a single tool, so it answers "none" for a task
-// that needs two tools or that several services serve equally; a survivor the
-// yes/no stage was this sure about is kept instead.
-const refineOverride = 0.9
-
-const refineNone = "none"
-
-func refineInstructions() string {
-	return routeRules + "Which single candidate tool most directly performs the current task? Choose " + refineNone + " when no candidate performs it, even if some only look up or prepare data for it."
-}
-
-type scoredTool struct {
-	Tool
-	relevance float64
-}
-
-// survivors lists the tools at or above the threshold, best first, at most limit.
-func survivors(a routeAnswers, tools []Tool, limit int) []scoredTool {
-	order := make([]int, len(tools))
-	for i := range order {
-		order[i] = i
-	}
-	sort.SliceStable(order, func(i, j int) bool { return a.relevance[order[i]] > a.relevance[order[j]] })
-	var result []scoredTool
-	for _, i := range order {
-		if a.relevance[i] < decisionThreshold || len(result) >= limit {
-			break
-		}
-		result = append(result, scoredTool{tools[i], a.relevance[i]})
-	}
-	return result
-}
-
-// refineSelection asks the choice question over the survivors and keeps the
-// winner plus survivors with at least refineShare of its share. When "none"
-// wins and no survivor is confidently relevant, nothing is selected.
-func refineSelection(ctx context.Context, s Settings, key string, req DiscoverRequest, candidates []scoredTool, opts routingOptions) (modelDecision, modelUsage, error) {
-	var decision modelDecision
-	tools := make([]Tool, len(candidates))
-	for i, c := range candidates {
-		tools[i] = c.Tool
-	}
-	input, err := json.Marshal(struct {
-		Intent     string             `json:"intent"`
-		Context    string             `json:"context"`
-		Candidates []routingCandidate `json:"candidates"`
-	}{req.Intent, req.Context, routingCandidates(tools, opts.params)})
-	if err != nil {
-		return decision, modelUsage{}, fmt.Errorf("encode refinement context: %w", err)
-	}
-	criteria := make([]decisionChoice, 0, len(candidates)+1)
-	for _, c := range candidates {
-		criteria = append(criteria, decisionChoice{Value: c.ID, Description: strings.SplitN(strings.TrimSpace(c.Description), "\n", 2)[0]})
-	}
-	criteria = append(criteria, decisionChoice{Value: refineNone, Description: "No candidate directly performs the task; a candidate that only looks up or prepares data for it does not count."})
-	answer, usage, err := askChoice(ctx, s, key, string(input), refineInstructions(), criteria)
-	if err != nil {
-		return decision, usage, err
-	}
-	winner, winnerShare := answer.choice, answer.probabilities[answer.choice]
-	if winner == refineNone {
-		winner, winnerShare = "", 0
-		for _, c := range candidates {
-			if share := answer.probabilities[c.ID]; c.relevance >= refineOverride && share > winnerShare {
-				winner, winnerShare = c.ID, share
-			}
-		}
-		if winner == "" {
-			// Survivors from several services and no winner: the task fits each service
-			// about equally, so the caller has to say which one it means.
-			services := []string{}
-			for _, c := range candidates {
-				if !slices.Contains(services, c.ServerID) {
-					services = append(services, c.ServerID)
-				}
-			}
-			if len(services) > 1 {
-				decision.Status = "needs_context"
-				decision.Summary = "Decisions 判断任务同时适用于多个服务"
-				decision.Question = fmt.Sprintf("任务可能涉及 %s，请说明要操作哪个服务，或在 services 参数中指定。", strings.Join(services, "、"))
-				return decision, usage, nil
-			}
-			decision.Status = "no_match"
-			decision.Summary = "Decisions 精选后判断没有直接服务任务的工具"
-			return decision, usage, nil
-		}
-	}
-	for _, c := range candidates {
-		share, known := answer.probabilities[c.ID]
-		if c.ID != winner && (!known || share < refineShare*winnerShare) {
-			continue
-		}
-		if len(decision.Tools) >= s.MaxTools {
-			break
-		}
-		reason := fmt.Sprintf("Decisions 相关性概率 %.1f%%", c.relevance*100)
-		if known {
-			reason += fmt.Sprintf("，精选占比 %.1f%%", share*100)
-		}
-		decision.Tools = append(decision.Tools, struct {
-			ID     string `json:"id"`
-			Reason string `json:"reason"`
-		}{ID: c.ID, Reason: reason})
-	}
-	// The winner comes first even when a higher-relevance survivor shares the distribution.
-	sort.SliceStable(decision.Tools, func(i, j int) bool {
-		return decision.Tools[i].ID == winner && decision.Tools[j].ID != winner
-	})
-	if len(decision.Tools) == 0 {
-		return decision, usage, problem(502, "Decisions 精选结果不在候选集内", nil)
-	}
-	decision.Status = "selected"
-	decision.Summary = fmt.Sprintf("Decisions 精选出 %d 个工具", len(decision.Tools))
-	return decision, usage, nil
-}
-
-type choiceAnswer struct {
-	choice        string
-	probabilities map[string]float64 // may be empty when the provider reports none
-}
-
-func askChoice(ctx context.Context, s Settings, key, input, instructions string, choices []decisionChoice) (choiceAnswer, modelUsage, error) {
-	answer, usage, err := model.AskChoice(ctx, s, key, input, instructions, choices)
-	return choiceAnswer{choice: answer.Choice, probabilities: answer.Probabilities}, modelUsage(usage), modelError(err)
+	return modelError(err)
 }
