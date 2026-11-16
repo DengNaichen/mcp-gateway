@@ -20,8 +20,11 @@ func (g *server) registerMarket(mux *http.ServeMux) {
 		w.Header().Set("Content-Type", ct)
 		w.Header().Set("Cache-Control", "public, max-age=86400")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		// Icons may be SVG. If one is opened directly in a browser, the sandbox CSP
+		// keeps any embedded script from running on the gateway's own origin.
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
 		w.WriteHeader(200)
-		_, _ = w.Write(data) //nolint:gosec // G705: icon bytes are served with the upstream-verified Content-Type plus nosniff, not rendered as HTML
+		_, _ = w.Write(data) //nolint:gosec // G705: image/* only, nosniff, and a sandbox CSP block script execution
 	})
 	mux.HandleFunc("POST /api/market/install", func(w http.ResponseWriter, r *http.Request) {
 		var in market.InstallMarketRequest
