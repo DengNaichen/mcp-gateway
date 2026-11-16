@@ -30,6 +30,10 @@ func TestLifecycle(t *testing.T) {
 			if !bytes.Contains(first, []byte("keep this comment")) {
 				t.Fatal("lost comment")
 			}
+			firstEntry, err := entry(c, first)
+			if err != nil || firstEntry["url"] != "http://127.0.0.1:8788/mcp?agent="+id {
+				t.Fatalf("expected ?agent=%s query param, got %v (err=%v)", id, firstEntry, err)
+			}
 			if e := m.Write(id, endpoint); e != nil {
 				t.Fatal(e)
 			}
@@ -199,7 +203,7 @@ func TestUpdateManagedClients(t *testing.T) {
 			}
 			updated, _ := read(c.Path)
 			got, err := entry(c, updated)
-			if err != nil || got["url"] != newURL {
+			if err != nil || got["url"] != ClientEndpoint(newURL, id) {
 				t.Fatal("wrong updated entry", got, err)
 			}
 			if !bytes.Contains(updated, []byte("unrelated")) {
@@ -274,6 +278,47 @@ func TestInterruptedUpdateKeepsOwnership(t *testing.T) {
 			}
 			if err := reopened.Revoke(c.ID); err != nil {
 				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestUpgradeLegacyURLWithoutAgentQuery(t *testing.T) {
+	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi"} {
+		t.Run(id, func(t *testing.T) {
+			h := t.TempDir()
+			m := New(h, filepath.Join(h, "receipts"), func(string) string { return "" })
+			c, _ := m.client(id)
+			legacyURL := "http://127.0.0.1:8788/mcp"
+			legacyEntry := desired(c, legacyURL)
+			legacyEntry["url"] = legacyURL
+			var rec receipt
+			rec.Path = c.Path
+			rec.Entry = legacyEntry
+			if c.TOML {
+				rec.Block = "\n[mcp_servers." + serverName + "]\nurl = \"http://127.0.0.1:8788/mcp\"\n"
+				atomicWrite(c.Path, []byte(rec.Block))
+			} else {
+				next, err := editJSON(c, nil, legacyEntry)
+				if err != nil {
+					t.Fatal(err)
+				}
+				atomicWrite(c.Path, next)
+			}
+			rawRec, _ := json.Marshal(rec)
+			atomicWrite(m.receiptPath(c), rawRec)
+
+			st := m.status(c, legacyURL)
+			if !st.CanUpdate || !st.CanRevoke || st.CanWrite {
+				t.Fatalf("expected legacy entry without ?agent= to offer update: %+v", st)
+			}
+			if err := m.Update(id, legacyURL); err != nil {
+				t.Fatalf("update legacy entry: %v", err)
+			}
+			after, _ := read(c.Path)
+			got, err := entry(c, after)
+			if err != nil || got["url"] != "http://127.0.0.1:8788/mcp?agent="+id {
+				t.Fatalf("expected upgraded url with ?agent=%s, got %v (%v)", id, got, err)
 			}
 		})
 	}

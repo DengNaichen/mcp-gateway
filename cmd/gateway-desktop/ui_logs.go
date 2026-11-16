@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"gatewaylab/internal/gateway"
 
@@ -26,6 +30,7 @@ type logsPageState struct {
 	payloadTab    int // 0: 完整事件 JSON, 1: Detail 详情载荷
 	timelineLimit int
 	timelineScrl  ui.ScrollState
+	bindingRepo   bool
 }
 
 func logsStateFor(u *DesktopUI) *logsPageState {
@@ -62,6 +67,18 @@ type logsMatchedTool struct {
 	HasReadOnly bool
 }
 
+type logsParsedScope struct {
+	Agent        string
+	RepoID       string
+	RepoName     string
+	Kind         string
+	Root         string
+	GitCommonDir string
+	RemoteHint   string
+	MatchedRule  string
+	Status       string
+}
+
 type logsParsedDetail struct {
 	Model         string
 	Summary       string
@@ -77,6 +94,7 @@ type logsParsedDetail struct {
 	Client        string
 	Method        string
 	AgentToolName string
+	Scope         *logsParsedScope
 	DetailJSON    string
 	FullEventJSON string
 }
@@ -439,7 +457,12 @@ func (u *DesktopUI) renderLogsInspectorPane(
 				ui.Row(c).Shrink(0).Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
 					if ev.Kind == "discover" && strings.TrimSpace(ev.Title) != "" {
 						if SailSmallButton(c.Key("logs-replay-"+ev.ID), "沙盒重放").Clicked() {
-							u.OpenPlaygroundReplay(ev.Title, ev.Actor)
+							if parsed.Scope != nil {
+								replayRepo := logsResolveReplayRepoKey(u.State, *parsed.Scope)
+								u.OpenPlaygroundReplay(ev.Title, ev.Actor, replayRepo, parsed.Scope.Agent)
+							} else {
+								u.OpenPlaygroundReplay(ev.Title, ev.Actor)
+							}
 						}
 					}
 					if ev.Kind == "invoke" {
@@ -520,6 +543,11 @@ func (u *DesktopUI) renderLogsInspectorPane(
 						SailKeyValueRow(c, "裁剪字段", strings.Join(parsed.Fields, ", "), true)
 					}
 				})
+			}
+
+			// Scope Trace Card when detail.scope is present.
+			if sc := parsed.Scope; sc != nil {
+				u.renderLogsScopeCard(c, st, ev.ID, *sc)
 			}
 
 			// 3. Semantic Summary / Question / Error.
@@ -799,6 +827,43 @@ func logsParseEventDetail(ev gateway.Event, toolByID map[string]gateway.Tool) lo
 	if v, ok := m["tool"].(string); ok {
 		out.AgentToolName = strings.TrimSpace(v)
 	}
+	if rawScope, ok := m["scope"].(map[string]any); ok && len(rawScope) > 0 {
+		sc := &logsParsedScope{}
+		if s, ok := rawScope["agent"].(string); ok {
+			sc.Agent = strings.TrimSpace(s)
+		}
+		if s, ok := rawScope["repo_id"].(string); ok {
+			sc.RepoID = strings.TrimSpace(s)
+		}
+		if s, ok := rawScope["repo_name"].(string); ok {
+			sc.RepoName = strings.TrimSpace(s)
+		}
+		if s, ok := rawScope["kind"].(string); ok {
+			sc.Kind = strings.TrimSpace(s)
+		}
+		if s, ok := rawScope["root"].(string); ok {
+			sc.Root = strings.TrimSpace(s)
+		} else if s, ok := rawScope["cwd"].(string); ok {
+			sc.Root = strings.TrimSpace(s)
+		}
+		if s, ok := rawScope["git_common_dir"].(string); ok {
+			sc.GitCommonDir = strings.TrimSpace(s)
+		}
+		if s, ok := rawScope["remote_hint"].(string); ok {
+			sc.RemoteHint = strings.TrimSpace(s)
+		}
+		if s, ok := rawScope["matched_rule"].(string); ok {
+			sc.MatchedRule = strings.TrimSpace(s)
+		}
+		if s, ok := rawScope["status"].(string); ok {
+			sc.Status = strings.TrimSpace(s)
+		} else if s, ok := rawScope["context_status"].(string); ok {
+			sc.Status = strings.TrimSpace(s)
+		}
+		if sc.Agent != "" || sc.RepoID != "" || sc.RepoName != "" || sc.Root != "" || sc.MatchedRule != "" || sc.Status != "" {
+			out.Scope = sc
+		}
+	}
 	if rawServers, ok := m["servers"].([]any); ok {
 		for _, item := range rawServers {
 			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
@@ -887,4 +952,222 @@ func logsParseEventDetail(ev gateway.Event, toolByID map[string]gateway.Tool) lo
 	}
 
 	return out
+}
+
+func hasSegmentPathPrefix(target, anchor string) bool {
+	t := filepath.Clean(strings.TrimSpace(target))
+	a := filepath.Clean(strings.TrimSpace(anchor))
+	if t == "" || a == "" || a == "." || t == "." {
+		return false
+	}
+	if t == a {
+		return true
+	}
+	sep := string(filepath.Separator)
+	if strings.HasSuffix(a, sep) {
+		return strings.HasPrefix(t, a)
+	}
+	return strings.HasPrefix(t, a+sep)
+}
+
+func logsMatchedBoundRepo(state *Bootstrap, sc logsParsedScope) *ScopeRepository {
+	if state == nil {
+		return nil
+	}
+	if sc.RepoID != "" && sc.RepoID != "*" {
+		for i := range state.Scopes.Repositories {
+			if state.Scopes.Repositories[i].ID == sc.RepoID {
+				return &state.Scopes.Repositories[i]
+			}
+		}
+	}
+	effectiveCommonDir := sc.GitCommonDir
+	effectiveKind := sc.Kind
+	if effectiveCommonDir == "" && sc.Root != "" {
+		for _, obs := range state.Scopes.Observed {
+			if obs.Root == sc.Root {
+				if obs.GitCommonDir != "" {
+					effectiveCommonDir = obs.GitCommonDir
+				}
+				if effectiveKind == "" && obs.Kind != "" {
+					effectiveKind = obs.Kind
+				}
+				break
+			}
+		}
+	}
+	isGit := effectiveKind == "git" || effectiveCommonDir != ""
+	if isGit {
+		for i := range state.Scopes.Repositories {
+			repo := &state.Scopes.Repositories[i]
+			if effectiveCommonDir != "" && slices.Contains(repo.GitCommonDirs, effectiveCommonDir) {
+				return repo
+			}
+			if effectiveCommonDir == "" && sc.Root != "" {
+				for _, cd := range repo.GitCommonDirs {
+					if filepath.Base(cd) == ".git" && filepath.Dir(cd) == sc.Root {
+						return repo
+					}
+				}
+			}
+		}
+		return nil
+	}
+	if sc.Root != "" {
+		var best *ScopeRepository
+		bestLen := -1
+		for i := range state.Scopes.Repositories {
+			repo := &state.Scopes.Repositories[i]
+			for _, rp := range repo.RootPaths {
+				if hasSegmentPathPrefix(sc.Root, rp) && len(rp) > bestLen {
+					best = repo
+					bestLen = len(rp)
+				}
+			}
+		}
+		if best != nil {
+			return best
+		}
+	}
+	return nil
+}
+
+func logsResolveReplayRepoKey(state *Bootstrap, sc logsParsedScope) string {
+	if repo := logsMatchedBoundRepo(state, sc); repo != nil {
+		return repo.ID
+	}
+	if sc.RepoID != "" && sc.RepoID != "*" {
+		return sc.RepoID
+	}
+	if sc.RepoID == "*" || sc.Root != "" || sc.Agent != "" {
+		return "*"
+	}
+	return ""
+}
+
+func logsScopeIsErrorStatus(status string) bool {
+	switch status {
+	case "scope_required", "scope_invalid", "ambiguous_workspace", "denied", "error":
+		return true
+	default:
+		return false
+	}
+}
+
+func (u *DesktopUI) renderLogsScopeCard(c *ui.Context, st *logsPageState, evID string, sc logsParsedScope) {
+	boundRepo := logsMatchedBoundRepo(u.State, sc)
+	canBind := boundRepo == nil && (sc.RepoID == "" || sc.RepoID == "*") && (sc.Root != "" || sc.GitCommonDir != "")
+
+	SailSubtleCard(c, func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "仓库作用域").FontSize(12).FontWeight(600).TextColor(SailInkMuted).SingleLine()
+				if sc.Status != "" {
+					if logsScopeIsErrorStatus(sc.Status) {
+						SailBadge(c, sc.Status, ToneDanger)
+					} else {
+						SailQuietStatus(c, sc.Status, SailSuccessInk, SailInkStrong)
+					}
+				}
+			})
+
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				if boundRepo != nil {
+					if SailSmallButton(c.Key("logs-open-repo-"+evID), "仓库规则").Clicked() {
+						u.OpenRepos(boundRepo.ID)
+					}
+				} else if canBind {
+					bindLbl := "绑定此仓库"
+					if st.bindingRepo {
+						bindLbl = "绑定中…"
+					}
+					if SailSmallButton(c.Key("logs-bind-repo-"+evID), bindLbl).Disabled(st.bindingRepo).Clicked() {
+						u.bindRepoFromLogScope(st, sc)
+					}
+				}
+			})
+		})
+
+		if sc.Agent != "" {
+			SailKeyValueRow(c, "调用客户端", fmt.Sprintf("%s (%s)", agentDisplayName(sc.Agent), sc.Agent), false)
+		}
+		repoDisplay := sc.RepoName
+		if boundRepo != nil && boundRepo.Name != "" {
+			repoDisplay = boundRepo.Name
+		}
+		if repoDisplay == "" && sc.Root != "" {
+			repoDisplay = filepath.Base(sc.Root)
+		}
+		if repoDisplay != "" {
+			if boundRepo == nil && (sc.RepoID == "" || sc.RepoID == "*") {
+				repoDisplay += " (未绑定)"
+			}
+			SailKeyValueRow(c, "仓库", repoDisplay, false)
+		}
+		if sc.Root != "" {
+			SailKeyValueRow(c, "工作目录", sc.Root, true)
+		}
+		if sc.MatchedRule != "" {
+			SailKeyValueRow(c, "命中规则", sc.MatchedRule, true)
+		}
+	})
+}
+
+func (u *DesktopUI) bindRepoFromLogScope(st *logsPageState, sc logsParsedScope) {
+	if st.bindingRepo || u.Client == nil {
+		return
+	}
+	st.bindingRepo = true
+
+	name := strings.TrimSpace(sc.RepoName)
+	if name == "" && sc.Root != "" {
+		name = filepath.Base(sc.Root)
+	}
+	in := SaveRepositoryInput{
+		Name: name,
+	}
+	// Check if this repo is in state.Scopes.Observed to reuse verified GitCommonDir & RemoteHint.
+	if u.State != nil {
+		for _, obs := range u.State.Scopes.Observed {
+			if (sc.Root != "" && obs.Root == sc.Root) || (sc.GitCommonDir != "" && obs.GitCommonDir == sc.GitCommonDir) {
+				if obs.GitCommonDir != "" {
+					in.GitCommonDirs = []string{obs.GitCommonDir}
+				}
+				if obs.RemoteHint != "" {
+					in.RemoteHint = obs.RemoteHint
+				}
+				break
+			}
+		}
+	}
+	if len(in.GitCommonDirs) == 0 && sc.GitCommonDir != "" {
+		in.GitCommonDirs = []string{sc.GitCommonDir}
+	}
+	if in.RemoteHint == "" && sc.RemoteHint != "" {
+		in.RemoteHint = sc.RemoteHint
+	}
+	shared := u.State != nil && u.State.Access.Shared
+	if len(in.GitCommonDirs) == 0 && sc.Root != "" {
+		if shared {
+			in.RootPaths = []string{sc.Root}
+		} else {
+			in.Path = sc.Root
+		}
+	}
+
+	u.RunAsync(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		saved, err := u.Client.SaveRepository(ctx, in)
+		if err != nil {
+			u.updateUI(func() { st.bindingRepo = false })
+			return err
+		}
+		_ = u.RefreshSync()
+		u.updateUI(func() {
+			st.bindingRepo = false
+		})
+		u.Notify("已绑定仓库 " + saved.Name)
+		return nil
+	})
 }

@@ -20,8 +20,14 @@ import (
 )
 
 func run() error {
+	defaultData := "data/" + buildinfo.Current().Channel
+	if envData := os.Getenv(buildinfo.EnvironmentKey("GATEWAY_DATA_DIR")); envData != "" {
+		defaultData = envData
+	} else if envData := os.Getenv("GATEWAY_DATA_DIR"); envData != "" {
+		defaultData = envData
+	}
 	addr := flag.String("addr", buildinfo.DefaultAddr(), "HTTP listening address")
-	data := flag.String("data", "data/"+buildinfo.Current().Channel, "Local registry and settings directory")
+	data := flag.String("data", defaultData, "Local registry and settings directory")
 	flag.Parse()
 	host, _, err := net.SplitHostPort(*addr)
 	if err != nil {

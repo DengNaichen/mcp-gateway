@@ -241,15 +241,19 @@ func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
 func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeResult, retErr error) {
 	req.Actor = requestActor(ctx, req.Actor)
 	started := time.Now()
+	scopeEv := scopeEventForContext(ctx)
 	defer func() {
 		status := "success"
-		detail := map[string]any{"tool_id": req.ToolID, "fields": req.Fields}
+		detail := map[string]any{"tool_id": req.ToolID, "fields": req.Fields, "scope": scopeEv}
 		if retErr != nil {
 			status = "error"
 			detail["error"] = g.errorDetail(retErr)
 		}
 		g.record("invoke", req.Actor, status, req.ToolID, started, detail)
 	}()
+	if err := g.checkExecutionScope(ctx); err != nil {
+		return result, err
+	}
 	r := g.Snapshot()
 	i := slices.IndexFunc(r.Tools, func(t Tool) bool { return t.ID == req.ToolID })
 	if i < 0 {

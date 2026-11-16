@@ -40,12 +40,17 @@ CREATE TABLE IF NOT EXISTS maintenance_sources (id TEXT PRIMARY KEY, definition 
 CREATE TABLE IF NOT EXISTS maintenance_runs (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
 CREATE TABLE IF NOT EXISTS maintenance_acceptance (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
 CREATE TABLE IF NOT EXISTS maintenance_deliveries (server_id TEXT NOT NULL, provider TEXT NOT NULL, delivery_id TEXT NOT NULL, received_at TEXT NOT NULL, run_id TEXT NOT NULL, definition TEXT NOT NULL CHECK(json_valid(definition)), PRIMARY KEY(server_id,provider,delivery_id));
-CREATE INDEX IF NOT EXISTS maintenance_pending_deliveries ON maintenance_deliveries(run_id,received_at);
-PRAGMA user_version=5;`); err != nil {
+CREATE INDEX IF NOT EXISTS maintenance_pending_deliveries ON maintenance_deliveries(run_id,received_at);`); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
 			slog.Warn("close failed database", "error", closeErr)
 		}
 		return nil, fmt.Errorf("initialize sqlite schema: %w", err)
+	}
+	if err := migrateDatabase(db); err != nil {
+		if closeErr := db.Close(); closeErr != nil {
+			slog.Warn("close failed database after migration", "error", closeErr)
+		}
+		return nil, fmt.Errorf("migrate sqlite schema: %w", err)
 	}
 	if err := os.Chmod(path, 0600); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
@@ -54,6 +59,80 @@ PRAGMA user_version=5;`); err != nil {
 		return nil, fmt.Errorf("restrict sqlite file permissions: %w", err)
 	}
 	return db, nil
+}
+
+func migrateDatabase(db *sql.DB) error {
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		return fmt.Errorf("read sqlite user_version: %w", err)
+	}
+	if version < 5 {
+		if _, err := db.Exec("PRAGMA user_version=5"); err != nil {
+			return fmt.Errorf("set sqlite user_version=5: %w", err)
+		}
+		version = 5
+	}
+	if version < 6 {
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("begin v6 migration: %w", err)
+		}
+		committed := false
+		defer func() {
+			if !committed {
+				_ = tx.Rollback()
+			}
+		}()
+		// Intentionally NO foreign keys to servers/tools because writeRegistry
+		// replaces servers and tools via DELETE + INSERT inside persistRegistry.
+		if _, err := tx.Exec(`
+CREATE TABLE IF NOT EXISTS scope_state (
+	id INTEGER PRIMARY KEY CHECK(id=1),
+	definition TEXT NOT NULL CHECK(json_valid(definition))
+);
+CREATE TABLE IF NOT EXISTS repositories (
+	id TEXT PRIMARY KEY,
+	definition TEXT NOT NULL CHECK(json_valid(definition))
+);
+CREATE TABLE IF NOT EXISTS scope_rules (
+	repo_key TEXT NOT NULL,
+	agent_key TEXT NOT NULL,
+	definition TEXT NOT NULL CHECK(json_valid(definition)),
+	PRIMARY KEY(repo_key, agent_key)
+);
+CREATE TABLE IF NOT EXISTS scope_observations (
+	fingerprint TEXT PRIMARY KEY,
+	last_seen TEXT NOT NULL,
+	definition TEXT NOT NULL CHECK(json_valid(definition))
+);
+CREATE INDEX IF NOT EXISTS scope_observations_by_last_seen ON scope_observations(last_seen DESC);
+`); err != nil {
+			return fmt.Errorf("create v6 scope tables: %w", err)
+		}
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO scope_state(id, definition) VALUES(1, '{"enforce":false}')`); err != nil {
+			return fmt.Errorf("seed scope_state: %w", err)
+		}
+		defaultRule, err := json.Marshal(ScopeRule{
+			RepoKey:   "*",
+			AgentKey:  "*",
+			Grants:    []ServiceGrant{},
+			UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		})
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO scope_rules(repo_key, agent_key, definition) VALUES('*', '*', ?)`, string(defaultRule)); err != nil {
+			return fmt.Errorf("seed default scope rule: %w", err)
+		}
+		if _, err := tx.Exec("PRAGMA user_version=6"); err != nil {
+			return fmt.Errorf("set sqlite user_version=6: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit v6 migration: %w", err)
+		}
+		committed = true
+	}
+	return nil
 }
 
 func (g *Gateway) Close() error {

@@ -1,20 +1,38 @@
 import { useEffect, useState } from "react";
-import { Search } from "lucide-react";
-import { formatTime, pretty, type Event } from "./types";
+import { Loader2, Search } from "lucide-react";
+import {
+  formatTime,
+  pretty,
+  saveScopeRepository,
+  scopeAgentLabel,
+  type Event,
+  type ScopeOverview,
+  type SimScope,
+} from "./types";
 import { EventStatusBadge } from "./OverviewPage";
 import { AlertBox, Badge, CopyButton } from "./ui";
 
 export function LogsPage({
   events,
+  scopes,
+  allowLocalPath = true,
   initialEventId,
   onReplay,
+  onOpenRepo,
   onRefresh,
   notify,
 }: {
   events: Event[];
+  scopes?: ScopeOverview;
+  allowLocalPath?: boolean;
   initialEventId?: string | null;
-  onReplay?: (payload: { intent: string; actor?: string }) => void;
-  onRefresh: () => void;
+  onReplay?: (payload: {
+    intent: string;
+    actor?: string;
+    simScope?: SimScope | null;
+  }) => void;
+  onOpenRepo?: (repoId: string) => void;
+  onRefresh: () => Promise<any> | void;
   notify: (msg: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -27,6 +45,7 @@ export function LogsPage({
   const [selectedId, setSelectedId] = useState<string | null>(
     initialEventId || events[0]?.id || null,
   );
+  const [bindingRoot, setBindingRoot] = useState(false);
 
   useEffect(() => {
     if (initialEventId) {
@@ -57,6 +76,113 @@ export function LogsPage({
     events.find((e) => e.id === selectedId) ||
     filtered[0] ||
     null;
+
+  const activeScope = activeEvent?.detail?.scope || null;
+  const matchedObs =
+    activeScope &&
+    (scopes?.observed.find(
+      (o) =>
+        (Boolean(activeScope.git_common_dir) &&
+          o.git_common_dir === activeScope.git_common_dir) ||
+        (Boolean(activeScope.root) && o.root === activeScope.root),
+    ) ||
+      null);
+  const effectiveCommonDir =
+    activeScope?.git_common_dir || matchedObs?.git_common_dir || "";
+
+  const alreadyBoundRepo = (() => {
+    if (!activeScope || !scopes?.repositories.length) return null;
+    if (activeScope.repo_id && activeScope.repo_id !== "*") {
+      const byId = scopes.repositories.find(
+        (r) => r.id === activeScope.repo_id,
+      );
+      if (byId) return byId;
+    }
+    if (effectiveCommonDir) {
+      return (
+        scopes.repositories.find((r) =>
+          (r.git_common_dirs || []).includes(effectiveCommonDir),
+        ) || null
+      );
+    }
+    if (activeScope.kind === "git") {
+      if (!activeScope.root) return null;
+      const inferredGitDir = `${activeScope.root.replace(/\/+$/, "")}/.git`;
+      return (
+        scopes.repositories.find((r) =>
+          (r.git_common_dirs || []).includes(inferredGitDir),
+        ) || null
+      );
+    }
+    if (activeScope.root) {
+      const rootClean = activeScope.root.replace(/\/+$/, "");
+      return (
+        scopes.repositories.find(
+          (r) =>
+            (r.root_paths || []).some((rp) => {
+              const rpClean = rp.replace(/\/+$/, "");
+              return (
+                Boolean(rpClean) &&
+                (rootClean === rpClean || rootClean.startsWith(`${rpClean}/`))
+              );
+            }) ||
+            (r.git_common_dirs || []).includes(`${rootClean}/.git`),
+        ) || null
+      );
+    }
+    return null;
+  })();
+
+  const boundRepoId =
+    alreadyBoundRepo?.id ||
+    (activeScope?.repo_id && activeScope.repo_id !== "*"
+      ? activeScope.repo_id
+      : "");
+
+  async function handleBindFromScope() {
+    if ((!activeScope?.root && !effectiveCommonDir) || bindingRoot) return;
+    setBindingRoot(true);
+    try {
+      const effectiveRemoteHint =
+        activeScope?.remote_hint || matchedObs?.remote_hint || "";
+      const name =
+        matchedObs?.name ||
+        activeScope?.repo_name ||
+        activeScope?.root?.split("/").filter(Boolean).pop() ||
+        effectiveCommonDir
+          .replace(/\/\.git\/?$/, "")
+          .split("/")
+          .filter(Boolean)
+          .pop() ||
+        "repo";
+      const saved = await saveScopeRepository(
+        effectiveCommonDir
+          ? {
+              name,
+              git_common_dirs: [effectiveCommonDir],
+              remote_hint: effectiveRemoteHint || undefined,
+            }
+          : allowLocalPath && activeScope?.root
+            ? {
+                name,
+                path: activeScope.root,
+                remote_hint: effectiveRemoteHint || undefined,
+              }
+            : {
+                name,
+                root_paths: activeScope?.root ? [activeScope.root] : undefined,
+                remote_hint: effectiveRemoteHint || undefined,
+              },
+      );
+      await onRefresh();
+      notify(`已绑定仓库 ${saved.name}`);
+      onOpenRepo?.(saved.id);
+    } catch (e: any) {
+      notify(e.message || "绑定仓库失败");
+    } finally {
+      setBindingRoot(false);
+    }
+  }
 
   return (
     <div>
@@ -181,7 +307,16 @@ export function LogsPage({
                     {ev.title}
                   </span>
                   <span className="log-row-meta">
-                    {ev.actor} · {formatTime(ev.time)}
+                    {ev.actor}
+                    {ev.detail?.scope?.agent
+                      ? ` · ${ev.detail.scope.agent}`
+                      : ""}
+                    {ev.detail?.scope?.repo_name
+                      ? ` · ${ev.detail.scope.repo_name}`
+                      : ev.detail?.scope?.root
+                        ? " · 未绑定仓库"
+                        : ""}{" "}
+                    · {formatTime(ev.time)}
                   </span>
                 </div>
                 <div className="log-row-right">{ev.duration_ms} ms</div>
@@ -235,6 +370,16 @@ export function LogsPage({
                           onReplay({
                             intent: activeEvent.title,
                             actor: activeEvent.actor,
+                            simScope: activeScope
+                              ? {
+                                  repo_key:
+                                    boundRepoId ||
+                                    (activeScope.root || effectiveCommonDir
+                                      ? "*"
+                                      : ""),
+                                  agent_key: activeScope.agent || "*",
+                                }
+                              : null,
                           })
                         }
                       >
@@ -287,6 +432,132 @@ export function LogsPage({
                     </div>
                   )}
                 </dl>
+
+                {activeScope && (
+                  <div
+                    style={{
+                      padding: "12px 16px",
+                      borderRadius: 6,
+                      background: "#ffffff",
+                      border: "1px solid var(--border)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "var(--ink-muted)",
+                        }}
+                      >
+                        仓库作用域追踪
+                      </span>
+
+                      {(activeScope.root || effectiveCommonDir) &&
+                      !boundRepoId ? (
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          disabled={bindingRoot}
+                          onClick={() => void handleBindFromScope()}
+                        >
+                          {bindingRoot && (
+                            <Loader2 size={12} className="spin" />
+                          )}
+                          绑定此仓库
+                        </button>
+                      ) : boundRepoId && onOpenRepo ? (
+                        <button
+                          type="button"
+                          className="btn-link"
+                          style={{ fontSize: 12 }}
+                          onClick={() => onOpenRepo(boundRepoId)}
+                        >
+                          查看绑定规则
+                        </button>
+                      ) : null}
+                    </div>
+
+                    <dl
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                        gap: "8px 16px",
+                      }}
+                    >
+                      <div className="kv-item">
+                        <dt>客户端</dt>
+                        <dd className="mono">
+                          {activeScope.agent
+                            ? `${scopeAgentLabel(activeScope.agent)} (${activeScope.agent})`
+                            : "—"}
+                        </dd>
+                      </div>
+                      <div className="kv-item">
+                        <dt>命中仓库</dt>
+                        <dd>
+                          {activeScope.repo_name ||
+                            alreadyBoundRepo?.name ||
+                            (boundRepoId
+                              ? boundRepoId
+                              : activeScope.root || effectiveCommonDir
+                                ? "未绑定仓库"
+                                : "—")}
+                        </dd>
+                      </div>
+                      <div className="kv-item">
+                        <dt>命中规则</dt>
+                        <dd className="mono">
+                          {activeScope.matched_rule || "—"}
+                        </dd>
+                      </div>
+                      <div className="kv-item">
+                        <dt>验证状态</dt>
+                        <dd>
+                          {activeScope.status === "scope_required" ||
+                          activeScope.status === "scope_invalid" ||
+                          activeScope.status === "ambiguous_workspace" ? (
+                            <Badge tone="danger">
+                              <span className="mono">{activeScope.status}</span>
+                            </Badge>
+                          ) : (
+                            <span className="mono">
+                              {activeScope.status || "—"}
+                            </span>
+                          )}
+                        </dd>
+                      </div>
+                      {activeScope.root && (
+                        <div
+                          className="kv-item"
+                          style={{ gridColumn: "1 / -1" }}
+                        >
+                          <dt>工作区根路径</dt>
+                          <dd className="mono">{activeScope.root}</dd>
+                        </div>
+                      )}
+                      {effectiveCommonDir && (
+                        <div
+                          className="kv-item"
+                          style={{ gridColumn: "1 / -1" }}
+                        >
+                          <dt>Git Common Dir</dt>
+                          <dd className="mono">{effectiveCommonDir}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </div>
+                )}
 
                 {activeEvent.detail?.summary && (
                   <AlertBox

@@ -82,8 +82,8 @@ try:
             for future in futures: future.result()
     for row in control("dev", "/clients"):
         current = entries(row)
-        assert current["mcp-gateway"]["url"] == states["stable"]["mcp_url"]
-        assert current["mcp-gateway-dev"]["url"] == states["dev"]["mcp_url"]
+        assert current["mcp-gateway"]["url"] == states["stable"]["mcp_url"] + "?agent=" + row["ID"]
+        assert current["mcp-gateway-dev"]["url"] == states["dev"]["mcp_url"] + "?agent=" + row["ID"]
     for channel in ["dev", "stable"]:
         subprocess.run(["curl", "-fsS", "--unix-socket", str(sockets[channel]), "http://localhost/screenshot", "-o", str(ARTIFACTS / (channel + ".png"))], check=True)
     for client in CLIENTS:

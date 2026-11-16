@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"gatewaylab/internal/workspace"
+
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"golang.org/x/oauth2"
@@ -39,6 +41,11 @@ type Gateway struct {
 	execution      executionPolicy
 	routing        routingOptions
 	maintenance    *Maintainer
+	scopeKey       []byte
+	hookBinPath    string
+	scope          scopePolicyState
+	jtiReplay      *jtiCache
+	clock          func() time.Time
 }
 
 func New(dir, baseURL string) (*Gateway, error) {
@@ -53,6 +60,10 @@ func New(dir, baseURL string) (*Gateway, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
+	scopeKey, err := workspace.EnsureScopeKey(dir)
+	if err != nil {
+		return nil, fmt.Errorf("initialize scope key: %w", err)
+	}
 	db, err := openDatabase(filepath.Join(dir, "gateway.db"))
 	if err != nil {
 		return nil, err
@@ -65,10 +76,28 @@ func New(dir, baseURL string) (*Gateway, error) {
 			}
 		}
 	}()
-	g := &Gateway{instanceID: uuid.NewString(), execution: execution, access: access, dir: dir, baseURL: baseURL, events: []Event{}, profileKeys: map[string]string{}, runtimeSecrets: map[string]string{}, oauthTokens: map[string]oauth2.TokenSource{}, settings: Settings{
-		BaseURL: "https://api.openai.com/v1", Model: "gpt-6-luna", MaxTools: 4, TimeoutSeconds: 45,
-	}, db: db}
+	g := &Gateway{
+		instanceID:     uuid.NewString(),
+		execution:      execution,
+		access:         access,
+		dir:            dir,
+		baseURL:        baseURL,
+		events:         []Event{},
+		profileKeys:    map[string]string{},
+		runtimeSecrets: map[string]string{},
+		oauthTokens:    map[string]oauth2.TokenSource{},
+		settings: Settings{
+			BaseURL: "https://api.openai.com/v1", Model: "gpt-6-luna", MaxTools: 4, TimeoutSeconds: 45,
+		},
+		db:          db,
+		scopeKey:    scopeKey,
+		hookBinPath: workspace.ResolveHookBinary("", dir),
+		jtiReplay:   newJTICache(),
+	}
 	if err := g.loadRegistry(); err != nil {
+		return nil, err
+	}
+	if err := g.loadScopes(); err != nil {
 		return nil, err
 	}
 	var count int
@@ -543,7 +572,7 @@ func actorName(actor string) string {
 }
 
 func allowed(t Tool, actor string) bool {
-	return t.Enabled && slices.Contains(t.Actors, actorName(actor))
+	return t.Enabled && (slices.Contains(t.Actors, "*") || slices.Contains(t.Actors, actorName(actor)))
 }
 
 func (g *Gateway) record(kind, actor, status, title string, started time.Time, detail any) {

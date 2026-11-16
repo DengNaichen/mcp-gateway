@@ -34,6 +34,10 @@ type playgroundState struct {
 	actor             string
 	serviceScopeLabel string
 	selectedServiceID string
+	simRepoLabel      string
+	simRepoKey        string // "": 管理员全量, "*": 未绑定新仓库, or repo.ID
+	simAgentLabel     string
+	simAgentKey       string // "": 不限 ("*" when simulating repo), or codex/claude/cursor/opencode/pi
 	includeDemo       bool
 	summaryOnly       bool
 
@@ -66,6 +70,8 @@ func getPlaygroundState(u *DesktopUI) *playgroundState {
 		st = &playgroundState{
 			actor:             "developer",
 			serviceScopeLabel: "全部已启用服务",
+			simRepoLabel:      "管理员全量",
+			simAgentLabel:     "不限",
 			argsText:          "{}",
 		}
 		playgroundStates[u] = st
@@ -87,19 +93,25 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 		} else {
 			st.actor = "developer"
 		}
-		if u.ReplayIntent != "" && u.ReplaySeq > 0 {
-			st.intent = u.ReplayIntent
+		if u.ReplaySeq > 0 {
+			if u.ReplayIntent != "" {
+				st.intent = u.ReplayIntent
+			}
+			applyPlaygroundReplayScope(st, u)
 			st.lastReplaySeq = u.ReplaySeq
 		}
 	}
 
-	// Sync handoff when navigating from Overview blind-spot replay.
+	// Sync handoff when navigating from Overview, Logs, or Repos preview.
 	if u.ReplaySeq != st.lastReplaySeq && u.ReplaySeq > 0 {
 		st.lastReplaySeq = u.ReplaySeq
-		st.intent = u.ReplayIntent
+		if u.ReplayIntent != "" {
+			st.intent = u.ReplayIntent
+		}
 		if !state.Access.Shared && u.ReplayActor != "" {
 			st.actor = u.ReplayActor
 		}
+		applyPlaygroundReplayScope(st, u)
 		st.includeDemo = false
 		st.selectedServiceID = ""
 		st.serviceScopeLabel = "全部已启用服务"
@@ -141,7 +153,56 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 		st.selectedServiceID = scopeLabelToID[st.serviceScopeLabel]
 	}
 
-	// Count eligible tools under current actor, demo toggle, and service scope.
+	// Build repository & coding agent simulation options.
+	repoOptions := []string{"管理员全量", "未绑定新仓库 (*)"}
+	repoLabelToKey := map[string]string{
+		"管理员全量":      "",
+		"未绑定新仓库 (*)": "*",
+	}
+	repoKeyToLabel := map[string]string{
+		"":  "管理员全量",
+		"*": "未绑定新仓库 (*)",
+	}
+	for _, repo := range state.Scopes.Repositories {
+		lbl := repo.Name
+		if lbl == "" {
+			lbl = repo.ID
+		} else if _, dup := repoLabelToKey[lbl]; dup {
+			lbl = fmt.Sprintf("%s (%s)", repo.Name, repo.ID)
+		}
+		repoOptions = append(repoOptions, lbl)
+		repoLabelToKey[lbl] = repo.ID
+		repoKeyToLabel[repo.ID] = lbl
+	}
+	if lbl, ok := repoKeyToLabel[st.simRepoKey]; ok {
+		st.simRepoLabel = lbl
+	} else {
+		st.simRepoKey = ""
+		st.simRepoLabel = "管理员全量"
+	}
+
+	agentOptions := []string{"不限"}
+	agentLabelToKey := map[string]string{"不限": ""}
+	agentKeyToLabel := map[string]string{"": "不限", "*": "不限"}
+	for _, ag := range scopeAgents {
+		agentOptions = append(agentOptions, ag.Name)
+		agentLabelToKey[ag.Name] = ag.ID
+		agentKeyToLabel[ag.ID] = ag.Name
+	}
+	if lbl, ok := agentKeyToLabel[st.simAgentKey]; ok {
+		st.simAgentLabel = lbl
+	} else {
+		st.simAgentKey = ""
+		st.simAgentLabel = "不限"
+	}
+
+	simScope := activePlaygroundSimScope(st)
+	var simGrants []ScopeServiceGrant
+	if simScope != nil {
+		simGrants, _, _, _ = resolveEffectiveScopeRule(state.Scopes, simScope.RepoKey, simScope.AgentKey)
+	}
+
+	// Count eligible tools under current actor, demo toggle, service scope, and simulated repo/agent scope.
 	eligibleCount := 0
 	toolsByID := make(map[string]gateway.Tool, len(state.Registry.Tools))
 	for _, t := range state.Registry.Tools {
@@ -160,6 +221,9 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 			continue
 		}
 		if !slices.Contains(t.Actors, "*") && !slices.Contains(t.Actors, effectiveActor) {
+			continue
+		}
+		if simScope != nil && !scopeGrantAllowsTool(simGrants, t) {
 			continue
 		}
 		eligibleCount++
@@ -189,7 +253,7 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 	ui.Row(c).FillWidth().Gap(24).AlignItems(ui.Start).Children(func() {
 		// Left Column: Intent Composer + Discovery Results.
 		ui.Column(c).Grow(1).MinWidth(0).Gap(24).Children(func() {
-			u.renderPlaygroundComposer(c, st, state, effectiveActor, scopeOptions, scopeLabelToID)
+			u.renderPlaygroundComposer(c, st, state, effectiveActor, scopeOptions, scopeLabelToID, repoOptions, repoLabelToKey, agentOptions, agentLabelToKey)
 			u.renderPlaygroundResults(c, st, serversByID, toolsByID, effectiveActor)
 		})
 
@@ -200,6 +264,41 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 	})
 }
 
+func applyPlaygroundReplayScope(st *playgroundState, u *DesktopUI) {
+	if u.ReplayHasScope {
+		st.simRepoKey = u.ReplayRepoKey
+		if u.ReplayAgentKey == "*" {
+			st.simAgentKey = ""
+		} else {
+			st.simAgentKey = u.ReplayAgentKey
+		}
+		if st.simRepoKey == "" && st.simAgentKey != "" {
+			st.simRepoKey = "*"
+		}
+	} else {
+		st.simRepoKey = ""
+		st.simAgentKey = ""
+	}
+}
+
+func activePlaygroundSimScope(st *playgroundState) *SimScope {
+	if st.simRepoKey == "" && st.simAgentKey == "" {
+		return nil
+	}
+	repoKey := st.simRepoKey
+	if repoKey == "" {
+		repoKey = "*"
+	}
+	agentKey := st.simAgentKey
+	if agentKey == "" {
+		agentKey = "*"
+	}
+	return &SimScope{
+		RepoKey:  repoKey,
+		AgentKey: agentKey,
+	}
+}
+
 func (u *DesktopUI) renderPlaygroundComposer(
 	c *ui.Context,
 	st *playgroundState,
@@ -207,6 +306,10 @@ func (u *DesktopUI) renderPlaygroundComposer(
 	effectiveActor string,
 	scopeOptions []string,
 	scopeLabelToID map[string]string,
+	repoOptions []string,
+	repoLabelToKey map[string]string,
+	agentOptions []string,
+	agentLabelToKey map[string]string,
 ) {
 	SailCard(c, func() {
 		SailCardTitle(c, "任务意图", "", func() {
@@ -254,6 +357,10 @@ func (u *DesktopUI) renderPlaygroundComposer(
 						st.includeDemo = true
 						st.selectedServiceID = ""
 						st.serviceScopeLabel = "全部已启用服务"
+						st.simRepoKey = ""
+						st.simRepoLabel = "管理员全量"
+						st.simAgentKey = ""
+						st.simAgentLabel = "不限"
 						st.result = nil
 						st.selectedTool = nil
 						st.invocation = nil
@@ -285,6 +392,34 @@ func (u *DesktopUI) renderPlaygroundComposer(
 				ui.Text(c, "服务").FontSize(12).TextColor(SailInkMuted).SingleLine()
 				if ui.Select(c.Key("pg-scope"), &st.serviceScopeLabel, scopeOptions).MinWidth(164).Changed() {
 					st.selectedServiceID = scopeLabelToID[st.serviceScopeLabel]
+					st.result = nil
+					st.selectedTool = nil
+					st.invocation = nil
+				}
+			})
+
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "仓库").FontSize(12).TextColor(SailInkMuted).SingleLine()
+				if ui.Select(c.Key("pg-sim-repo"), &st.simRepoLabel, repoOptions).MinWidth(156).Changed() {
+					st.simRepoKey = repoLabelToKey[st.simRepoLabel]
+					if st.simRepoKey == "" {
+						st.simAgentKey = ""
+						st.simAgentLabel = "不限"
+					}
+					st.result = nil
+					st.selectedTool = nil
+					st.invocation = nil
+				}
+			})
+
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "客户端").FontSize(12).TextColor(SailInkMuted).SingleLine()
+				if ui.Select(c.Key("pg-sim-agent"), &st.simAgentLabel, agentOptions).MinWidth(128).Changed() {
+					st.simAgentKey = agentLabelToKey[st.simAgentLabel]
+					if st.simAgentKey != "" && st.simRepoKey == "" {
+						st.simRepoKey = "*"
+						st.simRepoLabel = "未绑定新仓库 (*)"
+					}
 					st.result = nil
 					st.selectedTool = nil
 					st.invocation = nil
@@ -630,6 +765,7 @@ func (u *DesktopUI) runPlaygroundDiscover(st *playgroundState, intent, effective
 	if st.selectedServiceID != "" {
 		req.Services = []string{st.selectedServiceID}
 	}
+	simScope := activePlaygroundSimScope(st)
 
 	timeoutSec := 45
 	if u.State != nil && u.State.Settings.TimeoutSeconds > 0 {
@@ -647,7 +783,7 @@ func (u *DesktopUI) runPlaygroundDiscover(st *playgroundState, intent, effective
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec+15)*time.Second)
 		defer cancel()
 
-		res, err := u.Client.Discover(ctx, req)
+		res, err := u.Client.DiscoverScoped(ctx, req, simScope)
 		if err != nil {
 			if IsUnauthorized(err) {
 				u.updateUI(func() { st.routing = false })
@@ -739,6 +875,7 @@ func (u *DesktopUI) runPlaygroundInvoke(st *playgroundState, toolID, effectiveAc
 		Fields:    fields,
 		Actor:     effectiveActor,
 	}
+	simScope := activePlaygroundSimScope(st)
 
 	st.invoking = true
 	st.invokeError = ""
@@ -748,7 +885,7 @@ func (u *DesktopUI) runPlaygroundInvoke(st *playgroundState, toolID, effectiveAc
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		res, err := u.Client.Invoke(ctx, req)
+		res, err := u.Client.InvokeScoped(ctx, req, simScope)
 		if err != nil {
 			if IsUnauthorized(err) {
 				u.updateUI(func() { st.invoking = false })

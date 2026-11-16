@@ -16,17 +16,22 @@ func (g *Gateway) Discover(ctx context.Context, req DiscoverRequest) (DiscoverRe
 func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, registry Registry, record bool) (result DiscoverResult, retErr error) {
 	req.Actor = requestActor(ctx, req.Actor)
 	started := time.Now()
+	scopeEv := scopeEventForContext(ctx)
 	defer func() {
 		result.DurationMS = time.Since(started).Milliseconds()
 		if !record {
 			return
 		}
 		if retErr != nil {
-			g.record("discover", req.Actor, "error", req.Intent, started, map[string]any{"error": g.errorDetail(retErr)})
+			g.record("discover", req.Actor, "error", req.Intent, started, map[string]any{"error": g.errorDetail(retErr), "scope": scopeEv})
 		} else {
+			result.Scope = &scopeEv
 			g.record("discover", req.Actor, result.Status, req.Intent, started, result)
 		}
 	}()
+	if err := g.checkExecutionScope(ctx); err != nil {
+		return result, err
+	}
 	if strings.TrimSpace(req.Intent) == "" {
 		return result, invalid("请描述你需要完成的任务")
 	}

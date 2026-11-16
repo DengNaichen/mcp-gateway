@@ -499,6 +499,63 @@
     .master-detail.logs-layout {
       grid-template-columns: 380px minmax(0, 1fr);
     }
+    .master-detail.repos-layout {
+      grid-template-columns: 280px minmax(0, 1fr);
+    }
+    .list-group-hdr {
+      padding: 8px 16px 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--ink-faint);
+      background: var(--bg-subtle);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      letter-spacing: 0.02em;
+    }
+    .select-sm {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      color: var(--ink-strong);
+      background: var(--bg-canvas);
+      font-family: inherit;
+      height: 28px;
+    }
+    .subset-drawer {
+      background: var(--bg-subtle);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 18px 12px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .modal-mask {
+      position: fixed;
+      inset: 0;
+      background: rgba(26, 31, 54, 0.34);
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 20px;
+    }
+    .modal-box {
+      width: 100%;
+      max-width: 660px;
+      max-height: 86vh;
+      overflow-y: auto;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 15px 35px rgba(26, 31, 54, 0.18);
+      display: flex;
+      flex-direction: column;
+    }
 
     /* Structured Description Block */
     .desc-structured {
@@ -806,6 +863,7 @@
             <button class="nav-item" data-page="services"><span class="nav-item-left"><span class="nav-dot"></span>上游服务</span><span class="nav-count" id="nav-services-count">3</span></button>
             <button class="nav-item" data-page="market"><span class="nav-item-left"><span class="nav-dot"></span>MCP 市场</span></button>
             <button class="nav-item active" data-page="catalog"><span class="nav-item-left"><span class="nav-dot"></span>工具目录</span><span class="nav-count">18/26</span></button>
+            <button class="nav-item" data-page="repos"><span class="nav-item-left"><span class="nav-dot"></span>仓库绑定</span><span class="nav-count" id="nav-repos-count">2</span></button>
             <button class="nav-item" data-page="settings"><span class="nav-item-left"><span class="nav-dot"></span>访问与路由</span></button>
           </div>
           <div>
@@ -841,7 +899,7 @@
             <span class="mono" style="font-size:12px;">gpt-6-luna</span>
           </span>
           <button class="btn" onclick="render()">刷新</button>
-          <button class="btn" onclick="alert('接入客户端配置')">接入客户端</button>
+          <button class="btn" onclick="openHookModal('claude')">接入客户端</button>
         </div>
       </header>
 
@@ -850,6 +908,7 @@
       </main>
     </div>
   </div>
+  <div id="modal-root"></div>
 
   <script>
     let currentPage = "catalog";
@@ -956,10 +1015,140 @@ Args:
       { id: "billing", name: "Billing REST API", proto: "HTTP REST", tools: "4 / 8", status: "连接超时", tone: "err", desc: "Internal invoice & refund endpoints imported from OpenAPI v3 spec." }
     ];
 
+    const SERVICE_TOOLS = {
+      github: [
+        { id: "github.create_or_update_file", name: "create_or_update_file", rw: true },
+        { id: "github.list_pull_requests", name: "list_pull_requests", rw: false },
+        { id: "github.get_file_contents", name: "get_file_contents", rw: false }
+      ],
+      k8s: [
+        { id: "k8s.describe_pod_events", name: "describe_pod_events", rw: false },
+        { id: "k8s.get_pod_logs", name: "get_pod_logs", rw: false }
+      ],
+      billing: [
+        { id: "billing.list_invoices", name: "list_invoices", rw: false },
+        { id: "billing.refund_charge", name: "refund_charge", rw: true }
+      ]
+    };
+
+    const AGENTS = [
+      { id: "codex", label: "Codex CLI" },
+      { id: "claude", label: "Claude Code" },
+      { id: "cursor", label: "Cursor" },
+      { id: "opencode", label: "OpenCode v2" },
+      { id: "pi", label: "Pi" }
+    ];
+
+    let scopeEnforce = true;
+    let selectedScopeRepoKey = "repo-gw";
+    let expandedSubsetKey = "";
+    let playgroundSimRepo = "";
+    let playgroundSimAgent = "*";
+    let playgroundIntent = "排查 prod-core 下支付服务 Pod 频繁重启的原因";
+    let activeHookModalAgent = null;
+    let showAddRepoModal = false;
+
+    const REPOS = [
+      {
+        id: "repo-gw",
+        name: "mcp-gateway",
+        git_common_dirs: ["/Users/dev/Developer/mcp-gateway/.git"],
+        root_paths: [],
+        remote_hint: "github.com/DengNaichen/mcp-gateway"
+      },
+      {
+        id: "repo-checkout",
+        name: "checkout-service",
+        git_common_dirs: ["/Users/dev/Developer/checkout-service/.git"],
+        root_paths: [],
+        remote_hint: "github.com/acme/checkout-service"
+      }
+    ];
+
+    let OBSERVED_REPOS = [
+      {
+        fingerprint: "obs-1",
+        name: "infra-terraform",
+        kind: "git",
+        root: "/Users/dev/Developer/infra-terraform",
+        git_common_dir: "/Users/dev/Developer/infra-terraform/.git",
+        remote_hint: "github.com/acme/infra-terraform",
+        last_agent: "codex",
+        last_seen: "2 分钟前",
+        request_count: 3
+      }
+    ];
+
+    // Precedence: (R, agent) > (R, *) > (*, agent) > (*, *); out-of-the-box (*, *) is [] (0 tools)
+    let SCOPE_RULES = [
+      { repo_key: "*", agent_key: "*", grants: [] },
+      {
+        repo_key: "repo-gw",
+        agent_key: "*",
+        grants: [
+          { server_id: "github", access: "rw", tool_ids: [] },
+          { server_id: "k8s", access: "ro", tool_ids: [] }
+        ]
+      },
+      {
+        repo_key: "repo-gw",
+        agent_key: "cursor",
+        grants: [
+          { server_id: "github", access: "ro", tool_ids: ["github.list_pull_requests", "github.get_file_contents"] },
+          { server_id: "k8s", access: "ro", tool_ids: [] }
+        ]
+      },
+      {
+        repo_key: "repo-checkout",
+        agent_key: "*",
+        grants: [
+          { server_id: "k8s", access: "ro", tool_ids: [] }
+        ]
+      }
+    ];
+
+    const HOOK_SNIPPETS = {
+      claude: {
+        config_path: "~/.claude/settings.json",
+        hook_bin_path: "~/.mcp-gateway/bin/mcp-gateway-hook",
+        mcp_url: "http://127.0.0.1:8788/mcp?agent=claude",
+        instructions: "将 PreToolUse Hook 合并至 ~/.claude/settings.json，仅拦截 mcp-gateway 三元工具并注入单次签名 _gw_ctx。",
+        snippet: `{\n  "hooks": {\n    "PreToolUse": [\n      {\n        "matcher": "^mcp__mcp[-_]gateway__(discover_tools|get_tool_schema|invoke_tool)$",\n        "hooks": [{ "type": "command", "command": "~/.mcp-gateway/bin/mcp-gateway-hook claude" }]\n      }\n    ]\n  }\n}`
+      },
+      codex: {
+        config_path: "~/.codex/hooks.json",
+        hook_bin_path: "~/.mcp-gateway/bin/mcp-gateway-hook",
+        mcp_url: "http://127.0.0.1:8788/mcp?agent=codex",
+        instructions: "在 ~/.codex/hooks.json 中配置 PreToolUse Hook，签发扁平非空字符串凭证（兼容 TOML 约束）。",
+        snippet: `{\n  "hooks": {\n    "PreToolUse": [\n      {\n        "matcher": "^mcp__mcp[-_]gateway__(discover_tools|get_tool_schema|invoke_tool)$",\n        "hooks": [{ "type": "command", "command": "~/.mcp-gateway/bin/mcp-gateway-hook codex" }]\n      }\n    ]\n  }\n}`
+      },
+      cursor: {
+        config_path: "~/.cursor/hooks.json",
+        hook_bin_path: "~/.mcp-gateway/bin/mcp-gateway-hook",
+        mcp_url: "http://127.0.0.1:8788/mcp?agent=cursor",
+        instructions: "在 ~/.cursor/hooks.json 中配置 preToolUse（内置输入形状闸，不误伤其他同名工具）。",
+        snippet: `{\n  "version": 1,\n  "hooks": {\n    "preToolUse": [\n      {\n        "matcher": "^MCP:(discover_tools|get_tool_schema|invoke_tool)$",\n        "command": "~/.mcp-gateway/bin/mcp-gateway-hook cursor"\n      }\n    ]\n  }\n}`
+      },
+      opencode: {
+        config_path: "~/.config/opencode/plugins/mcp-gateway.js",
+        hook_bin_path: "~/.mcp-gateway/bin/mcp-gateway-hook",
+        mcp_url: "http://127.0.0.1:8788/mcp?agent=opencode",
+        instructions: "保存为 OpenCode v2 插件，通过 ctx.session.get 读取当前会话真实目录并原地签名。",
+        snippet: `export default async function McpGatewayScopePlugin(ctx) {\n  return {\n    "tool.execute.before": async (event, output) => {\n      if (!/^mcp[-_]gateway_(discover_tools|get_tool_schema|invoke_tool)$/.test(event.tool)) return;\n      const session = await ctx.session.get({ sessionID: event.sessionID });\n      const cwd = session?.location?.directory || process.cwd();\n      // 调用 ~/.mcp-gateway/bin/mcp-gateway-hook sign --agent opencode --cwd <cwd> --op <tool>\n      Object.assign(output.args, signedArgs);\n    }\n  };\n}`
+      },
+      pi: {
+        config_path: "~/.pi/agent/extensions/mcp-gateway.ts",
+        hook_bin_path: "~/.mcp-gateway/bin/mcp-gateway-hook",
+        mcp_url: "http://127.0.0.1:8788/mcp?agent=pi",
+        instructions: "保存为 Pi 扩展，在 pi.on(\"tool_call\") 中使用 ctx.cwd 原地注入单次签名凭证。",
+        snippet: `export default function (pi) {\n  pi.on("tool_call", async (event, ctx) => {\n    if (!/^mcp__mcp_gateway__(discover_tools|get_tool_schema|invoke_tool)$/.test(event.toolName)) return;\n    // 调用 ~/.mcp-gateway/bin/mcp-gateway-hook sign --agent pi --cwd ctx.cwd --op <tool>\n    Object.assign(event.input, signedInput);\n  });\n}`
+      }
+    };
+
     const LOGS = [
-      { id: "ev-101", kind: "discover", status: "selected", title: "排查 prod-core 下支付服务 Pod 频繁重启原因", actor: "developer", ms: 42, time: "17:14:08", eligible: 18, tokens: "218 tok", tools: [{ id: "k8s.describe_pod_events", reason: "匹配 Kubernetes Pod 重启与 Warning 事件诊断" }] },
-      { id: "ev-102", kind: "invoke", status: "error", title: "billing.refund_charge", actor: "developer", ms: 184, time: "17:12:51", err: "upstream HTTP 502: bad gateway (TLS handshake timeout)" },
-      { id: "ev-103", kind: "discover", status: "no_match", title: "删除生产数据库表 orders_archive", actor: "observer", ms: 58, time: "17:09:12", eligible: 12, reason: "当前身份 observer 仅开放只读工具，无匹配的写操作工具。" }
+      { id: "ev-101", kind: "discover", status: "selected", title: "排查 prod-core 下支付服务 Pod 频繁重启原因", actor: "developer", ms: 42, time: "17:14:08", eligible: 5, tokens: "142 tok", scope: { agent: "codex", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "mcp-gateway · *", status: "matched" }, tools: [{ id: "k8s.describe_pod_events", reason: "匹配 Kubernetes Pod 重启与 Warning 事件诊断" }] },
+      { id: "ev-102", kind: "discover", status: "no_match", title: "查询 Terraform 状态锁与变更计划", actor: "developer", ms: 8, time: "17:13:20", eligible: 0, reason: "当前仓库尚未绑定上游服务，命中全局默认 (*, *) -> 0 候选工具。", scope: { agent: "codex", repo_id: "", repo_name: "", root: "/Users/dev/Developer/infra-terraform", matched_rule: "* · *", status: "unconfigured" } },
+      { id: "ev-103", kind: "invoke", status: "error", title: "github.create_or_update_file", actor: "developer", ms: 6, time: "17:11:04", err: "403 scope_denied: Cursor 例外规则仅授予 GitHub MCP 只读 (RO) 权限", scope: { agent: "cursor", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "mcp-gateway · cursor", status: "matched" } }
     ];
 
     function stripMd(s) {
@@ -1060,7 +1249,7 @@ Args:
         document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         currentPage = btn.dataset.page;
-        const titles = { overview: "运行大盘", services: "上游服务", market: "MCP 市场", catalog: "工具目录", logs: "请求日志", playground: "路由沙盒", settings: "访问与路由" };
+        const titles = { overview: "运行大盘", services: "上游服务", market: "MCP 市场", catalog: "工具目录", repos: "仓库绑定", logs: "请求日志", playground: "路由沙盒", settings: "访问与路由" };
         document.getElementById("bc-title").textContent = titles[currentPage];
         render();
       });
@@ -1069,14 +1258,18 @@ Args:
     function render() {
       const countEl = document.getElementById("nav-services-count");
       if (countEl) countEl.textContent = String(SERVICES.length);
+      const cntEl = document.getElementById("nav-repos-count");
+      if (cntEl) cntEl.textContent = String(REPOS.length);
       const root = document.getElementById("page-root");
       if (currentPage === "catalog") root.innerHTML = renderCatalog();
       else if (currentPage === "overview") root.innerHTML = renderOverview();
       else if (currentPage === "services") root.innerHTML = renderServices();
       else if (currentPage === "market") root.innerHTML = renderMarket();
+      else if (currentPage === "repos") root.innerHTML = renderRepos();
       else if (currentPage === "logs") root.innerHTML = renderLogs();
       else if (currentPage === "playground") root.innerHTML = renderPlayground();
       else root.innerHTML = renderSettings();
+      renderModals();
     }
 
     function renderOverview() {
@@ -1310,6 +1503,295 @@ Args:
                     ` : ""}
                   </div>`
               }
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function findScopeRule(repoKey, agentKey) {
+      return SCOPE_RULES.find(r => r.repo_key === repoKey && r.agent_key === agentKey) || null;
+    }
+
+    function ensureScopeRule(repoKey, agentKey, seedGrants) {
+      let r = findScopeRule(repoKey, agentKey);
+      if (!r) {
+        r = { repo_key: repoKey, agent_key: agentKey, grants: JSON.parse(JSON.stringify(seedGrants || [])) };
+        SCOPE_RULES.push(r);
+      }
+      return r;
+    }
+
+    function evaluateEffectiveScope(repoKey, agentId) {
+      const candidates = repoKey === "*"
+        ? [
+            { rk: "*", ak: agentId, label: "全局客户端例外" },
+            { rk: "*", ak: "*", label: "全局默认" }
+          ]
+        : [
+            { rk: repoKey, ak: agentId, label: "客户端例外" },
+            { rk: repoKey, ak: "*", label: "仓库默认" },
+            { rk: "*", ak: agentId, label: "全局客户端默认" },
+            { rk: "*", ak: "*", label: "全局默认" }
+          ];
+      let matched = { rk: "*", ak: "*", label: "全局默认", grants: [] };
+      for (const c of candidates) {
+        const rule = findScopeRule(c.rk, c.ak);
+        if (rule) {
+          matched = { ...c, grants: rule.grants };
+          break;
+        }
+      }
+      let toolCount = 0;
+      let hasWrite = false;
+      for (const g of matched.grants) {
+        const all = SERVICE_TOOLS[g.server_id] || [];
+        const subset = (g.tool_ids && g.tool_ids.length) ? all.filter(t => g.tool_ids.includes(t.id)) : all;
+        const allowed = subset.filter(t => g.access === "rw" || !t.rw);
+        toolCount += allowed.length;
+        if (g.access === "rw" && allowed.some(t => t.rw)) hasWrite = true;
+      }
+      return {
+        matched_repo_key: matched.rk,
+        matched_agent_key: matched.ak,
+        source_label: matched.grants.length === 0 ? `${matched.label} · 无权限` : matched.label,
+        server_count: matched.grants.length,
+        tool_count: toolCount,
+        has_write: hasWrite
+      };
+    }
+
+    function renderGrantRows(repoKey, agentKey, grants) {
+      if (!grants.length) {
+        return `<div style="padding:18px;font-size:12.5px;color:var(--ink-muted);">${repoKey === "*" && agentKey === "*" ? "默认拒绝全部上游服务（未绑定新仓库 0 工具）" : "当前规则未开放任何上游服务（0 工具）"}</div>`;
+      }
+      return grants.map(g => {
+        const srv = SERVICES.find(s => s.id === g.server_id) || { id: g.server_id, name: g.server_id, desc: "" };
+        const parsed = parseRichDescription(srv.desc);
+        const allTools = SERVICE_TOOLS[g.server_id] || [];
+        const subsetCount = (g.tool_ids && g.tool_ids.length) ? `${g.tool_ids.length}/${allTools.length} 工具` : `全部 (${allTools.length})`;
+        const drawerKey = `${repoKey}:${agentKey}:${g.server_id}`;
+        const isOpen = expandedSubsetKey === drawerKey;
+        return `
+          <div>
+            <div class="hairline-row" style="cursor:default;">
+              <div class="row-main">
+                <div class="row-title-line">
+                  <span class="row-name" style="font-family:var(--sans);">${esc(srv.name)}</span>
+                  ${g.access === "rw" ? `<span class="badge-rw">RW</span>` : `<span class="quiet-meta">RO</span>`}
+                </div>
+                <div class="row-summary">${esc(parsed.summary)}</div>
+              </div>
+              <div class="row-right">
+                <button class="btn" style="padding:3px 8px;font-size:11.5px;" onclick="expandedSubsetKey=(expandedSubsetKey==='${drawerKey}'?'':'${drawerKey}');render();">${subsetCount}</button>
+                <div class="segmented">
+                  <button class="seg-btn ${g.access==='ro'?'active':''}" onclick="setGrantAccess('${repoKey}','${agentKey}','${g.server_id}','ro')">只读</button>
+                  <button class="seg-btn ${g.access==='rw'?'active':''}" onclick="setGrantAccess('${repoKey}','${agentKey}','${g.server_id}','rw')">读写</button>
+                </div>
+                <button class="btn" style="padding:3px 7px;font-size:11.5px;color:var(--ink-muted);" title="移除此服务" onclick="removeGrant('${repoKey}','${agentKey}','${g.server_id}')">×</button>
+              </div>
+            </div>
+            ${isOpen ? `
+              <div class="subset-drawer">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+                  <span class="quiet-meta" style="font-size:11.5px;">勾选允许暴露的工具子集（全选即不限子集）</span>
+                  ${g.tool_ids && g.tool_ids.length ? `<button class="raw-toggle" onclick="resetGrantTools('${repoKey}','${agentKey}','${g.server_id}')">恢复全部工具</button>` : ""}
+                </div>
+                ${allTools.map(t => {
+                  const checked = !g.tool_ids || g.tool_ids.length === 0 || g.tool_ids.includes(t.id);
+                  const blockedByRo = g.access === "ro" && t.rw;
+                  return `
+                    <label style="display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:2px 0;cursor:pointer;">
+                      <span style="display:inline-flex;align-items:center;gap:7px;">
+                        <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleGrantTool('${repoKey}','${agentKey}','${g.server_id}','${t.id}')" />
+                        <span class="mono" style="${blockedByRo ? 'color:var(--ink-faint);text-decoration:line-through;' : 'color:var(--ink-strong);'}">${esc(t.name)}</span>
+                      </span>
+                      <span>${t.rw ? `<span class="badge-rw">RW</span>${blockedByRo ? ` <span class="quiet-meta" style="font-size:11px;">只读下自动屏蔽</span>` : ""}` : `<span class="quiet-meta">RO</span>`}</span>
+                    </label>
+                  `;
+                }).join("")}
+              </div>
+            ` : ""}
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderRepos() {
+      const selectedRepo = selectedScopeRepoKey === "*" ? null : (REPOS.find(r => r.id === selectedScopeRepoKey) || REPOS[0] || null);
+      const repoKey = selectedRepo ? selectedRepo.id : "*";
+      const globalDefaultRule = findScopeRule("*", "*") || { grants: [] };
+      const baseRule = findScopeRule(repoKey, "*");
+      const baseGrants = baseRule ? baseRule.grants : [];
+      const unboundServices = SERVICES.filter(s => !baseGrants.some(g => g.server_id === s.id));
+      const agentOverrides = SCOPE_RULES.filter(r => r.repo_key === repoKey && r.agent_key !== "*");
+      const availableOverrideAgents = AGENTS.filter(a => !agentOverrides.some(r => r.agent_key === a.id));
+
+      return `
+        <div class="section-header">
+          <h1 class="section-title">仓库绑定</h1>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <label class="quiet-meta" style="cursor:pointer;gap:8px;margin-right:4px;" onclick="scopeEnforce=!scopeEnforce;render();">
+              <span>启用仓库隔离拦截</span>
+              <button class="switch ${scopeEnforce ? 'on' : ''}" type="button"></button>
+            </label>
+            <button class="btn" onclick="openHookModal('claude')">手动配置 Hook</button>
+            <button class="btn btn-primary" onclick="showAddRepoModal=true;render();">+ 添加仓库</button>
+          </div>
+        </div>
+
+        <div class="master-detail repos-layout">
+          <div class="card-flush">
+            <div class="hairline-row ${repoKey === '*' ? 'selected' : ''}" onclick="selectedScopeRepoKey='*';render();">
+              <div class="row-main">
+                <div class="row-title-line">
+                  <span class="row-name" style="font-family:var(--sans);">全局默认</span>
+                </div>
+                <div class="row-summary">未绑定仓库默认策略</div>
+              </div>
+              <div class="row-right">
+                <span class="quiet-meta">${globalDefaultRule.grants.length === 0 ? "默认无服务" : `${globalDefaultRule.grants.length} 服务`}</span>
+              </div>
+            </div>
+
+            <div class="list-group-hdr">
+              <span>已绑定仓库</span>
+              <span>${REPOS.length}</span>
+            </div>
+            ${REPOS.map(r => {
+              const rRule = findScopeRule(r.id, "*");
+              const cnt = rRule ? `${rRule.grants.length} 服务` : "继承全局";
+              const shortRemote = r.remote_hint ? r.remote_hint.replace(/^github\.com\//, "") : "本地仓库";
+              return `
+                <div class="hairline-row ${repoKey === r.id ? 'selected' : ''}" onclick="selectedScopeRepoKey='${r.id}';render();">
+                  <div class="row-main">
+                    <div class="row-title-line">
+                      <span class="row-name" style="font-family:var(--sans);">${esc(r.name)}</span>
+                    </div>
+                    <div class="row-summary mono" style="font-size:11.5px;">${esc(shortRemote)}</div>
+                  </div>
+                  <div class="row-right"><span class="quiet-meta">${cnt}</span></div>
+                </div>
+              `;
+            }).join("")}
+
+            ${OBSERVED_REPOS.length ? `
+              <div class="list-group-hdr">
+                <span>最近请求 · 未绑定</span>
+                <span>${OBSERVED_REPOS.length}</span>
+              </div>
+              ${OBSERVED_REPOS.map(obs => `
+                <div class="hairline-row" style="cursor:default;">
+                  <div class="row-main">
+                    <div class="row-title-line">
+                      <span class="dot dot-warn"></span>
+                      <span class="row-name" style="font-family:var(--sans);">${esc(obs.name)}</span>
+                    </div>
+                    <div class="row-summary mono" style="font-size:11px;">${esc(obs.last_agent)} · ${esc(obs.last_seen)}</div>
+                  </div>
+                  <div class="row-right">
+                    <button class="btn" style="padding:3px 9px;font-size:11.5px;" onclick="bindObservedRepo('${obs.fingerprint}')">绑定</button>
+                  </div>
+                </div>
+              `).join("")}
+            ` : ""}
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:18px;min-width:0;">
+            <div class="card" style="padding:16px 20px;gap:8px;">
+              <div class="card-header">
+                <div style="display:flex;align-items:baseline;gap:10px;min-width:0;">
+                  <h2 style="font-size:16px;font-weight:700;color:var(--ink-strong);margin:0;">${selectedRepo ? esc(selectedRepo.name) : "全局默认 (*)"}</h2>
+                  ${selectedRepo && selectedRepo.remote_hint ? `<span class="quiet-meta mono">${esc(selectedRepo.remote_hint)}</span>` : ""}
+                </div>
+                ${selectedRepo ? `<button class="btn" style="font-size:12px;color:var(--danger);" onclick="deleteBoundRepo('${selectedRepo.id}')">移除绑定</button>` : `<span class="quiet-meta">最小权限基线</span>`}
+              </div>
+              ${selectedRepo
+                ? `<div class="quiet-meta mono" style="font-size:11.5px;white-space:normal;">CommonDir: ${esc((selectedRepo.git_common_dirs[0] || selectedRepo.root_paths[0]) || "—")} · 自动归并同一仓库全部 git worktree</div>`
+                : `<div class="quiet-meta" style="white-space:normal;">通过有效 Hook 签名的未绑定新仓库命中此规则；开箱默认 0 服务，防止敏感项目写工具外泄。</div>`
+              }
+            </div>
+
+            <div class="card-flush">
+              <div class="card-header" style="padding:14px 18px;border-bottom:1px solid var(--border);">
+                <h2 class="card-title">${selectedRepo ? "仓库默认服务" : "全局默认服务"}</h2>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  ${unboundServices.length ? `
+                    <select class="select-sm" onchange="if(this.value){addGrant('${repoKey}','*',this.value);this.value='';}">
+                      <option value="">+ 添加服务…</option>
+                      ${unboundServices.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}
+                    </select>
+                  ` : `<span class="quiet-meta">已添加全部服务</span>`}
+                </div>
+              </div>
+              ${renderGrantRows(repoKey, "*", baseGrants)}
+            </div>
+
+            <div class="card-flush">
+              <div class="card-header" style="padding:14px 18px;border-bottom:1px solid var(--border);">
+                <h2 class="card-title">客户端例外</h2>
+                <div>
+                  ${availableOverrideAgents.length ? `
+                    <select class="select-sm" onchange="if(this.value){addAgentOverride('${repoKey}',this.value);this.value='';}">
+                      <option value="">+ 添加客户端例外…</option>
+                      ${availableOverrideAgents.map(a => `<option value="${a.id}">${esc(a.label)} (${a.id})</option>`).join("")}
+                    </select>
+                  ` : `<span class="quiet-meta">5 端均已单独覆盖</span>`}
+                </div>
+              </div>
+              ${agentOverrides.length === 0
+                ? `<div style="padding:16px 18px;font-size:12.5px;color:var(--ink-muted);">无客户端例外，5 个 Coding Agent 统一继承上方默认服务。</div>`
+                : agentOverrides.map(ov => {
+                    const agMeta = AGENTS.find(a => a.id === ov.agent_key) || { id: ov.agent_key, label: ov.agent_key };
+                    const ovUnbound = SERVICES.filter(s => !ov.grants.some(g => g.server_id === s.id));
+                    return `
+                      <div style="border-bottom:1px solid var(--border);">
+                        <div style="padding:10px 18px;background:var(--bg-subtle);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+                          <div style="display:flex;align-items:center;gap:8px;">
+                            <strong style="font-size:13px;color:var(--ink-strong);">${esc(agMeta.label)}</strong>
+                            <span class="quiet-meta mono">${esc(agMeta.id)}</span>
+                          </div>
+                          <div style="display:flex;gap:8px;align-items:center;">
+                            ${ovUnbound.length ? `
+                              <select class="select-sm" onchange="if(this.value){addGrant('${repoKey}','${ov.agent_key}',this.value);this.value='';}">
+                                <option value="">+ 服务…</option>
+                                ${ovUnbound.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}
+                              </select>
+                            ` : ""}
+                            <button class="btn" style="padding:3px 8px;font-size:11.5px;" onclick="removeAgentOverride('${repoKey}','${ov.agent_key}')">恢复继承</button>
+                          </div>
+                        </div>
+                        ${renderGrantRows(repoKey, ov.agent_key, ov.grants)}
+                      </div>
+                    `;
+                  }).join("")
+              }
+            </div>
+
+            <div class="card-flush">
+              <div class="card-header" style="padding:14px 18px;border-bottom:1px solid var(--border);">
+                <h2 class="card-title">五端生效预览</h2>
+                <span class="quiet-meta">只读诊断 · 点击 ↗ 带入沙盒</span>
+              </div>
+              ${AGENTS.map(ag => {
+                const eff = evaluateEffectiveScope(repoKey, ag.id);
+                return `
+                  <div class="hairline-row" style="cursor:default;">
+                    <div class="row-main">
+                      <div class="row-title-line">
+                        <span class="row-name" style="font-family:var(--sans);">${esc(ag.label)}</span>
+                        <span class="row-sub mono">${esc(ag.id)}</span>
+                      </div>
+                      <div class="row-summary">规则来源：${esc(eff.source_label)}（<span class="mono">${esc(eff.matched_repo_key)} · ${esc(eff.matched_agent_key)}</span>）</div>
+                    </div>
+                    <div class="row-right">
+                      <span class="quiet-meta">${eff.server_count} 服务 · ${eff.tool_count} 工具</span>
+                      ${eff.has_write ? `<span class="badge-rw">RW</span>` : `<span class="quiet-meta">${eff.tool_count > 0 ? "RO" : "—"}</span>`}
+                      <button class="btn" style="padding:3px 8px;font-size:12px;" title="在路由沙盒中测试" onclick="jumpToPlaygroundWithScope('${repoKey}','${ag.id}')">↗</button>
+                    </div>
+                  </div>
+                `;
+              }).join("")}
             </div>
           </div>
         </div>
@@ -1747,12 +2229,14 @@ Args:
 
     function renderLogs() {
       const ev = LOGS.find(l => l.id === selectedLogId) || LOGS[0];
+      const sc = ev.scope || null;
+      const canQuickBind = sc && sc.root && !sc.repo_id && !REPOS.some(r => r.root_paths.includes(sc.root) || r.name === sc.root.split("/").pop());
       return `
         <div class="section-header">
           <h1 class="section-title">请求日志</h1>
           <div style="display:flex;gap:10px;align-items:center;">
             <span class="quiet-meta"><span class="dot dot-ok"></span>每 4s 同步</span>
-            <button class="btn">刷新</button>
+            <button class="btn" onclick="render()">刷新</button>
           </div>
         </div>
 
@@ -1760,6 +2244,7 @@ Args:
           <div class="card-flush">
             ${LOGS.map(l => {
               const dotCls = l.status === "error" ? "dot-err" : l.status === "no_match" ? "dot-warn" : "dot-ok";
+              const scopeTag = l.scope ? ` · ${l.scope.agent} · ${l.scope.repo_name || "未绑定仓库"}` : "";
               return `
                 <div class="hairline-row ${l.id===ev.id ? 'selected' : ''}" onclick="selectedLogId='${l.id}';render();">
                   <div class="row-main">
@@ -1767,7 +2252,7 @@ Args:
                       <span class="dot ${dotCls}"></span>
                       <span class="row-name" style="${l.kind==='discover'?'font-family:var(--sans);':''}">${esc(l.title)}</span>
                     </div>
-                    <div class="quiet-meta">${esc(l.kind)} · ${esc(l.actor)} · ${esc(l.time)}</div>
+                    <div class="quiet-meta">${esc(l.kind)} · ${esc(l.actor)}${esc(scopeTag)} · ${esc(l.time)}</div>
                   </div>
                   <div class="row-right"><span class="quiet-meta mono">${l.ms} ms</span></div>
                 </div>
@@ -1783,9 +2268,22 @@ Args:
                 <span class="quiet-meta mono">· ${ev.ms} ms</span>
                 ${ev.tokens ? `<span class="quiet-meta mono">· ${ev.tokens}</span>` : ""}
               </div>
-              <button class="btn" onclick="switchPage('playground')">在沙盒中重放</button>
+              <button class="btn" onclick="replayLogInPlayground('${ev.id}')">在沙盒中重放</button>
             </div>
             <div style="font-size:15.5px;font-weight:600;color:var(--ink-strong);">${esc(ev.title)}</div>
+            ${sc ? `
+              <div style="border-top:1px solid var(--border);padding-top:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                  <span style="font-size:12px;font-weight:600;color:var(--ink-muted);">仓库作用域追踪（detail.scope）</span>
+                  ${canQuickBind ? `<button class="btn" style="padding:3px 9px;font-size:11.5px;" onclick="bindFromLog('${esc(sc.root)}')">绑定此仓库</button>` : ""}
+                </div>
+                <div class="kv-row"><span class="kv-k">客户端</span><span class="kv-v mono">${esc(sc.agent || "—")}</span></div>
+                <div class="kv-row"><span class="kv-k">命中仓库</span><span class="kv-v">${esc(sc.repo_name || "未绑定仓库")}</span></div>
+                <div class="kv-row"><span class="kv-k">工作区根路径</span><span class="kv-v mono">${esc(sc.root || "—")}</span></div>
+                <div class="kv-row"><span class="kv-k">命中规则</span><span class="kv-v mono">${esc(sc.matched_rule || "—")}</span></div>
+                <div class="kv-row"><span class="kv-k">验证状态</span><span class="kv-v mono">${esc(sc.status || "—")}</span></div>
+              </div>
+            ` : ""}
             ${ev.err ? `<div class="badge-err" style="border-radius:6px;padding:10px 12px;font-weight:500;">${esc(ev.err)}</div>` : ""}
             ${ev.reason ? `<p class="desc-lead">${esc(ev.reason)}</p>` : ""}
             ${ev.tools ? `
@@ -1806,33 +2304,51 @@ Args:
     function renderPlayground() {
       const sample = TOOLS[1];
       const parsed = parseRichDescription(sample.rawDescription);
+      const eff = playgroundSimRepo
+        ? evaluateEffectiveScope(playgroundSimRepo, playgroundSimAgent === "*" ? "codex" : playgroundSimAgent)
+        : { tool_count: 18, source_label: "管理员全量" };
       return `
         <div class="section-header">
           <h1 class="section-title">路由沙盒</h1>
-          <span class="quiet-meta"><span class="dot dot-ok"></span>gpt-6-luna · 18 候选工具</span>
+          <span class="quiet-meta"><span class="dot dot-ok"></span>gpt-6-luna · ${eff.tool_count} 候选工具</span>
         </div>
         <div class="two-col">
           <div style="display:flex;flex-direction:column;gap:18px;">
             <div class="card">
               <div class="card-header"><h2 class="card-title">任务意图</h2><span class="quiet-meta">⌘+Enter</span></div>
-              <textarea class="input-area" rows="3">排查 prod-core 下支付服务 Pod 频繁重启的原因</textarea>
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span class="quiet-meta">身份：developer · 范围：全部已启用服务</span>
-                <button class="btn btn-primary">发起路由发现</button>
+              <textarea class="input-area" rows="3" oninput="playgroundIntent=this.value">${esc(playgroundIntent)}</textarea>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <span class="quiet-meta">身份：developer</span>
+                  <select class="select-sm" onchange="playgroundSimRepo=this.value;render();">
+                    <option value="" ${playgroundSimRepo === "" ? "selected" : ""}>仓库：管理员全量</option>
+                    <option value="*" ${playgroundSimRepo === "*" ? "selected" : ""}>仓库：未绑定新仓库 (*)</option>
+                    ${REPOS.map(r => `<option value="${r.id}" ${playgroundSimRepo === r.id ? "selected" : ""}>仓库：${esc(r.name)}</option>`).join("")}
+                  </select>
+                  <select class="select-sm" onchange="playgroundSimAgent=this.value;if(!playgroundSimRepo&&this.value!=='*')playgroundSimRepo='*';render();">
+                    <option value="*" ${playgroundSimAgent === "*" ? "selected" : ""}>客户端：默认 (*)</option>
+                    ${AGENTS.map(a => `<option value="${a.id}" ${playgroundSimAgent === a.id ? "selected" : ""}>客户端：${esc(a.label)}</option>`).join("")}
+                  </select>
+                </div>
+                <button class="btn btn-primary" onclick="render()">发起路由发现</button>
               </div>
             </div>
             <div class="card-flush">
               <div class="card-header" style="padding:14px 18px;border-bottom:1px solid var(--border);">
                 <h2 class="card-title">命中工具</h2>
-                <span class="quiet-meta">1 命中 · 42 ms</span>
+                <span class="quiet-meta">${eff.tool_count > 0 ? "1 命中 · 42 ms" : "0 命中（作用域已拦截）"}</span>
               </div>
-              <div class="hairline-row selected">
-                <div class="row-main">
-                  <div class="row-title-line"><span class="row-name">k8s.describe_pod_events</span><span class="row-sub">K8s Diagnostics</span></div>
-                  <div class="row-summary">${esc(parsed.summary)}</div>
+              ${eff.tool_count > 0 ? `
+                <div class="hairline-row selected">
+                  <div class="row-main">
+                    <div class="row-title-line"><span class="row-name">k8s.describe_pod_events</span><span class="row-sub">K8s Diagnostics</span></div>
+                    <div class="row-summary">${esc(parsed.summary)}</div>
+                  </div>
+                  <div class="row-right"><span class="quiet-meta">RO</span></div>
                 </div>
-                <div class="row-right"><span class="quiet-meta">RO</span></div>
-              </div>
+              ` : `
+                <div style="padding:18px;font-size:12.5px;color:var(--ink-muted);">当前模拟作用域（sim_scope）开放 0 个候选工具，路由直接跳过模型调用。</div>
+              `}
             </div>
           </div>
 
@@ -2350,6 +2866,204 @@ Args:
           </div>
         </div>
       `;
+    }
+
+    function addGrant(repoKey, agentKey, serverId) {
+      const rule = ensureScopeRule(repoKey, agentKey, []);
+      if (!rule.grants.some(g => g.server_id === serverId)) {
+        rule.grants.push({ server_id: serverId, access: "ro", tool_ids: [] });
+      }
+      render();
+    }
+
+    function removeGrant(repoKey, agentKey, serverId) {
+      const rule = ensureScopeRule(repoKey, agentKey, []);
+      rule.grants = rule.grants.filter(g => g.server_id !== serverId);
+      render();
+    }
+
+    function setGrantAccess(repoKey, agentKey, serverId, access) {
+      const rule = ensureScopeRule(repoKey, agentKey, []);
+      const g = rule.grants.find(x => x.server_id === serverId);
+      if (g) g.access = access;
+      render();
+    }
+
+    function toggleGrantTool(repoKey, agentKey, serverId, toolId) {
+      const rule = ensureScopeRule(repoKey, agentKey, []);
+      const g = rule.grants.find(x => x.server_id === serverId);
+      if (!g) return;
+      const allIds = (SERVICE_TOOLS[serverId] || []).map(t => t.id);
+      let current = (g.tool_ids && g.tool_ids.length) ? [...g.tool_ids] : [...allIds];
+      if (current.includes(toolId)) current = current.filter(x => x !== toolId);
+      else current.push(toolId);
+      g.tool_ids = current.length === allIds.length ? [] : current;
+      render();
+    }
+
+    function resetGrantTools(repoKey, agentKey, serverId) {
+      const rule = findScopeRule(repoKey, agentKey);
+      const g = rule && rule.grants.find(x => x.server_id === serverId);
+      if (g) g.tool_ids = [];
+      render();
+    }
+
+    function addAgentOverride(repoKey, agentId) {
+      const base = findScopeRule(repoKey, "*");
+      ensureScopeRule(repoKey, agentId, base ? base.grants : []);
+      render();
+    }
+
+    function removeAgentOverride(repoKey, agentId) {
+      SCOPE_RULES = SCOPE_RULES.filter(r => !(r.repo_key === repoKey && r.agent_key === agentId));
+      render();
+    }
+
+    function bindObservedRepo(fp) {
+      const obs = OBSERVED_REPOS.find(o => o.fingerprint === fp);
+      if (!obs) return;
+      const newId = "repo-" + obs.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      REPOS.push({
+        id: newId,
+        name: obs.name,
+        git_common_dirs: obs.git_common_dir ? [obs.git_common_dir] : [],
+        root_paths: obs.git_common_dir ? [] : [obs.root],
+        remote_hint: obs.remote_hint || ""
+      });
+      ensureScopeRule(newId, "*", []);
+      OBSERVED_REPOS = OBSERVED_REPOS.filter(o => o.fingerprint !== fp);
+      selectedScopeRepoKey = newId;
+      render();
+    }
+
+    function bindFromLog(rootPath) {
+      const name = rootPath.split("/").filter(Boolean).pop() || "bound-repo";
+      const obs = OBSERVED_REPOS.find(o => o.root === rootPath);
+      if (obs) {
+        bindObservedRepo(obs.fingerprint);
+        switchPage("repos");
+        return;
+      }
+      const newId = "repo-" + name.toLowerCase();
+      REPOS.push({ id: newId, name, git_common_dirs: [rootPath + "/.git"], root_paths: [], remote_hint: "" });
+      ensureScopeRule(newId, "*", []);
+      selectedScopeRepoKey = newId;
+      switchPage("repos");
+    }
+
+    function deleteBoundRepo(id) {
+      const idx = REPOS.findIndex(r => r.id === id);
+      if (idx >= 0) REPOS.splice(idx, 1);
+      SCOPE_RULES = SCOPE_RULES.filter(r => r.repo_key !== id);
+      selectedScopeRepoKey = REPOS[0] ? REPOS[0].id : "*";
+      render();
+    }
+
+    function jumpToPlaygroundWithScope(repoKey, agentId) {
+      playgroundSimRepo = repoKey;
+      playgroundSimAgent = agentId;
+      switchPage("playground");
+    }
+
+    function replayLogInPlayground(logId) {
+      const ev = LOGS.find(l => l.id === logId);
+      if (ev) {
+        playgroundIntent = ev.title;
+        if (ev.scope) {
+          playgroundSimRepo = ev.scope.repo_id || (ev.scope.root ? "*" : "");
+          playgroundSimAgent = ev.scope.agent || "*";
+        }
+      }
+      switchPage("playground");
+    }
+
+    function openHookModal(agentId) {
+      activeHookModalAgent = agentId || "claude";
+      renderModals();
+    }
+
+    function submitAddRepoModal() {
+      const nameEl = document.getElementById("proto-repo-name");
+      const dirEl = document.getElementById("proto-repo-dir");
+      const name = (nameEl ? nameEl.value : "").trim() || "my-service";
+      const dir = (dirEl ? dirEl.value : "").trim() || ("/Users/dev/Developer/" + name + "/.git");
+      const id = "repo-" + Date.now();
+      REPOS.push({
+        id,
+        name,
+        git_common_dirs: dir.endsWith(".git") ? [dir] : [],
+        root_paths: dir.endsWith(".git") ? [] : [dir],
+        remote_hint: ""
+      });
+      ensureScopeRule(id, "*", []);
+      selectedScopeRepoKey = id;
+      showAddRepoModal = false;
+      render();
+    }
+
+    function renderModals() {
+      const modalRoot = document.getElementById("modal-root");
+      if (!modalRoot) return;
+      if (activeHookModalAgent) {
+        const snip = HOOK_SNIPPETS[activeHookModalAgent] || HOOK_SNIPPETS.claude;
+        modalRoot.innerHTML = `
+          <div class="modal-mask" onclick="activeHookModalAgent=null;renderModals();">
+            <div class="modal-box" onclick="event.stopPropagation();">
+              <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+                <strong style="font-size:15px;color:var(--ink-strong);">手动配置客户端 Hook（仓库身份识别）</strong>
+                <button class="btn" style="padding:2px 8px;" onclick="activeHookModalAgent=null;renderModals();">关闭</button>
+              </div>
+              <div style="padding:18px 20px;display:flex;flex-direction:column;gap:14px;">
+                <div class="segmented" style="align-self:flex-start;">
+                  ${AGENTS.map(a => `<button class="seg-btn ${activeHookModalAgent===a.id?'active':''}" onclick="openHookModal('${a.id}')">${esc(a.label)}</button>`).join("")}
+                </div>
+                <div style="border:1px solid var(--border);border-radius:6px;padding:10px 14px;background:var(--bg-subtle);">
+                  <div class="kv-row"><span class="kv-k">目标配置文件</span><span class="kv-v mono">${esc(snip.config_path)}</span></div>
+                  <div class="kv-row"><span class="kv-k">MCP 接入地址</span><span class="kv-v mono">${esc(snip.mcp_url)}</span></div>
+                  <div class="kv-row"><span class="kv-k">Hook 二进制</span><span class="kv-v mono">${esc(snip.hook_bin_path)}</span></div>
+                </div>
+                <div style="font-size:12.5px;color:var(--ink-muted);">${esc(snip.instructions)}</div>
+                <div class="code-navy">
+                  <div class="code-navy-hdr">
+                    <span>${esc(snip.config_path)}</span>
+                    <span style="cursor:pointer;color:#fff;" onclick="navigator.clipboard?.writeText(HOOK_SNIPPETS['${activeHookModalAgent}'].snippet);alert('已复制 Hook 配置片段')">复制片段</span>
+                  </div>
+                  <pre>${esc(snip.snippet)}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+      if (showAddRepoModal) {
+        modalRoot.innerHTML = `
+          <div class="modal-mask" onclick="showAddRepoModal=false;renderModals();">
+            <div class="modal-box" style="max-width:480px;" onclick="event.stopPropagation();">
+              <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+                <strong style="font-size:15px;color:var(--ink-strong);">添加绑定仓库</strong>
+                <button class="btn" style="padding:2px 8px;" onclick="showAddRepoModal=false;renderModals();">关闭</button>
+              </div>
+              <div style="padding:18px 20px;display:flex;flex-direction:column;gap:12px;">
+                <div>
+                  <div style="font-size:12px;font-weight:600;margin-bottom:5px;">仓库名称</div>
+                  <input id="proto-repo-name" class="input-line" placeholder="例如：payments-api" value="payments-api" />
+                </div>
+                <div>
+                  <div style="font-size:12px;font-weight:600;margin-bottom:5px;">Git Common Dir 或目录根路径</div>
+                  <input id="proto-repo-dir" class="input-line mono" value="/Users/dev/Developer/payments-api/.git" />
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:6px;">
+                  <button class="btn" onclick="showAddRepoModal=false;renderModals();">取消</button>
+                  <button class="btn btn-primary" onclick="submitAddRepoModal()">保存绑定</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+      modalRoot.innerHTML = "";
     }
 
     function toggleTool(id) {

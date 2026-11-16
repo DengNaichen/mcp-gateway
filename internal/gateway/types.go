@@ -143,6 +143,7 @@ type DiscoverResult struct {
 	DurationMS   int64       `json:"duration_ms"`
 	PromptTokens int         `json:"prompt_tokens"`
 	OutputTokens int         `json:"output_tokens"`
+	Scope        *EventScope `json:"scope,omitempty"`
 }
 
 type InvokeRequest struct {
@@ -173,6 +174,7 @@ type Event struct {
 
 type appError struct {
 	status  int
+	code    string
 	message string
 	cause   error
 }
@@ -184,5 +186,5 @@ func (e *appError) Error() string {
 	return e.message
 }
 func (e *appError) Unwrap() error                           { return e.cause }
-func problem(status int, message string, cause error) error { return &appError{status, message, cause} }
+func problem(status int, message string, cause error) error { return &appError{status: status, message: message, cause: cause} }
 func invalid(message string) error                          { return problem(http.StatusBadRequest, message, nil) }

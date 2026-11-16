@@ -25,6 +25,7 @@ const (
 	ViewServices   ViewID = "services"
 	ViewMarket     ViewID = "market"
 	ViewCatalog    ViewID = "catalog"
+	ViewRepos      ViewID = "repos"
 	ViewPlayground ViewID = "playground"
 	ViewLogs       ViewID = "logs"
 	ViewSettings   ViewID = "settings"
@@ -41,6 +42,8 @@ func viewTitle(v ViewID) string {
 		return "MCP 市场"
 	case ViewCatalog:
 		return "工具目录"
+	case ViewRepos:
+		return "仓库绑定"
 	case ViewPlayground:
 		return "路由沙盒"
 	case ViewLogs:
@@ -81,11 +84,15 @@ type DesktopUI struct {
 	// Cross-page navigation & handoff state.
 	SelectedServerID      string
 	SelectedEventID       string
+	SelectedRepoKey       string
 	OpenAddService        bool
 	CatalogFilterServerID string
 	CatalogFilterAccess   string // "", "all", "ro", "rw"
 	ReplayIntent          string
 	ReplayActor           string
+	ReplayRepoKey         string
+	ReplayAgentKey        string
+	ReplayHasScope        bool
 	ReplaySeq             int
 
 	// Auth & bootstrap lifecycle state.
@@ -104,6 +111,11 @@ type DesktopUI struct {
 	// Pending toast messages drained on the UI thread during View().
 	toastMu       sync.Mutex
 	pendingToasts []string
+
+	// Headless synchronization when Win == nil (e.g. ui.Tester under -race).
+	headlessViewMu         sync.Mutex
+	headlessQueueMu        sync.Mutex
+	pendingHeadlessUpdates []func()
 }
 
 // NewDesktopUI constructs a DesktopUI wired to the given gatewayRuntime.
@@ -184,7 +196,44 @@ func (u *DesktopUI) updateUI(fn func()) {
 		win.Update(fn)
 		return
 	}
-	fn()
+	if u.headlessViewMu.TryLock() {
+		u.drainHeadlessUpdatesLocked()
+		fn()
+		u.drainHeadlessUpdatesLocked()
+		u.headlessViewMu.Unlock()
+		return
+	}
+	u.headlessQueueMu.Lock()
+	u.pendingHeadlessUpdates = append(u.pendingHeadlessUpdates, fn)
+	u.headlessQueueMu.Unlock()
+}
+
+func (u *DesktopUI) drainHeadlessUpdatesLocked() {
+	for {
+		u.headlessQueueMu.Lock()
+		if len(u.pendingHeadlessUpdates) == 0 {
+			u.headlessQueueMu.Unlock()
+			return
+		}
+		batch := u.pendingHeadlessUpdates
+		u.pendingHeadlessUpdates = nil
+		u.headlessQueueMu.Unlock()
+		for _, fn := range batch {
+			fn()
+		}
+	}
+}
+
+func (u *DesktopUI) enterHeadlessFrame() func() {
+	if u.currentWindow() != nil {
+		return func() {}
+	}
+	u.headlessViewMu.Lock()
+	u.drainHeadlessUpdatesLocked()
+	return func() {
+		u.drainHeadlessUpdatesLocked()
+		u.headlessViewMu.Unlock()
+	}
 }
 
 // Notify queues a toast message and wakes the UI to display it.
@@ -323,7 +372,7 @@ func (u *DesktopUI) pollLoop(ctx context.Context) {
 				continue
 			}
 			view := u.CurrentView()
-			if view != ViewOverview && view != ViewLogs {
+			if view != ViewOverview && view != ViewLogs && view != ViewRepos {
 				continue
 			}
 			reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -385,14 +434,43 @@ func (u *DesktopUI) OpenCatalogFilter(serverID, access string) {
 	u.viewAtomic.Store(ViewCatalog)
 }
 
-func (u *DesktopUI) OpenPlaygroundReplay(intent, actor string) {
-	if intent != "" {
+func (u *DesktopUI) OpenPlaygroundReplay(intent, actor string, scope ...string) {
+	hasScope := len(scope) > 0
+	if intent != "" || hasScope {
 		u.ReplayIntent = intent
 		u.ReplayActor = actor
+		u.ReplayHasScope = hasScope
+		u.ReplayRepoKey = ""
+		u.ReplayAgentKey = ""
+		if len(scope) >= 1 {
+			u.ReplayRepoKey = scope[0]
+		}
+		if len(scope) >= 2 {
+			u.ReplayAgentKey = scope[1]
+		}
 		u.ReplaySeq++
 	}
 	u.ViewMode = ViewPlayground
 	u.viewAtomic.Store(ViewPlayground)
+}
+
+func (u *DesktopUI) OpenPlaygroundScope(repoKey, agentKey string) {
+	u.ReplayIntent = ""
+	u.ReplayActor = ""
+	u.ReplayHasScope = true
+	u.ReplayRepoKey = repoKey
+	u.ReplayAgentKey = agentKey
+	u.ReplaySeq++
+	u.ViewMode = ViewPlayground
+	u.viewAtomic.Store(ViewPlayground)
+}
+
+func (u *DesktopUI) OpenRepos(repoKey string) {
+	if repoKey != "" {
+		u.SelectedRepoKey = repoKey
+	}
+	u.ViewMode = ViewRepos
+	u.viewAtomic.Store(ViewRepos)
 }
 
 func (u *DesktopUI) OpenLogsEvent(eventID string) {
@@ -475,6 +553,7 @@ func (u *DesktopUI) logout() {
 
 // View renders the entire native mygo/ui window.
 func (u *DesktopUI) View(c *ui.Context) {
+	defer u.enterHeadlessFrame()()
 	applySailTheme(c)
 	u.winHidden.Store(c.WindowHidden())
 	u.drainToasts(c)
@@ -646,6 +725,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 					{id: ViewServices, label: "上游服务", icon: IconServer, badge: countBadge(activeRealServers)},
 					{id: ViewMarket, label: "MCP 市场", icon: IconMarket},
 					{id: ViewCatalog, label: "工具目录", icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
+					{id: ViewRepos, label: "仓库绑定", icon: IconFolderGit, badge: reposNavBadge(state.Scopes)},
 					{id: ViewClients, label: "连接客户端", icon: IconServer},
 					{id: ViewSettings, label: "访问与路由", icon: IconShield},
 				})
@@ -701,6 +781,16 @@ func countBadge(n int) string {
 		return ""
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+func reposNavBadge(scopes ScopeOverview) string {
+	if len(scopes.Repositories) > 0 {
+		return countBadge(len(scopes.Repositories))
+	}
+	if len(scopes.Observed) > 0 {
+		return fmt.Sprintf("+%d", len(scopes.Observed))
+	}
+	return ""
 }
 
 func (u *DesktopUI) renderNavGroup(c *ui.Context, heading string, items []navItem) {
@@ -894,6 +984,8 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						u.renderMarket(c)
 					case ViewCatalog:
 						u.renderCatalog(c)
+					case ViewRepos:
+						u.renderRepos(c)
 					case ViewPlayground:
 						u.renderPlayground(c)
 					case ViewLogs:
