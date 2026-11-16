@@ -16,7 +16,15 @@ import (
 	"strings"
 	"time"
 
+	"gatewaylab/internal/access"
+	"gatewaylab/internal/activity"
 	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/maintenance"
+	"gatewaylab/internal/market"
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/openapi"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/scope"
 )
 
 // ErrUnauthorized indicates the shared gateway rejected a request with HTTP 401.
@@ -51,16 +59,6 @@ type AccessInfo struct {
 	Actor  string `json:"actor"`
 }
 
-// ScopeRepository mirrors a registered repository anchor in GET /api/scopes.
-type ScopeRepository struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	GitCommonDirs []string `json:"git_common_dirs"`
-	RootPaths     []string `json:"root_paths"`
-	RemoteHint    string   `json:"remote_hint"`
-	CreatedAt     string   `json:"created_at"`
-}
-
 // ScopeServiceGrant defines per-service access ("rw" | "ro") and optional tool subset.
 type ScopeServiceGrant struct {
 	ServerID string   `json:"server_id"`
@@ -76,67 +74,13 @@ type ScopeRule struct {
 	UpdatedAt string              `json:"updated_at,omitempty"`
 }
 
-// ObservedRepo represents an unconfigured repository recently seen via verified hook context.
-type ObservedRepo struct {
-	Fingerprint  string `json:"fingerprint"`
-	Name         string `json:"name"`
-	Kind         string `json:"kind"`
-	Root         string `json:"root"`
-	GitCommonDir string `json:"git_common_dir"`
-	RemoteHint   string `json:"remote_hint"`
-	LastAgent    string `json:"last_agent"`
-	LastSeen     string `json:"last_seen"`
-	RequestCount int    `json:"request_count"`
-}
-
 // ScopeOverview mirrors the scopes block of GET /api/bootstrap and GET /api/scopes.
 type ScopeOverview struct {
-	Enforce      bool              `json:"enforce"`
-	HookBinPath  string            `json:"hook_bin_path"`
-	Repositories []ScopeRepository `json:"repositories"`
-	Rules        []ScopeRule       `json:"rules"`
-	Observed     []ObservedRepo    `json:"observed"`
-}
-
-// ScopeServerSummary describes effective per-server tool access inside ScopeAgentPreview.
-type ScopeServerSummary struct {
-	ServerID  string `json:"server_id"`
-	Access    string `json:"access"`
-	ToolCount int    `json:"tool_count"`
-}
-
-// ScopeAgentPreview describes effective scope resolution for one coding agent.
-type ScopeAgentPreview struct {
-	Agent           string               `json:"agent"`
-	MatchedRepoKey  string               `json:"matched_repo_key"`
-	MatchedAgentKey string               `json:"matched_agent_key"`
-	SourceLabel     string               `json:"source_label"`
-	ServerCount     int                  `json:"server_count"`
-	ToolCount       int                  `json:"tool_count"`
-	HasWrite        bool                 `json:"has_write"`
-	Servers         []ScopeServerSummary `json:"servers"`
-}
-
-// ScopePreviewResponse mirrors POST /api/scopes/preview.
-type ScopePreviewResponse struct {
-	RepoKey string              `json:"repo_key"`
-	Agents  []ScopeAgentPreview `json:"agents"`
-}
-
-// ScopeSnippetResponse mirrors GET /api/scopes/snippets?agent=...
-type ScopeSnippetResponse struct {
-	Agent        string `json:"agent"`
-	ConfigPath   string `json:"config_path"`
-	MCPURL       string `json:"mcp_url"`
-	HookBinPath  string `json:"hook_bin_path"`
-	Instructions string `json:"instructions"`
-	Snippet      string `json:"snippet"`
-}
-
-// SimScope simulates a (repo_key, agent_key) scope in admin Playground requests.
-type SimScope struct {
-	RepoKey  string `json:"repo_key"`
-	AgentKey string `json:"agent_key"`
+	Enforce      bool                 `json:"enforce"`
+	HookBinPath  string               `json:"hook_bin_path"`
+	Repositories []scope.Repository   `json:"repositories"`
+	Rules        []ScopeRule          `json:"rules"`
+	Observed     []scope.ObservedRepo `json:"observed"`
 }
 
 // SaveRepositoryInput is the request payload for PUT /api/scopes/repositories.
@@ -151,29 +95,29 @@ type SaveRepositoryInput struct {
 
 // Bootstrap mirrors the JSON response of GET /api/bootstrap.
 type Bootstrap struct {
-	Access        AccessInfo             `json:"access"`
-	Registry      gateway.Registry       `json:"registry"`
-	Settings      gateway.Settings       `json:"settings"`
-	KeyConfigured bool                   `json:"key_configured"`
-	Profiles      []gateway.ModelProfile `json:"profiles"`
-	Events        []gateway.Event        `json:"events"`
-	MCPURL        string                 `json:"mcp_url"`
-	Setup         gateway.SetupStatus    `json:"setup"`
-	Scopes        ScopeOverview          `json:"scopes"`
+	Access        AccessInfo           `json:"access"`
+	Registry      registry.Registry    `json:"registry"`
+	Settings      model.Settings       `json:"settings"`
+	KeyConfigured bool                 `json:"key_configured"`
+	Profiles      []model.ModelProfile `json:"profiles"`
+	Events        []activity.Event     `json:"events"`
+	MCPURL        string               `json:"mcp_url"`
+	Setup         gateway.SetupStatus  `json:"setup"`
+	Scopes        ScopeOverview        `json:"scopes"`
 }
 
 // AuthMeResponse mirrors GET /api/auth/me.
 type AuthMeResponse struct {
-	Authenticated bool              `json:"authenticated"`
-	Shared        bool              `json:"shared"`
-	Principal     gateway.Principal `json:"principal"`
+	Authenticated bool             `json:"authenticated"`
+	Shared        bool             `json:"shared"`
+	Principal     access.Principal `json:"principal"`
 }
 
 // MaintenanceOverview mirrors GET /api/maintenance.
 type MaintenanceOverview struct {
-	Runtime map[string]any              `json:"runtime"`
-	Sources []gateway.MaintenanceSource `json:"sources"`
-	Runs    []gateway.MaintenanceRun    `json:"runs"`
+	Runtime map[string]any                  `json:"runtime"`
+	Sources []maintenance.MaintenanceSource `json:"sources"`
+	Runs    []maintenance.MaintenanceRun    `json:"runs"`
 }
 
 // APIClient is a strongly-typed HTTP client for the local or shared gateway control plane.
@@ -273,9 +217,9 @@ func (c *APIClient) AuthMe(ctx context.Context) (AuthMeResponse, error) {
 	return out, err
 }
 
-func (c *APIClient) Login(ctx context.Context, token string) (gateway.Principal, error) {
+func (c *APIClient) Login(ctx context.Context, token string) (access.Principal, error) {
 	var resp struct {
-		Principal gateway.Principal `json:"principal"`
+		Principal access.Principal `json:"principal"`
 	}
 	err := c.doJSON(ctx, http.MethodPost, "/auth/login", map[string]string{"token": token}, &resp)
 	return resp.Principal, err
@@ -291,8 +235,8 @@ func (c *APIClient) Bootstrap(ctx context.Context) (Bootstrap, error) {
 	return out, err
 }
 
-func (c *APIClient) Events(ctx context.Context) ([]gateway.Event, error) {
-	var out []gateway.Event
+func (c *APIClient) Events(ctx context.Context) ([]activity.Event, error) {
+	var out []activity.Event
 	err := c.doJSON(ctx, http.MethodGet, "/events", nil, &out)
 	return out, err
 }
@@ -303,9 +247,9 @@ func (c *APIClient) SetupStatus(ctx context.Context) (gateway.SetupStatus, error
 	return out, err
 }
 
-func (c *APIClient) SaveSettings(ctx context.Context, settings gateway.Settings, apiKey string, clearKey bool) error {
+func (c *APIClient) SaveSettings(ctx context.Context, settings model.Settings, apiKey string, clearKey bool) error {
 	payload := struct {
-		gateway.Settings
+		model.Settings
 		APIKey   string `json:"api_key,omitempty"`
 		ClearKey bool   `json:"clear_key,omitempty"`
 	}{
@@ -316,9 +260,9 @@ func (c *APIClient) SaveSettings(ctx context.Context, settings gateway.Settings,
 	return c.doJSON(ctx, http.MethodPut, "/settings", payload, nil)
 }
 
-func (c *APIClient) PingModel(ctx context.Context, settings gateway.Settings, profileID, apiKey string, clearKey bool) (gateway.PingModelResult, error) {
+func (c *APIClient) PingModel(ctx context.Context, settings model.Settings, profileID, apiKey string, clearKey bool) (model.PingModelResult, error) {
 	payload := struct {
-		gateway.Settings
+		model.Settings
 		ProfileID string `json:"profile_id,omitempty"`
 		APIKey    string `json:"api_key,omitempty"`
 		ClearKey  bool   `json:"clear_key,omitempty"`
@@ -328,14 +272,14 @@ func (c *APIClient) PingModel(ctx context.Context, settings gateway.Settings, pr
 		APIKey:    apiKey,
 		ClearKey:  clearKey,
 	}
-	var out gateway.PingModelResult
+	var out model.PingModelResult
 	err := c.doJSON(ctx, http.MethodPost, "/model/ping", payload, &out)
 	return out, err
 }
 
-func (c *APIClient) SaveModelProfile(ctx context.Context, profile gateway.ModelProfile, apiKey string, clearKey bool) (gateway.ModelProfile, error) {
+func (c *APIClient) SaveModelProfile(ctx context.Context, profile model.ModelProfile, apiKey string, clearKey bool) (model.ModelProfile, error) {
 	payload := struct {
-		gateway.ModelProfile
+		model.ModelProfile
 		APIKey   string `json:"api_key,omitempty"`
 		ClearKey bool   `json:"clear_key,omitempty"`
 	}{
@@ -343,13 +287,13 @@ func (c *APIClient) SaveModelProfile(ctx context.Context, profile gateway.ModelP
 		APIKey:       apiKey,
 		ClearKey:     clearKey,
 	}
-	var out gateway.ModelProfile
+	var out model.ModelProfile
 	err := c.doJSON(ctx, http.MethodPut, "/model-profiles", payload, &out)
 	return out, err
 }
 
-func (c *APIClient) ActivateModelProfile(ctx context.Context, id string) (gateway.ModelProfile, error) {
-	var out gateway.ModelProfile
+func (c *APIClient) ActivateModelProfile(ctx context.Context, id string) (model.ModelProfile, error) {
+	var out model.ModelProfile
 	err := c.doJSON(ctx, http.MethodPost, "/model-profiles/"+url.PathEscape(id)+"/activate", nil, &out)
 	return out, err
 }
@@ -358,9 +302,9 @@ func (c *APIClient) DeleteModelProfile(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodDelete, "/model-profiles/"+url.PathEscape(id), nil, nil)
 }
 
-func (c *APIClient) TestModel(ctx context.Context, settings gateway.Settings, apiKey string, clearKey bool, intent string) (gateway.DiscoverResult, error) {
+func (c *APIClient) TestModel(ctx context.Context, settings model.Settings, apiKey string, clearKey bool, intent string) (gateway.DiscoverResult, error) {
 	payload := struct {
-		gateway.Settings
+		model.Settings
 		APIKey   string `json:"api_key,omitempty"`
 		ClearKey bool   `json:"clear_key,omitempty"`
 		Intent   string `json:"intent,omitempty"`
@@ -375,18 +319,18 @@ func (c *APIClient) TestModel(ctx context.Context, settings gateway.Settings, ap
 	return out, err
 }
 
-func (c *APIClient) MarketServers(ctx context.Context, query string) (gateway.MarketSearchResult, error) {
+func (c *APIClient) MarketServers(ctx context.Context, query string) (market.MarketSearchResult, error) {
 	path := "/market"
 	if strings.TrimSpace(query) != "" {
 		path += "?q=" + url.QueryEscape(strings.TrimSpace(query))
 	}
-	var out gateway.MarketSearchResult
+	var out market.MarketSearchResult
 	err := c.doJSON(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }
 
-func (c *APIClient) InstallMarketServer(ctx context.Context, req gateway.InstallMarketRequest) (gateway.InstallMarketResult, error) {
-	var out gateway.InstallMarketResult
+func (c *APIClient) InstallMarketServer(ctx context.Context, req market.InstallMarketRequest) (market.InstallMarketResult, error) {
+	var out market.InstallMarketResult
 	err := c.doJSON(ctx, http.MethodPost, "/market/install", req, &out)
 	return out, err
 }
@@ -418,14 +362,14 @@ func (c *APIClient) MarketIcon(ctx context.Context, id, iconURL string) ([]byte,
 	return b, resp.Header.Get("Content-Type"), nil
 }
 
-func (c *APIClient) TestSource(ctx context.Context, server gateway.Server) (gateway.ConnectionCheck, error) {
+func (c *APIClient) TestSource(ctx context.Context, server registry.Server) (gateway.ConnectionCheck, error) {
 	var out gateway.ConnectionCheck
 	err := c.doJSON(ctx, http.MethodPost, "/setup/source", server, &out)
 	return out, err
 }
 
-func (c *APIClient) SaveServer(ctx context.Context, server gateway.Server) (gateway.Server, error) {
-	var out gateway.Server
+func (c *APIClient) SaveServer(ctx context.Context, server registry.Server) (registry.Server, error) {
+	var out registry.Server
 	err := c.doJSON(ctx, http.MethodPut, "/servers", server, &out)
 	return out, err
 }
@@ -445,35 +389,35 @@ func (c *APIClient) EnableServerTools(ctx context.Context, serverID string, tool
 	return c.doJSON(ctx, http.MethodPost, "/servers/"+url.PathEscape(serverID)+"/tools", map[string]any{"ids": toolIDs}, nil)
 }
 
-func (c *APIClient) SaveTool(ctx context.Context, tool gateway.Tool) (gateway.Tool, error) {
-	var out gateway.Tool
+func (c *APIClient) SaveTool(ctx context.Context, tool registry.Tool) (registry.Tool, error) {
+	var out registry.Tool
 	err := c.doJSON(ctx, http.MethodPut, "/tools", tool, &out)
 	return out, err
 }
 
 type discoverPayload struct {
-	Intent      string    `json:"intent"`
-	Context     string    `json:"context,omitempty"`
-	Services    []string  `json:"services,omitempty"`
-	Actor       string    `json:"actor,omitempty"`
-	IncludeDemo bool      `json:"include_demo,omitempty"`
-	SummaryOnly bool      `json:"summary_only,omitempty"`
-	SimScope    *SimScope `json:"sim_scope,omitempty"`
+	Intent      string          `json:"intent"`
+	Context     string          `json:"context,omitempty"`
+	Services    []string        `json:"services,omitempty"`
+	Actor       string          `json:"actor,omitempty"`
+	IncludeDemo bool            `json:"include_demo,omitempty"`
+	SummaryOnly bool            `json:"summary_only,omitempty"`
+	SimScope    *scope.SimScope `json:"sim_scope,omitempty"`
 }
 
 type invokePayload struct {
-	ToolID    string         `json:"tool_id"`
-	Arguments map[string]any `json:"arguments"`
-	Fields    []string       `json:"fields,omitempty"`
-	Actor     string         `json:"actor,omitempty"`
-	SimScope  *SimScope      `json:"sim_scope,omitempty"`
+	ToolID    string          `json:"tool_id"`
+	Arguments map[string]any  `json:"arguments"`
+	Fields    []string        `json:"fields,omitempty"`
+	Actor     string          `json:"actor,omitempty"`
+	SimScope  *scope.SimScope `json:"sim_scope,omitempty"`
 }
 
 func (c *APIClient) Discover(ctx context.Context, req gateway.DiscoverRequest) (gateway.DiscoverResult, error) {
 	return c.DiscoverScoped(ctx, req, nil)
 }
 
-func (c *APIClient) DiscoverScoped(ctx context.Context, req gateway.DiscoverRequest, sim *SimScope) (gateway.DiscoverResult, error) {
+func (c *APIClient) DiscoverScoped(ctx context.Context, req gateway.DiscoverRequest, sim *scope.SimScope) (gateway.DiscoverResult, error) {
 	payload := discoverPayload{
 		Intent:      req.Intent,
 		Context:     req.Context,
@@ -492,7 +436,7 @@ func (c *APIClient) Invoke(ctx context.Context, req gateway.InvokeRequest) (gate
 	return c.InvokeScoped(ctx, req, nil)
 }
 
-func (c *APIClient) InvokeScoped(ctx context.Context, req gateway.InvokeRequest, sim *SimScope) (gateway.InvokeResult, error) {
+func (c *APIClient) InvokeScoped(ctx context.Context, req gateway.InvokeRequest, sim *scope.SimScope) (gateway.InvokeResult, error) {
 	payload := invokePayload{
 		ToolID:    req.ToolID,
 		Arguments: req.Arguments,
@@ -515,8 +459,8 @@ func (c *APIClient) SetScopeMode(ctx context.Context, enforce bool) error {
 	return c.doJSON(ctx, http.MethodPut, "/scopes/mode", map[string]bool{"enforce": enforce}, nil)
 }
 
-func (c *APIClient) SaveRepository(ctx context.Context, in SaveRepositoryInput) (ScopeRepository, error) {
-	var out ScopeRepository
+func (c *APIClient) SaveRepository(ctx context.Context, in SaveRepositoryInput) (scope.Repository, error) {
+	var out scope.Repository
 	err := c.doJSON(ctx, http.MethodPut, "/scopes/repositories", in, &out)
 	return out, err
 }
@@ -541,20 +485,20 @@ func (c *APIClient) DeleteScopeRule(ctx context.Context, repoKey, agentKey strin
 	return c.doJSON(ctx, http.MethodDelete, "/scopes/rules?"+q.Encode(), nil, nil)
 }
 
-func (c *APIClient) PreviewScope(ctx context.Context, repoKey, actor string) (ScopePreviewResponse, error) {
+func (c *APIClient) PreviewScope(ctx context.Context, repoKey, actor string) (scope.ScopePreviewResponse, error) {
 	payload := map[string]string{
 		"repo_key": repoKey,
 		"actor":    actor,
 	}
-	var out ScopePreviewResponse
+	var out scope.ScopePreviewResponse
 	err := c.doJSON(ctx, http.MethodPost, "/scopes/preview", payload, &out)
 	return out, err
 }
 
-func (c *APIClient) GetHookSnippet(ctx context.Context, agent string) (ScopeSnippetResponse, error) {
+func (c *APIClient) GetHookSnippet(ctx context.Context, agent string) (scope.ScopeSnippetResponse, error) {
 	q := url.Values{}
 	q.Set("agent", agent)
-	var out ScopeSnippetResponse
+	var out scope.ScopeSnippetResponse
 	err := c.doJSON(ctx, http.MethodGet, "/scopes/snippets?"+q.Encode(), nil, &out)
 	return out, err
 }
@@ -576,19 +520,19 @@ func (c *APIClient) Catalog(ctx context.Context, actor string, includeDemo bool)
 	return out, err
 }
 
-func (c *APIClient) ToolSchema(ctx context.Context, toolID, actor string) (gateway.Tool, error) {
+func (c *APIClient) ToolSchema(ctx context.Context, toolID, actor string) (registry.Tool, error) {
 	path := "/tools/" + url.PathEscape(toolID) + "/schema"
 	if actor != "" {
 		path += "?actor=" + url.QueryEscape(actor)
 	}
-	var out gateway.Tool
+	var out registry.Tool
 	err := c.doJSON(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }
 
 // ImportOpenAPI saves the HTTP server, parses the OpenAPI 3.0/3.1 document
 // (from specBytes or fetched from specURL), and registers each generated tool.
-func (c *APIClient) ImportOpenAPI(ctx context.Context, server gateway.Server, specBytes []byte, specURL string, operationIDs []string) (int, error) {
+func (c *APIClient) ImportOpenAPI(ctx context.Context, server registry.Server, specBytes []byte, specURL string, operationIDs []string) (int, error) {
 	data := bytes.TrimSpace(specBytes)
 	if len(data) == 0 && strings.TrimSpace(specURL) != "" {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSpace(specURL), nil)
@@ -614,7 +558,7 @@ func (c *APIClient) ImportOpenAPI(ctx context.Context, server gateway.Server, sp
 	}
 
 	server.Kind = "http"
-	tools, err := gateway.ImportOpenAPI(server.ID, data, operationIDs)
+	tools, err := openapi.ImportOpenAPI(server.ID, data, operationIDs)
 	if err != nil {
 		return 0, err
 	}
@@ -635,29 +579,29 @@ func (c *APIClient) Maintenance(ctx context.Context) (MaintenanceOverview, error
 	return out, err
 }
 
-func (c *APIClient) SaveMaintenanceSource(ctx context.Context, src gateway.MaintenanceSource) error {
+func (c *APIClient) SaveMaintenanceSource(ctx context.Context, src maintenance.MaintenanceSource) error {
 	return c.doJSON(ctx, http.MethodPut, "/maintenance/sources", src, nil)
 }
 
-func (c *APIClient) GetAcceptance(ctx context.Context, serverID string) (gateway.AcceptanceSuite, error) {
-	var out gateway.AcceptanceSuite
+func (c *APIClient) GetAcceptance(ctx context.Context, serverID string) (maintenance.AcceptanceSuite, error) {
+	var out maintenance.AcceptanceSuite
 	err := c.doJSON(ctx, http.MethodGet, "/maintenance/sources/"+url.PathEscape(serverID)+"/acceptance", nil, &out)
 	return out, err
 }
 
-func (c *APIClient) SaveAcceptance(ctx context.Context, serverID string, suite gateway.AcceptanceSuite) error {
+func (c *APIClient) SaveAcceptance(ctx context.Context, serverID string, suite maintenance.AcceptanceSuite) error {
 	return c.doJSON(ctx, http.MethodPut, "/maintenance/sources/"+url.PathEscape(serverID)+"/acceptance", suite, nil)
 }
 
-func (c *APIClient) RunMaintenance(ctx context.Context, serverID string, force bool) (gateway.MaintenanceRun, error) {
-	var out gateway.MaintenanceRun
+func (c *APIClient) RunMaintenance(ctx context.Context, serverID string, force bool) (maintenance.MaintenanceRun, error) {
+	var out maintenance.MaintenanceRun
 	err := c.doJSON(ctx, http.MethodPost, "/maintenance/sources/"+url.PathEscape(serverID)+"/run", map[string]bool{"force": force}, &out)
 	return out, err
 }
 
-func (c *APIClient) GetMaintenanceRun(ctx context.Context, runID string) (gateway.MaintenanceRun, error) {
+func (c *APIClient) GetMaintenanceRun(ctx context.Context, runID string) (maintenance.MaintenanceRun, error) {
 	var resp struct {
-		Run gateway.MaintenanceRun `json:"run"`
+		Run maintenance.MaintenanceRun `json:"run"`
 	}
 	err := c.doJSON(ctx, http.MethodGet, "/maintenance/runs/"+url.PathEscape(runID), nil, &resp)
 	return resp.Run, err
@@ -776,11 +720,11 @@ func ComputeGatewayTelemetry(state Bootstrap) GatewayTelemetry {
 	toolHitCounts := make(map[string]int)
 	blindSpotMap := make(map[string]*BlindSpotItem)
 
-	toolByID := make(map[string]gateway.Tool, len(tools))
+	toolByID := make(map[string]registry.Tool, len(tools))
 	for _, t := range tools {
 		toolByID[t.ID] = t
 	}
-	serverByID := make(map[string]gateway.Server, len(servers))
+	serverByID := make(map[string]registry.Server, len(servers))
 	for _, s := range servers {
 		serverByID[s.ID] = s
 	}
@@ -999,8 +943,8 @@ func ComputeGatewayTelemetry(state Bootstrap) GatewayTelemetry {
 }
 
 // ComputeActorMatrix computes per-actor reachable services and read/write tool counts.
-func ComputeActorMatrix(servers []gateway.Server, tools []gateway.Tool, sharedActor string) []ActorPolicyRow {
-	realActiveServers := make([]gateway.Server, 0, len(servers))
+func ComputeActorMatrix(servers []registry.Server, tools []registry.Tool, sharedActor string) []ActorPolicyRow {
+	realActiveServers := make([]registry.Server, 0, len(servers))
 	activeServerIDs := make(map[string]bool, len(servers))
 	for _, s := range servers {
 		if !s.Demo && s.Enabled {
@@ -1009,7 +953,7 @@ func ComputeActorMatrix(servers []gateway.Server, tools []gateway.Tool, sharedAc
 		}
 	}
 
-	enabledRealTools := make([]gateway.Tool, 0, len(tools))
+	enabledRealTools := make([]registry.Tool, 0, len(tools))
 	for _, t := range tools {
 		if t.Enabled && activeServerIDs[t.ServerID] {
 			enabledRealTools = append(enabledRealTools, t)
@@ -1036,7 +980,7 @@ func ComputeActorMatrix(servers []gateway.Server, tools []gateway.Tool, sharedAc
 
 	rows := make([]ActorPolicyRow, 0, len(actorOrder))
 	for _, actor := range actorOrder {
-		var allowed []gateway.Tool
+		var allowed []registry.Tool
 		readOnly := 0
 		for _, t := range enabledRealTools {
 			if slices.Contains(t.Actors, "*") || slices.Contains(t.Actors, actor) {
@@ -1089,7 +1033,7 @@ func FormatCompactTokens(tokens int) string {
 	return fmt.Sprintf("%d", tokens)
 }
 
-func ServerProtocolLabel(s gateway.Server) string {
+func ServerProtocolLabel(s registry.Server) string {
 	if s.Kind == "http" {
 		return "HTTP API"
 	}
@@ -1099,7 +1043,7 @@ func ServerProtocolLabel(s gateway.Server) string {
 	return "MCP · HTTP"
 }
 
-func ServerTargetText(s gateway.Server) string {
+func ServerTargetText(s registry.Server) string {
 	if s.Kind == "mcp" && s.Transport == "stdio" {
 		parts := make([]string, 0, 1+len(s.Args))
 		if s.Command != "" {

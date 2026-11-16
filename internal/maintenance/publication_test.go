@@ -1,11 +1,11 @@
 package maintenance
 
 import (
+	"gatewaylab/internal/jsonutil"
+	"gatewaylab/internal/store"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"gatewaylab/internal/store"
 )
 
 func TestPublicationCommitsRegistryAndRunAtomically(t *testing.T) {
@@ -21,7 +21,7 @@ func TestPublicationCommitsRegistryAndRunAtomically(t *testing.T) {
 	}
 	r.Status = "ready"
 	r.Tools = []Tool{{ID: "service.logs", ServerID: "service", Name: "logs", Description: "Search logs", Actors: []string{"developer"}, InputSchema: objectSchema(map[string]any{}), Method: "GET", Path: "/logs"}}
-	r.Acceptance = AcceptanceReport{Configured: true, Passed: true, Fingerprint: maintenanceDigest(m.suites["service"]), RoutingFingerprint: m.router.RoutingFingerprint("service")}
+	r.Acceptance = AcceptanceReport{Configured: true, Passed: true, Fingerprint: jsonutil.MustDigest(m.suites["service"]), RoutingFingerprint: m.router.RoutingFingerprint("service")}
 	r.Review = PublicationReview{Required: true, Reasons: []ReviewReason{}}
 	revision := filepath.Join(m.directory(r.ID), "revision")
 	if err := os.MkdirAll(revision, 0700); err != nil {
@@ -31,7 +31,7 @@ func TestPublicationCommitsRegistryAndRunAtomically(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(revision, "manifest.json"), content, 0400); err != nil {
 		t.Fatal(err)
 	}
-	r.Artifacts = map[string]string{"manifest.json": maintenanceDigest(string(content))}
+	r.Artifacts = map[string]string{"manifest.json": jsonutil.MustDigest(string(content))}
 	if err := m.saveRun(r); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestPublicationCommitsRegistryAndRunAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if maintenanceDigest(before) != maintenanceDigest(persisted) || maintenanceDigest(before) != maintenanceDigest(m.catalog.Snapshot()) {
+	if jsonutil.MustDigest(before) != jsonutil.MustDigest(persisted) || jsonutil.MustDigest(before) != jsonutil.MustDigest(m.catalog.Snapshot()) {
 		t.Fatal("failed publication changed the persisted or visible catalog")
 	}
 	persistedRuns, err := store.MaintenanceRuns[MaintenanceRun](m.db).List()
@@ -66,7 +66,7 @@ func TestPublicationCommitsRegistryAndRunAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(persisted.Tools) != 1 || !persisted.Tools[0].Enabled || maintenanceDigest(persisted) != maintenanceDigest(m.catalog.Snapshot()) {
+	if len(persisted.Tools) != 1 || !persisted.Tools[0].Enabled || jsonutil.MustDigest(persisted) != jsonutil.MustDigest(m.catalog.Snapshot()) {
 		t.Fatal("publication did not expose the committed catalog")
 	}
 	persistedRuns, err = store.MaintenanceRuns[MaintenanceRun](m.db).List()
@@ -83,7 +83,7 @@ func TestPublicationCommitsRegistryAndRunAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if maintenanceDigest(before) != maintenanceDigest(persisted) || m.runs[r.ID].Status != "rolled_back" {
+	if jsonutil.MustDigest(before) != jsonutil.MustDigest(persisted) || m.runs[r.ID].Status != "rolled_back" {
 		t.Fatal("rollback did not restore the committed catalog")
 	}
 }

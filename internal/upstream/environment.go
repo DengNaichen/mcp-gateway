@@ -1,15 +1,13 @@
 package upstream
 
 import (
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 
+	"gatewaylab/internal/jsonutil"
 	"gatewaylab/internal/registry"
 )
 
@@ -25,28 +23,7 @@ func closeBody(resp *http.Response) {
 		slog.Debug("close upstream response", "error", err)
 	}
 }
-func ProcessEnvironment(extra map[string]string) []string {
-	env := []string{}
-	for _, key := range []string{"PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "SYSTEMROOT"} {
-		if v, ok := os.LookupEnv(key); ok {
-			env = append(env, key+"="+v)
-		}
-	}
-	for k, v := range extra {
-		env = append(env, k+"="+v)
-	}
-	return env
-}
-func readBounded(r io.Reader, limit int64) ([]byte, error) {
-	b, err := io.ReadAll(io.LimitReader(r, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("read bounded input: %w", err)
-	}
-	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("input exceeds %d bytes", limit)
-	}
-	return b, nil
-}
+
 func Fingerprint(s Server, lookup func(string) string) (string, error) {
 	if lookup == nil {
 		lookup = os.Getenv
@@ -58,11 +35,11 @@ func Fingerprint(s Server, lookup func(string) string) (string, error) {
 	for k, v := range s.Env {
 		values["env:"+k] = os.Expand(v, lookup)
 	}
-	b, err := json.Marshal([]any{s, values})
+	sum, err := jsonutil.Digest([]any{s, values})
 	if err != nil {
 		return "", fmt.Errorf("encode connection fingerprint: %w", err)
 	}
-	return fmt.Sprintf("%x", sha256.Sum256(b)), nil
+	return sum, nil
 }
 
 func CheckEnvironment(s Server, lookup func(string) string) error {

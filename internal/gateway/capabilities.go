@@ -2,69 +2,28 @@ package gateway
 
 import (
 	"context"
-	"net/http"
 	"slices"
 
+	"gatewaylab/internal/fault"
+	"gatewaylab/internal/registry"
 	"gatewaylab/internal/routing"
 )
 
-type Capability = routing.Capability
-
-func capability(t Tool) Capability             { return routing.Summarize(t) }
-func summarizeTools(tools []Tool) []Capability { return routing.SummarizeTools(tools) }
-func discoveryPresentation(result DiscoverResult, summary bool) any {
-	if !summary {
-		return result
-	}
-	out := struct {
-		DiscoverResult
-		Tools []Capability `json:"tools"`
-	}{DiscoverResult: result, Tools: []Capability{}}
-	for _, t := range result.Tools {
-		c := capability(t.Tool)
-		c.Reason = t.Reason
-		out.Tools = append(out.Tools, c)
-	}
-	return out
-}
-func (g *Gateway) ToolSchema(ctx context.Context, id, actor string) (Tool, error) {
-	if err := g.checkExecutionScope(ctx); err != nil {
-		return Tool{}, err
+func (g *Gateway) ToolSchema(ctx context.Context, id, actor string) (registry.Tool, error) {
+	if err := g.scope.CheckExecutionScope(ctx); err != nil {
+		return registry.Tool{}, err
 	}
 	reg := g.Snapshot()
-	i := slices.IndexFunc(reg.Tools, func(t Tool) bool { return t.ID == id })
+	i := slices.IndexFunc(reg.Tools, func(t registry.Tool) bool { return t.ID == id })
 	if i < 0 {
-		return Tool{}, problem(404, "工具不存在", nil)
+		return registry.Tool{}, fault.New(fault.NotFound, "工具不存在", nil)
 	}
 	tool := reg.Tools[i]
-	server := slices.IndexFunc(reg.Servers, func(s Server) bool { return s.ID == tool.ServerID && s.Enabled })
+	server := slices.IndexFunc(reg.Servers, func(s registry.Server) bool { return s.ID == tool.ServerID && s.Enabled })
 	if server < 0 || !g.authorizedTool(ctx, tool, actor) {
-		return Tool{}, problem(403, "工具已禁用或没有访问权限", nil)
+		return registry.Tool{}, fault.New(fault.Forbidden, "工具已禁用或没有访问权限", nil)
 	}
 	return tool, nil
-}
-func (g *Gateway) registerCapabilities(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/catalog", func(w http.ResponseWriter, r *http.Request) {
-		ctx, err := g.resolveRESTScope(r.Context(), r, "catalog", nil, nil)
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		respond(w, 200, g.Catalog(ctx, r.URL.Query().Get("actor"), r.URL.Query().Get("include_demo") == "true"))
-	})
-	mux.HandleFunc("GET /api/tools/{id}/schema", func(w http.ResponseWriter, r *http.Request) {
-		ctx, err := g.resolveRESTScope(r.Context(), r, "get_tool_schema", nil, nil)
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		tool, err := g.ToolSchema(ctx, r.PathValue("id"), r.URL.Query().Get("actor"))
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		respond(w, 200, tool)
-	})
 }
 
 type CatalogServer struct {
@@ -74,21 +33,21 @@ type CatalogServer struct {
 	ToolCount   int    `json:"tool_count"`
 }
 type Catalog struct {
-	Servers []CatalogServer `json:"servers"`
-	Tools   []Capability    `json:"tools"`
+	Servers []CatalogServer      `json:"servers"`
+	Tools   []routing.Capability `json:"tools"`
 }
 
 func (g *Gateway) Catalog(ctx context.Context, actor string, includeDemo bool) Catalog {
-	registry := g.Snapshot()
-	out := Catalog{Servers: []CatalogServer{}, Tools: []Capability{}}
-	for _, server := range registry.Servers {
+	reg := g.Snapshot()
+	out := Catalog{Servers: []CatalogServer{}, Tools: []routing.Capability{}}
+	for _, server := range reg.Servers {
 		if !server.Enabled || server.Demo && !includeDemo {
 			continue
 		}
 		count := 0
-		for _, tool := range registry.Tools {
+		for _, tool := range reg.Tools {
 			if tool.ServerID == server.ID && g.authorizedTool(ctx, tool, actor) {
-				out.Tools = append(out.Tools, capability(tool))
+				out.Tools = append(out.Tools, routing.Summarize(tool))
 				count++
 			}
 		}

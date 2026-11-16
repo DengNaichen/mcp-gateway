@@ -4,14 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 
-	"gatewaylab/internal/registry"
-
 	"gopkg.in/yaml.v3"
+
+	"gatewaylab/internal/registry"
 )
 
 // ImportOpenAPI supports JSON and YAML OpenAPI 3.0/3.1. External references and
@@ -38,7 +38,7 @@ func ImportOpenAPI(serverID string, data []byte, operationIDs []string) ([]Tool,
 		return nil, invalid("OpenAPI 缺少 paths")
 	}
 	importer := openAPIImporter{doc: doc, version: version}
-	names := sortedKeys(paths)
+	names := slices.Sorted(maps.Keys(paths))
 	tools := []Tool{}
 	seen := map[string]bool{}
 	selected := map[string]bool{}
@@ -100,14 +100,6 @@ type openAPIImporter struct {
 	version string
 }
 
-func sortedKeys[T any](m map[string]T) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
 func (p openAPIImporter) object(v any) (map[string]any, error) {
 	seen := map[string]bool{}
 	for depth := 0; depth < 64; depth++ {
@@ -294,7 +286,7 @@ func (p openAPIImporter) operation(serverID, id, name, method, path string, item
 	}
 	groups := map[string]map[string]any{}
 	requiredGroups := []string{}
-	for _, key := range sortedKeys(params) {
+	for _, key := range slices.Sorted(maps.Keys(params)) {
 		param := params[key]
 		in, _ := param["in"].(string)
 		name, _ := param["name"].(string)
@@ -351,7 +343,7 @@ func (p openAPIImporter) operation(serverID, id, name, method, path string, item
 		}
 		t.HTTP.Parameters = append(t.HTTP.Parameters, HTTPParameter{Name: name, In: in, Style: style, Explode: explode})
 	}
-	for _, match := range pathVariable.FindAllStringSubmatch(path, -1) {
+	for _, match := range registry.PathVariable.FindAllStringSubmatch(path, -1) {
 		if _, ok := params["path:"+match[1]]; !ok {
 			return t, invalid("路径模板缺少参数定义：" + match[1])
 		}
@@ -396,7 +388,7 @@ func (p openAPIImporter) operation(serverID, id, name, method, path string, item
 	if !ok {
 		return t, invalid("operation 缺少 responses")
 	}
-	for _, status := range sortedKeys(responses) {
+	for _, status := range slices.Sorted(maps.Keys(responses)) {
 		if !strings.HasPrefix(status, "2") && status != "default" {
 			continue
 		}
@@ -456,11 +448,11 @@ func rebaseDefinitions(root map[string]any) {
 				}
 				counter++
 				prefix := fmt.Sprintf("s%d_", counter)
-				for _, key := range sortedKeys(defs) {
+				for _, key := range slices.Sorted(maps.Keys(defs)) {
 					local[key] = prefix + key
 				}
 				delete(value, "$defs")
-				for _, key := range sortedKeys(defs) {
+				for _, key := range slices.Sorted(maps.Keys(defs)) {
 					visit(defs[key], local)
 					merged[local[key]] = defs[key]
 				}
@@ -471,11 +463,11 @@ func rebaseDefinitions(root map[string]any) {
 					value["$ref"] = "#/$defs/" + encodePointer(mapped)
 				}
 			}
-			for _, key := range sortedKeys(value) {
+			for _, key := range slices.Sorted(maps.Keys(value)) {
 				switch key {
 				case "properties", "patternProperties", "definitions", "dependentSchemas":
 					if fields, ok := value[key].(map[string]any); ok {
-						for _, name := range sortedKeys(fields) {
+						for _, name := range slices.Sorted(maps.Keys(fields)) {
 							visit(fields[name], local)
 						}
 					}
@@ -494,8 +486,6 @@ func rebaseDefinitions(root map[string]any) {
 		root["$defs"] = merged
 	}
 }
-
-var pathVariable = regexp.MustCompile(`\{([^{}]+)\}`)
 
 func decodePointer(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "~1", "/"), "~0", "~")

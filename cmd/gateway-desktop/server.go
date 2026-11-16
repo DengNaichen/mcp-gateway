@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"gatewaylab/internal/api"
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/gateway"
 )
@@ -221,7 +222,7 @@ func startOrAttachGateway(ctx context.Context, addr, dataDir string) (*gatewayRu
 	g.StartMaintenance(maintCtx)
 
 	server := &http.Server{
-		Handler:           g.Handler(),
+		Handler:           api.Handler(g),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       90 * time.Second,
 	}

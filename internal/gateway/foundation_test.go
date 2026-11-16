@@ -5,31 +5,32 @@ import (
 	"testing"
 	"time"
 
+	"gatewaylab/internal/registry"
 	"gatewaylab/internal/store"
 )
 
-func TestRegistryOperationsDoNotAcquireGatewayMutex(t *testing.T) {
+func TestRegistryOperationsDoNotAcquirePublicationConfigMutex(t *testing.T) {
 	g, err := New(t.TempDir(), "http://127.0.0.1:8789")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer g.Close()
-	g.mu.Lock()
+	g.publicationConfigMu.Lock()
 	done := make(chan error, 1)
 	go func() {
 		_ = g.Snapshot()
-		done <- g.SaveServer(Server{ID: "independent", Name: "Independent", Kind: "http", Endpoint: "https://example.com"})
+		done <- g.Registry().SaveServer(registry.Server{ID: "independent", Name: "Independent", Kind: "http", Endpoint: "https://example.com"})
 	}()
 	select {
 	case err := <-done:
-		g.mu.Unlock()
+		g.publicationConfigMu.Unlock()
 		if err != nil {
 			t.Fatal(err)
 		}
 	case <-time.After(2 * time.Second):
-		g.mu.Unlock()
+		g.publicationConfigMu.Unlock()
 		<-done
-		t.Fatal("registry acquired the gateway mutex")
+		t.Fatal("registry acquired the publication/config mutex")
 	}
 }
 

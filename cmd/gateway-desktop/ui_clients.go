@@ -3,10 +3,10 @@ package main
 import (
 	"errors"
 
+	"github.com/egoist/mygo/ui"
+
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
-
-	"github.com/egoist/mygo/ui"
 )
 
 func (u *DesktopUI) clientEndpoint() string {

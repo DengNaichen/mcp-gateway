@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"gatewaylab/internal/buildinfo"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"gatewaylab/internal/buildinfo"
 )
 
 func TestProbeRejectsForeignInstances(t *testing.T) {

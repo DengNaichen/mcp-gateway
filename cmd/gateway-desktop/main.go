@@ -11,12 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gatewaylab/internal/buildinfo"
-
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/updater"
 	"github.com/egoist/mygo/plugins/updater/native"
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/buildinfo"
 )
 
 //go:embed assets/tray.png

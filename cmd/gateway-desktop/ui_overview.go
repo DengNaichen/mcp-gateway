@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"gatewaylab/internal/gateway"
-
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/registry"
 )
 
 // overviewLocalState holds UI-thread state local to the Overview page.
@@ -98,8 +98,8 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 	state := u.State
 	ov := u.overviewState()
 
-	realServers := make([]gateway.Server, 0, len(state.Registry.Servers))
-	activeRealServers := make([]gateway.Server, 0, len(state.Registry.Servers))
+	realServers := make([]registry.Server, 0, len(state.Registry.Servers))
+	activeRealServers := make([]registry.Server, 0, len(state.Registry.Servers))
 	realServerMap := make(map[string]bool, len(state.Registry.Servers))
 	activeRealMap := make(map[string]bool, len(state.Registry.Servers))
 	for _, s := range state.Registry.Servers {
@@ -113,8 +113,8 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 		}
 	}
 
-	realTools := make([]gateway.Tool, 0, len(state.Registry.Tools))
-	enabledRealTools := make([]gateway.Tool, 0, len(state.Registry.Tools))
+	realTools := make([]registry.Tool, 0, len(state.Registry.Tools))
+	enabledRealTools := make([]registry.Tool, 0, len(state.Registry.Tools))
 	readOnlyEnabled := 0
 	for _, t := range state.Registry.Tools {
 		if realServerMap[t.ServerID] {
@@ -207,7 +207,7 @@ func (u *DesktopUI) renderOverviewSetupBanner(
 	c *ui.Context,
 	ov *overviewLocalState,
 	state *Bootstrap,
-	realServers []gateway.Server,
+	realServers []registry.Server,
 ) {
 	setup := state.Setup
 	settings := state.Settings
@@ -776,8 +776,8 @@ func (u *DesktopUI) renderOverviewTopToolsCard(c *ui.Context, topTools []TopTool
 func (u *DesktopUI) renderOverviewServersCard(
 	c *ui.Context,
 	state *Bootstrap,
-	realServers []gateway.Server,
-	realTools []gateway.Tool,
+	realServers []registry.Server,
+	realTools []registry.Tool,
 ) {
 	SailFlushCard(c, func() {
 		SailListCardHeader(c, "上游服务", "", func() {

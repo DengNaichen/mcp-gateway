@@ -10,6 +10,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/routing"
 )
 
 func systemOneFixture(status string, start int, probabilities ...float64) map[string]any {
@@ -24,7 +28,7 @@ func systemOneFixture(status string, start int, probabilities ...float64) map[st
 }
 
 func TestSystemOneRouting(t *testing.T) {
-	candidates := []Tool{{ID: "s.a"}, {ID: "s.b"}, {ID: "s.c"}}
+	candidates := []registry.Tool{{ID: "s.a"}, {ID: "s.b"}, {ID: "s.c"}}
 	for _, tc := range []struct {
 		name, suffix, model string
 		status              string
@@ -64,7 +68,7 @@ func TestSystemOneRouting(t *testing.T) {
 				respond(w, 200, systemOneFixture(tc.status, 0, tc.probabilities...))
 			}))
 			defer server.Close()
-			d, usage, err := selectWithModel(context.Background(), Settings{BaseURL: server.URL + tc.suffix, Model: tc.model, MaxTools: 2, TimeoutSeconds: 5}, "test-key", DiscoverRequest{Intent: "inspect"}, candidates)
+			d, usage, err := selectWithModel(context.Background(), model.Settings{BaseURL: server.URL + tc.suffix, Model: tc.model, MaxTools: 2, TimeoutSeconds: 5}, "test-key", DiscoverRequest{Intent: "inspect"}, candidates)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -81,9 +85,9 @@ func TestSystemOneRouting(t *testing.T) {
 
 func TestSystemOneBatchesOverQuestionLimit(t *testing.T) {
 	// 32 tools require 3 batches under the 16-question cap: 15 (with route_status), 16, 1.
-	tools := make([]Tool, 32)
+	tools := make([]registry.Tool, 32)
 	for i := range tools {
-		tools[i] = Tool{ID: fmt.Sprintf("s.t%02d", i)}
+		tools[i] = registry.Tool{ID: fmt.Sprintf("s.t%02d", i)}
 	}
 	var batchSizes []int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +123,7 @@ func TestSystemOneBatchesOverQuestionLimit(t *testing.T) {
 	}))
 	defer server.Close()
 
-	d, usage, err := selectWithModel(context.Background(), Settings{BaseURL: server.URL + "/v1/systemone", Model: "jev", MaxTools: 2, TimeoutSeconds: 5}, "k", DiscoverRequest{Intent: "find"}, tools)
+	d, usage, err := selectWithModel(context.Background(), model.Settings{BaseURL: server.URL + "/v1/systemone", Model: "jev", MaxTools: 2, TimeoutSeconds: 5}, "k", DiscoverRequest{Intent: "find"}, tools)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +144,7 @@ func TestSystemOneBatchesOverQuestionLimit(t *testing.T) {
 }
 
 func TestSystemOneRefineSelection(t *testing.T) {
-	tools := []Tool{
+	tools := []registry.Tool{
 		{ID: "s.errors", ServerID: "s", Name: "errors", Description: "Errors.\nMore."},
 		{ID: "s.trace", ServerID: "s", Name: "trace", Description: "Trace."},
 	}
@@ -178,7 +182,7 @@ func TestSystemOneRefineSelection(t *testing.T) {
 	}))
 	defer server.Close()
 
-	d, usage, err := selectTools(context.Background(), Settings{BaseURL: server.URL + "/v1", Model: "jev", MaxTools: 4, TimeoutSeconds: 5}, "k", DiscoverRequest{Intent: "500 errors"}, tools, routingOptions{Refine: true})
+	d, usage, err := selectTools(context.Background(), model.Settings{BaseURL: server.URL + "/v1", Model: "jev", MaxTools: 4, TimeoutSeconds: 5}, "k", DiscoverRequest{Intent: "500 errors"}, tools, routing.Options{Refine: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,25 +199,25 @@ func TestSystemOneRefineSelection(t *testing.T) {
 func TestLiveSystemOneRouting(t *testing.T) {
 	key := os.Getenv("GATEWAY_TEST_SYSTEMONE_KEY")
 	baseURL := os.Getenv("GATEWAY_TEST_SYSTEMONE_URL")
-	model := os.Getenv("GATEWAY_TEST_SYSTEMONE_MODEL")
+	modelName := os.Getenv("GATEWAY_TEST_SYSTEMONE_MODEL")
 	if key == "" || baseURL == "" {
 		t.Skip("set GATEWAY_TEST_SYSTEMONE_URL and GATEWAY_TEST_SYSTEMONE_KEY for live SystemOne integration")
 	}
-	if model == "" {
-		model = "jev"
+	if modelName == "" {
+		modelName = "jev"
 	}
-	tools := make([]Tool, 18)
+	tools := make([]registry.Tool, 18)
 	for i := range tools {
-		tools[i] = Tool{ID: fmt.Sprintf("svc.tool_%02d", i), ServerID: "svc", Name: fmt.Sprintf("tool_%02d", i), Description: fmt.Sprintf("Unrelated helper %d", i)}
+		tools[i] = registry.Tool{ID: fmt.Sprintf("svc.tool_%02d", i), ServerID: "svc", Name: fmt.Sprintf("tool_%02d", i), Description: fmt.Sprintf("Unrelated helper %d", i)}
 	}
-	tools[16] = Tool{ID: "svc.list_issues", ServerID: "svc", Name: "list_issues", Description: "List open GitHub issues in a repository."}
+	tools[16] = registry.Tool{ID: "svc.list_issues", ServerID: "svc", Name: "list_issues", Description: "List open GitHub issues in a repository."}
 
-	d, usage, err := selectTools(context.Background(), Settings{
+	d, usage, err := selectTools(context.Background(), model.Settings{
 		BaseURL:        baseURL,
-		Model:          model,
+		Model:          modelName,
 		MaxTools:       4,
 		TimeoutSeconds: 30,
-	}, key, DiscoverRequest{Intent: "list open GitHub issues in mcp-gateway"}, tools, routingOptions{Hierarchical: true, Refine: true})
+	}, key, DiscoverRequest{Intent: "list open GitHub issues in mcp-gateway"}, tools, routing.Options{Hierarchical: true, Refine: true})
 	if err != nil {
 		t.Fatalf("live SystemOne selectTools failed: %v", err)
 	}

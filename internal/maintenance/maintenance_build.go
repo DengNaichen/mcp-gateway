@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
+	"gatewaylab/internal/jsonutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	inpututil "gatewaylab/internal/input"
 	"gatewaylab/internal/maintenance/sandbox"
 )
 
@@ -26,31 +26,6 @@ type maintenanceBundle struct {
 	Tools   []Tool `json:"tools"`
 }
 
-func readBounded(r io.Reader, limit int64) ([]byte, error) {
-	b, err := io.ReadAll(io.LimitReader(r, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("read bounded input: %w", err)
-	}
-	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("input exceeds %d bytes", limit)
-	}
-	return b, nil
-}
-func readFileBounded(path string, limit int64) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open input file: %w", err)
-	}
-	b, readErr := readBounded(f, limit)
-	closeErr := f.Close()
-	if readErr != nil {
-		return nil, readErr
-	}
-	if closeErr != nil {
-		return nil, fmt.Errorf("close input file: %w", closeErr)
-	}
-	return b, nil
-}
 func writeJSON(path string, v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -74,7 +49,7 @@ func (m *Maintainer) documents(ctx context.Context, r *MaintenanceRun) ([]source
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		b, err := readFileBounded(p, 2<<20)
+		b, err := inpututil.ReadFileBounded(p, 2<<20)
 		if err != nil {
 			return nil, fmt.Errorf("read reference %s: %w", p, err)
 		}
@@ -90,7 +65,7 @@ func (m *Maintainer) documents(ctx context.Context, r *MaintenanceRun) ([]source
 		if err != nil {
 			return nil, fmt.Errorf("fetch reference: %w", err)
 		}
-		b, readErr := readBounded(resp.Body, 2<<20)
+		b, readErr := inpututil.ReadBounded(resp.Body, 2<<20)
 		closeBody(resp)
 		if resp.StatusCode != 200 {
 			return nil, fmt.Errorf("reference returned http %d", resp.StatusCode)
@@ -126,7 +101,7 @@ func (m *Maintainer) documents(ctx context.Context, r *MaintenanceRun) ([]source
 	}
 	r.Provenance.Documents = map[string]string{}
 	for _, doc := range docs {
-		r.Provenance.Documents[doc.Name] = maintenanceDigest(doc.Content)
+		r.Provenance.Documents[doc.Name] = jsonutil.MustDigest(doc.Content)
 	}
 	return docs, nil
 }
@@ -137,11 +112,11 @@ func (m *Maintainer) build(ctx context.Context, r *MaintenanceRun) error {
 	}
 	// Only meaningful source/model changes invalidate an input snapshot. Publishing
 	// changes the registry, which must not itself trigger an endless rebuild loop.
-	r.Fingerprint = maintenanceDigest(struct {
+	r.Fingerprint = jsonutil.MustDigest(struct {
 		Docs   []sourceDocument
 		Server Server
 		Source string
-	}{docs, r.Server, sourceIdentity(r.Source) + maintenanceDigest(r.AcceptanceInput)})
+	}{docs, r.Server, sourceIdentity(r.Source) + jsonutil.MustDigest(r.AcceptanceInput)})
 	m.mu.Lock()
 	var latest MaintenanceRun
 	for _, old := range m.runs {
@@ -181,7 +156,7 @@ func (m *Maintainer) build(ctx context.Context, r *MaintenanceRun) error {
 		if err != nil {
 			return err
 		}
-		b, err := readFileBounded(p, 1<<20)
+		b, err := inpututil.ReadFileBounded(p, 1<<20)
 		if err != nil {
 			return err
 		}
@@ -247,7 +222,7 @@ func (m *Maintainer) build(ctx context.Context, r *MaintenanceRun) error {
 		if totalBytes > 8<<20 {
 			return invalid("产物合计不能超过 8 MB")
 		}
-		r.Artifacts[e.Name()] = maintenanceDigest(string(b))
+		r.Artifacts[e.Name()] = jsonutil.MustDigest(string(b))
 		if err := os.WriteFile(filepath.Join(revision, e.Name()), b, 0400); err != nil {
 			return fmt.Errorf("snapshot artifact: %w", err)
 		}
@@ -295,7 +270,7 @@ func (m *Maintainer) validateBundle(ctx context.Context, r MaintenanceRun, dir s
 	if err := dec.Decode(&bundle); err != nil {
 		return bundle, fmt.Errorf("decode manifest: %w", err)
 	}
-	if err := ensureJSONEnd(dec); err != nil {
+	if err := inpututil.EnsureJSONEnd(dec, invalid); err != nil {
 		return bundle, err
 	}
 	if strings.TrimSpace(bundle.Summary) == "" || len(bundle.Summary) > 4000 || bundle.Tools == nil || len(bundle.Tools) > 200 {
@@ -377,27 +352,21 @@ func (m *Maintainer) validateBundle(ctx context.Context, r MaintenanceRun, dir s
 			if err != nil {
 				return bundle, fmt.Errorf("validate native tools: %w", err)
 			}
-			live[t.Name] = maintenanceDigest(t.InputSchema)
+			live[t.Name] = jsonutil.MustDigest(t.InputSchema)
 			if t.Annotations != nil {
 				readOnly[t.Name] = t.Annotations.ReadOnlyHint
 			}
 		}
 		for i, t := range bundle.Tools {
 			bundle.Tools[i].ReadOnly = readOnly[t.Name]
-			if schema, ok := live[t.Name]; !ok || schema != maintenanceDigest(t.InputSchema) {
+			if schema, ok := live[t.Name]; !ok || schema != jsonutil.MustDigest(t.InputSchema) {
 				return bundle, invalid("MCP 工具名和 schema 必须匹配下游实际定义")
 			}
 		}
 	}
 	return bundle, nil
 }
-func ensureJSONEnd(dec *json.Decoder) error {
-	var more any
-	if err := dec.Decode(&more); !errors.Is(err, io.EOF) {
-		return invalid("产物必须是单个 JSON 对象")
-	}
-	return nil
-}
+
 func regularArtifact(dir, name string) ([]byte, error) {
 	if name == "" || filepath.Base(name) != name || name == "." || name == ".." {
 		return nil, invalid("产物必须是顶层相对文件名")
@@ -410,7 +379,7 @@ func regularArtifact(dir, name string) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, invalid("产物不允许目录或符号链接")
 	}
-	return readFileBounded(p, 1<<20)
+	return inpututil.ReadFileBounded(p, 1<<20)
 }
 
 const maintenanceContract = `# Gateway maintenance contract

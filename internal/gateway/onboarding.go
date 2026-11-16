@@ -1,23 +1,23 @@
 package gateway
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
 	"slices"
 	"strings"
 	"time"
 
+	"gatewaylab/internal/access"
+	"gatewaylab/internal/activity"
+	"gatewaylab/internal/fault"
+	"gatewaylab/internal/jsonutil"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/scope"
 	"gatewaylab/internal/store"
 	"gatewaylab/internal/upstream"
-	"gatewaylab/internal/workspace"
 )
 
 type ConnectionCheck struct {
@@ -37,22 +37,15 @@ type SetupStatus struct {
 	ModelReady       bool                       `json:"model_ready"`
 	ModelCheck       *ConnectionCheck           `json:"model_check"`
 	SourceChecks     map[string]ConnectionCheck `json:"source_checks"`
-	AgentLastRequest *Event                     `json:"agent_last_request"`
+	AgentLastRequest *activity.Event            `json:"agent_last_request"`
 }
 
 func digest(v any) (string, error) {
-	b, err := json.Marshal(v)
+	sum, err := jsonutil.Digest(v)
 	if err != nil {
 		return "", fmt.Errorf("encode connection fingerprint: %w", err)
 	}
-	return fmt.Sprintf("%x", sha256.Sum256(b)), nil
-}
-
-func sourceFingerprintWithLookup(s Server, lookup func(string) string) (string, error) {
-	return upstream.Fingerprint(s, lookup)
-}
-func sourceFingerprint(s Server) (string, error) {
-	return sourceFingerprintWithLookup(s, os.Getenv)
+	return sum, nil
 }
 
 func (g *Gateway) modelFingerprint() (string, error) {
@@ -60,22 +53,15 @@ func (g *Gateway) modelFingerprint() (string, error) {
 	return digest([]any{routingProtocol, settings, key, g.realTools()})
 }
 
-func (g *Gateway) realTools() []Tool {
+func (g *Gateway) realTools() []registry.Tool {
 	r := g.Snapshot()
-	out := []Tool{}
+	out := []registry.Tool{}
 	for _, tool := range r.Tools {
-		if allowed(tool, "developer") && slices.ContainsFunc(r.Servers, func(s Server) bool { return s.ID == tool.ServerID && s.Enabled && !s.Demo }) {
+		if access.Allowed(tool, "developer") && slices.ContainsFunc(r.Servers, func(s registry.Server) bool { return s.ID == tool.ServerID && s.Enabled && !s.Demo }) {
 			out = append(out, tool)
 		}
 	}
 	return out
-}
-
-func checkEnvironmentWithLookup(s Server, lookup func(string) string) error {
-	return upstream.CheckEnvironment(s, lookup)
-}
-func checkEnvironment(s Server) error {
-	return checkEnvironmentWithLookup(s, os.Getenv)
 }
 
 func (g *Gateway) saveCheck(id, fingerprint string, check ConnectionCheck) error {
@@ -113,7 +99,7 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 			continue
 		}
 		out.Sources++
-		fingerprint, err := sourceFingerprintWithLookup(s, g.lookupEnv)
+		fingerprint, err := upstream.Fingerprint(s, g.lookupEnv)
 		if err != nil {
 			return out, err
 		}
@@ -125,7 +111,7 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 			out.SourceChecks[s.ID] = *check
 		}
 	}
-	settings, _ := g.Config()
+	settings, _ := g.Model().Config()
 	out.ModelConfigured = strings.TrimSpace(settings.Model) != ""
 	fingerprint, err := g.modelFingerprint()
 	if err != nil {
@@ -141,17 +127,17 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 		return out, err
 	}
 	if latest != nil {
-		ev := Event(*latest)
+		ev := activity.Event(*latest)
 		out.AgentLastRequest = &ev
 	}
 	return out, nil
 }
 
-func (g *Gateway) TestSource(ctx context.Context, s Server) (check ConnectionCheck, retErr error) {
-	if err := g.SaveServer(s); err != nil {
+func (g *Gateway) TestSource(ctx context.Context, s registry.Server) (check ConnectionCheck, retErr error) {
+	if err := g.Registry().SaveServer(s); err != nil {
 		return check, err
 	}
-	fingerprint, err := sourceFingerprintWithLookup(s, g.lookupEnv)
+	fingerprint, err := upstream.Fingerprint(s, g.lookupEnv)
 	if err != nil {
 		return check, err
 	}
@@ -160,7 +146,7 @@ func (g *Gateway) TestSource(ctx context.Context, s Server) (check ConnectionChe
 		if retErr != nil {
 			check.Status = "error"
 			check.Message = "配置已保存，连接尚未试通"
-			check.Detail = g.errorDetail(retErr)
+			check.Detail = g.ErrorDetail(retErr)
 		}
 		if err := g.saveCheck("source:"+s.ID, fingerprint, check); err != nil {
 			retErr = errors.Join(retErr, err)
@@ -175,45 +161,30 @@ func (g *Gateway) TestSource(ctx context.Context, s Server) (check ConnectionChe
 		check.Message = fmt.Sprintf("MCP 已连接，读取到 %d 个工具。请选择需要开放给 Agent 的工具。", count)
 		return check, nil
 	}
-	if err := checkEnvironmentWithLookup(s, g.lookupEnv); err != nil {
-		return check, problem(400, "请求头引用的环境变量尚未设置", err)
+	if err := upstream.CheckEnvironment(s, g.lookupEnv); err != nil {
+		return check, fault.New(fault.Invalid, "请求头引用的环境变量尚未设置", err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, s.Endpoint, nil)
+	status, err := upstream.CheckHTTPConnectivity(ctx, s, g.lookupEnv)
 	if err != nil {
-		return check, fmt.Errorf("create api connectivity request: %w", err)
+		return check, err
 	}
-	for k, v := range s.Headers {
-		req.Header.Set(k, g.expandEnv(v))
-	}
-	response, err := (&http.Client{CheckRedirect: noRedirect}).Do(req)
-	if err != nil {
-		return check, problem(502, "无法连接 HTTP API", err)
-	}
-	defer closeBody(response)
-	if response.StatusCode == 401 || response.StatusCode == 403 {
-		return check, problem(502, fmt.Sprintf("服务返回 HTTP %d，请检查认证请求头", response.StatusCode), nil)
-	}
-	if response.StatusCode >= 500 {
-		return check, problem(502, fmt.Sprintf("服务返回 HTTP %d", response.StatusCode), nil)
-	}
+
 	check.Status = "success"
-	check.Message = fmt.Sprintf("已收到 HTTP %d 响应，服务地址可达。继续配置具体工具路径和参数后试调用。", response.StatusCode)
+	check.Message = fmt.Sprintf("已收到 HTTP %d 响应，服务地址可达。继续配置具体工具路径和参数后试调用。", status)
 	return check, nil
 }
 
 func (g *Gateway) EnableTools(id string, ids []string) error {
-	return g.registry.Update(func(current Registry) (Registry, error) {
-		if !slices.ContainsFunc(current.Servers, func(s Server) bool { return s.ID == id }) {
-			return Registry{}, invalid("服务不存在")
+	return g.registry.Update(func(current registry.Registry) (registry.Registry, error) {
+		if !slices.ContainsFunc(current.Servers, func(s registry.Server) bool { return s.ID == id }) {
+			return registry.Registry{}, invalid("服务不存在")
 		}
 		for _, toolID := range ids {
-			if !slices.ContainsFunc(current.Tools, func(t Tool) bool { return t.ID == toolID && t.ServerID == id }) {
-				return Registry{}, invalid("工具不属于当前服务")
+			if !slices.ContainsFunc(current.Tools, func(t registry.Tool) bool { return t.ID == toolID && t.ServerID == id }) {
+				return registry.Registry{}, invalid("工具不属于当前服务")
 			}
 		}
-		updated := Registry{Servers: current.Servers, Tools: slices.Clone(current.Tools)}
+		updated := registry.Registry{Servers: current.Servers, Tools: slices.Clone(current.Tools)}
 		for i, t := range updated.Tools {
 			if t.ServerID == id {
 				updated.Tools[i].Enabled = slices.Contains(ids, t.ID)
@@ -235,12 +206,12 @@ func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult,
 	if err != nil {
 		return DiscoverResult{}, err
 	}
-	result, routeErr := g.Discover(withInternalScopeBypass(ctx), DiscoverRequest{Intent: intent, Actor: "developer"})
+	result, routeErr := g.Discover(scope.WithInternalBypass(ctx), DiscoverRequest{Intent: intent, Actor: "developer"})
 	check := ConnectionCheck{Status: "success", Message: "Decisions 已响应，回答格式、概率和候选映射校验通过", CheckedAt: time.Now()}
 	if routeErr != nil {
 		check.Status = "error"
 		check.Message = "模型路由未试通"
-		check.Detail = g.errorDetail(routeErr)
+		check.Detail = g.ErrorDetail(routeErr)
 	}
 	if err := g.saveCheck("model", fingerprint, check); err != nil {
 		return result, errors.Join(routeErr, err)
@@ -249,7 +220,7 @@ func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult,
 }
 
 // Keep error details useful for local developers without echoing live credentials.
-func (g *Gateway) errorDetail(err error) string {
+func (g *Gateway) ErrorDetail(err error) string {
 	message := err.Error()
 	_, key := g.model.RuntimeConfig()
 	secrets := append([]string{key}, g.upstream.TokenSecrets()...)
@@ -273,113 +244,19 @@ func (g *Gateway) errorDetail(err error) string {
 	return message
 }
 
-type trackingWriter struct {
-	http.ResponseWriter
-	status int
-}
-
-func (w *trackingWriter) WriteHeader(status int) {
-	w.status = status
-	w.ResponseWriter.WriteHeader(status)
-}
-func (w *trackingWriter) Write(b []byte) (int, error) {
-	if w.status == 0 {
-		w.status = 200
-	}
-	return w.ResponseWriter.Write(b)
-}
-func (w *trackingWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
-
-// Observe only real requests arriving at the MCP endpoint. Browser status checks
-// never create an Agent connection or complete the third onboarding step.
-func (g *Gateway) trackMCP(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		agent := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("agent")))
-		r.Header.Del("X-Gateway-Agent")
-		if agent != "" {
-			r.Header.Set("X-Gateway-Agent", agent)
-		}
-		if r.Method != http.MethodPost {
-			next.ServeHTTP(w, r)
-			return
-		}
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
-		if err != nil {
-			fail(w, problem(400, "MCP 请求过大或无法读取", err))
-			return
-		}
-		r.Body = io.NopCloser(bytes.NewReader(body))
-		var envelope map[string]json.RawMessage
-		var input struct {
-			ID     json.RawMessage `json:"id"`
-			Method string          `json:"method"`
-			Params struct {
-				ClientInfo struct {
-					Name string `json:"name"`
-				} `json:"clientInfo"`
-				Name      string          `json:"name"`
-				Arguments json.RawMessage `json:"arguments"`
-			} `json:"params"`
-		}
-		if err := json.Unmarshal(body, &input); err != nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-		start := time.Now()
-		if input.Method == "tools/call" && workspace.IsMetaTool(input.Params.Name) {
-			scopedCtx, cleanArgs, scopeErr := g.resolveMCPToolCallScope(r.Context(), agent, input.Params.Name, input.Params.Arguments)
-			if scopeErr != nil {
-				g.recordRejectedMCPScope(r.Context(), agent, input.Params.Name, input.Params.Arguments, start, scopeErr)
-				writeJSONRPCScopeError(w, input.ID, scopeErr)
-				return
-			}
-			r = r.WithContext(scopedCtx)
-			if json.Unmarshal(body, &envelope) == nil {
-				var paramsMap map[string]json.RawMessage
-				if json.Unmarshal(envelope["params"], &paramsMap) == nil {
-					paramsMap["arguments"] = cleanArgs
-					if newParams, pErr := json.Marshal(paramsMap); pErr == nil {
-						envelope["params"] = newParams
-						if rewritten, mErr := json.Marshal(envelope); mErr == nil {
-							body = rewritten
-						}
-					}
-				}
-			}
-			r.Body = io.NopCloser(bytes.NewReader(body))
-			r.ContentLength = int64(len(body))
-		}
-		tracked := &trackingWriter{ResponseWriter: w}
-		next.ServeHTTP(tracked, r)
-		if slices.Contains([]string{"initialize", "tools/list"}, input.Method) && tracked.status == 200 {
-			client := input.Params.ClientInfo.Name
-			if client == "" {
-				client = agent
-			}
-			if client == "" {
-				client = r.UserAgent()
-			}
-			if client == "" {
-				client = "MCP client"
-			}
-			g.record("agent", "developer", "observed", input.Method, start, map[string]any{"client": client, "agent": agent, "method": input.Method})
-		}
-	})
-}
-
-func (g *Gateway) recordRejectedMCPScope(ctx context.Context, agent, toolName string, rawArgs []byte, start time.Time, scopeErr error) {
-	actor := requestActor(ctx, "")
+func (g *Gateway) RecordRejectedMCPScope(ctx context.Context, agent, toolName string, rawArgs []byte, start time.Time, scopeErr error) {
+	actor := access.RequestActor(ctx, "")
 	status := "invalid"
-	var app *appError
+	var app *scope.Error
 	if errors.As(scopeErr, &app) {
-		switch app.code {
+		switch app.Code {
 		case "scope_required":
 			status = "missing"
 		case "ambiguous_workspace":
 			status = "ambiguous"
 		}
 	}
-	evScope := EventScope{Agent: agent, Status: status}
+	evScope := scope.EventScope{Agent: agent, Status: status}
 	switch toolName {
 	case "discover_tools":
 		var in struct {
@@ -390,7 +267,7 @@ func (g *Gateway) recordRejectedMCPScope(ctx context.Context, agent, toolName st
 		if title == "" {
 			title = "discover_tools"
 		}
-		g.record("discover", actor, "error", title, start, map[string]any{"error": g.errorDetail(scopeErr), "scope": evScope})
+		g.record("discover", actor, "error", title, start, map[string]any{"error": g.ErrorDetail(scopeErr), "scope": evScope})
 	case "invoke_tool":
 		var in struct {
 			ToolID string `json:"tool_id"`
@@ -400,128 +277,17 @@ func (g *Gateway) recordRejectedMCPScope(ctx context.Context, agent, toolName st
 		if title == "" {
 			title = "invoke_tool"
 		}
-		g.record("invoke", actor, "error", title, start, map[string]any{"tool_id": in.ToolID, "error": g.errorDetail(scopeErr), "scope": evScope})
+		g.record("invoke", actor, "error", title, start, map[string]any{"tool_id": in.ToolID, "error": g.ErrorDetail(scopeErr), "scope": evScope})
 	}
-	g.recordAgentTool(toolName, actor, start, scopeErr)
+	g.RecordAgentTool(toolName, actor, start, scopeErr)
 }
 
-func writeJSONRPCScopeError(w http.ResponseWriter, rawID json.RawMessage, err error) {
-	httpStatus := http.StatusForbidden
-	code := "scope_invalid"
-	msg := err.Error()
-	var app *appError
-	if errors.As(err, &app) {
-		httpStatus = app.status
-		if app.code != "" {
-			code = app.code
-		}
-		msg = app.message
-	}
-	var id any
-	if len(bytes.TrimSpace(rawID)) > 0 {
-		id = rawID
-	}
-	respond(w, httpStatus, map[string]any{
-		"jsonrpc": "2.0",
-		"id":      id,
-		"error": map[string]any{
-			"code":    -32003,
-			"message": msg,
-			"data": map[string]any{
-				"code":  code,
-				"error": msg,
-			},
-		},
-	})
-}
-
-func (g *Gateway) registerSetup(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/setup/status", func(w http.ResponseWriter, r *http.Request) {
-		status, err := g.Setup()
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		respond(w, 200, status)
-	})
-	mux.HandleFunc("POST /api/setup/source", func(w http.ResponseWriter, r *http.Request) {
-		var source Server
-		if err := decode(w, r, &source); err != nil {
-			fail(w, err)
-			return
-		}
-		check, err := g.TestSource(r.Context(), source)
-		if err != nil {
-			if check.Message == "" {
-				check.Message = "工具来源配置有误"
-			}
-			respond(w, 400, map[string]any{"error": check.Message, "detail": g.errorDetail(err)})
-			return
-		}
-		respond(w, 200, check)
-	})
-	mux.HandleFunc("POST /api/servers/{id}/tools", func(w http.ResponseWriter, r *http.Request) {
-		var input struct {
-			IDs []string `json:"ids"`
-		}
-		if err := decode(w, r, &input); err != nil {
-			fail(w, err)
-			return
-		}
-		if err := g.EnableTools(r.PathValue("id"), input.IDs); err != nil {
-			fail(w, err)
-			return
-		}
-		respond(w, 200, map[string]bool{"saved": true})
-	})
-	mux.HandleFunc("POST /api/model/ping", func(w http.ResponseWriter, r *http.Request) {
-		var input struct {
-			Settings
-			ProfileID string `json:"profile_id"`
-			APIKey    string `json:"api_key"`
-			ClearKey  bool   `json:"clear_key"`
-		}
-		if err := decode(w, r, &input); err != nil {
-			fail(w, err)
-			return
-		}
-		result, err := g.PingModel(r.Context(), input.Settings, input.ProfileID, input.APIKey, input.ClearKey)
-		if err != nil {
-			respond(w, 400, map[string]any{"error": "模型连接测试失败", "detail": g.errorDetail(err)})
-			return
-		}
-		respond(w, 200, result)
-	})
-	mux.HandleFunc("POST /api/setup/model", func(w http.ResponseWriter, r *http.Request) {
-		var input struct {
-			Settings
-			APIKey   string `json:"api_key"`
-			ClearKey bool   `json:"clear_key"`
-			Intent   string `json:"intent"`
-		}
-		if err := decode(w, r, &input); err != nil {
-			fail(w, err)
-			return
-		}
-		if err := g.SaveSettings(input.Settings, input.APIKey, input.ClearKey); err != nil {
-			fail(w, err)
-			return
-		}
-		result, err := g.TestModel(r.Context(), input.Intent)
-		if err != nil {
-			respond(w, 400, map[string]any{"error": "配置已保存，模型路由尚未试通", "detail": g.errorDetail(err)})
-			return
-		}
-		respond(w, 200, result)
-	})
-}
-
-func (g *Gateway) recordAgentTool(name, actor string, start time.Time, err error) {
+func (g *Gateway) RecordAgentTool(name, actor string, start time.Time, err error) {
 	status := "success"
 	detail := map[string]any{"method": "tools/call", "tool": name}
 	if err != nil {
 		status = "error"
-		detail["error"] = g.errorDetail(err)
+		detail["error"] = g.ErrorDetail(err)
 	}
 	g.record("agent", actor, status, name, start, detail)
 }

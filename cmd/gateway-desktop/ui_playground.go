@@ -9,9 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"gatewaylab/internal/gateway"
-
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/scope"
 )
 
 type playgroundDemoExample struct {
@@ -131,7 +133,7 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 	}
 
 	// Build active server lookup & scope selector options.
-	serversByID := make(map[string]gateway.Server, len(state.Registry.Servers))
+	serversByID := make(map[string]registry.Server, len(state.Registry.Servers))
 	scopeOptions := []string{"全部已启用服务"}
 	scopeLabelToID := map[string]string{"全部已启用服务": ""}
 	for _, srv := range state.Registry.Servers {
@@ -204,7 +206,7 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 
 	// Count eligible tools under current actor, demo toggle, service scope, and simulated repo/agent scope.
 	eligibleCount := 0
-	toolsByID := make(map[string]gateway.Tool, len(state.Registry.Tools))
+	toolsByID := make(map[string]registry.Tool, len(state.Registry.Tools))
 	for _, t := range state.Registry.Tools {
 		toolsByID[t.ID] = t
 		if !t.Enabled {
@@ -281,7 +283,7 @@ func applyPlaygroundReplayScope(st *playgroundState, u *DesktopUI) {
 	}
 }
 
-func activePlaygroundSimScope(st *playgroundState) *SimScope {
+func activePlaygroundSimScope(st *playgroundState) *scope.SimScope {
 	if st.simRepoKey == "" && st.simAgentKey == "" {
 		return nil
 	}
@@ -293,7 +295,7 @@ func activePlaygroundSimScope(st *playgroundState) *SimScope {
 	if agentKey == "" {
 		agentKey = "*"
 	}
-	return &SimScope{
+	return &scope.SimScope{
 		RepoKey:  repoKey,
 		AgentKey: agentKey,
 	}
@@ -458,8 +460,8 @@ func (u *DesktopUI) renderPlaygroundComposer(
 func (u *DesktopUI) renderPlaygroundResults(
 	c *ui.Context,
 	st *playgroundState,
-	serversByID map[string]gateway.Server,
-	toolsByID map[string]gateway.Tool,
+	serversByID map[string]registry.Server,
+	toolsByID map[string]registry.Tool,
 	effectiveActor string,
 ) {
 	SailFlushCard(c, func() {
@@ -596,7 +598,7 @@ func (u *DesktopUI) renderPlaygroundResults(
 func (u *DesktopUI) renderPlaygroundInspector(
 	c *ui.Context,
 	st *playgroundState,
-	toolsByID map[string]gateway.Tool,
+	toolsByID map[string]registry.Tool,
 	effectiveActor string,
 ) {
 	SailCard(c, func() {
@@ -716,7 +718,7 @@ func (u *DesktopUI) renderPlaygroundInspector(
 func (u *DesktopUI) selectPlaygroundTool(
 	st *playgroundState,
 	sel gateway.Selection,
-	toolsByID map[string]gateway.Tool,
+	toolsByID map[string]registry.Tool,
 	effectiveActor string,
 ) {
 	chosen := sel
@@ -739,7 +741,7 @@ func (u *DesktopUI) selectPlaygroundTool(
 	_ = effectiveActor
 }
 
-func initialArgsForTool(t gateway.Tool) string {
+func initialArgsForTool(t registry.Tool) string {
 	if len(t.Example) > 0 {
 		return PrettyJSON(t.Example)
 	}
@@ -801,9 +803,9 @@ func (u *DesktopUI) runPlaygroundDiscover(st *playgroundState, intent, effective
 			st.routing = false
 			st.result = &res
 			if len(res.Tools) > 0 {
-				var toolsByID map[string]gateway.Tool
+				var toolsByID map[string]registry.Tool
 				if u.State != nil {
-					toolsByID = make(map[string]gateway.Tool, len(u.State.Registry.Tools))
+					toolsByID = make(map[string]registry.Tool, len(u.State.Registry.Tools))
 					for _, t := range u.State.Registry.Tools {
 						toolsByID[t.ID] = t
 					}

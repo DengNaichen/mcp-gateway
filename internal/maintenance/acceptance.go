@@ -4,20 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
+	"gatewaylab/internal/contracttest"
+	"gatewaylab/internal/jsonutil"
+	"gatewaylab/internal/maintenance/sandbox"
+	"gatewaylab/internal/store"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
-
-	"gatewaylab/internal/maintenance/sandbox"
-	"gatewaylab/internal/store"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Acceptance suites are owner-authored, persisted separately, and NEVER included
@@ -134,7 +129,7 @@ func (m *Maintainer) EvaluateAcceptance(ctx context.Context, r MaintenanceRun, d
 	suite := *r.AcceptanceInput
 	report.Configured = true
 	report.Passed = true
-	report.Fingerprint = maintenanceDigest(suite)
+	report.Fingerprint = jsonutil.MustDigest(suite)
 	covered := map[string]bool{}
 	routed := map[string]bool{}
 	for _, c := range suite.Contracts {
@@ -247,59 +242,45 @@ func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir
 	var result any
 	var callErr error
 	if server.Kind == "mcp" {
-		native := mcp.NewServer(&mcp.Implementation{Name: "acceptance", Version: "1"}, nil)
-		var fixture any
-		if len(c.MCPResult) > 0 {
-			if err := json.Unmarshal(c.MCPResult, &fixture); err != nil {
-				return fmt.Errorf("decode mcp fixture: %w", err)
-			}
+		mock, calls, err := contracttest.MCP(tool.Name, tool.InputSchema, c.MCPResult, c.MCPError)
+		if err != nil {
+			return err
 		}
-		var calls atomic.Int32
-		native.AddTool(&mcp.Tool{Name: tool.Name, InputSchema: tool.InputSchema}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			calls.Add(1)
-			if c.MCPError {
-				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "fixture upstream error"}}}, nil
-			}
-			return toolResult(fixture)
-		})
-		mock := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return native }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true}))
+
 		defer mock.Close()
 		server.Endpoint = mock.URL
 		server.Transport = "http"
 		result, callErr = m.upstream.CallMCP(ctx, server, tool, arguments)
-		if calls.Load() != 1 {
-			return fmt.Errorf("expected one native tool invocation, got %d", calls.Load())
+		if calls() != 1 {
+			return fmt.Errorf("expected one native tool invocation, got %d", calls())
 		}
 	} else {
 		var mu sync.Mutex
 		index := 0
 		failures := []string{}
-		mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			mu.Lock()
-			defer mu.Unlock()
+		mock := contracttest.HTTP(&mu, func(req contracttest.Request) contracttest.Response {
 			if index >= len(c.Exchanges) {
 				failures = append(failures, "unexpected extra upstream request")
-				w.WriteHeader(500)
-				return
+				return contracttest.Response{Status: 500}
 			}
 			expected := c.Exchanges[index]
 			index++
-			if req.Method != expected.Method || req.URL.EscapedPath() != expected.Path {
-				failures = append(failures, fmt.Sprintf("request %d: expected %s %s, got %s %s", index, expected.Method, expected.Path, req.Method, req.URL.EscapedPath()))
+			if req.Method != expected.Method || req.Path != expected.Path {
+				failures = append(failures, fmt.Sprintf("request %d: expected %s %s, got %s %s", index, expected.Method, expected.Path, req.Method, req.Path))
 			}
 			query := expected.Query
 			if query == nil {
 				query = map[string][]string{}
 			}
-			if maintenanceDigest(map[string][]string(req.URL.Query())) != maintenanceDigest(query) {
+			if jsonutil.MustDigest(req.Query) != jsonutil.MustDigest(query) {
 				failures = append(failures, fmt.Sprintf("request %d: query mismatch", index))
 			}
 			for key, value := range expected.Headers {
-				if req.Header.Get(key) != value {
+				if req.Header(key) != value {
 					failures = append(failures, "request header mismatch: "+key)
 				}
 			}
-			b, err := readBounded(req.Body, 1<<20)
+			b, err := req.Body()
 			if err != nil {
 				failures = append(failures, "request body too large")
 			} else if len(expected.Body) > 0 {
@@ -309,25 +290,9 @@ func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir
 			} else if len(b) > 0 {
 				failures = append(failures, "unexpected request body")
 			}
-			for key, value := range expected.ResponseHeaders {
-				w.Header().Set(key, value)
-			}
-			if expected.Text != nil {
-				w.Header().Set("Content-Type", "text/plain")
-			} else if len(expected.Response) > 0 {
-				w.Header().Set("Content-Type", "application/json")
-			}
-			w.WriteHeader(expected.Status)
-			var writeErr error
-			if expected.Text != nil {
-				_, writeErr = io.WriteString(w, *expected.Text)
-			} else {
-				_, writeErr = w.Write(expected.Response)
-			}
-			if writeErr != nil {
-				failures = append(failures, "write fixture response failed")
-			}
-		}))
+			return contracttest.Response{Status: expected.Status, Headers: expected.ResponseHeaders, Body: expected.Response, Text: expected.Text}
+		}, func() { failures = append(failures, "write fixture response failed") })
+
 		defer mock.Close()
 		server.Endpoint = mock.URL
 		if tool.Adapter != "" {
@@ -370,5 +335,5 @@ func equalJSON(a, b []byte) bool {
 	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
 		return false
 	}
-	return maintenanceDigest(x) == maintenanceDigest(y)
+	return jsonutil.MustDigest(x) == jsonutil.MustDigest(y)
 }

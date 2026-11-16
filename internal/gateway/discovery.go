@@ -2,36 +2,38 @@ package gateway
 
 import (
 	"context"
-	"log/slog"
-	"net/http"
 	"slices"
 	"strings"
 	"time"
 
+	"gatewaylab/internal/access"
+	"gatewaylab/internal/fault"
+	"gatewaylab/internal/registry"
 	"gatewaylab/internal/routing"
+	"gatewaylab/internal/scope"
 )
 
 func (g *Gateway) Discover(ctx context.Context, req DiscoverRequest) (DiscoverResult, error) {
 	return g.discoverRegistry(ctx, req, g.Snapshot(), true)
 }
 
-func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, registry Registry, record bool) (result DiscoverResult, retErr error) {
-	req.Actor = requestActor(ctx, req.Actor)
+func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, catalog registry.Registry, record bool) (result DiscoverResult, retErr error) {
+	req.Actor = access.RequestActor(ctx, req.Actor)
 	started := time.Now()
-	scopeEv := scopeEventForContext(ctx)
+	scopeEv := scope.EventForContext(ctx)
 	defer func() {
 		result.DurationMS = time.Since(started).Milliseconds()
 		if !record {
 			return
 		}
 		if retErr != nil {
-			g.record("discover", req.Actor, "error", req.Intent, started, map[string]any{"error": g.errorDetail(retErr), "scope": scopeEv})
+			g.record("discover", req.Actor, "error", req.Intent, started, map[string]any{"error": g.ErrorDetail(retErr), "scope": scopeEv})
 		} else {
 			result.Scope = &scopeEv
 			g.record("discover", req.Actor, result.Status, req.Intent, started, result)
 		}
 	}()
-	if err := g.checkExecutionScope(ctx); err != nil {
+	if err := g.scope.CheckExecutionScope(ctx); err != nil {
 		return result, err
 	}
 	if strings.TrimSpace(req.Intent) == "" {
@@ -41,14 +43,14 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, reg
 		return result, invalid("任务和上下文合计不能超过 24 KB")
 	}
 	s, key := g.model.RuntimeConfig()
-	r := registry
-	servers := map[string]Server{}
+	r := catalog
+	servers := map[string]registry.Server{}
 	for _, server := range r.Servers {
 		if server.Enabled && (!server.Demo || req.IncludeDemo) {
 			servers[server.ID] = server
 		}
 	}
-	eligible := []Tool{}
+	eligible := []registry.Tool{}
 	for _, t := range r.Tools {
 		if _, ok := servers[t.ServerID]; ok && g.authorizedTool(ctx, t, req.Actor) && (len(req.Services) == 0 || slices.Contains(req.Services, t.ServerID)) {
 			eligible = append(eligible, t)
@@ -60,7 +62,7 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, reg
 		return result, nil
 	}
 	if strings.TrimSpace(s.Model) == "" {
-		return result, problem(409, "请先在模型设置中填写模型名称", nil)
+		return result, fault.New(fault.Conflict, "请先在模型设置中填写模型名称", nil)
 	}
 	matched, err := routing.Discover(ctx, routingModel{s, key}, routingRequest(req), servers, eligible, s.MaxTools, g.routing)
 	result.Status, result.Summary, result.Question = matched.Status, matched.Summary, matched.Question
@@ -74,16 +76,8 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, reg
 		result.Model = s.Model
 	}
 	if err != nil {
-		return result, routingError(err)
+		return result, err
 	}
 	result.DurationMS = time.Since(started).Milliseconds()
 	return result, nil
-}
-
-func noRedirect(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }
-
-func closeBody(resp *http.Response) {
-	if err := resp.Body.Close(); err != nil {
-		slog.Debug("close upstream response", "error", err)
-	}
 }

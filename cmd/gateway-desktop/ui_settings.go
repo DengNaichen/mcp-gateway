@@ -9,17 +9,19 @@ import (
 	"sync"
 	"time"
 
-	"gatewaylab/internal/gateway"
-
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
 )
 
 type settingsState struct {
 	initialized        bool
-	lastSyncedSettings gateway.Settings
+	lastSyncedSettings model.Settings
 
 	editingProfileID string
-	config           gateway.Settings
+	config           model.Settings
 	maxToolsFloat    float64
 	timeoutFloat     float64
 	apiKey           string
@@ -28,7 +30,7 @@ type settingsState struct {
 	advancedExpanded bool
 	busyMode         string // "", "save", "test"
 	pingBusy         bool
-	pingResult       *gateway.PingModelResult
+	pingResult       *model.PingModelResult
 	pingErr          string
 	pingDetail       string
 	profileBusyID    string
@@ -54,7 +56,7 @@ func getSettingsState(u *DesktopUI) *settingsState {
 	return st
 }
 
-func settingsIsDirty(st *settingsState, saved gateway.Settings) bool {
+func settingsIsDirty(st *settingsState, saved model.Settings) bool {
 	return st.config.BaseURL != saved.BaseURL ||
 		st.config.Model != saved.Model ||
 		st.config.MaxTools != saved.MaxTools ||
@@ -123,7 +125,7 @@ func (u *DesktopUI) renderSettingsGuardrailSection(c *ui.Context, st *settingsSt
 			realActiveServers[s.ID] = true
 		}
 	}
-	var enabledWriteTools []gateway.Tool
+	var enabledWriteTools []registry.Tool
 	for _, t := range state.Registry.Tools {
 		if t.Enabled && !t.ReadOnly && realActiveServers[t.ServerID] {
 			enabledWriteTools = append(enabledWriteTools, t)
@@ -528,7 +530,7 @@ func (u *DesktopUI) renderSettingsProfilesSection(c *ui.Context, st *settingsSta
 					}
 					if SailSmallButton(c.Key("set-prof-edit-"+prof.ID), editLabel).Disabled(busy).Clicked() {
 						st.editingProfileID = prof.ID
-						st.config = gateway.Settings{
+						st.config = model.Settings{
 							BaseURL:        prof.BaseURL,
 							Model:          prof.Model,
 							MaxTools:       prof.MaxTools,
@@ -620,7 +622,7 @@ func (u *DesktopUI) activateProfile(st *settingsState, id string) {
 		u.updateUI(func() {
 			st.profileBusyID = ""
 			st.editingProfileID = prof.ID
-			st.config = gateway.Settings{
+			st.config = model.Settings{
 				BaseURL:        prof.BaseURL,
 				Model:          prof.Model,
 				MaxTools:       prof.MaxTools,
@@ -660,7 +662,7 @@ func (u *DesktopUI) deleteProfile(st *settingsState, id string) {
 					for _, p := range u.State.Profiles {
 						if p.Active {
 							st.editingProfileID = p.ID
-							st.config = gateway.Settings{
+							st.config = model.Settings{
 								BaseURL:        p.BaseURL,
 								Model:          p.Model,
 								MaxTools:       p.MaxTools,
@@ -705,7 +707,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 	st.errDetail = ""
 	st.testResult = nil
 
-	profile := gateway.ModelProfile{
+	profile := model.ModelProfile{
 		ID:             st.editingProfileID,
 		BaseURL:        cfg.BaseURL,
 		Model:          cfg.Model,
@@ -778,7 +780,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 	})
 }
 
-func (u *DesktopUI) enforceSettingsReadOnlyGuardrail(st *settingsState, state *Bootstrap, enabledWriteTools []gateway.Tool) {
+func (u *DesktopUI) enforceSettingsReadOnlyGuardrail(st *settingsState, state *Bootstrap, enabledWriteTools []registry.Tool) {
 	if len(enabledWriteTools) == 0 || st.guardrailBusy || u.Client == nil {
 		return
 	}

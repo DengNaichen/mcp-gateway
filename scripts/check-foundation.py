@@ -7,14 +7,14 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 output = subprocess.check_output(
-    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox"],
+    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault"],
     cwd=root, text=True,
 )
 allowed = {
     "gatewaylab/internal/registry": set(),
     "gatewaylab/internal/store": {"gatewaylab/internal/registry"},
     "gatewaylab/internal/routing": {"gatewaylab/internal/registry"},
-    "gatewaylab/internal/upstream": {"gatewaylab/internal/registry"},
+    "gatewaylab/internal/upstream": {"gatewaylab/internal/registry", "gatewaylab/internal/procutil", "gatewaylab/internal/fault", "gatewaylab/internal/input", "gatewaylab/internal/jsonutil"},
 }
 allowed.update({
     "gatewaylab/internal/secrets": set(),
@@ -22,15 +22,26 @@ allowed.update({
     "gatewaylab/internal/openapi": {"gatewaylab/internal/registry"},
 })
 allowed.update({
-    "gatewaylab/internal/model": {"gatewaylab/internal/registry", "gatewaylab/internal/store", "gatewaylab/internal/secrets"},
+    "gatewaylab/internal/model": {"gatewaylab/internal/registry", "gatewaylab/internal/store", "gatewaylab/internal/secrets", "gatewaylab/internal/input"},
     "gatewaylab/internal/scope": {"gatewaylab/internal/registry", "gatewaylab/internal/store", "gatewaylab/internal/workspace", "gatewaylab/internal/buildinfo"},
 })
 allowed.update({
     "gatewaylab/internal/maintenance": {
         "gatewaylab/internal/maintenance/sandbox", "gatewaylab/internal/registry",
-        "gatewaylab/internal/store", "gatewaylab/internal/upstream",
+        "gatewaylab/internal/store", "gatewaylab/internal/procutil", "gatewaylab/internal/input", "gatewaylab/internal/jsonutil", "gatewaylab/internal/mcputil", "gatewaylab/internal/contracttest", "gatewaylab/internal/secrets",
     },
-    "gatewaylab/internal/maintenance/sandbox": {"gatewaylab/internal/registry", "gatewaylab/internal/upstream"},
+    "gatewaylab/internal/maintenance/sandbox": {"gatewaylab/internal/registry", "gatewaylab/internal/procutil", "gatewaylab/internal/input", "gatewaylab/internal/secrets"},
+})
+allowed.update({
+    "gatewaylab/internal/access": {"gatewaylab/internal/registry", "gatewaylab/internal/input", "gatewaylab/internal/fault", "gatewaylab/internal/secrets"},
+    "gatewaylab/internal/market": {"gatewaylab/internal/registry", "gatewaylab/internal/input", "gatewaylab/internal/fault"},
+    "gatewaylab/internal/demo": {"gatewaylab/internal/registry"},
+    "gatewaylab/internal/procutil": set(),
+    "gatewaylab/internal/input": set(),
+    "gatewaylab/internal/jsonutil": set(),
+    "gatewaylab/internal/mcputil": set(),
+    "gatewaylab/internal/contracttest": {"gatewaylab/internal/input", "gatewaylab/internal/mcputil"},
+    "gatewaylab/internal/fault": set(),
 })
 decoder = json.JSONDecoder()
 while output.strip():
@@ -45,7 +56,7 @@ while output.strip():
     print(f'{package["ImportPath"]} -> {", ".join(sorted(internal)) or "no internal dependencies"}')
 
 # SQLite ownership stays in store as the remaining domains are extracted.
-for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "model", "scope", "routing", "upstream", "maintenance", "maintenance/sandbox")
+for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "model", "scope", "routing", "upstream", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault")
                    for p in (root / "internal" / name).glob("*.go")):
     if path.name.endswith("_test.go"):
         continue
@@ -53,7 +64,7 @@ for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "
 print("PASS: foundation/policy/routing/upstream/maintenance dependency direction; SQL stays in store")
 
 # Domain errors carry classifications; only transport adapters choose HTTP status.
-for name in ("openapi", "model", "scope", "routing", "maintenance", "maintenance/sandbox"):
+for name in ("gateway", "openapi", "model", "scope", "routing", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault"):
     for path in (root / "internal" / name).glob("*.go"):
         if path.name.endswith("_test.go"):
             continue
@@ -89,7 +100,23 @@ for path in sorted((root / "internal").rglob("*.go")):
     for name in re.findall(r"^func (ProcessEnvironment|ConfigureProcess|processEnvironment|configureProcess)\(", path.read_text(), re.MULTILINE):
         process_definitions.setdefault(name, []).append(str(path.relative_to(root)))
 assert process_definitions == {
-    "ProcessEnvironment": ["internal/upstream/environment.go"],
-    "ConfigureProcess": ["internal/upstream/process_other.go", "internal/upstream/process_unix.go"],
+    "ProcessEnvironment": ["internal/procutil/environment.go"],
+    "ConfigureProcess": ["internal/procutil/process_other.go", "internal/procutil/process_unix.go"],
 }, process_definitions
-print("PASS: process environment and platform cancellation implementations stay in upstream")
+print("PASS: process environment and platform cancellation implementations stay in procutil")
+
+# Enforce reverse edges across all buildable production packages, including commands.
+output = subprocess.check_output(["go", "list", "-json", "./..."], cwd=root, text=True)
+while output.strip():
+    package, end = decoder.raw_decode(output.lstrip())
+    output = output.lstrip()[end:]
+    name = package["ImportPath"]
+    imports = set(package.get("Imports", []))
+    if "gatewaylab/internal/api" in imports:
+        assert name.startswith("gatewaylab/cmd/"), f"only commands may import api: {name}"
+    if "gatewaylab/internal/gateway" in imports:
+        assert name == "gatewaylab/internal/api" or name.startswith("gatewaylab/cmd/"), f"gateway imported outside composition boundary: {name}"
+    if name == "gatewaylab/internal/maintenance/sandbox":
+        assert "gatewaylab/internal/upstream" not in package.get("Deps", []), "sandbox must not depend on upstream"
+print("PASS: cmd -> api -> gateway reverse edges; sandbox is independent of upstream")
+subprocess.run(["go", "run", "scripts/check-api-boundaries.go"], cwd=root, check=True)

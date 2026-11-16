@@ -9,6 +9,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
 )
 
 func geminiFixture(status string, probabilities ...float64) map[string]any {
@@ -20,7 +23,7 @@ func geminiFixture(status string, probabilities ...float64) map[string]any {
 }
 
 func TestGeminiDecisionsRouting(t *testing.T) {
-	candidates := []Tool{{ID: "s.a"}, {ID: "s.b"}, {ID: "s.c"}}
+	candidates := []registry.Tool{{ID: "s.a"}, {ID: "s.b"}, {ID: "s.c"}}
 	for _, tc := range []struct {
 		name, status  string
 		probabilities []float64
@@ -58,7 +61,7 @@ func TestGeminiDecisionsRouting(t *testing.T) {
 			}))
 			defer server.Close()
 			for _, suffix := range []string{"/v1beta", "/v1beta/decisions/"} {
-				d, usage, err := selectWithModel(context.Background(), Settings{BaseURL: server.URL + suffix, Model: "gemini-decision-1", MaxTools: 2, TimeoutSeconds: 5}, "test-key", DiscoverRequest{Intent: "inspect"}, candidates)
+				d, usage, err := selectWithModel(context.Background(), model.Settings{BaseURL: server.URL + suffix, Model: "gemini-decision-1", MaxTools: 2, TimeoutSeconds: 5}, "test-key", DiscoverRequest{Intent: "inspect"}, candidates)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -91,7 +94,7 @@ func TestGeminiDecisionsRejectsInvalidAnswers(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			_, _, err := selectWithModel(context.Background(), Settings{BaseURL: server.URL, Model: "gemini-decision-1", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{}, []Tool{{ID: "s.a"}})
+			_, _, err := selectWithModel(context.Background(), model.Settings{BaseURL: server.URL, Model: "gemini-decision-1", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{}, []registry.Tool{{ID: "s.a"}})
 			if err == nil {
 				t.Fatal("invalid answer accepted")
 			}

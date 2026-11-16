@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"gatewaylab/internal/api"
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/gateway"
 )
@@ -48,7 +49,7 @@ func run() error {
 			slog.Error("close gateway database", "error", err)
 		}
 	}()
-	server := &http.Server{Addr: *addr, Handler: g.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
+	server := &http.Server{Addr: *addr, Handler: api.Handler(g), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	g.StartMaintenance(ctx)

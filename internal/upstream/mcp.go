@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gatewaylab/internal/procutil"
 	"log/slog"
 	"net/http"
 	"os"
@@ -44,7 +45,7 @@ func (u *Service) connectMCP(ctx, processContext context.Context, s Server) (*mc
 	if s.Transport == "stdio" {
 		command := exec.CommandContext(processContext, s.Command, s.Args...)
 		command.Dir = s.WorkDir
-		command.Env = ProcessEnvironment(nil)
+		command.Env = procutil.ProcessEnvironment(nil)
 		for key, value := range s.Env {
 			command.Env = append(command.Env, key+"="+u.expandEnv(value))
 		}

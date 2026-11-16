@@ -12,10 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/activity"
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/gateway"
-
-	"github.com/egoist/mygo/ui"
+	"gatewaylab/internal/market"
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
 )
 
 func TestParseDesktopFlagsAndPSNFiltering(t *testing.T) {
@@ -189,17 +193,17 @@ func TestComputeGatewayTelemetryAndActorMatrix(t *testing.T) {
 		"error": "upstream timeout\ndetail line 2",
 	})
 	boot := Bootstrap{
-		Registry: gateway.Registry{
-			Servers: []gateway.Server{
+		Registry: registry.Registry{
+			Servers: []registry.Server{
 				{ID: "srv", Name: "Demo Srv", Kind: "http", Endpoint: "http://127.0.0.1:9999", Enabled: true},
 				{ID: "demo", Name: "Built-in", Kind: "mcp", Endpoint: "http://127.0.0.1:8788/demo/mcp", Enabled: true, Demo: true},
 			},
-			Tools: []gateway.Tool{
+			Tools: []registry.Tool{
 				{ID: "srv.list_items", ServerID: "srv", Name: "list_items", Enabled: true, ReadOnly: true, Actors: []string{"developer", "observer"}},
 				{ID: "srv.create_item", ServerID: "srv", Name: "create_item", Enabled: true, ReadOnly: false, Actors: []string{"developer"}},
 			},
 		},
-		Events: []gateway.Event{
+		Events: []activity.Event{
 			{ID: "1", Time: now, Kind: "discover", Actor: "developer", Status: "selected", Title: "list items", DurationMS: 42, Detail: detailHit},
 			{ID: "2", Time: now.Add(-time.Second), Kind: "discover", Actor: "observer", Status: "no_match", Title: "drop db", DurationMS: 80},
 			{ID: "3", Time: now.Add(-2 * time.Second), Kind: "invoke", Actor: "developer", Status: "error", Title: "srv.create_item", DurationMS: 120, Detail: detailErr},
@@ -269,8 +273,8 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 			Shared: false,
 			Actor:  "developer",
 		},
-		Registry: gateway.Registry{
-			Servers: []gateway.Server{
+		Registry: registry.Registry{
+			Servers: []registry.Server{
 				{
 					ID:          "github",
 					Name:        "GitHub MCP",
@@ -300,7 +304,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 					Demo:        true,
 				},
 			},
-			Tools: []gateway.Tool{
+			Tools: []registry.Tool{
 				{
 					ID:          "github.list_prs",
 					ServerID:    "github",
@@ -344,7 +348,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 				},
 			},
 		},
-		Settings: gateway.Settings{
+		Settings: model.Settings{
 			BaseURL:        "https://api.openai.com/v1",
 			Model:          "gpt-6-luna",
 			MaxTools:       4,
@@ -372,7 +376,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 				},
 			},
 		},
-		Events: []gateway.Event{
+		Events: []activity.Event{
 			{
 				ID:         "ev-1",
 				Time:       now,
@@ -414,8 +418,8 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 		case r.URL.Path == "/api/auth/me":
 			_ = json.NewEncoder(w).Encode(AuthMeResponse{Authenticated: true, Shared: false})
 		case r.URL.Path == "/api/market":
-			_ = json.NewEncoder(w).Encode(gateway.MarketSearchResult{
-				Items: []gateway.MarketServer{
+			_ = json.NewEncoder(w).Encode(market.MarketSearchResult{
+				Items: []market.MarketServer{
 					{
 						ID:          "context7",
 						ServerID:    "context7",
@@ -426,7 +430,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 						Endpoint:    "https://mcp.context7.com/mcp",
 						Description: "任意库的最新文档与代码示例。",
 						Featured:    true,
-						Inputs:      []gateway.MarketInput{},
+						Inputs:      []market.MarketInput{},
 					},
 					{
 						ID:          "brave-search",
@@ -439,7 +443,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 						Args:        []string{"-y", "@brave/brave-search-mcp-server"},
 						Description: "基于 Brave 独立索引的网页搜索。",
 						Featured:    true,
-						Inputs: []gateway.MarketInput{
+						Inputs: []market.MarketInput{
 							{Key: "BRAVE_API_KEY", Where: "env", Label: "Brave Search API Key", Secret: true, Required: true},
 						},
 					},
@@ -522,7 +526,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 	// 2b. MCP Market.
 	mktState := getMarketState(uiApp)
 	mktState.loaded = true
-	mktState.items = []gateway.MarketServer{
+	mktState.items = []market.MarketServer{
 		{
 			ID:          "notion",
 			ServerID:    "notion",
@@ -534,7 +538,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 			Description: "检索并更新 Notion 工作区页面与数据库。",
 			SignIn:      true,
 			Featured:    true,
-			Inputs:      []gateway.MarketInput{},
+			Inputs:      []market.MarketInput{},
 		},
 		{
 			ID:          "context7",
@@ -546,7 +550,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 			Endpoint:    "https://mcp.context7.com/mcp",
 			Description: "任意库的最新文档与代码示例。",
 			Featured:    true,
-			Inputs:      []gateway.MarketInput{},
+			Inputs:      []market.MarketInput{},
 		},
 		{
 			ID:          "github",
@@ -559,7 +563,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 			Description: "GitHub 仓库、Issue 与 PR。",
 			Featured:    true,
 			Installed:   true,
-			Inputs: []gateway.MarketInput{
+			Inputs: []market.MarketInput{
 				{Key: "Authorization", Where: "header", Label: "Personal Access Token", Secret: true, Required: true},
 			},
 		},
@@ -574,7 +578,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 			Args:        []string{"-y", "@brave/brave-search-mcp-server"},
 			Description: "基于 Brave 独立索引的网页搜索。",
 			Featured:    true,
-			Inputs: []gateway.MarketInput{
+			Inputs: []market.MarketInput{
 				{Key: "BRAVE_API_KEY", Where: "env", Label: "Brave Search API Key", Secret: true, Required: true},
 			},
 		},

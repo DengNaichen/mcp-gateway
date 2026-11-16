@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -45,3 +46,8 @@ func (s *Store) Get(key string) string {
 	defer s.mu.RUnlock()
 	return s.values[key]
 }
+
+var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// ValidEnvName recognizes the environment variable names used by runtime secrets.
+func ValidEnvName(name string) bool { return envName.MatchString(name) }

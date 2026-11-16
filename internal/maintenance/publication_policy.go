@@ -1,6 +1,9 @@
 package maintenance
 
-import "slices"
+import (
+	"gatewaylab/internal/jsonutil"
+	"slices"
+)
 
 type ReviewReason struct {
 	ToolID  string `json:"tool_id"`
@@ -31,7 +34,7 @@ func publicationReview(before, after []Tool) PublicationReview {
 		if !inputCompatible(old.InputSchema, tool.InputSchema) {
 			add(tool.ID, "input_breaking", "输入 schema 不兼容或无法证明兼容")
 		}
-		if maintenanceDigest(schemaSemantics(old.OutputSchema)) != maintenanceDigest(schemaSemantics(tool.OutputSchema)) {
+		if jsonutil.MustDigest(schemaSemantics(old.OutputSchema)) != jsonutil.MustDigest(schemaSemantics(tool.OutputSchema)) {
 			add(tool.ID, "output_changed", "输出 schema 变化，需要检查调用方影响")
 		}
 		for _, actor := range tool.Actors {
@@ -49,7 +52,7 @@ func publicationReview(before, after []Tool) PublicationReview {
 		if (old.Adapter == "") != (tool.Adapter == "") || (old.HTTP == nil) != (tool.HTTP == nil) {
 			add(tool.ID, "execution_changed", "工具执行方式变化")
 		}
-		if old.HTTP != nil && tool.HTTP != nil && maintenanceDigest(httpContract(old.HTTP)) != maintenanceDigest(httpContract(tool.HTTP)) {
+		if old.HTTP != nil && tool.HTTP != nil && jsonutil.MustDigest(httpContract(old.HTTP)) != jsonutil.MustDigest(httpContract(tool.HTTP)) {
 			add(tool.ID, "http_contract_changed", "HTTP 参数编码或状态响应契约变化，需要检查兼容性")
 		}
 	}
@@ -74,7 +77,7 @@ func httpContract(mapping *HTTPMapping) any {
 func inputCompatible(old, new map[string]any) bool {
 	a, _ := schemaSemantics(old).(map[string]any)
 	b, _ := schemaSemantics(new).(map[string]any)
-	if maintenanceDigest(a) == maintenanceDigest(b) {
+	if jsonutil.MustDigest(a) == jsonutil.MustDigest(b) {
 		return true
 	}
 	if a["type"] != "object" || b["type"] != "object" || a["additionalProperties"] != false || b["additionalProperties"] != false {
@@ -107,7 +110,7 @@ func inputCompatible(old, new map[string]any) bool {
 	delete(b, "properties")
 	delete(a, "required")
 	delete(b, "required")
-	return maintenanceDigest(a) == maintenanceDigest(b)
+	return jsonutil.MustDigest(a) == jsonutil.MustDigest(b)
 }
 func jsonStringList(v any) []string {
 	switch x := v.(type) {

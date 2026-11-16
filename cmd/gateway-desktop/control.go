@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"gatewaylab/internal/buildinfo"
-
 	"github.com/egoist/mygo"
+
+	"gatewaylab/internal/buildinfo"
 )
 
 // startControlSocket starts an optional local Unix domain socket server when

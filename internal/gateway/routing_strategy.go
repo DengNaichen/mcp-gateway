@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"os"
 
 	"gatewaylab/internal/model"
@@ -10,8 +9,6 @@ import (
 )
 
 const routingProtocol = routing.Protocol
-
-type routingOptions = routing.Options
 
 func loadRoutingOptions() (routing.Options, error) {
 	return routing.ParseOptions(os.Getenv("GATEWAY_ROUTING"))
@@ -38,15 +35,4 @@ func (m routingModel) Choose(ctx context.Context, input, instructions string, ch
 }
 func routingRequest(req DiscoverRequest) routing.Request {
 	return routing.Request{Intent: req.Intent, Context: req.Context, Services: req.Services}
-}
-func routingError(err error) error {
-	var e *routing.Error
-	if errors.As(err, &e) {
-		status := 502
-		if errors.Is(e, routing.ErrInvalid) {
-			status = 400
-		}
-		return problem(status, e.Message, e.Cause)
-	}
-	return modelError(err)
 }

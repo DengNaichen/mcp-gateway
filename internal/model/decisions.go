@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"math"
 	"net/http"
 	"strings"
 	"time"
+
+	"gatewaylab/internal/input"
 )
 
 // Bump this when routing semantics change to invalidate saved checks/acceptance.
@@ -210,7 +211,7 @@ func postDecisions(ctx context.Context, call decisionsCall, key string) ([]byte,
 		return nil, domainError(ErrUpstream, "Decisions 服务连接失败或请求超时", err)
 	}
 	defer closeBody(resp)
-	b, err := readBounded(resp.Body, 2<<20)
+	b, err := input.ReadBounded(resp.Body, 2<<20)
 	if err != nil {
 		return nil, domainError(ErrUpstream, "无法读取 Decisions 返回内容", err)
 	}
@@ -286,17 +287,6 @@ func parseOpenAIAnswers(b []byte, n int) (Answers, error) {
 type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
-}
-
-func readBounded(r io.Reader, limit int64) ([]byte, error) {
-	b, err := io.ReadAll(io.LimitReader(r, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("read bounded input: %w", err)
-	}
-	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("input exceeds %d bytes", limit)
-	}
-	return b, nil
 }
 
 func noRedirect(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }
