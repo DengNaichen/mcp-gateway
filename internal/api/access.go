@@ -27,6 +27,8 @@ func (g *server) protectAccess(next http.Handler) http.Handler {
 			host := r.Host
 			if h, _, err := net.SplitHostPort(host); err == nil {
 				host = h
+			} else if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+				host = host[1 : len(host)-1] // bracketed IPv6 literal without a port
 			}
 			if !access.LoopbackHost(host) {
 				fail(w, problem(403, "本机模式不接受外部 Host，请配置认证后共享", nil))

@@ -428,3 +428,66 @@ func TestBuildSnippetAllAgents(t *testing.T) {
 		}
 	}
 }
+
+// fuzzTokenKey is a fixed key so the corpus stays valid across runs.
+var fuzzTokenKey = []byte("01234567890123456789012345678901")
+
+func fuzzTokenNow() time.Time { return time.Unix(1_700_000_000, 0) }
+
+func fuzzValidToken(tb testing.TB) string {
+	tb.Helper()
+	token, err := SignToken(fuzzTokenKey, Claims{Channel: "stable", Agent: "codex", Cwd: "/work/repo", Op: "discover_tools", ArgsHash: "abc", JTI: "jti-1", IAT: fuzzTokenNow().Unix(), EXP: fuzzTokenNow().Unix() + 60})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return token
+}
+
+// FuzzVerifyToken checks that VerifyToken never panics and never accepts any
+// string other than the one token that was actually signed with the key.
+func FuzzVerifyToken(f *testing.F) {
+	valid := fuzzValidToken(f)
+	f.Add(valid)
+	parts := strings.Split(valid, ".")
+	f.Add("")
+	f.Add("v1..")
+	f.Add("v1.e30.AAAA")
+	f.Add(parts[0] + "." + parts[1] + "." + parts[2][:len(parts[2])-1])
+	f.Add(parts[0] + "." + parts[1] + "A." + parts[2])
+	f.Add(parts[0] + "." + parts[1] + ".")
+	f.Add("v2." + parts[1] + "." + parts[2])
+	f.Add(valid + ".extra")
+	f.Add(strings.Repeat("v1.", 100))
+	expected := VerifyParams{Channel: "stable", URLAgent: "codex", AllowedOps: []string{"discover_tools"}, ArgsHash: "abc"}
+	f.Fuzz(func(t *testing.T, token string) {
+		claims, err := VerifyToken(fuzzTokenKey, token, expected, fuzzTokenNow())
+		if err == nil && token != valid {
+			t.Fatalf("forged token verified: %q -> %+v", token, claims)
+		}
+		if err != nil && !errors.Is(err, ErrTokenInvalid) {
+			t.Fatalf("unexpected error class: %v", err)
+		}
+		if _, err := VerifyToken([]byte("short"), token, expected, fuzzTokenNow()); err == nil {
+			t.Fatal("token verified with an invalid key")
+		}
+	})
+}
+
+// FuzzVerifyTokenMutation flips one byte of a valid token; the result must be
+// rejected unless the mutation is a no-op.
+func FuzzVerifyTokenMutation(f *testing.F) {
+	valid := fuzzValidToken(f)
+	f.Add(0, byte(1))
+	f.Add(len(valid)-1, byte(1))
+	f.Add(len(valid)/2, byte(0x80))
+	f.Fuzz(func(t *testing.T, pos int, mask byte) {
+		if pos < 0 || pos >= len(valid) || mask == 0 {
+			return
+		}
+		b := []byte(valid)
+		b[pos] ^= mask
+		if _, err := VerifyToken(fuzzTokenKey, string(b), VerifyParams{Channel: "stable"}, fuzzTokenNow()); err == nil {
+			t.Fatalf("mutated token verified (pos=%d mask=%#x): %q", pos, mask, b)
+		}
+	})
+}

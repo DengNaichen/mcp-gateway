@@ -1,10 +1,12 @@
 package scope
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -130,4 +132,58 @@ func TestVerifiedScopePersistsRulesAndRejectsReplay(t *testing.T) {
 	if _, _, err := s.ResolveMCPToolCallScope(context.Background(), "codex", "discover_tools", raw); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("replay error: %v", err)
 	}
+}
+
+// FuzzResolveMCPToolCallScope drives the full MCP scope verification path with
+// an arbitrary context token and URL agent. It must never panic, and no token
+// other than the one actually signed with the scope key may be accepted.
+func FuzzResolveMCPToolCallScope(f *testing.F) {
+	dir := f.TempDir()
+	db, err := store.Open(dir)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Cleanup(func() { db.Close() })
+	key := []byte("01234567890123456789012345678901")
+	reg := registry.Registry{}
+	s, err := New(Options{DB: db.DB, Dir: dir, BaseURL: "http://localhost", Key: key, Snapshot: func() registry.Registry { return reg }, AdminCaller: func(context.Context) bool { return true }, IdentityAllowsTool: func(context.Context, Tool, string) bool { return true }})
+	if err != nil {
+		f.Fatal(err)
+	}
+	baseArgs := map[string]any{"intent": "inspect"}
+	field := workspace.CurrentContextField()
+	hash, err := workspace.CanonicalArgsHash(baseArgs, field)
+	if err != nil {
+		f.Fatal(err)
+	}
+	// Fixed clock and cwd keep the signed seed token identical in the fuzz workers.
+	now := time.Unix(1_700_000_000, 0)
+	s.clock = func() time.Time { return now }
+	valid, err := workspace.SignToken(key, workspace.Claims{Channel: buildinfo.Current().Channel, Agent: "codex", Cwd: "/", Op: "discover_tools", ArgsHash: hash, JTI: "fuzz-valid", IAT: now.Unix(), EXP: now.Add(time.Minute).Unix()})
+	if err != nil {
+		f.Fatal(err)
+	}
+	parts := strings.Split(valid, ".")
+	f.Add(valid, "codex")
+	f.Add(valid, "claude")
+	f.Add(valid, "")
+	f.Add(parts[0]+"."+parts[1]+".", "codex")
+	f.Add("v1."+parts[1]+"."+parts[2][:len(parts[2])-1]+"A", "codex")
+	f.Add("", "codex")
+	f.Add("not.a.token", "CODEX")
+	f.Add("v1..", "unknown-agent")
+	f.Fuzz(func(t *testing.T, token, agent string) {
+		args := map[string]any{"intent": "inspect", field: token}
+		raw, err := json.Marshal(args)
+		if err != nil {
+			t.Skip()
+		}
+		_, clean, err := s.ResolveMCPToolCallScope(context.Background(), agent, "discover_tools", raw)
+		if err == nil && token != valid {
+			t.Fatalf("forged token accepted: %q (agent %q)", token, agent)
+		}
+		if err == nil && bytes.Contains(clean, []byte(field)) {
+			t.Fatalf("context field leaked into upstream arguments: %s", clean)
+		}
+	})
 }
