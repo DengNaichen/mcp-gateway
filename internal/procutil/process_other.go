@@ -1,6 +1,6 @@
 //go:build !unix
 
-package upstream
+package procutil
 
 import (
 	"os/exec"

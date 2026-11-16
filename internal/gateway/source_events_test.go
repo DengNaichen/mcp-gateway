@@ -6,7 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"gatewaylab/internal/upstream"
+	"gatewaylab/internal/procutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,7 +20,7 @@ func testGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(upstream.ProcessEnvironment(nil), "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=Gateway Test", "GIT_AUTHOR_EMAIL=gateway@example.invalid", "GIT_COMMITTER_NAME=Gateway Test", "GIT_COMMITTER_EMAIL=gateway@example.invalid")
+	cmd.Env = append(procutil.ProcessEnvironment(nil), "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=Gateway Test", "GIT_AUTHOR_EMAIL=gateway@example.invalid", "GIT_COMMITTER_NAME=Gateway Test", "GIT_COMMITTER_EMAIL=gateway@example.invalid")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v %s", args, err, output)

@@ -25,18 +25,6 @@ func closeBody(resp *http.Response) {
 		slog.Debug("close upstream response", "error", err)
 	}
 }
-func ProcessEnvironment(extra map[string]string) []string {
-	env := []string{}
-	for _, key := range []string{"PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "SYSTEMROOT"} {
-		if v, ok := os.LookupEnv(key); ok {
-			env = append(env, key+"="+v)
-		}
-	}
-	for k, v := range extra {
-		env = append(env, k+"="+v)
-	}
-	return env
-}
 func readBounded(r io.Reader, limit int64) ([]byte, error) {
 	b, err := io.ReadAll(io.LimitReader(r, limit+1))
 	if err != nil {

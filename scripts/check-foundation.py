@@ -14,7 +14,7 @@ allowed = {
     "gatewaylab/internal/registry": set(),
     "gatewaylab/internal/store": {"gatewaylab/internal/registry"},
     "gatewaylab/internal/routing": {"gatewaylab/internal/registry"},
-    "gatewaylab/internal/upstream": {"gatewaylab/internal/registry"},
+    "gatewaylab/internal/upstream": {"gatewaylab/internal/registry", "gatewaylab/internal/procutil"},
 }
 allowed.update({
     "gatewaylab/internal/secrets": set(),
@@ -28,9 +28,9 @@ allowed.update({
 allowed.update({
     "gatewaylab/internal/maintenance": {
         "gatewaylab/internal/maintenance/sandbox", "gatewaylab/internal/registry",
-        "gatewaylab/internal/store", "gatewaylab/internal/upstream",
+        "gatewaylab/internal/store", "gatewaylab/internal/procutil",
     },
-    "gatewaylab/internal/maintenance/sandbox": {"gatewaylab/internal/registry", "gatewaylab/internal/upstream"},
+    "gatewaylab/internal/maintenance/sandbox": {"gatewaylab/internal/registry", "gatewaylab/internal/procutil"},
 })
 decoder = json.JSONDecoder()
 while output.strip():
@@ -89,7 +89,7 @@ for path in sorted((root / "internal").rglob("*.go")):
     for name in re.findall(r"^func (ProcessEnvironment|ConfigureProcess|processEnvironment|configureProcess)\(", path.read_text(), re.MULTILINE):
         process_definitions.setdefault(name, []).append(str(path.relative_to(root)))
 assert process_definitions == {
-    "ProcessEnvironment": ["internal/upstream/environment.go"],
-    "ConfigureProcess": ["internal/upstream/process_other.go", "internal/upstream/process_unix.go"],
+    "ProcessEnvironment": ["internal/procutil/environment.go"],
+    "ConfigureProcess": ["internal/procutil/process_other.go", "internal/procutil/process_unix.go"],
 }, process_definitions
-print("PASS: process environment and platform cancellation implementations stay in upstream")
+print("PASS: process environment and platform cancellation implementations stay in procutil")

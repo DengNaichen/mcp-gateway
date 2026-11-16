@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gatewaylab/internal/upstream"
+	"gatewaylab/internal/procutil"
 	"log/slog"
 	"net"
 	"net/url"
@@ -205,7 +205,7 @@ func piEnvironment(extra map[string]string) []string {
 			}
 		}
 	}
-	return upstream.ProcessEnvironment(extra)
+	return procutil.ProcessEnvironment(extra)
 }
 
 func loopbackHost(host string) bool {

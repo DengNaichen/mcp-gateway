@@ -23,24 +23,26 @@ import (
 )
 
 type Gateway struct {
-	instanceID     string
-	mu             sync.RWMutex
-	registry       *registry.Service
-	model          *model.Service
-	runtimeSecrets secrets.Store
-	activity       *activity.Service
-	dir            string
-	baseURL        string
-	db             *sql.DB
-	storage        *store.Store
-	upstream       *upstream.Service
-	access         *accessPolicy
-	execution      executionPolicy
-	routing        routingOptions
-	maintenance    *Maintainer
-	scopeKey       []byte
-	scope          *scope.Service
-	clock          func() time.Time
+	instanceID string
+	// publicationConfigMu serializes model mutations with final maintenance
+	// fingerprint validation and catalog publication; domain state owns its own locks.
+	publicationConfigMu sync.RWMutex
+	registry            *registry.Service
+	model               *model.Service
+	runtimeSecrets      secrets.Store
+	activity            *activity.Service
+	dir                 string
+	baseURL             string
+	db                  *sql.DB
+	storage             *store.Store
+	upstream            *upstream.Service
+	access              *accessPolicy
+	execution           executionPolicy
+	routing             routingOptions
+	maintenance         *Maintainer
+	scopeKey            []byte
+	scope               *scope.Service
+	clock               func() time.Time
 }
 
 func New(dir, baseURL string) (*Gateway, error) {
@@ -172,28 +174,28 @@ func newID() string { return fmt.Sprintf("%x", time.Now().UnixNano()) }
 
 func (g *Gateway) ModelProfiles() []ModelProfile { return g.model.ModelProfiles() }
 
-// Serialize model changes with maintenance publication until that cross-domain
-// transaction is composed by the integration phase. Model owns its state lock.
+// Model owns its state lock. This coordination prevents model configuration
+// changing between maintenance fingerprint validation and catalog publication.
 func (g *Gateway) SaveSettings(s Settings, key string, clearKey bool) error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.publicationConfigMu.Lock()
+	defer g.publicationConfigMu.Unlock()
 	return modelError(g.model.SaveSettings(s, key, clearKey))
 }
 func (g *Gateway) SaveModelProfile(p ModelProfile, key string, clearKey bool) (ModelProfile, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.publicationConfigMu.Lock()
+	defer g.publicationConfigMu.Unlock()
 	out, err := g.model.SaveModelProfile(p, key, clearKey)
 	return out, modelError(err)
 }
 func (g *Gateway) ActivateModelProfile(id string) (ModelProfile, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.publicationConfigMu.Lock()
+	defer g.publicationConfigMu.Unlock()
 	out, err := g.model.ActivateModelProfile(id)
 	return out, modelError(err)
 }
 func (g *Gateway) DeleteModelProfile(id string) error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	g.publicationConfigMu.Lock()
+	defer g.publicationConfigMu.Unlock()
 	return modelError(g.model.DeleteModelProfile(id))
 }
 func (g *Gateway) PingModel(ctx context.Context, s Settings, profileID, apiKey string, clearKey bool) (PingModelResult, error) {

@@ -18,8 +18,8 @@ import (
 )
 
 func (g *Gateway) acceptanceRoutingFingerprint(serverID string) string {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
+	g.publicationConfigMu.RLock()
+	defer g.publicationConfigMu.RUnlock()
 	return g.routingFingerprintForRegistryLocked(serverID, g.Snapshot())
 }
 func (g *Gateway) routingFingerprintForRegistryLocked(serverID string, reg Registry) string {
@@ -52,8 +52,8 @@ func newMaintainer(g *Gateway) (*Maintainer, error) {
 func (g *Gateway) StartMaintenance(ctx context.Context) { g.maintenance.Start(ctx) }
 func (a maintenanceAdapter) Snapshot() Registry         { return a.g.Snapshot() }
 func (a maintenanceAdapter) UpdateCatalog(serverID, fingerprint string, update func(Registry) (Registry, error), commit func(Registry) error) error {
-	a.g.mu.Lock()
-	defer a.g.mu.Unlock()
+	a.g.publicationConfigMu.Lock()
+	defer a.g.publicationConfigMu.Unlock()
 	return a.g.registry.UpdateWithCommit(func(reg Registry) (Registry, error) {
 		if fingerprint != "" && a.g.routingFingerprintForRegistryLocked(serverID, reg) != fingerprint {
 			return Registry{}, &maintenance.Error{Kind: maintenance.ErrConflict, Message: "路由配置或候选工具已变化，请重新验收"}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gatewaylab/internal/procutil"
 	"io"
 	"os"
 	"os/exec"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"gatewaylab/internal/registry"
-	"gatewaylab/internal/upstream"
 )
 
 // limitedOutput keeps draining a child after reaching the capture limit.
@@ -40,12 +40,12 @@ func (w *limitedOutput) Write(p []byte) (int, error) {
 func RunCommand(ctx context.Context, name string, args []string, dir string, input []byte, env map[string]string, limit int) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	cmd.Env = upstream.ProcessEnvironment(env)
+	cmd.Env = procutil.ProcessEnvironment(env)
 	cmd.Stdin = bytes.NewReader(input)
 	out := &limitedOutput{limit: limit}
 	cmd.Stdout = out
 	cmd.Stderr = &limitedOutput{limit: 4096}
-	upstream.ConfigureProcess(cmd)
+	procutil.ConfigureProcess(cmd)
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -79,7 +79,7 @@ func RunPi(ctx context.Context, policy Policy, command, dir string, s PiOptions,
 	// argv, the job's JSON artifacts, or event logs.
 	cmd.Env = piEnvironment(sandboxEnv)
 	cmd.Stderr = &limitedOutput{limit: 8192}
-	upstream.ConfigureProcess(cmd)
+	procutil.ConfigureProcess(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("open pi output: %w", err)
