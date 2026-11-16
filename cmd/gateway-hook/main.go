@@ -443,13 +443,9 @@ func resolveCursorWorkspace(ctx context.Context, event map[string]any) (cwd stri
 	if rawCwd != "" {
 		evalCwd := evalOrClean(rawCwd)
 		matchedRoots := 0
-		var commonDirs []string
 		for _, r := range roots {
 			if workspace.HasPathPrefix(evalCwd, evalOrClean(r)) {
 				matchedRoots++
-				if info, err := workspace.Identify(ctx, r); err == nil {
-					commonDirs = append(commonDirs, string(info.Kind)+":"+info.CommonDir+":"+info.Root)
-				}
 			}
 		}
 		if matchedRoots == 1 {

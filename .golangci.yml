@@ -1,0 +1,166 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - gatewaylab
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - gosec
+    - depguard
+  settings:
+    staticcheck:
+      # Default set minus two stylistic quickfixes that only rewrite correct code.
+      checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022", "-QF1001", "-QF1003"]
+    depguard:
+      # Mirrors the direct-import allowlists in scripts/check-foundation.py.
+      # check-foundation.py additionally checks transitive dependencies.
+      rules:
+        leaf-registry:
+          files: ["**/internal/registry/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "registry is the foundation layer and imports no other internal package; move shared types into registry instead of importing upwards"
+        leaf-secrets:
+          files: ["**/internal/secrets/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "secrets is a leaf package and imports no other internal package; pass needed values in as parameters"
+        leaf-procutil:
+          files: ["**/internal/procutil/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "procutil is a leaf package and imports no other internal package"
+        leaf-input:
+          files: ["**/internal/input/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "input is a leaf package and imports no other internal package"
+        leaf-jsonutil:
+          files: ["**/internal/jsonutil/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "jsonutil is a leaf package and imports no other internal package"
+        leaf-mcputil:
+          files: ["**/internal/mcputil/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "mcputil is a leaf package and imports no other internal package"
+        leaf-fault:
+          files: ["**/internal/fault/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "fault is a leaf package and imports no other internal package"
+        store-layer:
+          files: ["**/internal/store/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal/api
+              desc: "store must not import api; api sits above the domain layers"
+            - pkg: gatewaylab/internal/gateway
+              desc: "store must not import gateway; gateway is the composition root"
+            - pkg: gatewaylab/internal/routing
+              desc: "store may only import registry"
+            - pkg: gatewaylab/internal/upstream
+              desc: "store may only import registry"
+            - pkg: gatewaylab/internal/maintenance
+              desc: "store may only import registry"
+            - pkg: gatewaylab/internal/model
+              desc: "store may only import registry"
+        routing-pure:
+          files: ["**/internal/routing/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal/maintenance
+              desc: "routing must stay pure: depend on routing.Client instead of importing maintenance"
+            - pkg: gatewaylab/internal/upstream
+              desc: "routing must stay pure: depend on routing.Client instead of importing upstream"
+            - pkg: gatewaylab/internal/store
+              desc: "routing must stay pure: take data through routing interfaces instead of importing store"
+            - pkg: gatewaylab/internal/model
+              desc: "routing must stay pure: depend on routing.Client instead of importing model"
+            - pkg: gatewaylab/internal/api
+              desc: "routing must not import api"
+            - pkg: gatewaylab/internal/gateway
+              desc: "routing must not import gateway"
+        sandbox-isolated:
+          files: ["**/internal/maintenance/sandbox/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal/upstream
+              desc: "sandbox must not depend on upstream; inject the needed capability from maintenance or gateway"
+            - pkg: gatewaylab/internal/store
+              desc: "sandbox may only import registry, procutil, input, secrets"
+            - pkg: gatewaylab/internal/maintenance
+              desc: "sandbox must not import its parent maintenance package; maintenance imports sandbox"
+        # Domain packages sit below api and gateway.
+        domain-no-upper-layers:
+          files:
+            - "**/internal/registry/**"
+            - "**/internal/store/**"
+            - "**/internal/secrets/**"
+            - "**/internal/activity/**"
+            - "**/internal/model/**"
+            - "**/internal/openapi/**"
+            - "**/internal/routing/**"
+            - "**/internal/upstream/**"
+            - "**/internal/scope/**"
+            - "**/internal/access/**"
+            - "**/internal/maintenance/**"
+            - "**/internal/market/**"
+            - "**/internal/demo/**"
+            - "**/internal/procutil/**"
+            - "**/internal/input/**"
+            - "**/internal/jsonutil/**"
+            - "**/internal/mcputil/**"
+            - "**/internal/fault/**"
+            - "**/internal/contracttest/**"
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal/api
+              desc: "domain packages must not import api; the transport layer depends on domains, never the reverse"
+            - pkg: gatewaylab/internal/gateway
+              desc: "domain packages must not import gateway; gateway is the composition root, expose a small interface in the domain package instead"
+        only-cmd-imports-api:
+          files:
+            - "**/internal/**"
+            - "!**/internal/api/**"
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal/api
+              desc: "only cmd/* may import api; internal packages must depend downwards"
+        only-api-cmd-import-gateway:
+          files:
+            - "**/internal/**"
+            - "!**/internal/api/**"
+            - "!**/internal/gateway/**"
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal/gateway
+              desc: "only api and cmd/* may import gateway; define an interface in your own package and let gateway implement it"
+  exclusions:
+    rules:
+      # Tests create fixtures in t.TempDir(), shell out to git with literal
+      # arguments, and use loopback servers; gosec's file-permission, subprocess
+      # and path-taint rules do not model that and add only noise there.
+      - path: _test\.go
+        linters: [gosec]
+      # Test setup/teardown is best effort; assertions cover the observable result.
+      - path: _test\.go
+        linters: [errcheck]

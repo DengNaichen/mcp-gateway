@@ -39,7 +39,7 @@ func (w *limitedOutput) Write(p []byte) (int, error) {
 }
 
 func RunCommand(ctx context.Context, name string, args []string, dir string, input []byte, env map[string]string, limit int) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // G204: command and arguments are fixed or come from the user's own local configuration; launching them is this component's purpose
 	cmd.Dir = dir
 	cmd.Env = procutil.ProcessEnvironment(env)
 	cmd.Stdin = bytes.NewReader(input)
@@ -74,7 +74,7 @@ func RunPi(ctx context.Context, policy Policy, command, dir string, s PiOptions,
 	if s.Provider != "" {
 		args = append(args, "--provider", s.Provider)
 	}
-	cmd := exec.CommandContext(childCtx, command, args...)
+	cmd := exec.CommandContext(childCtx, command, args...) //nolint:gosec // G204: command and arguments are fixed or come from the user's own local configuration; launching them is this component's purpose
 	cmd.Dir = dir
 	// Pi owns its local provider configuration and credentials. Do not put them in
 	// argv, the job's JSON artifacts, or event logs.

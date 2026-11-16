@@ -180,7 +180,7 @@ func BuildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args ma
 			}
 			if obj && p.Explode {
 				for i := 0; i < len(parts); i += 2 {
-					cookies = append(cookies, &http.Cookie{Name: parts[i], Value: url.QueryEscape(parts[i+1])})
+					cookies = append(cookies, &http.Cookie{Name: parts[i], Value: url.QueryEscape(parts[i+1])}) //nolint:gosec // G124: outbound request Cookie header for the upstream API, not a Set-Cookie response; Secure/SameSite do not apply
 				}
 			} else {
 				if arr, ok := v.([]any); ok && p.Explode {
@@ -189,10 +189,10 @@ func BuildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args ma
 						if err != nil {
 							return nil, err
 						}
-						cookies = append(cookies, &http.Cookie{Name: p.Name, Value: url.QueryEscape(value)})
+						cookies = append(cookies, &http.Cookie{Name: p.Name, Value: url.QueryEscape(value)}) //nolint:gosec // G124: outbound request Cookie header for the upstream API, not a Set-Cookie response; Secure/SameSite do not apply
 					}
 				} else {
-					cookies = append(cookies, &http.Cookie{Name: p.Name, Value: url.QueryEscape(strings.Join(parts, ","))})
+					cookies = append(cookies, &http.Cookie{Name: p.Name, Value: url.QueryEscape(strings.Join(parts, ","))}) //nolint:gosec // G124: outbound request Cookie header for the upstream API, not a Set-Cookie response; Secure/SameSite do not apply
 				}
 			}
 		}
@@ -280,10 +280,6 @@ func MappedResponse(t Tool, status int, b []byte) (any, error) {
 	}
 	return data, nil
 }
-func callMappedHTTP(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
-	return callMappedHTTPWithLookup(ctx, s, t, args, os.Getenv)
-}
-
 func callMappedHTTPWithLookup(ctx context.Context, s Server, t Tool, args map[string]any, lookup func(string) string) (any, error) {
 	if lookup == nil {
 		lookup = os.Getenv

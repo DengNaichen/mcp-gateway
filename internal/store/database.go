@@ -51,7 +51,7 @@ CREATE INDEX IF NOT EXISTS maintenance_pending_deliveries ON maintenance_deliver
 		}
 		return nil, fmt.Errorf("migrate sqlite schema: %w", err)
 	}
-	if err := os.Chmod(path, 0600); err != nil {
+	if err := os.Chmod(path, 0600); err != nil { //nolint:gosec // G703: path is the user's own local data/socket path from configuration, not remote input
 		if closeErr := db.Close(); closeErr != nil {
 			slog.Warn("close database", "error", closeErr)
 		}

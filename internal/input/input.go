@@ -19,7 +19,7 @@ func ReadBounded(r io.Reader, limit int64) ([]byte, error) {
 	return b, nil
 }
 func ReadFileBounded(path string, limit int64) ([]byte, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path is built from the user's own local config/data directories, not from remote input
 	if err != nil {
 		return nil, fmt.Errorf("open input file: %w", err)
 	}

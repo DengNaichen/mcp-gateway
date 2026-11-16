@@ -1,11 +1,12 @@
 package maintenance
 
 import (
-	"gatewaylab/internal/jsonutil"
-	"gatewaylab/internal/store"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gatewaylab/internal/jsonutil"
+	"gatewaylab/internal/store"
 )
 
 func TestPublicationCommitsRegistryAndRunAtomically(t *testing.T) {

@@ -2,11 +2,12 @@ package activity
 
 import (
 	"encoding/json"
-	"gatewaylab/internal/store"
 	"log/slog"
 	"slices"
 	"sync"
 	"time"
+
+	"gatewaylab/internal/store"
 
 	"github.com/google/uuid"
 )

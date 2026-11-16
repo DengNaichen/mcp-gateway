@@ -1,4 +1,5 @@
 package demo
+
 import (
 	"fmt"
 	"strings"
@@ -6,8 +7,6 @@ import (
 
 	"gatewaylab/internal/registry"
 )
-
-
 
 func objectSchema(properties map[string]any, required ...string) map[string]any {
 	if required == nil {

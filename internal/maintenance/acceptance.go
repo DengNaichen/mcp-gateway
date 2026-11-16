@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/contracttest"
-	"gatewaylab/internal/jsonutil"
-	"gatewaylab/internal/maintenance/sandbox"
-	"gatewaylab/internal/store"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"gatewaylab/internal/contracttest"
+	"gatewaylab/internal/jsonutil"
+	"gatewaylab/internal/maintenance/sandbox"
+	"gatewaylab/internal/store"
 )
 
 // Acceptance suites are owner-authored, persisted separately, and NEVER included

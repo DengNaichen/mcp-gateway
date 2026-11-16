@@ -120,10 +120,10 @@ func SyncHookBinary(homeDir string) (string, error) {
 		return target, nil
 	}
 	if sameFilePath(src, target) || filesHaveSameSHA256(src, target) {
-		_ = os.Chmod(target, 0755)
+		_ = os.Chmod(target, 0755) //nolint:gosec // G302: installed hook binary must stay executable (0755)
 		return target, nil
 	}
-	data, err := os.ReadFile(src)
+	data, err := os.ReadFile(src) //nolint:gosec // G304: path is built from the user's own local config/data directories, not from remote input
 	if err != nil {
 		return target, fmt.Errorf("read hook binary %s: %w", src, err)
 	}
@@ -135,7 +135,7 @@ func SyncHookBinary(homeDir string) (string, error) {
 		return target, fmt.Errorf("create temp hook binary: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 	if err := tmp.Chmod(0755); err != nil {
 		_ = tmp.Close()
 		return target, err
@@ -201,11 +201,11 @@ func sameFilePath(a, b string) bool {
 }
 
 func filesHaveSameSHA256(a, b string) bool {
-	da, ea := os.ReadFile(a)
+	da, ea := os.ReadFile(a) //nolint:gosec // G304: path is built from the user's own local config/data directories, not from remote input
 	if ea != nil {
 		return false
 	}
-	db, eb := os.ReadFile(b)
+	db, eb := os.ReadFile(b) //nolint:gosec // G304: path is built from the user's own local config/data directories, not from remote input
 	if eb != nil || len(da) != len(db) {
 		return false
 	}

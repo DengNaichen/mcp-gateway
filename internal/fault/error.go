@@ -1,9 +1,8 @@
 package fault
+
 import (
 	"fmt"
 )
-
-
 
 type Kind uint8
 

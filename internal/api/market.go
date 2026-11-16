@@ -21,7 +21,7 @@ func (g *server) registerMarket(mux *http.ServeMux) {
 		w.Header().Set("Cache-Control", "public, max-age=86400")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(200)
-		_, _ = w.Write(data)
+		_, _ = w.Write(data) //nolint:gosec // G705: icon bytes are served with the upstream-verified Content-Type plus nosniff, not rendered as HTML
 	})
 	mux.HandleFunc("POST /api/market/install", func(w http.ResponseWriter, r *http.Request) {
 		var in market.InstallMarketRequest

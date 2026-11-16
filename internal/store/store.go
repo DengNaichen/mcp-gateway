@@ -26,7 +26,7 @@ type Store struct {
 // The lock file is retained: unlinking it would let a third process lock a
 // different inode while another process still owns the original one.
 func Open(dir string) (*Store, error) {
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil { //nolint:gosec // G703: path is the user's own local data/socket path from configuration, not remote input
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
 	absolute, err := filepath.EvalSymlinks(dir)

@@ -1,8 +1,9 @@
 package maintenance
 
 import (
-	"gatewaylab/internal/jsonutil"
 	"slices"
+
+	"gatewaylab/internal/jsonutil"
 )
 
 type ReviewReason struct {

@@ -110,7 +110,7 @@ func probeGatewayHealth(ctx context.Context, baseURL, dataDir string) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return false
 	}
@@ -141,7 +141,7 @@ func probeGatewayHealth(ctx context.Context, baseURL, dataDir string) bool {
 	if err != nil {
 		return false
 	}
-	defer authResp.Body.Close()
+	defer func() { _ = authResp.Body.Close() }()
 	if authResp.StatusCode == http.StatusUnauthorized {
 		return strings.Contains(authResp.Header.Get("WWW-Authenticate"), `realm="gateway"`)
 	}
@@ -244,7 +244,7 @@ func startOrAttachGateway(ctx context.Context, addr, dataDir string) (*gatewayRu
 			joined = errors.Join(joined, fmt.Errorf("shutdown http server: %w", err))
 		}
 		select {
-		case <-serveDone:
+		case <-serveDone: //nolint:errcheck // the serve goroutine already logs unexpected errors; shutdown only waits for it to exit
 		case <-shutdownCtx.Done():
 		}
 		if err := g.Close(); err != nil {

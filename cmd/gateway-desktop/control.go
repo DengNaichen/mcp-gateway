@@ -25,14 +25,14 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 	if sockPath == "" {
 		return func() {}, nil
 	}
-	if info, err := os.Lstat(sockPath); err == nil && info.Mode()&os.ModeSocket != 0 {
-		_ = os.Remove(sockPath)
+	if info, err := os.Lstat(sockPath); err == nil && info.Mode()&os.ModeSocket != 0 { //nolint:gosec // G703: path is the user's own local data/socket path from configuration, not remote input
+		_ = os.Remove(sockPath) //nolint:gosec // G703: path is the user's own local data/socket path from configuration, not remote input
 	}
 	ln, err := net.Listen("unix", sockPath)
 	if err != nil {
 		return nil, err
 	}
-	_ = os.Chmod(sockPath, 0o600)
+	_ = os.Chmod(sockPath, 0o600) //nolint:gosec // G703: path is the user's own local data/socket path from configuration, not remote input
 
 	mux := http.NewServeMux()
 	writeJSON := func(w http.ResponseWriter, code int, v any) {
@@ -226,6 +226,6 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
-		_ = os.Remove(sockPath)
+		_ = os.Remove(sockPath) //nolint:gosec // G703: path is the user's own local data/socket path from configuration, not remote input
 	}, nil
 }

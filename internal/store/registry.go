@@ -14,7 +14,7 @@ func Registry(db *sql.DB) RegistryRepository { return RegistryRepository{db} }
 func (r RegistryRepository) Load() (registry.Registry, error) {
 	result := registry.Registry{Servers: []registry.Server{}, Tools: []registry.Tool{}}
 	for _, table := range []string{"servers", "tools"} {
-		rows, err := r.db.Query("SELECT definition FROM " + table + " ORDER BY position,rowid")
+		rows, err := r.db.Query("SELECT definition FROM " + table + " ORDER BY position,rowid") //nolint:gosec // G202: table names come from a compile-time constant list, never from user input
 		if err != nil {
 			return result, fmt.Errorf("query registry table %s: %w", table, err)
 		}
@@ -98,7 +98,7 @@ func WriteRegistry(tx *sql.Tx, reg registry.Registry) error {
 		name string
 		keep map[string]bool
 	}{{"tools", tools}, {"servers", servers}} {
-		rows, err := tx.Query("SELECT id FROM " + table.name)
+		rows, err := tx.Query("SELECT id FROM " + table.name) //nolint:gosec // G202: table names come from a compile-time constant list, never from user input
 		if err != nil {
 			return fmt.Errorf("replace registry: %w", err)
 		}
@@ -119,7 +119,7 @@ func WriteRegistry(tx *sql.Tx, reg registry.Registry) error {
 			return err
 		}
 		for _, id := range removed {
-			if _, err := tx.Exec("DELETE FROM "+table.name+" WHERE id=?", id); err != nil {
+			if _, err := tx.Exec("DELETE FROM "+table.name+" WHERE id=?", id); err != nil { //nolint:gosec // G202: table names come from a compile-time constant list, never from user input
 				return fmt.Errorf("replace registry: %w", err)
 			}
 		}

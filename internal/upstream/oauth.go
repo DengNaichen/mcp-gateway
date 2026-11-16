@@ -20,11 +20,11 @@ func defaultOpenBrowserURL(rawURL string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", rawURL)
+		cmd = exec.Command("open", rawURL) //nolint:gosec // G204: command and arguments are fixed or come from the user's own local configuration; launching them is this component's purpose
 	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", rawURL)
+		cmd = exec.Command("cmd", "/c", "start", "", rawURL) //nolint:gosec // G204: command and arguments are fixed or come from the user's own local configuration; launching them is this component's purpose
 	default:
-		cmd = exec.Command("xdg-open", rawURL)
+		cmd = exec.Command("xdg-open", rawURL) //nolint:gosec // G204: command and arguments are fixed or come from the user's own local configuration; launching them is this component's purpose
 	}
 	return cmd.Start()
 }
@@ -112,7 +112,7 @@ func (u *Service) oauthHandlerForServer(serverID string) (*auth.AuthorizationCod
 		})
 	})
 
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 
 	var closeOnce sync.Once

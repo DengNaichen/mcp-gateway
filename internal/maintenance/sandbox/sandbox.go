@@ -3,13 +3,13 @@ package sandbox
 import (
 	"context"
 	"crypto/rand"
+
 	"gatewaylab/internal/secrets"
 
 	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gatewaylab/internal/procutil"
 	"log/slog"
 	"net"
 	"net/url"
@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gatewaylab/internal/procutil"
 )
 
 //go:embed runtime/pi-sandbox.ts

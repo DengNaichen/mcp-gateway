@@ -104,7 +104,7 @@ func desired(c Client, endpoint string) map[string]any {
 	return e
 }
 func read(path string) ([]byte, error) {
-	b, e := os.ReadFile(path)
+	b, e := os.ReadFile(path) //nolint:gosec // G304: path is built from the user's own local config/data directories, not from remote input
 	if os.IsNotExist(e) {
 		return nil, nil
 	}
@@ -153,7 +153,7 @@ func entry(c Client, b []byte) (map[string]any, error) {
 	}
 	out, ok := v.(map[string]any)
 	if !ok {
-		return nil, errors.New("Gateway 配置不是对象")
+		return nil, errors.New("Gateway 配置不是对象") //nolint:staticcheck // ST1005: "Gateway" is the product name
 	}
 	return out, nil
 }
@@ -255,7 +255,7 @@ func (m *Manager) write(id, endpoint string, update bool) error {
 	if e != nil {
 		return e
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 	b, e := read(c.Path)
 	if e != nil {
 		return e
@@ -354,7 +354,7 @@ func (m *Manager) Revoke(id string) error {
 	if e != nil {
 		return e
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 	r, e := m.load(c)
 	if e != nil {
 		return e
@@ -452,8 +452,8 @@ func atomicWrite(path string, b []byte) error {
 	if e != nil {
 		return e
 	}
-	defer os.Remove(f.Name())
-	defer f.Close()
+	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close() }()
 	if e = f.Chmod(mode); e != nil {
 		return e
 	}

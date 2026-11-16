@@ -1,9 +1,10 @@
 package activity
 
 import (
-	"gatewaylab/internal/store"
 	"testing"
 	"time"
+
+	"gatewaylab/internal/store"
 
 	"github.com/google/uuid"
 )

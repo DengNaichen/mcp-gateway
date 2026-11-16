@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"gatewaylab/internal/clientconfig"
 	"os"
+
+	"gatewaylab/internal/clientconfig"
 )
 
 func main() {
@@ -40,7 +41,7 @@ func main() {
 	}
 	for _, s := range m.Statuses(*endpoint) {
 		if *client == "" || s.ID == *client {
-			json.NewEncoder(os.Stdout).Encode(s)
+			_ = json.NewEncoder(os.Stdout).Encode(s)
 		}
 	}
 }

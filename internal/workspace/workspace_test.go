@@ -305,10 +305,10 @@ func TestScopeKeyTokensAndChannelContextFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	combinedJSON, _ := json.Marshal(map[string]any{
-		"intent":                   "check logs",
-		"services":                 []string{"github"},
-		"_gw_ctx":                  stableTok,
-		"_gw_ctx_mcp_gateway_dev":  devTok,
+		"intent":                  "check logs",
+		"services":                []string{"github"},
+		"_gw_ctx":                 stableTok,
+		"_gw_ctx_mcp_gateway_dev": devTok,
 	})
 
 	// Both Stable Gateway and Dev Gateway must verify their respective tokens from combinedJSON!

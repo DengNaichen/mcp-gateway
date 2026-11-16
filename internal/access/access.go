@@ -10,10 +10,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/fault"
-	"gatewaylab/internal/input"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/secrets"
 	"net"
 	"net/url"
 	"os"
@@ -21,6 +17,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gatewaylab/internal/fault"
+	"gatewaylab/internal/input"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/secrets"
 )
 
 type Principal struct {
