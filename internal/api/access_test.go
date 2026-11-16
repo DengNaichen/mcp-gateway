@@ -172,3 +172,30 @@ func TestPublicListenerRequiresAuthentication(t *testing.T) {
 		t.Fatal("local mode accepted a rebinding host")
 	}
 }
+
+func TestLocalModeRejectsNonLoopbackHost(t *testing.T) {
+	g, _ := testGateway(t)
+	if g.Access() != nil {
+		t.Fatal("test gateway must run in local mode")
+	}
+	handler := Handler(g)
+	const message = "本机模式不接受外部 Host，请配置认证后共享"
+	for _, host := range []string{"evil.example", "evil.example:8788", "192.168.1.10:8788", "10.0.0.1", "[2001:db8::1]:8788", "localhost.evil.example", "127.0.0.1.evil.example", "0.0.0.0:8788", ""} {
+		req := httptest.NewRequest("GET", "/api/health", nil)
+		req.Host = host
+		out := httptest.NewRecorder()
+		handler.ServeHTTP(out, req)
+		if out.Code != 403 || !strings.Contains(out.Body.String(), message) {
+			t.Fatalf("host %q: %d %s", host, out.Code, out.Body)
+		}
+	}
+	for _, host := range []string{"127.0.0.1", "127.0.0.1:8788", "localhost", "localhost:8788", "LOCALHOST:8788", "[::1]", "[::1]:8788"} {
+		req := httptest.NewRequest("GET", "/api/health", nil)
+		req.Host = host
+		out := httptest.NewRecorder()
+		handler.ServeHTTP(out, req)
+		if out.Code != 200 {
+			t.Fatalf("host %q: %d %s", host, out.Code, out.Body)
+		}
+	}
+}
