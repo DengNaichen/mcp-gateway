@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
+  FolderGit2,
   Home,
   Layers,
   Loader2,
@@ -11,13 +12,20 @@ import {
   X,
 } from "lucide-react";
 import "./sail.css";
-import { api, type Bootstrap, type Event } from "./types";
+import {
+  api,
+  getScopeOverview,
+  type Bootstrap,
+  type Event,
+  type SimScope,
+} from "./types";
 import { CopyButton, GatewayLogo } from "./ui";
 import { ConnectClientModal } from "./ConnectClientModal";
 import { LoginPage } from "./LoginPage";
 import { OverviewPage } from "./OverviewPage";
 import { ServicesPage } from "./ServicesPage";
 import { CatalogPage } from "./CatalogPage";
+import { ReposPage } from "./ReposPage";
 import { PlaygroundPage, type ReplayDraft } from "./PlaygroundPage";
 import { LogsPage } from "./LogsPage";
 import { SettingsPage } from "./SettingsPage";
@@ -26,6 +34,7 @@ type ViewId =
   | "overview"
   | "upstreams"
   | "catalog"
+  | "repos"
   | "policies"
   | "logs"
   | "playground";
@@ -42,10 +51,12 @@ function parseHash(): RouteState {
   const subId = rest.length ? decodeURIComponent(rest.join("/")) : null;
   if (first === "services") return { view: "upstreams", subId };
   if (first === "settings") return { view: "policies", subId };
+  if (first === "scopes") return { view: "repos", subId };
   if (
     first === "overview" ||
     first === "upstreams" ||
     first === "catalog" ||
+    first === "repos" ||
     first === "policies" ||
     first === "logs" ||
     first === "playground"
@@ -68,6 +79,7 @@ const viewLabels: Record<ViewId, string> = {
   overview: "运行大盘",
   upstreams: "上游服务",
   catalog: "工具目录",
+  repos: "仓库绑定",
   policies: "访问与路由",
   logs: "请求日志",
   playground: "路由沙盒",
@@ -92,11 +104,16 @@ function App() {
     writeHash(view, subId);
   }
 
-  function openSandboxReplay(payload?: { intent: string; actor?: string }) {
-    if (payload && payload.intent) {
+  function openSandboxReplay(payload?: {
+    intent?: string;
+    actor?: string;
+    simScope?: SimScope | null;
+  }) {
+    if (payload && (payload.intent !== undefined || payload.simScope !== undefined)) {
       setReplayDraft((prev) => ({
         intent: payload.intent,
         actor: payload.actor,
+        simScope: payload.simScope,
         seq: (prev?.seq || 0) + 1,
       }));
     }
@@ -195,6 +212,7 @@ function App() {
     );
   }
 
+  const scopes = getScopeOverview(state);
   const realServers = state.registry.servers.filter((s) => !s.demo);
   const activeRealServers = realServers.filter((s) => s.enabled);
   const realTools = state.registry.tools.filter((t) =>
@@ -246,6 +264,17 @@ function App() {
               <span>工具目录</span>
               <span className="sail-nav-badge">
                 {state.setup.enabled_tools}/{realTools.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`sail-nav-item ${route.view === "repos" ? "active" : ""}`}
+              onClick={() => navigate("repos")}
+            >
+              <FolderGit2 size={15} strokeWidth={1.65} />
+              <span>仓库绑定</span>
+              <span className="sail-nav-badge">
+                {scopes.repositories.length}
               </span>
             </button>
             <button
@@ -432,6 +461,17 @@ function App() {
             />
           )}
 
+          {route.view === "repos" && (
+            <ReposPage
+              state={state}
+              initialRepoId={route.subId}
+              refresh={refresh}
+              onSelectRepoRoute={(repoId) => navigate("repos", repoId)}
+              onOpenPlaygroundScope={(payload) => openSandboxReplay(payload)}
+              notify={setToast}
+            />
+          )}
+
           {route.view === "policies" && (
             <SettingsPage
               state={state}
@@ -448,8 +488,11 @@ function App() {
           {route.view === "logs" && (
             <LogsPage
               events={state.events}
+              scopes={scopes}
+              allowLocalPath={!state.access?.shared}
               initialEventId={route.subId}
               onReplay={(payload) => openSandboxReplay(payload)}
+              onOpenRepo={(repoId) => navigate("repos", repoId)}
               onRefresh={() =>
                 refresh()
                   .then(() => setToast("日志已刷新"))

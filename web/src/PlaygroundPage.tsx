@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
+  SCOPE_AGENTS,
   api,
   exampleFromSchema,
+  getScopeOverview,
   pretty,
+  previewScope,
   type Bootstrap,
   type Discovery,
   type Invocation,
+  type SimScope,
   type Tool,
 } from "./types";
 import { EventStatusBadge } from "./OverviewPage";
@@ -28,8 +32,9 @@ const demoExamples = [
 ];
 
 export type ReplayDraft = {
-  intent: string;
+  intent?: string;
   actor?: string;
+  simScope?: SimScope | null;
   seq: number;
 };
 
@@ -46,11 +51,24 @@ export function PlaygroundPage({
   onOpenSettings: () => void;
   notify: (msg: string) => void;
 }) {
+  const scopes = getScopeOverview(state);
+  const canSimulateScope =
+    !state.access?.shared || state.access?.admin !== false;
+
   const [actor, setActor] = useState(
     state.access?.shared
       ? state.access.actor
       : replayDraft?.actor || "developer",
   );
+  const [simRepoKey, setSimRepoKey] = useState<string>(
+    replayDraft?.simScope?.repo_key || "",
+  );
+  const [simAgentKey, setSimAgentKey] = useState<string>(
+    replayDraft?.simScope?.agent_key || "*",
+  );
+  const [scopedCandidateCount, setScopedCandidateCount] = useState<
+    number | null
+  >(null);
   const [includeDemo, setIncludeDemo] = useState(false);
   const [intent, setIntent] = useState(replayDraft?.intent || "");
   const [showContext, setShowContext] = useState(false);
@@ -71,9 +89,15 @@ export function PlaygroundPage({
 
   useEffect(() => {
     if (!replayDraft) return;
-    setIntent(replayDraft.intent);
+    if (typeof replayDraft.intent === "string") {
+      setIntent(replayDraft.intent);
+    }
     if (!state.access?.shared && replayDraft.actor) {
       setActor(replayDraft.actor);
+    }
+    if (replayDraft.simScope !== undefined) {
+      setSimRepoKey(replayDraft.simScope?.repo_key || "");
+      setSimAgentKey(replayDraft.simScope?.agent_key || "*");
     }
     setIncludeDemo(false);
     setResult(null);
@@ -87,8 +111,68 @@ export function PlaygroundPage({
     if (!t.enabled) return false;
     const srv = servers.find((s) => s.id === t.server_id);
     if (!srv || !srv.enabled) return false;
+    if (
+      t.actors?.length &&
+      !t.actors.includes("*") &&
+      !t.actors.includes(actor)
+    ) {
+      return false;
+    }
     return includeDemo || !srv.demo;
   });
+
+  useEffect(() => {
+    if (!simRepoKey) {
+      setScopedCandidateCount(null);
+      return;
+    }
+    let cancelled = false;
+    previewScope(simRepoKey, actor)
+      .then((res) => {
+        if (cancelled) return;
+        const targetAgent =
+          simAgentKey && simAgentKey !== "*" ? simAgentKey : "codex";
+        const found = res.agents.find((a) => a.agent === targetAgent);
+        if (found && simAgentKey && simAgentKey !== "*") {
+          setScopedCandidateCount(found.tool_count);
+          return;
+        }
+        // When agent_key === "*", compute directly against (repo, *) > (*, *)
+        const rule =
+          scopes.rules.find(
+            (r) => r.repo_key === simRepoKey && r.agent_key === "*",
+          ) ||
+          scopes.rules.find((r) => r.repo_key === "*" && r.agent_key === "*");
+        if (!rule) {
+          setScopedCandidateCount(0);
+          return;
+        }
+        const count = eligiblePool.filter((t) => {
+          const g = rule.grants.find((gr) => gr.server_id === t.server_id);
+          if (!g) return false;
+          if (g.tool_ids?.length && !g.tool_ids.includes(t.id)) return false;
+          if (g.access === "ro" && !t.read_only) return false;
+          return true;
+        }).length;
+        setScopedCandidateCount(count);
+      })
+      .catch(() => {
+        if (!cancelled) setScopedCandidateCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [simRepoKey, simAgentKey, actor, JSON.stringify(scopes.rules), includeDemo]);
+
+  const activeSimScope: SimScope | undefined =
+    canSimulateScope && simRepoKey
+      ? { repo_key: simRepoKey, agent_key: simAgentKey || "*" }
+      : undefined;
+
+  const displayedPoolCount =
+    simRepoKey && scopedCandidateCount !== null
+      ? scopedCandidateCount
+      : eligiblePool.length;
 
   function selectTool(tool: Tool, nextTab: "schema" | "invoke" = "schema") {
     setSelected(tool);
@@ -114,6 +198,7 @@ export function PlaygroundPage({
           context,
           actor,
           include_demo: includeDemo,
+          sim_scope: activeSimScope,
         }),
       });
       setResult(data);
@@ -146,6 +231,7 @@ export function PlaygroundPage({
             .split(",")
             .map((s) => s.trim())
             .filter(Boolean),
+          sim_scope: activeSimScope,
         }),
       });
       setInvocation(res);
@@ -176,7 +262,7 @@ export function PlaygroundPage({
             <code style={{ color: "var(--ink-body)" }}>
               {state.settings.model || "未配置"}
             </code>{" "}
-            · 候选池 {eligiblePool.length} 个工具
+            · 候选池 {displayedPoolCount} 个工具
           </span>
           <button type="button" className="btn btn-sm" onClick={onOpenSettings}>
             路由参数
@@ -319,6 +405,77 @@ export function PlaygroundPage({
                     <option value="observer">observer</option>
                   </select>
                 </label>
+
+                {canSimulateScope && (
+                  <>
+                    <label
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 12.5,
+                      }}
+                    >
+                      <span style={{ color: "var(--ink-muted)" }}>仓库</span>
+                      <select
+                        aria-label="模拟仓库作用域"
+                        className="select"
+                        style={{ height: 28, width: 155, fontSize: 12.5 }}
+                        value={simRepoKey}
+                        onChange={(e) => {
+                          const nextRepo = e.target.value;
+                          setSimRepoKey(nextRepo);
+                          if (!nextRepo) {
+                            setSimAgentKey("*");
+                          }
+                          setResult(null);
+                          setSelected(null);
+                        }}
+                      >
+                        <option value="">管理员全量</option>
+                        <option value="*">未绑定新仓库 (*)</option>
+                        {scopes.repositories.map((repo) => (
+                          <option key={repo.id} value={repo.id}>
+                            {repo.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 12.5,
+                      }}
+                    >
+                      <span style={{ color: "var(--ink-muted)" }}>客户端</span>
+                      <select
+                        aria-label="模拟客户端"
+                        className="select"
+                        style={{ height: 28, width: 130, fontSize: 12.5 }}
+                        value={simAgentKey}
+                        onChange={(e) => {
+                          const nextAgent = e.target.value;
+                          setSimAgentKey(nextAgent);
+                          if (!simRepoKey && nextAgent !== "*") {
+                            setSimRepoKey("*");
+                          }
+                          setResult(null);
+                          setSelected(null);
+                        }}
+                      >
+                        <option value="*">默认 (*)</option>
+                        {SCOPE_AGENTS.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                )}
 
                 <label className="checkbox-field" style={{ fontSize: 12.5 }}>
                   <input
