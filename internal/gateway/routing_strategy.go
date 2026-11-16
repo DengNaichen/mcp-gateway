@@ -8,7 +8,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"time"
+
+	"gatewaylab/internal/model"
 )
 
 // Routing variants under evaluation, selected with GATEWAY_ROUTING as a
@@ -296,128 +297,7 @@ type choiceAnswer struct {
 	probabilities map[string]float64 // may be empty when the provider reports none
 }
 
-// askChoice sends one choice question over input and returns the pick and, when
-// the provider reports it, the probability of every option.
 func askChoice(ctx context.Context, s Settings, key, input, instructions string, choices []decisionChoice) (choiceAnswer, modelUsage, error) {
-	proto, endpoint, err := resolveDecisionProtocol(s)
-	if err != nil {
-		return choiceAnswer{}, modelUsage{}, err
-	}
-	var call decisionsCall
-	var parse func([]byte) (choiceAnswer, modelUsage, error)
-	switch proto {
-	case protocolGemini:
-		call, err = geminiChoiceCall(endpoint, s.Model, input, instructions, choices)
-		parse = func(b []byte) (choiceAnswer, modelUsage, error) { return parseMapChoice(b, true) }
-	case protocolSystemOne:
-		call, err = systemOneChoiceCall(endpoint, s.Model, input, instructions, choices)
-		parse = func(b []byte) (choiceAnswer, modelUsage, error) { return parseMapChoice(b, false) }
-	default:
-		call, err = openAIChoiceCall(endpoint, s.Model, input, instructions, choices)
-		parse = parseOpenAIChoice
-	}
-	if err != nil {
-		return choiceAnswer{}, modelUsage{}, err
-	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.TimeoutSeconds)*time.Second)
-	defer cancel()
-	b, err := postDecisions(ctx, call, key)
-	if err != nil {
-		return choiceAnswer{}, modelUsage{}, err
-	}
-	answer, usage, err := parse(b)
-	if err != nil {
-		return answer, usage, err
-	}
-	if !slices.ContainsFunc(choices, func(c decisionChoice) bool { return c.Value == answer.choice }) {
-		return answer, usage, problem(502, "Decisions 精选返回了候选之外的选项", nil)
-	}
-	return answer, usage, nil
-}
-
-const choiceQuestionName = "best"
-
-func buildChoiceQuestions(instructions string, choices []decisionChoice) map[string]any {
-	return map[string]any{
-		choiceQuestionName: map[string]any{
-			"type":         "choice",
-			"instructions": instructions,
-			"criteria":     buildChoiceCriteria(choices),
-		},
-	}
-}
-
-func geminiChoiceCall(endpoint, model, input, instructions string, choices []decisionChoice) (decisionsCall, error) {
-	body, err := json.Marshal(geminiRequest{
-		Model:     model,
-		Input:     []map[string]string{{"type": "text", "text": input}},
-		Questions: buildChoiceQuestions(instructions, choices),
-	})
-	if err != nil {
-		return decisionsCall{}, fmt.Errorf("encode decisions request: %w", err)
-	}
-	return decisionsCall{endpoint: endpoint, keyHeader: "x-goog-api-key", body: body}, nil
-}
-
-func systemOneChoiceCall(endpoint, model, input, instructions string, choices []decisionChoice) (decisionsCall, error) {
-	body, err := json.Marshal(systemOneRequest{
-		Model:     model,
-		State:     input,
-		Questions: buildChoiceQuestions(instructions, choices),
-	})
-	if err != nil {
-		return decisionsCall{}, fmt.Errorf("encode systemone request: %w", err)
-	}
-	return decisionsCall{endpoint: endpoint, keyHeader: "Authorization", keyPrefix: "Bearer ", body: body}, nil
-}
-
-func parseMapChoice(b []byte, geminiUsage bool) (choiceAnswer, modelUsage, error) {
-	var response struct {
-		Answers map[string]struct {
-			Type          string             `json:"type"`
-			Choice        string             `json:"choice"`
-			Probabilities map[string]float64 `json:"probabilities"`
-		} `json:"answers"`
-		Usage mapUsage `json:"usage"`
-	}
-	if err := json.Unmarshal(b, &response); err != nil {
-		return choiceAnswer{}, modelUsage{}, problem(502, "Decisions 响应格式无效", err)
-	}
-	usage := response.Usage.toModelUsage(geminiUsage)
-	answer, ok := response.Answers[choiceQuestionName]
-	if !ok || answer.Type != "choice" {
-		return choiceAnswer{}, usage, problem(502, "Decisions 回答名称、顺序或类型不匹配", nil)
-	}
-	return choiceAnswer{choice: answer.Choice, probabilities: answer.Probabilities}, usage, nil
-}
-
-func openAIChoiceCall(endpoint, model, input, instructions string, choices []decisionChoice) (decisionsCall, error) {
-	body, err := json.Marshal(map[string]any{"model": model, "input": input, "questions": []decisionQuestion{{Type: "choice", Name: choiceQuestionName, Instructions: instructions, Choices: choices}}})
-	if err != nil {
-		return decisionsCall{}, fmt.Errorf("encode decisions request: %w", err)
-	}
-	return decisionsCall{endpoint: endpoint, keyHeader: "Authorization", keyPrefix: "Bearer ", body: body}, nil
-}
-
-func parseOpenAIChoice(b []byte) (choiceAnswer, modelUsage, error) {
-	var response struct {
-		Answers []struct {
-			Type          string             `json:"type"`
-			Name          string             `json:"name"`
-			Choice        string             `json:"choice"`
-			Probabilities map[string]float64 `json:"probabilities"`
-		} `json:"answers"`
-		Usage struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-		} `json:"usage"`
-	}
-	if err := json.Unmarshal(b, &response); err != nil {
-		return choiceAnswer{}, modelUsage{}, problem(502, "Decisions 响应格式无效", err)
-	}
-	usage := modelUsage{PromptTokens: response.Usage.InputTokens, CompletionTokens: response.Usage.OutputTokens}
-	if len(response.Answers) != 1 || response.Answers[0].Name != choiceQuestionName || response.Answers[0].Type != "choice" {
-		return choiceAnswer{}, usage, problem(502, "Decisions 回答名称、顺序或类型不匹配", nil)
-	}
-	return choiceAnswer{choice: response.Answers[0].Choice, probabilities: response.Answers[0].Probabilities}, usage, nil
+	answer, usage, err := model.AskChoice(ctx, s, key, input, instructions, choices)
+	return choiceAnswer{choice: answer.Choice, probabilities: answer.Probabilities}, modelUsage(usage), modelError(err)
 }

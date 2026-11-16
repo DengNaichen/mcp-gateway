@@ -1,4 +1,4 @@
-package gateway
+package model
 
 import (
 	"encoding/json"
@@ -20,7 +20,7 @@ func systemOneCalls(endpoint, model, input string, instructions []string) ([]dec
 	start := 0
 	for len(calls) == 0 || start < len(instructions) {
 		includeStatus := len(calls) == 0
-		limit := systemOneMaxQuestions
+		limit := SystemOneMaxQuestions
 		if includeStatus {
 			limit--
 		}
@@ -39,7 +39,7 @@ func systemOneCalls(endpoint, model, input string, instructions []string) ([]dec
 			keyHeader: "Authorization",
 			keyPrefix: "Bearer ",
 			body:      body,
-			parse:     func(b []byte) (routeAnswers, error) { return parseMapAnswersRange(b, s, e, inc, false) },
+			parse:     func(b []byte) (Answers, error) { return parseMapAnswersRange(b, s, e, inc, false) },
 		})
 		start = end
 	}

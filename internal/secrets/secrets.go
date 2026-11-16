@@ -14,13 +14,8 @@ type Store struct {
 }
 
 func (s *Store) Lookup(key string) string {
-	if s != nil {
-		s.mu.RLock()
-		v := s.values[key]
-		s.mu.RUnlock()
-		if v != "" {
-			return v
-		}
+	if v := s.Get(key); v != "" {
+		return v
 	}
 	return os.Getenv(key)
 }
@@ -39,4 +34,14 @@ func (s *Store) Set(key, value string) {
 	} else {
 		s.values[key] = value
 	}
+}
+
+// Get returns only an in-memory value; profile IDs are not environment names.
+func (s *Store) Get(key string) string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.values[key]
 }

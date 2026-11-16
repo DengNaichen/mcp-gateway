@@ -149,7 +149,8 @@ func (g *Gateway) routingFingerprintForRegistryLocked(serverID string, reg Regis
 	if g.access != nil {
 		principals = g.access.principals
 	}
-	return maintenanceDigest([]any{routingProtocol, g.settings, g.apiKey, other, principals, g.execution})
+	settings, key := g.model.RuntimeConfig()
+	return maintenanceDigest([]any{routingProtocol, settings, key, other, principals, g.execution})
 }
 func (m *Maintainer) evaluateAcceptance(ctx context.Context, r MaintenanceRun, dir string) AcceptanceReport {
 	report := AcceptanceReport{Results: []AcceptanceResult{}, MissingCoverage: []string{}, RoutingFingerprint: m.g.acceptanceRoutingFingerprint(r.ServerID)}

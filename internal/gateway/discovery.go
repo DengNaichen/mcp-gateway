@@ -38,9 +38,7 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, reg
 	if len(req.Intent)+len(req.Context) > 24000 {
 		return result, invalid("任务和上下文合计不能超过 24 KB")
 	}
-	g.mu.RLock()
-	s, key := g.settings, g.apiKey
-	g.mu.RUnlock()
+	s, key := g.model.RuntimeConfig()
 	r := registry
 	servers := map[string]Server{}
 	for _, server := range r.Servers {

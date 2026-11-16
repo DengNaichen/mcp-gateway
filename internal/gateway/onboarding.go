@@ -68,9 +68,7 @@ func sourceFingerprint(s Server) (string, error) {
 }
 
 func (g *Gateway) modelFingerprint() (string, error) {
-	g.mu.RLock()
-	settings, key := g.settings, g.apiKey
-	g.mu.RUnlock()
+	settings, key := g.model.RuntimeConfig()
 	return digest([]any{routingProtocol, settings, key, g.realTools()})
 }
 
@@ -256,53 +254,6 @@ func (g *Gateway) EnableTools(id string, ids []string) error {
 	})
 }
 
-func (g *Gateway) PingModel(ctx context.Context, s Settings, profileID, apiKey string, clearKey bool) (PingModelResult, error) {
-	s.BaseURL = strings.TrimSpace(s.BaseURL)
-	s.Model = strings.TrimSpace(s.Model)
-	if err := validateURL(s.BaseURL); err != nil {
-		return PingModelResult{}, err
-	}
-	if s.Model == "" {
-		return PingModelResult{}, invalid("请填写路由模型名称")
-	}
-	if s.TimeoutSeconds < 5 || s.TimeoutSeconds > 180 {
-		s.TimeoutSeconds = 30
-	}
-
-	effectiveKey := strings.TrimSpace(apiKey)
-	if clearKey {
-		effectiveKey = ""
-	} else if effectiveKey == "" {
-		g.mu.RLock()
-		if profileID != "" {
-			effectiveKey = g.profileKeys[profileID]
-		}
-		if effectiveKey == "" && profileID == "" {
-			effectiveKey = g.apiKey
-		}
-		if effectiveKey == "" {
-			// Fallback to active key if editing the currently active profile before it was re-keyed.
-			for _, p := range g.profiles {
-				if p.ID == profileID && p.Active {
-					effectiveKey = g.apiKey
-					break
-				}
-			}
-		}
-		g.mu.RUnlock()
-	}
-
-	started := time.Now()
-	if _, err := askDecisions(ctx, s, effectiveKey, "ping", []string{"Connectivity check."}); err != nil {
-		return PingModelResult{}, err
-	}
-	return PingModelResult{
-		OK:         true,
-		Model:      s.Model,
-		DurationMS: time.Since(started).Milliseconds(),
-	}, nil
-}
-
 func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult, error) {
 	tools := g.realTools()
 	if len(tools) == 0 {
@@ -331,8 +282,8 @@ func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult,
 // Keep error details useful for local developers without echoing live credentials.
 func (g *Gateway) errorDetail(err error) string {
 	message := err.Error()
+	_, key := g.model.RuntimeConfig()
 	g.mu.RLock()
-	key := g.apiKey
 	tokenSources := make([]oauth2.TokenSource, 0, len(g.oauthTokens))
 	for _, ts := range g.oauthTokens {
 		tokenSources = append(tokenSources, ts)
