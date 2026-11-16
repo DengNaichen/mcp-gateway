@@ -1,4 +1,4 @@
-package gateway
+package model
 
 import (
 	"context"
@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"gatewaylab/internal/store"
 )
 
 func TestModelProfilesLifecycleAndPersistence(t *testing.T) {
 	dir := t.TempDir()
-	g, err := New(dir, "http://127.0.0.1:0")
+	g, err := openTestService(dir)
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}
@@ -94,7 +96,7 @@ func TestModelProfilesLifecycleAndPersistence(t *testing.T) {
 	}
 
 	// Reopen from SQLite: profile metadata persists, in-memory key does not.
-	g2, err := New(dir, "http://127.0.0.1:0")
+	g2, err := openTestService(dir)
 	if err != nil {
 		t.Fatalf("reopen gateway: %v", err)
 	}
@@ -121,7 +123,7 @@ func TestPingModelDirectConnectivity(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	g, err := New(t.TempDir(), "http://127.0.0.1:0")
+	g, err := openTestService(t.TempDir())
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}
@@ -146,3 +148,22 @@ func TestPingModelDirectConnectivity(t *testing.T) {
 		t.Fatalf("expected ping error with wrong key")
 	}
 }
+
+type testService struct {
+	*Service
+	storage *store.Store
+}
+
+func openTestService(dir string) (*testService, error) {
+	storage, err := store.Open(dir)
+	if err != nil {
+		return nil, err
+	}
+	svc, err := New(storage.DB)
+	if err != nil {
+		_ = storage.Close()
+		return nil, err
+	}
+	return &testService{svc, storage}, nil
+}
+func (g *testService) Close() error { return g.storage.Close() }

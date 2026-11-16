@@ -1,11 +1,11 @@
 package gateway
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
+	"gatewaylab/internal/activity"
+	"gatewaylab/internal/model"
 	"gatewaylab/internal/registry"
 )
 
@@ -38,32 +38,14 @@ type SourceProvenance struct {
 	Documents  map[string]string `json:"documents"`
 }
 
-type Settings struct {
-	BaseURL        string `json:"base_url"`
-	Model          string `json:"model"`
-	MaxTools       int    `json:"max_tools"`
-	TimeoutSeconds int    `json:"timeout_seconds"`
-}
+type Settings = model.Settings
 
 // ModelProfile represents a saved Decisions model configuration.
 // API keys remain in process memory only and are never persisted to SQLite.
-type ModelProfile struct {
-	ID             string `json:"id"`
-	BaseURL        string `json:"base_url"`
-	Model          string `json:"model"`
-	MaxTools       int    `json:"max_tools"`
-	TimeoutSeconds int    `json:"timeout_seconds"`
-	Active         bool   `json:"active"`
-	KeyConfigured  bool   `json:"key_configured"`
-	UpdatedAt      string `json:"updated_at,omitempty"`
-}
+type ModelProfile = model.ModelProfile
 
 // PingModelResult is returned by POST /api/model/ping for direct model connectivity checks.
-type PingModelResult struct {
-	OK         bool   `json:"ok"`
-	Model      string `json:"model"`
-	DurationMS int64  `json:"duration_ms"`
-}
+type PingModelResult = model.PingModelResult
 
 type DiscoverRequest struct {
 	Intent      string   `json:"intent" jsonschema:"Describe the capability needed for the current task, in natural language"`
@@ -109,16 +91,7 @@ type InvokeResult struct {
 	DurationMS int64  `json:"duration_ms"`
 }
 
-type Event struct {
-	ID         string          `json:"id"`
-	Time       time.Time       `json:"time"`
-	Kind       string          `json:"kind"`
-	Actor      string          `json:"actor"`
-	Status     string          `json:"status"`
-	Title      string          `json:"title"`
-	DurationMS int64           `json:"duration_ms"`
-	Detail     json.RawMessage `json:"detail,omitempty"`
-}
+type Event = activity.Event
 
 type appError struct {
 	status  int

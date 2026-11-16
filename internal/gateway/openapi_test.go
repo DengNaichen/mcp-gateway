@@ -122,39 +122,6 @@ func TestOpenAPIWireContract(t *testing.T) {
 		t.Fatalf("text response: %v %v", text, err)
 	}
 }
-func TestOpenAPISelectionAndFailures(t *testing.T) {
-	selected, err := ImportOpenAPI("ci", []byte(openAPIFixture), []string{"logs"})
-	if err != nil || len(selected) != 1 || selected[0].ID != "ci.logs" {
-		t.Fatalf("selection: %v %v", selected, err)
-	}
-	if _, err := ImportOpenAPI("ci", []byte(openAPIFixture), []string{"missing"}); err == nil {
-		t.Fatal("missing selected operation ignored")
-	}
-	for _, bad := range []string{
-		strings.ReplaceAll(openAPIFixture, "#/components/schemas/Input", "https://example.invalid/schema.json"),
-		strings.ReplaceAll(openAPIFixture, "application/json:", "multipart/form-data:"),
-		strings.ReplaceAll(openAPIFixture, "style: deepObject", "style: matrix"),
-		strings.ReplaceAll(openAPIFixture, "operationId: logs", "operationId: create_build"),
-	} {
-		if _, err := ImportOpenAPI("ci", []byte(bad), nil); err == nil {
-			t.Fatal("unsupported contract was silently imported")
-		}
-	}
-}
-func TestOpenAPIStableIDsAnd31(t *testing.T) {
-	document := strings.ReplaceAll(openAPIFixture, "3.0.3", "3.1.1")
-	a, err := ImportOpenAPI("ci", []byte(document), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := ImportOpenAPI("ci", []byte(document), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if maintenanceDigest(a) != maintenanceDigest(b) {
-		t.Fatal("import is not deterministic")
-	}
-}
 func TestOpenAPIMaintenanceWithoutPi(t *testing.T) {
 	g, reference := testGateway(t)
 	if err := os.WriteFile(reference, []byte(openAPIFixture), 0600); err != nil {

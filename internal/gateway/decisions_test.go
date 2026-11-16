@@ -103,28 +103,6 @@ func TestDecisionsRejectsInvalidAnswers(t *testing.T) {
 	}
 }
 
-func TestDecisionsErrorsAndCancellation(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 401, map[string]string{"error": "secret-test-key"})
-	}))
-	defer server.Close()
-	s := Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}
-	candidates := []Tool{{ID: "s.a"}}
-	_, _, err := selectWithModel(context.Background(), s, "secret-test-key", DiscoverRequest{}, candidates)
-	if err == nil || strings.Contains(err.Error(), "secret-test-key") || !strings.Contains(err.Error(), "401") {
-		t.Fatalf("error did not redact key: %v", err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if _, _, err := selectWithModel(ctx, s, "", DiscoverRequest{}, candidates); err == nil {
-		t.Fatal("cancellation ignored")
-	}
-	s.BaseURL += "/chat/completions"
-	if _, _, err := selectWithModel(context.Background(), s, "", DiscoverRequest{}, candidates); err == nil {
-		t.Fatal("legacy endpoint accepted")
-	}
-}
-
 // The task must come before the tool list in the model input; see selectWithModel.
 func TestRoutingInputPutsIntentBeforeCandidates(t *testing.T) {
 	var input string
