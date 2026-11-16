@@ -702,6 +702,93 @@
       border-color: var(--danger-border);
       background: #fef6f6;
     }
+    .market-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    @media (max-width: 1120px) {
+      .market-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .market-card {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 12px;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .market-card:hover {
+      border-color: var(--border-strong);
+      box-shadow: 0 2px 6px rgba(10, 37, 64, 0.04);
+    }
+    .market-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink-strong);
+    }
+    .market-icon img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .tag-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      background: var(--bg-muted);
+      color: var(--ink-muted);
+    }
+    .market-desc {
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--ink-body);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      min-height: 38px;
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(10, 37, 64, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 20px;
+    }
+    .modal-card {
+      width: 100%;
+      max-width: 480px;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 16px 40px rgba(10, 37, 64, 0.16);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
   </style>
 </head>
 <body>
@@ -716,7 +803,8 @@
           <div>
             <div class="nav-heading">控制面</div>
             <button class="nav-item" data-page="overview"><span class="nav-item-left"><span class="nav-dot"></span>运行大盘</span></button>
-            <button class="nav-item" data-page="services"><span class="nav-item-left"><span class="nav-dot"></span>上游服务</span><span class="nav-count">3</span></button>
+            <button class="nav-item" data-page="services"><span class="nav-item-left"><span class="nav-dot"></span>上游服务</span><span class="nav-count" id="nav-services-count">3</span></button>
+            <button class="nav-item" data-page="market"><span class="nav-item-left"><span class="nav-dot"></span>MCP 市场</span></button>
             <button class="nav-item active" data-page="catalog"><span class="nav-item-left"><span class="nav-dot"></span>工具目录</span><span class="nav-count">18/26</span></button>
             <button class="nav-item" data-page="settings"><span class="nav-item-left"><span class="nav-dot"></span>访问与路由</span></button>
           </div>
@@ -972,17 +1060,20 @@ Args:
         document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         currentPage = btn.dataset.page;
-        const titles = { overview: "运行大盘", services: "上游服务", catalog: "工具目录", logs: "请求日志", playground: "路由沙盒", settings: "访问与路由" };
+        const titles = { overview: "运行大盘", services: "上游服务", market: "MCP 市场", catalog: "工具目录", logs: "请求日志", playground: "路由沙盒", settings: "访问与路由" };
         document.getElementById("bc-title").textContent = titles[currentPage];
         render();
       });
     });
 
     function render() {
+      const countEl = document.getElementById("nav-services-count");
+      if (countEl) countEl.textContent = String(SERVICES.length);
       const root = document.getElementById("page-root");
       if (currentPage === "catalog") root.innerHTML = renderCatalog();
       else if (currentPage === "overview") root.innerHTML = renderOverview();
       else if (currentPage === "services") root.innerHTML = renderServices();
+      else if (currentPage === "market") root.innerHTML = renderMarket();
       else if (currentPage === "logs") root.innerHTML = renderLogs();
       else if (currentPage === "playground") root.innerHTML = renderPlayground();
       else root.innerHTML = renderSettings();
@@ -1222,6 +1313,435 @@ Args:
             </div>
           </div>
         </div>
+      `;
+    }
+
+    const MARKET_STORAGE_KEY = "mcp_gateway_proto_market_installed_v1";
+    const MARKET_SERVERS = [
+      {
+        id: "context7",
+        title: "Context7",
+        publisher: "Upstash",
+        icon: "https://github.com/upstash.png?size=96",
+        transport: "http",
+        runs: "远程",
+        endpoint: "https://mcp.context7.com/mcp",
+        description: "任意库的最新文档与代码示例，直接送进提示词。",
+        featured: true,
+        signIn: false,
+        inputs: []
+      },
+      {
+        id: "playwright",
+        title: "Playwright",
+        publisher: "Microsoft",
+        icon: "https://playwright.dev/img/playwright-logo.svg",
+        transport: "stdio",
+        runs: "npx",
+        command: "npx -y @playwright/mcp@latest",
+        description: "驱动真实浏览器：打开页面、点击、输入，并通过无障碍树读取页面。",
+        featured: true,
+        signIn: false,
+        inputs: []
+      },
+      {
+        id: "chrome-devtools",
+        title: "Chrome DevTools",
+        publisher: "Google",
+        icon: "https://github.com/ChromeDevTools.png?size=96",
+        transport: "stdio",
+        runs: "npx",
+        command: "npx -y chrome-devtools-mcp@latest",
+        description: "控制并检查运行中的 Chrome：控制台、网络、性能追踪和截图。",
+        featured: true,
+        signIn: false,
+        inputs: []
+      },
+      {
+        id: "deepwiki",
+        title: "DeepWiki",
+        publisher: "Cognition",
+        icon: "https://github.com/CognitionAI.png?size=96",
+        transport: "http",
+        runs: "远程",
+        endpoint: "https://mcp.deepwiki.com/mcp",
+        description: "就任意公开 GitHub 仓库提问，并阅读自动生成的 Wiki。",
+        featured: true,
+        signIn: false,
+        inputs: []
+      },
+      {
+        id: "exa",
+        title: "Exa",
+        publisher: "Exa",
+        icon: "https://github.com/exa-labs.png?size=96",
+        transport: "http",
+        runs: "远程",
+        endpoint: "https://mcp.exa.ai/mcp",
+        description: "为 Agent 打造的网页与代码搜索，返回干净的页面内容。",
+        featured: true,
+        signIn: false,
+        inputs: []
+      },
+      {
+        id: "notion",
+        title: "Notion",
+        publisher: "Notion",
+        icon: "https://github.com/makenotion.png?size=96",
+        transport: "http",
+        runs: "远程",
+        endpoint: "https://mcp.notion.com/mcp",
+        description: "读取与检索 Notion 工作区页面、数据库及评论上下文。",
+        featured: true,
+        signIn: true,
+        inputs: []
+      },
+      {
+        id: "linear",
+        title: "Linear",
+        publisher: "Linear",
+        icon: "https://github.com/linear.png?size=96",
+        transport: "http",
+        runs: "远程",
+        endpoint: "https://mcp.linear.app/mcp",
+        description: "查询与更新 Linear Issue、项目进度和团队周期。",
+        featured: true,
+        signIn: true,
+        inputs: []
+      },
+      {
+        id: "github",
+        title: "GitHub",
+        publisher: "GitHub",
+        icon: "https://github.com/github.png?size=96",
+        transport: "http",
+        runs: "远程",
+        endpoint: "https://api.githubcopilot.com/mcp/",
+        description: "GitHub 上的仓库、Issue、PR、Actions 和代码搜索。",
+        featured: true,
+        signIn: false,
+        inputs: [
+          { key: "Authorization", where: "header", label: "Personal Access Token", placeholder: "github_pat_...", secret: true, required: true }
+        ]
+      },
+      {
+        id: "filesystem",
+        title: "Filesystem",
+        publisher: "Model Context Protocol",
+        icon: "https://github.com/modelcontextprotocol.png?size=96",
+        transport: "stdio",
+        runs: "npx",
+        command: "npx -y @modelcontextprotocol/server-filesystem",
+        description: "读、写、搜索本地文件，仅限你显式允许的目录路径。",
+        featured: true,
+        signIn: false,
+        inputs: [
+          { key: "ALLOWED_DIR", where: "arg", label: "允许访问的目录路径", placeholder: "/Users/nd/Developer", secret: false, required: true }
+        ]
+      }
+    ];
+
+    const REGISTRY_RESULTS = [
+      {
+        id: "postgres-mcp",
+        title: "PostgreSQL",
+        publisher: "modelcontextprotocol",
+        icon: "https://github.com/postgres.png?size=96",
+        transport: "stdio",
+        runs: "npx",
+        command: "npx -y @modelcontextprotocol/server-postgres",
+        description: "只读检查 PostgreSQL Schema 并执行受控 SQL 查询。",
+        featured: false,
+        inputs: [
+          { key: "POSTGRES_URL", where: "arg", label: "数据库连接串", placeholder: "postgresql://localhost:5432/app", secret: true, required: true }
+        ]
+      },
+      {
+        id: "figma-mcp",
+        title: "Figma",
+        publisher: "figma",
+        icon: "https://github.com/figma.png?size=96",
+        transport: "http",
+        runs: "远程",
+        endpoint: "https://mcp.figma.com/mcp",
+        description: "读取 Figma 设计稿节点、Token 变量与组件结构。",
+        featured: false,
+        inputs: [
+          { key: "X-Figma-Token", where: "header", label: "Figma Access Token", placeholder: "figd_...", secret: true, required: true }
+        ]
+      },
+      {
+        id: "slack-mcp",
+        title: "Slack",
+        publisher: "modelcontextprotocol",
+        icon: "https://github.com/slackapi.png?size=96",
+        transport: "stdio",
+        runs: "npx",
+        command: "npx -y @modelcontextprotocol/server-slack",
+        description: "检索频道消息、Thread 上下文并发送通知。",
+        featured: false,
+        inputs: [
+          { key: "SLACK_BOT_TOKEN", where: "env", label: "Bot Token", placeholder: "xoxb-...", secret: true, required: true }
+        ]
+      }
+    ];
+
+    function loadInstalledMarketIds() {
+      try {
+        const raw = localStorage.getItem(MARKET_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return new Set(parsed);
+        }
+      } catch {}
+      return new Set(["github"]);
+    }
+
+    let marketQuery = "";
+    let marketFilter = "all"; // all | featured | http | stdio | installed
+    let installedMarketIds = loadInstalledMarketIds();
+    let marketModalItem = null;
+    let marketModalValues = {};
+    let marketToast = "";
+
+    function saveInstalledMarketIds() {
+      try {
+        localStorage.setItem(MARKET_STORAGE_KEY, JSON.stringify([...installedMarketIds]));
+      } catch {}
+    }
+
+    function setMarketFilter(next) {
+      marketFilter = next;
+      render();
+    }
+
+    function updateMarketQuery(val) {
+      marketQuery = val;
+      render();
+      const el = document.getElementById("market-search-input");
+      if (el) {
+        el.focus();
+        el.setSelectionRange(val.length, val.length);
+      }
+    }
+
+    function findMarketItem(id) {
+      return MARKET_SERVERS.find(x => x.id === id) || REGISTRY_RESULTS.find(x => x.id === id);
+    }
+
+    function handleMarketAddClick(id) {
+      const item = findMarketItem(id);
+      if (!item) return;
+      if (!item.inputs || item.inputs.length === 0) {
+        installMarketServer(item, {});
+        return;
+      }
+      marketModalItem = item;
+      marketModalValues = {};
+      render();
+    }
+
+    function closeMarketModal() {
+      marketModalItem = null;
+      marketModalValues = {};
+      render();
+    }
+
+    function updateMarketModalInput(key, val) {
+      marketModalValues[key] = val;
+    }
+
+    function confirmMarketModalInstall() {
+      if (!marketModalItem) return;
+      for (const inp of marketModalItem.inputs || []) {
+        if (inp.required && !(marketModalValues[inp.key] || "").trim()) {
+          alert(`请填写必填项：${inp.label}`);
+          return;
+        }
+      }
+      const item = marketModalItem;
+      const vals = { ...marketModalValues };
+      marketModalItem = null;
+      marketModalValues = {};
+      installMarketServer(item, vals);
+    }
+
+    function installMarketServer(item, values) {
+      installedMarketIds.add(item.id);
+      saveInstalledMarketIds();
+      if (!SERVICES.some(s => s.id === item.id)) {
+        SERVICES.unshift({
+          id: item.id,
+          name: item.title,
+          kind: item.transport === "http" ? "HTTP MCP" : "Stdio MCP",
+          endpoint: item.endpoint || item.command,
+          enabled: true,
+          status: "connected",
+          toolCount: 6,
+          enabledCount: 4,
+          tools: []
+        });
+      }
+      marketToast = `已添加 ${item.title} 并同步至上游服务`;
+      render();
+      setTimeout(() => {
+        marketToast = "";
+        const toastEl = document.getElementById("market-toast");
+        if (toastEl) toastEl.remove();
+      }, 2800);
+    }
+
+    function renderMarketCard(item) {
+      const isInstalled = installedMarketIds.has(item.id);
+      const needsSecret = (item.inputs || []).some(i => i.secret);
+      const needsConfig = (item.inputs || []).length > 0;
+      const fallbackChar = escapeHtml((item.title || "?").slice(0, 1).toUpperCase());
+
+      let authChip = "";
+      if (item.signIn) {
+        authChip = `<span class="tag-chip">需登录</span>`;
+      } else if (needsSecret) {
+        authChip = `<span class="tag-chip">需凭据</span>`;
+      } else if (needsConfig) {
+        authChip = `<span class="tag-chip">需参数</span>`;
+      }
+
+      return `
+        <div class="market-card">
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div class="market-icon">
+                <img src="${escapeHtml(item.icon)}" alt="${escapeHtml(item.title)}" onerror="this.remove();this.parentNode.textContent='${fallbackChar}';" />
+              </div>
+              <div style="min-width:0;flex:1;">
+                <div style="font-size:13.5px;font-weight:600;color:var(--ink-strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.title)}</div>
+                <div style="display:flex;align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap;">
+                  <span style="font-size:11.5px;color:var(--ink-muted);">${escapeHtml(item.publisher)}</span>
+                  <span class="tag-chip">${escapeHtml(item.runs)}</span>
+                  ${authChip}
+                </div>
+              </div>
+            </div>
+            <div class="market-desc">${escapeHtml(item.description)}</div>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:4px;">
+            <span class="mono" style="font-size:11.5px;color:var(--ink-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(item.id)}</span>
+            ${isInstalled
+              ? `<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                   <span class="quiet-meta" style="color:var(--success);font-weight:500;"><span class="dot dot-ok"></span>已接入</span>
+                   <button class="btn" type="button" onclick="switchPage('services')">查看</button>
+                 </div>`
+              : `<button class="btn" type="button" onclick="handleMarketAddClick('${item.id}')">${needsConfig ? "添加..." : "添加"}</button>`}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderMarketModal() {
+      if (!marketModalItem) return "";
+      const item = marketModalItem;
+      const targetStr = item.endpoint || item.command || "";
+      const inputsHtml = (item.inputs || []).map(inp => `
+        <div>
+          <div class="field-label-row">
+            <span class="field-label">${escapeHtml(inp.label)}${inp.required ? ' <span style="color:var(--danger);">*</span>' : ""}</span>
+            <span class="tag-chip mono">${escapeHtml(inp.where)}</span>
+          </div>
+          <input class="input-line mono" type="${inp.secret ? "password" : "text"}" placeholder="${escapeHtml(inp.placeholder || "")}" oninput="updateMarketModalInput('${escapeHtml(inp.key)}', this.value)" />
+        </div>
+      `).join("");
+
+      return `
+        <div class="modal-backdrop" onclick="if(event.target===this) closeMarketModal()">
+          <div class="modal-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div class="market-icon">
+                  <img src="${escapeHtml(item.icon)}" alt="${escapeHtml(item.title)}" onerror="this.remove();this.parentNode.textContent='${escapeHtml(item.title.slice(0, 1))}';" />
+                </div>
+                <div>
+                  <div style="font-size:14px;font-weight:600;color:var(--ink-strong);">添加 ${escapeHtml(item.title)}</div>
+                  <div style="font-size:12px;color:var(--ink-muted);">${escapeHtml(item.publisher)} · ${escapeHtml(item.runs)}</div>
+                </div>
+              </div>
+              <button class="btn" type="button" onclick="closeMarketModal()">取消</button>
+            </div>
+
+            <div class="mono" style="font-size:11.5px;color:var(--ink-muted);background:var(--bg-subtle);border:1px solid var(--border);border-radius:6px;padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              ${escapeHtml(targetStr)}
+            </div>
+
+            ${inputsHtml}
+
+            <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px;">
+              <button class="btn" type="button" onclick="closeMarketModal()">取消</button>
+              <button class="btn btn-primary" type="button" onclick="confirmMarketModalInstall()">确认添加并同步工具</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderMarket() {
+      const q = marketQuery.trim().toLowerCase();
+      const matchesQuery = (m) => !q || (m.title + " " + m.id + " " + m.publisher + " " + m.description + " " + (m.endpoint || m.command || "")).toLowerCase().includes(q);
+      const matchesFilter = (m) => {
+        if (marketFilter === "featured") return m.featured;
+        if (marketFilter === "http") return m.transport === "http";
+        if (marketFilter === "stdio") return m.transport === "stdio";
+        if (marketFilter === "installed") return installedMarketIds.has(m.id);
+        return true;
+      };
+
+      const featuredMatches = MARKET_SERVERS.filter(m => matchesQuery(m) && matchesFilter(m));
+      const registryMatches = q ? REGISTRY_RESULTS.filter(m => matchesQuery(m) && matchesFilter(m)) : [];
+
+      const pill = (id, label) => `<button class="btn ${marketFilter === id ? "btn-toggle-active" : ""}" type="button" onclick="setMarketFilter('${id}')">${label}</button>`;
+
+      return `
+        <div class="section-header">
+          <h1 class="section-title">MCP 市场</h1>
+          <div style="display:flex;align-items:center;gap:10px;">
+            ${marketToast ? `<span id="market-toast" class="quiet-meta" style="color:var(--success);font-weight:500;"><span class="dot dot-ok"></span>${escapeHtml(marketToast)}</span>` : ""}
+            <span class="quiet-meta">精选，以及官方 MCP Registry</span>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <input id="market-search-input" class="input-line" style="flex:1;min-width:260px;" value="${escapeHtml(marketQuery)}" oninput="updateMarketQuery(this.value)" placeholder="搜索 MCP 服务器 — GitHub、Postgres、Figma、URL 或包名..." />
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${pill("all", "全部")}
+            ${pill("http", "远程 HTTP")}
+            ${pill("stdio", "本地 npx")}
+            ${pill("installed", `已接入 (${installedMarketIds.size})`)}
+          </div>
+        </div>
+
+        ${featuredMatches.length > 0 ? `
+          <div class="market-grid">
+            ${featuredMatches.map(renderMarketCard).join("")}
+          </div>
+        ` : (registryMatches.length === 0 ? `
+          <div class="card" style="align-items:center;text-align:center;padding:36px 20px;">
+            <div style="font-size:14px;font-weight:600;color:var(--ink-strong);">未找到匹配的 MCP 服务</div>
+            <div style="font-size:12.5px;color:var(--ink-muted);">试试搜索 GitHub、Postgres、Figma 或切换筛选条件。</div>
+          </div>
+        ` : "")}
+
+        ${registryMatches.length > 0 ? `
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <span style="font-size:12.5px;font-weight:600;color:var(--ink-body);">官方 MCP Registry 搜索结果</span>
+              <span class="quiet-meta">registry.modelcontextprotocol.io</span>
+            </div>
+            <div class="market-grid">
+              ${registryMatches.map(renderMarketCard).join("")}
+            </div>
+          </div>
+        ` : ""}
+
+        ${renderMarketModal()}
       `;
     }
 
