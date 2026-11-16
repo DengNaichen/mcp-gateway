@@ -112,7 +112,7 @@ func (u *Service) oauthHandlerForServer(serverID string) (*auth.AuthorizationCod
 		})
 	})
 
-	srv := &http.Server{Handler: mux} //nolint:gosec // G112: reapplied below
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 
 	var closeOnce sync.Once
