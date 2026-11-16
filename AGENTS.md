@@ -1,5 +1,13 @@
 # AGENTS.md
 
+## Roster
+
+- 本仓库使用 Roster 管理任务和 Spec；MCP Server 名称为 `roster`，连接方式为远程 HTTP + OAuth，地址为 `https://qietzaqhmforixtpicjd.supabase.co/functions/v1/mcp/w/mcp-gateway/mcp`。
+- 默认 Workspace 为 `mcp-gateway`，默认 Team 为 `MCP Gateway`（key：`MCP`）。按要求在此 Team 中管理任务和 Spec，不自动创建新的 Workspace 或 Team。
+- 修改已有任务前，先读取其最新内容；修改已有 Spec 前同样先读取最新内容及版本，遵守服务端的版本检查。
+- 任务中记录相关仓库（`https://github.com/DengNaichen/mcp-gateway`）、实际工作分支及 PR 链接；尚未创建 PR 时不编造链接，创建后补充。
+- OAuth 凭据由 coding agent 的用户级凭据存储管理，不将 Token、Supabase 密钥或其他认证凭据写入仓库。认证失败时报告具体错误和缺少的 OAuth 配置，不绕过认证，不创建测试任务验证连接。
+
 ## Prototypes
 
 - 仓库内的所有 UI / 交互原型与配套设计文档统一存放在根目录 `prototypes/` 下（索引见 [prototypes/README.md](prototypes/README.md)），一律使用仓库相对路径链接，严禁留在 `~/.gemini` 等临时目录或 artifact 目录中。
