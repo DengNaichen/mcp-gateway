@@ -15,27 +15,30 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"golang.org/x/oauth2"
 	_ "modernc.org/sqlite"
 )
 
 type Gateway struct {
-	instanceID  string
-	mu          sync.RWMutex
-	registry    Registry
-	settings    Settings
-	apiKey      string
-	profiles    []ModelProfile
-	profileKeys map[string]string
-	events      []Event
-	dir         string
-	baseURL     string
-	db          *sql.DB
-	sessionMu   sync.Mutex
-	sessions    map[string]stdioSession
-	access      *accessPolicy
-	execution   executionPolicy
-	routing     routingOptions
-	maintenance *Maintainer
+	instanceID     string
+	mu             sync.RWMutex
+	registry       Registry
+	settings       Settings
+	apiKey         string
+	profiles       []ModelProfile
+	profileKeys    map[string]string
+	runtimeSecrets map[string]string
+	oauthTokens    map[string]oauth2.TokenSource
+	events         []Event
+	dir            string
+	baseURL        string
+	db             *sql.DB
+	sessionMu      sync.Mutex
+	sessions       map[string]stdioSession
+	access         *accessPolicy
+	execution      executionPolicy
+	routing        routingOptions
+	maintenance    *Maintainer
 }
 
 func New(dir, baseURL string) (*Gateway, error) {
@@ -62,7 +65,7 @@ func New(dir, baseURL string) (*Gateway, error) {
 			}
 		}
 	}()
-	g := &Gateway{instanceID: uuid.NewString(), execution: execution, access: access, dir: dir, baseURL: baseURL, events: []Event{}, profileKeys: map[string]string{}, settings: Settings{
+	g := &Gateway{instanceID: uuid.NewString(), execution: execution, access: access, dir: dir, baseURL: baseURL, events: []Event{}, profileKeys: map[string]string{}, runtimeSecrets: map[string]string{}, oauthTokens: map[string]oauth2.TokenSource{}, settings: Settings{
 		BaseURL: "https://api.openai.com/v1", Model: "gpt-6-luna", MaxTools: 4, TimeoutSeconds: 45,
 	}, db: db}
 	if err := g.loadRegistry(); err != nil {
@@ -135,6 +138,38 @@ func (g *Gateway) Config() (Settings, bool) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	return g.settings, g.apiKey != ""
+}
+
+func (g *Gateway) lookupEnv(key string) string {
+	if g != nil {
+		g.mu.RLock()
+		v := g.runtimeSecrets[key]
+		g.mu.RUnlock()
+		if v != "" {
+			return v
+		}
+	}
+	return os.Getenv(key)
+}
+
+func (g *Gateway) expandEnv(value string) string {
+	return os.Expand(value, g.lookupEnv)
+}
+
+func (g *Gateway) setRuntimeSecret(key, value string) {
+	if g == nil || strings.TrimSpace(key) == "" {
+		return
+	}
+	g.mu.Lock()
+	if g.runtimeSecrets == nil {
+		g.runtimeSecrets = map[string]string{}
+	}
+	if value == "" {
+		delete(g.runtimeSecrets, key)
+	} else {
+		g.runtimeSecrets[key] = value
+	}
+	g.mu.Unlock()
 }
 
 func validateURL(raw string) error {

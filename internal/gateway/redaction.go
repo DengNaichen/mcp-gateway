@@ -9,13 +9,20 @@ import (
 var emailPattern = regexp.MustCompile(`\b[A-Za-z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\b`)
 
 func redactResponse(data any, s Server) any {
+	return redactResponseWithLookup(data, s, os.Getenv)
+}
+
+func redactResponseWithLookup(data any, s Server, lookup func(string) string) any {
+	if lookup == nil {
+		lookup = os.Getenv
+	}
 	secrets := []string{}
 	for _, value := range s.Headers {
-		expanded := os.ExpandEnv(value)
+		expanded := os.Expand(value, lookup)
 		secrets = append(secrets, expanded, strings.TrimPrefix(expanded, "Bearer "))
 	}
 	for _, value := range s.Env {
-		secrets = append(secrets, os.ExpandEnv(value))
+		secrets = append(secrets, os.Expand(value, lookup))
 	}
 	var walk func(any, string) any
 	walk = func(value any, path string) any {

@@ -193,6 +193,35 @@ func (g *Gateway) Handler(assets fs.FS) http.Handler {
 		}
 		respond(w, 200, map[string]bool{"deleted": true})
 	})
+	mux.HandleFunc("GET /api/market", func(w http.ResponseWriter, r *http.Request) {
+		res := g.MarketServers(r.Context(), r.URL.Query().Get("q"))
+		respond(w, 200, res)
+	})
+	mux.HandleFunc("GET /api/market/icon", func(w http.ResponseWriter, r *http.Request) {
+		data, ct, err := g.MarketIcon(r.Context(), r.URL.Query().Get("id"), r.URL.Query().Get("url"))
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", ct)
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(200)
+		_, _ = w.Write(data)
+	})
+	mux.HandleFunc("POST /api/market/install", func(w http.ResponseWriter, r *http.Request) {
+		var in InstallMarketRequest
+		if err := decode(w, r, &in); err != nil {
+			fail(w, err)
+			return
+		}
+		out, err := g.InstallMarketServer(r.Context(), in)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		respond(w, 200, out)
+	})
 	mux.HandleFunc("PUT /api/servers", func(w http.ResponseWriter, r *http.Request) {
 		var in Server
 		if err := decode(w, r, &in); err != nil {

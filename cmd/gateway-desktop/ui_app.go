@@ -23,6 +23,7 @@ type ViewID string
 const (
 	ViewOverview   ViewID = "overview"
 	ViewServices   ViewID = "services"
+	ViewMarket     ViewID = "market"
 	ViewCatalog    ViewID = "catalog"
 	ViewPlayground ViewID = "playground"
 	ViewLogs       ViewID = "logs"
@@ -36,6 +37,8 @@ func viewTitle(v ViewID) string {
 		return "运行大盘"
 	case ViewServices:
 		return "上游服务"
+	case ViewMarket:
+		return "MCP 市场"
 	case ViewCatalog:
 		return "工具目录"
 	case ViewPlayground:
@@ -641,6 +644,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 				u.renderNavGroup(c, "工作台", []navItem{
 					{id: ViewOverview, label: "运行大盘", icon: IconHome},
 					{id: ViewServices, label: "上游服务", icon: IconServer, badge: countBadge(activeRealServers)},
+					{id: ViewMarket, label: "MCP 市场", icon: IconMarket},
 					{id: ViewCatalog, label: "工具目录", icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
 					{id: ViewClients, label: "连接客户端", icon: IconServer},
 					{id: ViewSettings, label: "访问与路由", icon: IconShield},
@@ -886,6 +890,8 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						u.renderOverview(c)
 					case ViewServices:
 						u.renderServices(c)
+					case ViewMarket:
+						u.renderMarket(c)
 					case ViewCatalog:
 						u.renderCatalog(c)
 					case ViewPlayground:
