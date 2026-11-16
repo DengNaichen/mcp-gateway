@@ -1,35 +1,35 @@
 # Gateway Lab
 
-一个可以直接运行的 MCP Gateway 原型。Go 后端、React + TypeScript 管理界面、SQLite 持久化；网关中的模型负责从可用工具里做选择，本地 Agent 继续负责规划和执行。新增的 Pi coding agent 在后台维护接入定义和适配代码，使服务变化能持续同步到路由模型可选的工具集合。
+一个可以直接运行的 MCP Gateway 原型。Go 后端、MyGo 原生桌面端、SQLite 持久化；网关中的模型负责从可用工具里做选择，本地 Agent 继续负责规划和执行。新增的 Pi coding agent 在后台维护接入定义和适配代码，使服务变化能持续同步到路由模型可选的工具集合。
 
 ## 启动
 
-当前目录已经构建了本机可执行文件：
+管理界面只有原生桌面端（MyGo，`cmd/gateway-desktop`）。桌面端在进程内启动网关并连接其 HTTP API，默认监听 `127.0.0.1:8789`（Dev）。
 
 ```sh
-cd mcp-gateway
-./start.sh
+make setup    # 下载 Go 依赖
+make dev      # 运行 Dev 原生桌面端
 ```
 
-打开 <http://127.0.0.1:8789>。前端已经内嵌到 Go 程序中，运行时只需启动一个进程。更换端口使用 `./start.sh -addr 127.0.0.1:8888`。
-
-从源码首次准备和构建需要 Go 1.26+、Node.js 22.12+：
+无界面部署使用 `cmd/gateway`，只提供 HTTP API 与 MCP 入口，没有网页：
 
 ```sh
-make setup
-make build
-./start.sh
+./start.sh                          # 构建并启动 Dev 网关，默认 127.0.0.1:8789
+./start.sh -addr 127.0.0.1:8888     # 更换端口
+curl http://127.0.0.1:8789/api/health
 ```
 
-如果依赖下载受网络影响，可以使用 `GOPROXY=https://goproxy.cn,direct` 和 `npm ci --registry=https://registry.npmmirror.com`。
+MCP 入口为 `http://127.0.0.1:8789/mcp`，管理 API 位于 `/api/*`，`gatewayctl`、`gateway-hook` 和桌面端都通过它们访问网关。访问根路径 `/` 只返回指向 `/mcp` 与 `/api/health` 的 404 JSON。
+
+从源码构建需要 Go 1.26+；打包桌面端和发布脚本（`scripts/*.mjs`）需要 Node.js 22.12+。如果依赖下载受网络影响，可以使用 `GOPROXY=https://goproxy.cn,direct`。
 
 ## 使用流程
 
-首页「开始接入」按三个步骤引导：
+桌面端首页「开始接入」按三个步骤引导：
 
 1. **接入工具**：填写 MCP 地址或本地 stdio 启动命令，点击「保存并读取工具」。也可以粘贴单个现有 `mcpServers` 配置。检查工具描述和读写属性，勾选后点击「保存工具选择」。新导入工具默认禁用，表单中的勾选只是待保存的选择。普通 HTTP API 则先检查地址，再填写具体工具的方法、路径和参数 schema。
 2. **配置模型**：填写 Decisions API 的 Base URL、模型 ID（当前支持 `gpt-6-luna`）和 API Key。「仅保存配置」不发起请求；「保存并测试路由」会用自己的工具定义发起一次真实模型请求，校验回答类型、相关性概率和工具映射，不执行下游工具。需要先启用至少一个自己的工具。更换配置、Key 或工具后，上次检查会显示需要重新测试。
-3. **连接 Agent**：选择 Codex、Claude Code 或通用 JSON，复制命令或配置，在本地客户端应用。重新打开客户端会话后，直接在 Agent 里提出任务。页面只读取状态，在网关收到 MCP 初始化、工具列表或工具调用请求后显示记录；不会通过网页自测模拟完成接入。
+3. **连接 Agent**：选择 Codex、Claude Code 或通用 JSON，复制命令或配置，在本地客户端应用。重新打开客户端会话后，直接在 Agent 里提出任务。页面只读取状态，在网关收到 MCP 初始化、工具列表或工具调用请求后显示记录；不会通过界面自测模拟完成接入。
 
 三个步骤都可以先查看，未接入时进度保持未完成。连接失败会保留配置，显示错误详情，方便修改重试。HTTP 地址可达、工具已启用、模型已响应和 Agent 已发来请求分别显示，不代表下游任务一定成功。
 
@@ -39,7 +39,7 @@ make build
 
 ## 模型配置
 
-可以在网页填写，也可以用环境变量启动：
+可以在桌面端设置页填写，也可以用环境变量启动：
 
 ```sh
 export GATEWAY_MODEL_BASE_URL='https://api.openai.com/v1'
@@ -48,7 +48,7 @@ export GATEWAY_MODEL_API_KEY='你的 OpenAI API Key'
 ./start.sh
 ```
 
-模型 ID 以 `gemini-` 开头时使用 Google Gemini Decisions API（如 Base URL `https://generativelanguage.googleapis.com/v1beta`、模型 `gemini-decision-1`），其他模型使用 OpenAI 风格的 Decisions API。Base URL 自动补全 `/decisions`；也可直接填写完整 endpoint。Key 只保存在内存，不写数据库或浏览器存储，重启后重新填写或使用环境变量。路由只调用 Decisions API，不调用 Chat Completions，也不使用 JSON Mode。已有配置若使用旧模型或 `/chat/completions` 地址，需要重新填写模型和地址，再测试路由。切换服务时请同时更新或清除旧 Key。
+模型 ID 以 `gemini-` 开头时使用 Google Gemini Decisions API（如 Base URL `https://generativelanguage.googleapis.com/v1beta`、模型 `gemini-decision-1`），其他模型使用 OpenAI 风格的 Decisions API。Base URL 自动补全 `/decisions`；也可直接填写完整 endpoint。Key 只保存在内存，不写数据库，重启后重新填写或使用环境变量。路由只调用 Decisions API，不调用 Chat Completions，也不使用 JSON Mode。已有配置若使用旧模型或 `/chat/completions` 地址，需要重新填写模型和地址，再测试路由。切换服务时请同时更新或清除旧 Key。
 
 路由分三步，默认全开；`GATEWAY_ROUTING=flat` 退回只有第二步的平铺路由，`GATEWAY_ROUTING=hierarchical` 或 `refine` 只开其中一步：
 
@@ -259,7 +259,7 @@ sqlite3 data/gateway.db 'SELECT id, server_id FROM tools;'
 sqlite3 data/gateway.db 'SELECT time, kind, status, title FROM activity ORDER BY time DESC LIMIT 10;'
 ```
 
-注册表在运行时有内存快照；通过网页或 API 修改会事务写入 SQLite。直接编辑数据库后需重启进程。数据库及运行时文件均由 Git 忽略。
+注册表在运行时有内存快照；通过桌面端或 API 修改会事务写入 SQLite。直接编辑数据库后需重启进程。数据库及运行时文件均由 Git 忽略。
 
 ## HTTP API
 
@@ -295,9 +295,9 @@ export GATEWAY_PUBLIC_URL=https://gateway.example.com
 ./start.sh -addr 0.0.0.0:8788
 ```
 
-在 HTTPS 反向代理后运行。网页通过管理员令牌建立 8 小时 HttpOnly / SameSiteStrict 会话，不用 localStorage 保存令牌。MCP / CLI 带 `Authorization: Bearer <token>`；CLI 可设置 `GATEWAY_TOKEN`。认证后忽略请求中的 actor，按主体 groups、servers、tools 和 allow_write 重新检查发现、schema 和执行；admin 也不绕过工具 ACL。管理 API 仅管理员可用。访问配置和令牌变更需要重启，会话随进程失效。
+在 HTTPS 反向代理后运行。管理 API 支持用管理员令牌调用 `/api/auth/login` 建立 8 小时 HttpOnly / SameSiteStrict 会话 Cookie。MCP / CLI 带 `Authorization: Bearer <token>`；CLI 可设置 `GATEWAY_TOKEN`。认证后忽略请求中的 actor，按主体 groups、servers、tools 和 allow_write 重新检查发现、schema 和执行；admin 也不绕过工具 ACL。管理 API 仅管理员可用。访问配置和令牌变更需要重启，会话随进程失效。
 
-服务 headers/env 只保存环境变量引用；stdio 子进程只继承最小运行环境和明确声明的 env。返回结果默认遮盖凭据字段、当前服务凭据值，还可设置 `redact_fields:["user.email","logs.customer_id"]` 与 `redact_emails:true`。脱敏先于字段投影。它不自动识别所有业务 PII；由服务负责人配置字段。调用日志不保存返回数据或请求参数。共享模式默认不信任开发服务器 Origin，确需跨来源管理界面时显式设置 `GATEWAY_TRUSTED_ORIGINS`。
+服务 headers/env 只保存环境变量引用；stdio 子进程只继承最小运行环境和明确声明的 env。返回结果默认遮盖凭据字段、当前服务凭据值，还可设置 `redact_fields:["user.email","logs.customer_id"]` 与 `redact_emails:true`。脱敏先于字段投影。它不自动识别所有业务 PII；由服务负责人配置字段。调用日志不保存返回数据或请求参数。共享模式默认不信任开发服务器 Origin，确需跨来源调用管理 API 时显式设置 `GATEWAY_TRUSTED_ORIGINS`。
 
 这是单机部署的最小共享认证层，尚未接入公司 SSO / OIDC、外部策略系统或多机任务调度。
 
@@ -336,23 +336,17 @@ go run ./cmd/routingeval -url http://127.0.0.1:8789 -cases evals/routing/github.
 
 ## 开发
 
-界面使用本地打包的 DM Sans 和 IBM Plex Mono 字体，运行时不依赖外部字体服务；OFL 许可证保存在 `web/public/fonts/`。界面动效遵循系统的减少动态效果偏好。
-
 ```sh
-# 终端 1：Go 后端，使用已有 web/dist
-make run
-# 终端 2：React 热更新，API 代理至 8789
-cd web && npm run dev
-# 完成修改后重新内嵌前端并生成两个程序
-make build
+make run       # 无界面 Go 后端（go run ./cmd/gateway）
+make dev       # 原生桌面端（Dev）
+make build     # 构建后端与命令行工具
 ```
 
 ```text
-cmd/gateway        Go 网关入口
-cmd/gatewayctl     CLI
-internal/gateway  SQLite、Registry、模型选择、协议适配与 API
-web/src           React 工作台
-web/dist          可直接内嵌的前端构建产物
+cmd/gateway          Go 网关入口（无界面）
+cmd/gateway-desktop  MyGo 原生桌面端
+cmd/gatewayctl       CLI
+internal/gateway     SQLite、Registry、模型选择、协议适配与 API
 ```
 
 参考：[Uber MCP Gateway](https://www.uber.com/pr/en/blog/designing-mcp-gateway/)、[官方 MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)、[OpenAI Decisions API](https://developers.openai.com/api/reference/resources/decisions/methods/create)。

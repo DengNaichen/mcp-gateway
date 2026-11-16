@@ -675,7 +675,7 @@ func (c *APIClient) RollbackMaintenanceRun(ctx context.Context, runID string) er
 	return c.doJSON(ctx, http.MethodPost, "/maintenance/runs/"+url.PathEscape(runID)+"/rollback", map[string]any{}, nil)
 }
 
-// --- Analytics & Formatting (ported from web/src/analytics.ts and web/src/types.ts) ---
+// --- Analytics & Formatting ---
 
 type BlindSpotItem struct {
 	Intent       string

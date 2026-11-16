@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"os"
 	"sync"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"gatewaylab/internal/buildinfo"
-	"gatewaylab/web"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/updater"
@@ -28,7 +26,6 @@ type desktopApp struct {
 	addr       string
 	addrCustom bool
 	dataDir    string
-	assets     fs.FS
 
 	appCtx    context.Context
 	appCancel context.CancelFunc
@@ -75,9 +72,6 @@ func (d *desktopApp) setupMenus() {
 			{Label: "复制 MCP 接入地址", Accelerator: "CmdOrCtrl+Shift+C", Click: func(*mygo.MenuItem, *mygo.Window) {
 				d.copyMCPURL()
 			}},
-			{Label: "在浏览器中打开", Accelerator: "CmdOrCtrl+Shift+O", Click: func(*mygo.MenuItem, *mygo.Window) {
-				d.openInBrowser()
-			}},
 			mygo.Separator(),
 			{Role: mygo.RoleClose},
 		}},
@@ -92,7 +86,6 @@ func (d *desktopApp) setupMenus() {
 	mygo.App.Dock.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 		{Label: "打开控制面窗口", Click: func(*mygo.MenuItem, *mygo.Window) { d.showMainWindow() }},
 		{Label: "复制 MCP 接入地址", Click: func(*mygo.MenuItem, *mygo.Window) { d.copyMCPURL() }},
-		{Label: "在浏览器中打开", Click: func(*mygo.MenuItem, *mygo.Window) { d.openInBrowser() }},
 	}))
 }
 
@@ -105,9 +98,6 @@ func (d *desktopApp) setupTray() {
 		mygo.Separator(),
 		{ID: "copy-mcp", Label: "复制 MCP 接入地址", Disabled: true, Click: func(*mygo.MenuItem, *mygo.Window) {
 			d.copyMCPURL()
-		}},
-		{ID: "open-browser", Label: "在浏览器中打开", Disabled: true, Click: func(*mygo.MenuItem, *mygo.Window) {
-			d.openInBrowser()
 		}},
 		mygo.Separator(),
 		channelUpdateMenuItem(),
@@ -156,9 +146,6 @@ func (d *desktopApp) updateTrayReady(rt *gatewayRuntime) {
 		item.SetSubtitle(rt.MCPURL)
 		item.SetEnabled(true)
 	}
-	if item := menu.ItemByID("open-browser"); item != nil {
-		item.SetEnabled(true)
-	}
 	tray.SetToolTip(buildinfo.Current().Name + " — " + rt.MCPURL)
 }
 
@@ -174,20 +161,6 @@ func (d *desktopApp) copyMCPURL() {
 	if uiApp != nil {
 		uiApp.Notify("已复制 MCP 接入端点")
 	}
-}
-
-func (d *desktopApp) openInBrowser() {
-	d.mu.Lock()
-	rt := d.runtime
-	d.mu.Unlock()
-	if rt == nil || rt.UIURL == "" {
-		return
-	}
-	go func(target string) {
-		if err := mygo.Shell.OpenExternal(target); err != nil {
-			slog.Warn("open control plane in browser", "url", target, "error", err)
-		}
-	}(rt.UIURL)
 }
 
 func (d *desktopApp) showMainWindow() {
@@ -254,7 +227,7 @@ func (d *desktopApp) showMainWindow() {
 }
 
 func (d *desktopApp) startBackend() {
-	rt, conflict, err := startOrAttachGateway(d.appCtx, d.addr, d.dataDir, d.assets)
+	rt, conflict, err := startOrAttachGateway(d.appCtx, d.addr, d.dataDir)
 	if conflict != nil {
 		res, dlgErr := mygo.Dialog.Message(mygo.MessageOptions{
 			Type:          mygo.MessageWarning,
@@ -269,7 +242,7 @@ func (d *desktopApp) startBackend() {
 			d.requestQuit()
 			return
 		}
-		rt, _, err = startOrAttachGateway(d.appCtx, "127.0.0.1:0", d.dataDir, d.assets)
+		rt, _, err = startOrAttachGateway(d.appCtx, "127.0.0.1:0", d.dataDir)
 	}
 	if err != nil {
 		slog.Error("start gateway desktop backend", "error", err)
@@ -358,10 +331,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	assets, err := fs.Sub(web.Assets, "dist")
-	if err != nil {
-		return fmt.Errorf("load embedded frontend: %w", err)
-	}
 
 	if mygo.App.IsPackaged() && mygo.App.Name() != buildinfo.Current().Name {
 		return fmt.Errorf("package identity %q does not match compiled channel %q; rebuild using scripts/build-channel.mjs", mygo.App.Name(), buildinfo.Current().Channel)
@@ -383,7 +352,6 @@ func run() error {
 		addr:       addr,
 		addrCustom: addrCustom,
 		dataDir:    dataDir,
-		assets:     assets,
 		appCtx:     appCtx,
 		appCancel:  appCancel,
 	}

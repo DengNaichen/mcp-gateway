@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -175,7 +174,7 @@ func waitGatewayReady(ctx context.Context, baseURL, dataDir string) error {
 // addr is already occupied by a healthy MCP Gateway instance, it attaches to
 // that instance instead of crashing; if occupied by another process, it returns
 // a *portConflictError so the caller can prompt or fall back cleanly.
-func startOrAttachGateway(ctx context.Context, addr, dataDir string, assets fs.FS) (*gatewayRuntime, *portConflictError, error) {
+func startOrAttachGateway(ctx context.Context, addr, dataDir string) (*gatewayRuntime, *portConflictError, error) {
 	if err := validateListenAddr(addr); err != nil {
 		return nil, nil, err
 	}
@@ -222,7 +221,7 @@ func startOrAttachGateway(ctx context.Context, addr, dataDir string, assets fs.F
 	g.StartMaintenance(maintCtx)
 
 	server := &http.Server{
-		Handler:           g.Handler(assets),
+		Handler:           g.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       90 * time.Second,
 	}

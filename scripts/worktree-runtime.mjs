@@ -1,7 +1,7 @@
 // Worktree setup, port/data isolation, and cleanup for mcp-gateway.
 //
 // The primary checkout keeps repository defaults (API/Desktop 127.0.0.1:8789,
-// Vite 5173, data/dev). Secondary worktrees under .worktrees/ receive a stable
+// data/dev). Secondary worktrees under .worktrees/ receive a stable
 // 12-char hex identity, an unused port slot (1-99), and a worktree-local
 // data directory recorded in the ignored .env.worktree file.
 import { createHash } from 'node:crypto';
@@ -12,17 +12,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const MARKER = '# MCP_GATEWAY_MANAGED_WORKTREE_ENV_V1';
 export const ENV_FILE = '.env.worktree';
-export const STAMP_REL = path.join('web', 'node_modules', '.gateway-lock.sha256');
-export const DEFAULT_API_PORT = 8789;
-export const DEFAULT_VITE_PORT = 5173;
 export const BASE_SLOT_API_PORT = 8800;
-export const BASE_SLOT_VITE_PORT = 5180;
 export const MAX_SLOT = 99;
-
-const DEPENDENCY_FILES = [
-  path.join('web', 'package.json'),
-  path.join('web', 'package-lock.json'),
-];
 
 const scriptRepoRoot = fs.realpathSync(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -44,7 +35,6 @@ export function slotPorts(slot) {
   }
   return {
     apiPort: BASE_SLOT_API_PORT + slot,
-    vitePort: BASE_SLOT_VITE_PORT + slot,
   };
 }
 
@@ -68,15 +58,13 @@ export function parseManagedEnv(content) {
 }
 
 export function formatManagedEnv({ id, root, slot }) {
-  const { apiPort, vitePort } = slotPorts(slot);
+  const { apiPort } = slotPorts(slot);
   const values = [
     ['GATEWAY_WORKTREE_ID', id],
     ['GATEWAY_WORKTREE_PATH', root],
     ['GATEWAY_WORKTREE_SLOT', String(slot)],
     ['GATEWAY_DEV_ADDR', `127.0.0.1:${apiPort}`],
     ['GATEWAY_DEV_DATA_DIR', path.join(root, 'data', 'dev')],
-    ['GATEWAY_VITE_PORT', String(vitePort)],
-    ['VITE_API_PORT', String(apiPort)],
   ];
   return [
     MARKER,
@@ -84,24 +72,6 @@ export function formatManagedEnv({ id, root, slot }) {
     ...values.map(([k, v]) => `${k}=${v}`),
     '',
   ].join('\n');
-}
-
-export function computeDependencyStamp({
-  packageJson,
-  packageLock,
-  platform = process.platform,
-  arch = process.arch,
-  nodeMajor = process.versions.node.split('.')[0],
-}) {
-  return sha256Hex(
-    [
-      `platform=${platform}`,
-      `arch=${arch}`,
-      `node=${nodeMajor}`,
-      `package.json=${packageJson}`,
-      `package-lock.json=${packageLock}`,
-    ].join('\n'),
-  );
 }
 
 function git(args, cwd) {
@@ -171,65 +141,26 @@ function ensureManagedEnv(root) {
       : chooseSlot(id, occupied);
   const content = formatManagedEnv({ id, root, slot });
   fs.writeFileSync(path.join(root, ENV_FILE), content, { mode: 0o600 });
-  const { apiPort, vitePort } = slotPorts(slot);
+  const { apiPort } = slotPorts(slot);
   return {
     id,
     slot,
     apiPort,
-    vitePort,
     dataDir: path.join(root, 'data', 'dev'),
   };
 }
 
-function readStampInputs(root) {
-  const [pkgPath, lockPath] = DEPENDENCY_FILES.map((rel) => path.join(root, rel));
-  if (!fs.existsSync(pkgPath) || !fs.existsSync(lockPath)) {
-    return null;
-  }
-  return computeDependencyStamp({
-    packageJson: fs.readFileSync(pkgPath, 'utf8'),
-    packageLock: fs.readFileSync(lockPath, 'utf8'),
-  });
-}
-
-function ensureWebDependencies(root, { ifNeeded = false, skipNpm = false } = {}) {
-  if (skipNpm) return { status: 'skipped' };
-  const stamp = readStampInputs(root);
-  if (!stamp) return { status: 'no-web-manifest' };
-  const stampPath = path.join(root, STAMP_REL);
-  const nodeModulesDir = path.join(root, 'web', 'node_modules');
-  if (ifNeeded && fs.existsSync(nodeModulesDir)) {
-    try {
-      if (fs.readFileSync(stampPath, 'utf8').trim() === stamp) {
-        return { status: 'cached' };
-      }
-    } catch {
-      // Missing or unreadable stamp: install below.
-    }
-  }
-  const result = spawnSync('npm', ['ci'], {
-    cwd: path.join(root, 'web'),
-    stdio: 'inherit',
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0) fail(`npm ci failed in ${path.join(root, 'web')} with exit ${result.status}`);
-  fs.mkdirSync(nodeModulesDir, { recursive: true });
-  fs.writeFileSync(stampPath, `${stamp}\n`);
-  return { status: 'installed' };
-}
-
-export function setupWorktree(targetRoot = scriptRepoRoot, options = {}) {
+export function setupWorktree(targetRoot = scriptRepoRoot) {
   const root = fs.realpathSync(targetRoot);
   const primary = primaryRoot(root);
   let runtime = null;
   if (root !== primary) {
     runtime = ensureManagedEnv(root);
     console.log(
-      `worktree ${runtime.id}: api 127.0.0.1:${runtime.apiPort}, web http://127.0.0.1:${runtime.vitePort}, data ${runtime.dataDir}`,
+      `worktree ${runtime.id}: api 127.0.0.1:${runtime.apiPort}, data ${runtime.dataDir}`,
     );
   }
-  const deps = ensureWebDependencies(root, options);
-  return { root, primary, runtime, deps };
+  return { root, primary, runtime };
 }
 
 export function cleanWorktree(targetPath = scriptRepoRoot) {
@@ -287,13 +218,6 @@ function runTarget(part, extraArgs) {
     if (isSecondary) {
       env.GATEWAY_DEV_DATA_DIR = values.GATEWAY_DEV_DATA_DIR;
     }
-  } else if (part === 'web') {
-    cmd = 'npm';
-    cwd = path.join(root, 'web');
-    args = isSecondary
-      ? ['run', 'dev', '--', '--port', values.GATEWAY_VITE_PORT, '--strictPort', ...extraArgs]
-      : ['run', 'dev', '--', ...extraArgs];
-    env.VITE_API_PORT = isSecondary ? values.VITE_API_PORT : String(DEFAULT_API_PORT);
   } else if (part === 'desktop') {
     cmd = process.execPath;
     args = [
@@ -306,7 +230,7 @@ function runTarget(part, extraArgs) {
       ...extraArgs,
     ];
   } else {
-    fail('usage: worktree-runtime.mjs run api|web|desktop [args...]');
+    fail('usage: worktree-runtime.mjs run api|desktop [args...]');
   }
 
   const result = spawnSync(cmd, args, { cwd, env, stdio: 'inherit' });
@@ -319,10 +243,7 @@ function main() {
   switch (command) {
     case 'setup': {
       const target = rest.find((arg) => !arg.startsWith('--')) ?? process.cwd();
-      setupWorktree(target, {
-        ifNeeded: rest.includes('--if-needed'),
-        skipNpm: rest.includes('--skip-npm'),
-      });
+      setupWorktree(target);
       break;
     }
     case 'clean': {
@@ -337,7 +258,7 @@ function main() {
     }
     default:
       fail(
-        'usage: worktree-runtime.mjs setup [path] [--if-needed] [--skip-npm] | clean [path] | run api|web|desktop [args...]',
+        'usage: worktree-runtime.mjs setup [path] | clean [path] | run api|desktop [args...]',
       );
   }
 }

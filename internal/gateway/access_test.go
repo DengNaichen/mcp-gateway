@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,7 +53,7 @@ func sharedGateway(t *testing.T) *Gateway {
 }
 func TestAccessIdentityScopeAndRedaction(t *testing.T) {
 	g := sharedGateway(t)
-	handler := g.Handler(os.DirFS(t.TempDir()))
+	handler := g.Handler()
 	call := func(method, path, token, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(body))
 		if token != "" {
@@ -95,7 +94,7 @@ func TestAccessIdentityScopeAndRedaction(t *testing.T) {
 }
 func TestAdminLoginCookieLogoutAndCSRF(t *testing.T) {
 	g := sharedGateway(t)
-	handler := g.Handler(os.DirFS(t.TempDir()))
+	handler := g.Handler()
 	req := httptest.NewRequest("POST", "http://localhost/api/auth/login", bytes.NewReader(mustJSON(t, map[string]string{"token": adminTestToken})))
 	out := httptest.NewRecorder()
 	handler.ServeHTTP(out, req)
@@ -115,7 +114,7 @@ func TestAdminLoginCookieLogoutAndCSRF(t *testing.T) {
 	}
 	req = httptest.NewRequest("POST", "http://localhost/api/auth/logout", nil)
 	req.AddCookie(cookies[0])
-	req.Header.Set("Origin", "http://localhost:5173")
+	req.Header.Set("Origin", "http://localhost:3000")
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	out = httptest.NewRecorder()
 	handler.ServeHTTP(out, req)
@@ -139,7 +138,7 @@ func TestAdminLoginCookieLogoutAndCSRF(t *testing.T) {
 }
 func TestMCPUsesAuthenticatedPrincipal(t *testing.T) {
 	g := sharedGateway(t)
-	host := httptest.NewServer(g.Handler(os.DirFS(t.TempDir())))
+	host := httptest.NewServer(g.Handler())
 	defer host.Close()
 	client := mcp.NewClient(&mcp.Implementation{Name: "auth-test", Version: "1"}, nil)
 	session, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{Endpoint: host.URL + "/mcp", HTTPClient: &http.Client{Transport: headerTransport{headers: map[string]string{"Authorization": "Bearer " + readerTestToken}, base: http.DefaultTransport}}}, nil)
@@ -167,7 +166,7 @@ func TestPublicListenerRequiresAuthentication(t *testing.T) {
 	g, _ := testGateway(t)
 	req := httptest.NewRequest("GET", "http://attacker.invalid/api/bootstrap", nil)
 	out := httptest.NewRecorder()
-	g.Handler(os.DirFS(t.TempDir())).ServeHTTP(out, req)
+	g.Handler().ServeHTTP(out, req)
 	if out.Code != 403 {
 		t.Fatal("local mode accepted a rebinding host")
 	}

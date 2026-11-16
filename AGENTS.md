@@ -24,5 +24,5 @@
 ## Release
 
 - 版本号升级与打标统一通过 [scripts/bump-version.sh](scripts/bump-version.sh) 完成：校验工作区干净并与 `origin/main` 同步后，更新 `internal/buildinfo/profiles.json` 中的统一版本号、提交并推送 `v<version>` tag。
-- Tag 推送后由 [.github/workflows/release.yml](.github/workflows/release.yml) 自动执行版本校验、Draft Release 创建、前端构建与 Go 测试、`mygo build`（`darwin/arm64,darwin/amd64`）Developer ID 签名与 Apple 公证、生成 Ed25519 自动更新清单（`update-darwin-*.json`）与 `SHA256SUMS` 并正式发布至 GitHub Releases。
+- Tag 推送后由 [.github/workflows/release.yml](.github/workflows/release.yml) 自动执行版本校验、Draft Release 创建、Go 测试、`mygo build`（`darwin/arm64,darwin/amd64`）Developer ID 签名与 Apple 公证、生成 Ed25519 自动更新清单（`update-darwin-*.json`）与 `SHA256SUMS` 并正式发布至 GitHub Releases。
 - 本地签名公证与打包调试可使用 [scripts/release-macos-local.sh](scripts/release-macos-local.sh)（自动读取 `.env.release`、Keychain Developer ID 证书、notary profile 与 Ed25519 更新私钥并调用 `node scripts/build-channel.mjs package stable`）。

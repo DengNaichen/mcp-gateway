@@ -113,11 +113,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: Build embedded frontend
-        run: cd web && npm ci && npm run build
 
       - name: Run Go tests
         run: CGO_ENABLED=0 go test -count=1 ./...

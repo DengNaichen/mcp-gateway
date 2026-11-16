@@ -52,24 +52,22 @@ scripts/new-worktree <branch> [--base <ref>] [--no-setup]
 - 默认基线为 `origin/main`；脚本只 fetch 所选基线分支，fetch 失败立即中止，**不使用过期本地缓存**。
 - 新分支以 `--no-track` 创建，不把 `origin/main` 继承为 upstream；首次推送使用 `git push -u origin <branch>`。
 - 已有本地分支直接检出，不要传 `--base`；若分支已在其他 worktree 检出则报错并打印现有路径。
-- 创建后自动运行 `scripts/setup-worktree --if-needed`（仅在纯文档或明确无需前端构建的任务时传 `--no-setup`）：
+- 创建后自动运行 `scripts/setup-worktree --if-needed`（纯文档任务可传 `--no-setup`）：
   - Go module/build cache 跨 worktree 原生共享，无需重复下载。
-  - `web/node_modules` 按 `web/package.json`、`web/package-lock.json` 与平台/Node ABI 摘要判断是否需要执行 `npm ci`，锁文件未变时跳过。
+  - 为次级 worktree 生成独占端口槽位与数据目录（见下节）。
 
 ### 运行时隔离
 
 实现位于 [scripts/worktree-runtime.mjs](../../../scripts/worktree-runtime.mjs)：
 
-- **主 checkout 保持默认端口与目录**：后端/桌面端 `127.0.0.1:8789`、Vite `5173`、数据目录 `data/dev`，不生成 `.env.worktree`。
+- **主 checkout 保持默认端口与目录**：后端/桌面端 `127.0.0.1:8789`、数据目录 `data/dev`，不生成 `.env.worktree`。
 - **次级 worktree** 根据其 canonical 路径派生稳定 12 位 hex ID 与独占槽位 `1–99`，写入 Git 忽略的 `.env.worktree`（权限 `0600`）：
   - 后端地址 `GATEWAY_DEV_ADDR=127.0.0.1:<8800+slot>`（避开 Stable `8788` 与 Dev `8789`）
-  - Vite 端口 `GATEWAY_VITE_PORT=<5180+slot>`，并通过 `VITE_API_PORT` 自动代理到对应后端端口
   - 本地数据目录 `GATEWAY_DEV_DATA_DIR=<worktree>/data/dev`
 - 若 `.env.worktree` 已存在且不含托管 marker（手工创建文件），脚本拒绝覆盖或删除。
 - 需要多个 worktree 并行启动服务时使用：
   ```sh
   node scripts/worktree-runtime.mjs run api
-  node scripts/worktree-runtime.mjs run web
   node scripts/worktree-runtime.mjs run desktop
   ```
 - Go 单元测试（`t.TempDir()`）与验证脚本（`127.0.0.1:0`）天然隔离，可直接运行，不占用固定槽位端口。
@@ -94,7 +92,6 @@ python3 scripts/check-doc-links.py
 node --test scripts/release-policy.test.mjs scripts/worktree-runtime.test.mjs
 ```
 
-- 修改 `web/src/` 后**必须**执行 `cd web && npm run build`，并将更新后的 `web/dist` 一并提交（CI 会检查 `git diff --exit-code -- web/dist`）。
 - 修改原生桌面端或发布脚本时按需运行 `make package`、`scripts/verify-desktop-theme.py`、`scripts/verify-build-channels.py`。
 - 逐文件 `git add <path>`，不用 `git add -A` / `git add .`，避免混入无关改动或 `.DS_Store`。
 
