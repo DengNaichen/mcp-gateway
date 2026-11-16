@@ -3,14 +3,15 @@ package maintenance
 import (
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/jsonutil"
-	"gatewaylab/internal/store"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
+
+	"gatewaylab/internal/jsonutil"
+	"gatewaylab/internal/store"
 )
 
 func sourceIdentity(s MaintenanceSource) string {

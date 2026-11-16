@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"gatewaylab/internal/clientconfig"
 	"os"
+
+	"gatewaylab/internal/clientconfig"
 )
 
 func main() {

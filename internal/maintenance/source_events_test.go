@@ -5,10 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"gatewaylab/internal/store"
 	"net/http"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/store"
 )
 
 func signedEvent(t *testing.T, body []byte) string {

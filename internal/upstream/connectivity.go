@@ -3,10 +3,11 @@ package upstream
 import (
 	"context"
 	"fmt"
-	"gatewaylab/internal/fault"
 	"net/http"
 	"os"
 	"time"
+
+	"gatewaylab/internal/fault"
 )
 
 func CheckHTTPConnectivity(ctx context.Context, s Server, lookup func(string) string) (int, error) {

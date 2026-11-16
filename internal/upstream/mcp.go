@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gatewaylab/internal/procutil"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
+
+	"gatewaylab/internal/procutil"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"

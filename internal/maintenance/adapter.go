@@ -2,9 +2,10 @@ package maintenance
 
 import (
 	"fmt"
-	"gatewaylab/internal/jsonutil"
 	"path/filepath"
 	"strings"
+
+	"gatewaylab/internal/jsonutil"
 )
 
 func (m *Maintainer) AdapterPath(t Tool) (string, error) {

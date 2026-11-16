@@ -423,20 +423,20 @@ func ValidateDirAnchor(dir string) error {
 	}
 
 	forbidden := map[string]bool{
-		"/":                         true,
-		"/tmp":                      true,
-		"/private":                  true,
-		"/private/tmp":              true,
-		"/var":                      true,
-		"/private/var":              true,
-		"/Users":                    true,
+		"/":                          true,
+		"/tmp":                       true,
+		"/private":                   true,
+		"/private/tmp":               true,
+		"/var":                       true,
+		"/private/var":               true,
+		"/Users":                     true,
 		"/System/Volumes/Data/Users": true,
-		"/home":                     true,
-		"/etc":                      true,
-		"/private/etc":              true,
-		"/System":                   true,
-		"/Applications":             true,
-		"/Library":                  true,
+		"/home":                      true,
+		"/etc":                       true,
+		"/private/etc":               true,
+		"/System":                    true,
+		"/Applications":              true,
+		"/Library":                   true,
 	}
 
 	for _, h := range homeCandidates() {
