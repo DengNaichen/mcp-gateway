@@ -48,7 +48,7 @@ jobs:
 
       - name: Test channel and release policy
         run: |
-          node --test scripts/release-policy.test.mjs
+          node --test scripts/release-policy.test.mjs scripts/worktree-runtime.test.mjs
           CGO_ENABLED=0 go test -ldflags="-X gatewaylab/internal/buildinfo.channel=stable" ./...
 
       - name: Verify desktop package build (ad-hoc)

@@ -18,3 +18,7 @@ mygo-update.key
 
 # Bare desktop builds are artifacts, never source.
 /gateway-desktop
+
+# Local worktrees and host-managed worktrees
+/.worktrees/
+/.claude/worktrees/

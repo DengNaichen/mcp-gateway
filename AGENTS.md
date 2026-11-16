@@ -1,5 +1,11 @@
 # AGENTS.md
 
+## Git & Worktree
+
+- Git 分支、worktree、提交、PR 与合并后清理遵循 [.agents/skills/git-workflow/SKILL.md](.agents/skills/git-workflow/SKILL.md)。
+- 主 checkout（`~/Developer/mcp-gateway`）保持在干净的 `main`；新开工作通过 [scripts/new-worktree](scripts/new-worktree) 创建在 `<主 checkout>/.worktrees/<branch-slug>`（已由 `.gitignore` 忽略），不在 `~/Developer/` 下平铺创建 worktree 目录。
+- PR 合并后从干净的主 checkout 运行 [scripts/finish-branch](scripts/finish-branch) 完成 worktree 与分支回收。
+
 ## Roster
 
 - 本仓库使用 Roster 管理任务和 Spec；MCP Server 名称为 `roster`，连接方式为远程 HTTP + OAuth，地址为 `https://qietzaqhmforixtpicjd.supabase.co/functions/v1/mcp/w/mcp-gateway/mcp`。
