@@ -91,6 +91,26 @@ type Settings struct {
 	TimeoutSeconds int    `json:"timeout_seconds"`
 }
 
+// ModelProfile represents a saved Decisions model configuration.
+// API keys remain in process memory only and are never persisted to SQLite.
+type ModelProfile struct {
+	ID             string `json:"id"`
+	BaseURL        string `json:"base_url"`
+	Model          string `json:"model"`
+	MaxTools       int    `json:"max_tools"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+	Active         bool   `json:"active"`
+	KeyConfigured  bool   `json:"key_configured"`
+	UpdatedAt      string `json:"updated_at,omitempty"`
+}
+
+// PingModelResult is returned by POST /api/model/ping for direct model connectivity checks.
+type PingModelResult struct {
+	OK         bool   `json:"ok"`
+	Model      string `json:"model"`
+	DurationMS int64  `json:"duration_ms"`
+}
+
 type Registry struct {
 	Servers []Server `json:"servers"`
 	Tools   []Tool   `json:"tools"`

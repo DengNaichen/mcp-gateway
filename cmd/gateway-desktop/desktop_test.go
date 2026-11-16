@@ -533,8 +533,23 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 	if err := tester.Click("访问与路由"); err != nil {
 		t.Fatalf("nav settings: %v", err)
 	}
-	if !tester.HasText("调用身份与写操作护栏矩阵") || !tester.HasText("Decisions 语义路由模型") {
-		t.Fatal("expected settings matrix and model config to render")
+	if !tester.HasText("调用身份与写操作护栏矩阵") || !tester.HasText("Decisions 语义路由模型") || !tester.HasText("已保存的模型") {
+		t.Fatal("expected settings matrix, model config, and saved profiles list to render")
+	}
+	if !tester.HasText("测试连接") || !tester.HasText("保存配置") {
+		t.Fatal("expected inline model ping and save buttons in model card")
+	}
+	if tester.HasText("清除内存中的 API Key") || tester.HasText("仅驻留内存不落盘") {
+		t.Fatal("did not expect legacy clear-key checkbox or memory-only helper text")
+	}
+	if tester.HasText("运行路由校验") {
+		t.Fatal("expected advanced routing policy & verification to be collapsed by default")
+	}
+	if err := tester.Click("▸ 高级设置 · 路由策略与校验"); err != nil {
+		t.Fatalf("expand advanced settings: %v", err)
+	}
+	if !tester.HasText("单次返回上限 (1–12)") || !tester.HasText("运行路由校验") {
+		t.Fatal("expected advanced routing fields after expanding")
 	}
 
 	// 7. Shared-gateway Login screen.

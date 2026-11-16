@@ -18,17 +18,24 @@ type settingsState struct {
 	initialized        bool
 	lastSyncedSettings gateway.Settings
 
-	config        gateway.Settings
-	maxToolsFloat float64
-	timeoutFloat  float64
-	apiKey        string
-	clearKey      bool
-	testIntent    string
-	busyMode      string // "", "save", "test"
-	guardrailBusy bool
-	errTitle      string
-	errDetail     string
-	testResult    *gateway.DiscoverResult
+	editingProfileID string
+	config           gateway.Settings
+	maxToolsFloat    float64
+	timeoutFloat     float64
+	apiKey           string
+	clearKey         bool
+	testIntent       string
+	advancedExpanded bool
+	busyMode         string // "", "save", "test"
+	pingBusy         bool
+	pingResult       *gateway.PingModelResult
+	pingErr          string
+	pingDetail       string
+	profileBusyID    string
+	guardrailBusy    bool
+	errTitle         string
+	errDetail        string
+	testResult       *gateway.DiscoverResult
 }
 
 var (
@@ -67,6 +74,12 @@ func (u *DesktopUI) renderSettings(c *ui.Context) {
 		st.config = state.Settings
 		st.maxToolsFloat = float64(clampInt(state.Settings.MaxTools, 1, 12))
 		st.timeoutFloat = float64(clampInt(state.Settings.TimeoutSeconds, 5, 180))
+		for _, p := range state.Profiles {
+			if p.Active {
+				st.editingProfileID = p.ID
+				break
+			}
+		}
 	} else if st.lastSyncedSettings != state.Settings {
 		wasDirty := settingsIsDirty(st, st.lastSyncedSettings)
 		st.lastSyncedSettings = state.Settings
@@ -74,6 +87,12 @@ func (u *DesktopUI) renderSettings(c *ui.Context) {
 			st.config = state.Settings
 			st.maxToolsFloat = float64(clampInt(state.Settings.MaxTools, 1, 12))
 			st.timeoutFloat = float64(clampInt(state.Settings.TimeoutSeconds, 5, 180))
+			for _, p := range state.Profiles {
+				if p.Active {
+					st.editingProfileID = p.ID
+					break
+				}
+			}
 		}
 	}
 
@@ -84,11 +103,11 @@ func (u *DesktopUI) renderSettings(c *ui.Context) {
 	// Section 1: Actor & Read/Write Guardrail Matrix.
 	u.renderSettingsGuardrailSection(c, st, state)
 
-	// Section 2: Decisions Model Credentials.
-	u.renderSettingsModelSection(c, st, state)
+	// Section 2: Unified Decisions Model & Collapsible Advanced Routing Policy.
+	u.renderSettingsModelSection(c, st, state, dirty)
 
-	// Section 3: Routing Limits & Real-time Verification.
-	u.renderSettingsStrategySection(c, st, state, dirty)
+	// Section 3: Saved Model Profiles List.
+	u.renderSettingsProfilesSection(c, st, state)
 }
 
 func (u *DesktopUI) renderSettingsGuardrailSection(c *ui.Context, st *settingsState, state *Bootstrap) {
@@ -200,17 +219,41 @@ func (u *DesktopUI) renderSettingsGuardrailSection(c *ui.Context, st *settingsSt
 	})
 }
 
-func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState, state *Bootstrap) {
+func editingProfileKeyConfigured(st *settingsState, state *Bootstrap) bool {
+	if st.clearKey {
+		return false
+	}
+	if st.editingProfileID != "" {
+		for _, p := range state.Profiles {
+			if p.ID == st.editingProfileID {
+				return p.KeyConfigured
+			}
+		}
+	}
+	return state.KeyConfigured
+}
+
+func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState, state *Bootstrap, dirty bool) {
 	SailCard(c, func() {
 		SailCardTitle(c, "Decisions 语义路由模型", "", func() {
 			if SailSmallButton(c.Key("set-preset-openai"), "OpenAI 预设").Clicked() {
+				st.editingProfileID = ""
 				st.config.BaseURL = "https://api.openai.com/v1"
 				st.config.Model = "gpt-6-luna"
+				st.clearKey = false
+				st.pingResult = nil
+				st.pingErr = ""
+				st.pingDetail = ""
 				st.testResult = nil
 			}
 			if SailSmallButton(c.Key("set-preset-gemini"), "Gemini 预设").Clicked() {
+				st.editingProfileID = ""
 				st.config.BaseURL = "https://generativelanguage.googleapis.com/v1beta"
 				st.config.Model = "gemini-decision-1"
+				st.clearKey = false
+				st.pingResult = nil
+				st.pingErr = ""
+				st.pingDetail = ""
 				st.testResult = nil
 			}
 		})
@@ -223,6 +266,9 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 					Placeholder("https://api.openai.com/v1").
 					FillWidth().
 					Changed() {
+					st.pingResult = nil
+					st.pingErr = ""
+					st.pingDetail = ""
 					st.testResult = nil
 				}
 			})
@@ -234,23 +280,37 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 					Placeholder("gpt-6-luna / gemini-decision-1").
 					FillWidth().
 					Changed() {
+					st.pingResult = nil
+					st.pingErr = ""
+					st.pingDetail = ""
 					st.testResult = nil
 				}
 			})
 		})
 
+		keyConfigured := editingProfileKeyConfigured(st, state)
 		ui.Column(c).FillWidth().Gap(6).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 				ui.Text(c, "API Key").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-				if state.KeyConfigured {
-					SailQuietStatus(c, "已配置", SailSuccessInk, SailInkStrong)
-				} else {
-					SailBadgeDot(c, "未配置", ToneWarning)
-				}
+				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+					if keyConfigured {
+						SailQuietStatus(c, "已配置", SailSuccessInk, SailInkStrong)
+						if SailSmallButton(c.Key("set-clear-key-inline"), "清除").Clicked() {
+							st.clearKey = true
+							st.apiKey = ""
+							st.pingResult = nil
+							st.pingErr = ""
+							st.pingDetail = ""
+							st.testResult = nil
+						}
+					} else {
+						SailQuietStatus(c, "未配置", SailInkMuted, SailInkMuted)
+					}
+				})
 			})
 
 			placeholder := "粘贴 API Key"
-			if state.KeyConfigured {
+			if keyConfigured {
 				placeholder = "留空保持当前 Key"
 			}
 			if ui.TextInput(c.Key("set-api-key"), &st.apiKey).
@@ -260,133 +320,362 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 				FillWidth().
 				Changed() {
 				st.clearKey = false
+				st.pingResult = nil
+				st.pingErr = ""
+				st.pingDetail = ""
 				st.testResult = nil
 			}
-			// Counter-intuitive risk hint (<= 25 chars): API Key lives only in process memory.
-			ui.Text(c, "仅驻留内存不落盘，或用环境变量注入").
-				FontSize(11.5).
-				TextColor(SailInkMuted)
+		})
 
-			if state.KeyConfigured {
-				if ui.Checkbox(c.Key("set-clear-key"), &st.clearKey, "清除内存中的 API Key").Changed() {
-					if st.clearKey {
-						st.apiKey = ""
-					}
-					st.testResult = nil
-				}
+		// Collapsible advanced routing policy & end-to-end verification.
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+			arrow := "▸"
+			if st.advancedExpanded {
+				arrow = "▾"
 			}
-		})
-	})
-}
-
-func (u *DesktopUI) renderSettingsStrategySection(c *ui.Context, st *settingsState, state *Bootstrap, dirty bool) {
-	SailCard(c, func() {
-		SailCardTitle(c, "路由策略与校验", "", nil)
-
-		ui.Row(c).FillWidth().Gap(16).Children(func() {
-			ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
-				ui.Text(c, "单次返回上限 (1–12)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-				if ui.NumberInput(c.Key("set-max-tools"), &st.maxToolsFloat, 1, 12, 1).
-					Label("单次返回工具上限").
-					Width(200).
-					Changed() {
-					st.config.MaxTools = clampInt(int(math.Round(st.maxToolsFloat)), 1, 12)
-					st.testResult = nil
-				}
-			})
-
-			ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
-				ui.Text(c, "请求超时 (5–180 秒)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-				if ui.NumberInput(c.Key("set-timeout"), &st.timeoutFloat, 5, 180, 5).
-					Label("模型请求超时").
-					Width(200).
-					Changed() {
-					st.config.TimeoutSeconds = clampInt(int(math.Round(st.timeoutFloat)), 5, 180)
-					st.testResult = nil
-				}
-			})
+			if SailSmallButton(c.Key("set-toggle-advanced"), fmt.Sprintf("%s 高级设置 · 路由策略与校验", arrow)).Clicked() {
+				st.advancedExpanded = !st.advancedExpanded
+			}
+			ui.Textf(c, "上限 %d · 超时 %ds", st.config.MaxTools, st.config.TimeoutSeconds).
+				Font("monospace").FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted)
 		})
 
-		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			ui.Text(c, "校验意图（可选）").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-			ui.TextInput(c.Key("set-test-intent"), &st.testIntent).
-				Placeholder("留空自动生成").
-				FillWidth()
-		})
+		if st.advancedExpanded {
+			SailSubtleCard(c, func() {
+				ui.Row(c).FillWidth().Gap(16).Children(func() {
+					ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
+						ui.Text(c, "单次返回上限 (1–12)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						if ui.NumberInput(c.Key("set-max-tools"), &st.maxToolsFloat, 1, 12, 1).
+							Label("单次返回工具上限").
+							Width(200).
+							Changed() {
+							st.config.MaxTools = clampInt(int(math.Round(st.maxToolsFloat)), 1, 12)
+							st.testResult = nil
+						}
+					})
 
-		if !state.Setup.ToolsReady {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
-				SailQuietStatus(c, "尚未启用真实工具，暂不可运行路由校验", SailWarningInk, SailInkMuted)
-				if SailSmallButton(c.Key("set-goto-services"), "前往上游服务").Clicked() {
-					u.Navigate(ViewServices)
+					ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
+						ui.Text(c, "请求超时 (5–180 秒)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						if ui.NumberInput(c.Key("set-timeout"), &st.timeoutFloat, 5, 180, 5).
+							Label("模型请求超时").
+							Width(200).
+							Changed() {
+							st.config.TimeoutSeconds = clampInt(int(math.Round(st.timeoutFloat)), 5, 180)
+							st.testResult = nil
+						}
+					})
+				})
+
+				ui.Column(c).FillWidth().Gap(6).Children(func() {
+					ui.Text(c, "校验意图（可选）").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+					ui.TextInput(c.Key("set-test-intent"), &st.testIntent).
+						Placeholder("留空自动生成").
+						FillWidth()
+				})
+
+				if !state.Setup.ToolsReady {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
+						SailQuietStatus(c, "尚未启用真实工具，暂不可运行路由校验", SailWarningInk, SailInkMuted)
+						if SailSmallButton(c.Key("set-goto-services"), "前往上游服务").Clicked() {
+							u.Navigate(ViewServices)
+						}
+					})
 				}
+
+				modelCheck := state.Setup.ModelCheck
+				if !dirty && modelCheck != nil && modelCheck.Status == "error" {
+					SailAlertBox(c, ToneDanger, fmt.Sprintf("%s（%s）", modelCheck.Message, FormatTime(modelCheck.CheckedAt)), modelCheck.Detail)
+				} else if !dirty && modelCheck != nil {
+					dotCol := SailSuccessInk
+					lbl := fmt.Sprintf("%s · %s", modelCheck.Message, FormatTime(modelCheck.CheckedAt))
+					if modelCheck.Stale {
+						dotCol = SailWarningInk
+						lbl = fmt.Sprintf("配置已变更，建议重新校验 · 上次 %s", FormatTime(modelCheck.CheckedAt))
+					}
+					SailQuietStatus(c, lbl, dotCol, SailInkMuted)
+				}
+
+				if res := st.testResult; res != nil {
+					SailCard(c, func() {
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+							if res.Status == "selected" {
+								SailQuietStatus(c, "路由校验通过 · "+res.Status, SailSuccessInk, SailInkStrong)
+							} else {
+								SailBadge(c, res.Status, ToneWarning)
+							}
+							ui.Textf(c, "%d ms", res.DurationMS).Font("monospace").FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted)
+						})
+						if res.Summary != "" {
+							ui.Text(c, res.Summary).FontSize(12.5).TextColor(SailInkMuted)
+						}
+						if len(res.Tools) > 0 {
+							ui.Column(c).FillWidth().Gap(4).Margin(4, 0, 0, 0).Children(func() {
+								for _, t := range res.Tools {
+									ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Start).Children(func() {
+										ui.Text(c, t.ID).Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+										ui.Text(c, "— "+t.Reason).Grow(1).MinWidth(0).FontSize(12).TextColor(SailInkMuted)
+									})
+								}
+							})
+						}
+					})
+				}
+
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Children(func() {
+					testLabel := "运行路由校验"
+					if st.busyMode == "test" {
+						testLabel = "校验中…"
+					}
+					if ui.Button(c.Key("set-save-test"), testLabel).
+						Disabled(st.busyMode != "" || !state.Setup.ToolsReady).
+						Clicked() {
+						u.submitSettings(st, true)
+					}
+				})
 			})
 		}
 
 		if st.errTitle != "" {
 			SailAlertBox(c, ToneDanger, st.errTitle, st.errDetail)
 		}
-
-		modelCheck := state.Setup.ModelCheck
-		if !dirty && modelCheck != nil && modelCheck.Status == "error" {
-			SailAlertBox(c, ToneDanger, fmt.Sprintf("%s（%s）", modelCheck.Message, FormatTime(modelCheck.CheckedAt)), modelCheck.Detail)
-		} else if !dirty && modelCheck != nil {
-			dotCol := SailSuccessInk
-			lbl := fmt.Sprintf("%s · %s", modelCheck.Message, FormatTime(modelCheck.CheckedAt))
-			if modelCheck.Stale {
-				dotCol = SailWarningInk
-				lbl = fmt.Sprintf("配置已变更，建议重新校验 · 上次 %s", FormatTime(modelCheck.CheckedAt))
-			}
-			SailQuietStatus(c, lbl, dotCol, SailInkMuted)
+		if st.pingErr != "" && st.pingDetail != "" {
+			SailAlertBox(c, ToneDanger, st.pingErr, st.pingDetail)
 		}
 
-		if res := st.testResult; res != nil {
-			SailSubtleCard(c, func() {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-					if res.Status == "selected" {
-						SailQuietStatus(c, "校验通过 · "+res.Status, SailSuccessInk, SailInkStrong)
-					} else {
-						SailBadge(c, res.Status, ToneWarning)
-					}
-					ui.Textf(c, "%d ms", res.DurationMS).Font("monospace").FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted)
-				})
-				if res.Summary != "" {
-					ui.Text(c, res.Summary).FontSize(12.5).TextColor(SailInkMuted)
-				}
-				if len(res.Tools) > 0 {
-					ui.Column(c).FillWidth().Gap(4).Margin(4, 0, 0, 0).Children(func() {
-						for _, t := range res.Tools {
-							ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Start).Children(func() {
-								ui.Text(c, t.ID).Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-								ui.Text(c, "— "+t.Reason).Grow(1).MinWidth(0).FontSize(12).TextColor(SailInkMuted)
-							})
-						}
-					})
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
+			ui.Row(c).Grow(1).MinWidth(0).AlignItems(ui.Center).Children(func() {
+				switch {
+				case st.pingBusy:
+					SailQuietStatus(c, "正在测试模型连接…", SailWarningInk, SailInkMuted)
+				case st.pingResult != nil:
+					SailQuietStatus(c, fmt.Sprintf("模型测试通过 · %s 已响应 · %d ms", st.pingResult.Model, st.pingResult.DurationMS), SailSuccessInk, SailSuccessInk)
+				case st.pingErr != "":
+					SailQuietStatus(c, st.pingErr, SailDangerInk, SailDangerInk)
+				default:
+					SailQuietStatus(c, "点击「测试连接」验证模型可用性", SailInkMuted, SailInkMuted)
 				}
 			})
+
+			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+				pingLabel := "测试连接"
+				if st.pingBusy {
+					pingLabel = "测试中…"
+				}
+				if ui.Button(c.Key("set-ping-model"), pingLabel).Disabled(st.pingBusy || st.busyMode != "").Clicked() {
+					u.pingSettingsModel(st)
+				}
+
+				saveLabel := "保存配置"
+				if st.busyMode == "save" {
+					saveLabel = "保存中…"
+				}
+				if ui.PrimaryButton(c.Key("set-save-only"), saveLabel).Disabled(st.busyMode != "" || st.pingBusy).Clicked() {
+					u.submitSettings(st, false)
+				}
+			})
+		})
+	})
+}
+
+func (u *DesktopUI) renderSettingsProfilesSection(c *ui.Context, st *settingsState, state *Bootstrap) {
+	profiles := state.Profiles
+	SailFlushCard(c, func() {
+		SailListCardHeader(c, "已保存的模型", fmt.Sprintf("%d 个配置", len(profiles)), nil)
+		if len(profiles) == 0 {
+			SailEmptyState(c, "暂无已保存模型", "在上方填写模型信息并点击「保存配置」即可添加到列表。", "", nil)
+			return
 		}
-
-		ui.Box(c).FillWidth().Height(1).Background(SailDivider)
-
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			saveLabel := "仅保存配置"
-			if st.busyMode == "save" {
-				saveLabel = "保存中…"
+		for i, p := range profiles {
+			if i > 0 {
+				ui.Box(c).FillWidth().Height(1).Background(SailDivider)
 			}
-			if ui.Button(c.Key("set-save-only"), saveLabel).Disabled(st.busyMode != "").Clicked() {
-				u.submitSettings(st, false)
+			prof := p
+			isEditing := prof.ID == st.editingProfileID
+			bg := SailBgCanvas
+			if isEditing {
+				bg = SailBgSubtle
 			}
+			ui.Row(c).FillWidth().Padding(14, 20).Background(bg).AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(16).Children(func() {
+				ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+						ui.Text(c, prof.Model).Font("monospace").FontSize(13).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+						if prof.Active {
+							SailQuietStatus(c, "使用中", SailSuccessInk, SailSuccessInk)
+						} else {
+							SailQuietStatus(c, "备用", SailInkMuted, SailInkMuted)
+						}
+					})
+					ui.Text(c, prof.BaseURL).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
+				})
 
-			testLabel := "保存并运行路由校验"
-			if st.busyMode == "test" {
-				testLabel = "校验中…"
+				keyTxt := "未配置 Key"
+				if prof.KeyConfigured {
+					keyTxt = "Key 已配置"
+				}
+				ui.Textf(c, "%s · 上限 %d · %ds", keyTxt, prof.MaxTools, prof.TimeoutSeconds).
+					Font("monospace").FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted).SingleLine()
+
+				ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+					busy := st.profileBusyID == prof.ID
+					if !prof.Active {
+						if SailSmallButton(c.Key("set-prof-activate-"+prof.ID), "设为当前").Disabled(busy).Clicked() {
+							u.activateProfile(st, prof.ID)
+						}
+					}
+					editLabel := "编辑"
+					if isEditing {
+						editLabel = "编辑中"
+					}
+					if SailSmallButton(c.Key("set-prof-edit-"+prof.ID), editLabel).Disabled(busy).Clicked() {
+						st.editingProfileID = prof.ID
+						st.config = gateway.Settings{
+							BaseURL:        prof.BaseURL,
+							Model:          prof.Model,
+							MaxTools:       prof.MaxTools,
+							TimeoutSeconds: prof.TimeoutSeconds,
+						}
+						st.maxToolsFloat = float64(clampInt(prof.MaxTools, 1, 12))
+						st.timeoutFloat = float64(clampInt(prof.TimeoutSeconds, 5, 180))
+						st.apiKey = ""
+						st.clearKey = false
+						st.pingResult = nil
+						st.pingErr = ""
+						st.pingDetail = ""
+						st.errTitle = ""
+						st.errDetail = ""
+					}
+					if len(profiles) > 1 {
+						if SailDangerButton(c.Key("set-prof-del-"+prof.ID), "删除").Disabled(busy).Clicked() {
+							u.deleteProfile(st, prof.ID)
+						}
+					}
+				})
+			})
+		}
+	})
+}
+
+func (u *DesktopUI) pingSettingsModel(st *settingsState) {
+	if st.pingBusy || u.Client == nil {
+		return
+	}
+	cfg := st.config
+	cfg.BaseURL = strings.TrimSpace(cfg.BaseURL)
+	cfg.Model = strings.TrimSpace(cfg.Model)
+	cfg.TimeoutSeconds = clampInt(int(math.Round(st.timeoutFloat)), 5, 180)
+	if cfg.BaseURL == "" || cfg.Model == "" {
+		st.pingResult = nil
+		st.pingErr = "请填写 Base URL 与 Model ID 后再测试连接"
+		st.pingDetail = ""
+		return
+	}
+	st.pingBusy = true
+	st.pingResult = nil
+	st.pingErr = ""
+	st.pingDetail = ""
+
+	profileID := st.editingProfileID
+	apiKey := st.apiKey
+	clearKey := st.clearKey
+
+	u.RunAsync(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.TimeoutSeconds+5)*time.Second)
+		defer cancel()
+		res, err := u.Client.PingModel(ctx, cfg, profileID, apiKey, clearKey)
+		if err != nil {
+			if IsUnauthorized(err) {
+				u.updateUI(func() { st.pingBusy = false })
+				return err
 			}
-			if ui.PrimaryButton(c.Key("set-save-test"), testLabel).
-				Disabled(st.busyMode != "" || !state.Setup.ToolsReady).
-				Clicked() {
-				u.submitSettings(st, true)
+			title, detail := splitAPIError(err)
+			u.updateUI(func() {
+				st.pingBusy = false
+				st.pingErr = title
+				st.pingDetail = detail
+			})
+			return nil
+		}
+		u.updateUI(func() {
+			st.pingBusy = false
+			st.pingResult = &res
+		})
+		return nil
+	})
+}
+
+func (u *DesktopUI) activateProfile(st *settingsState, id string) {
+	if st.profileBusyID != "" || u.Client == nil {
+		return
+	}
+	st.profileBusyID = id
+	u.RunAsync(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		prof, err := u.Client.ActivateModelProfile(ctx, id)
+		if err != nil {
+			u.updateUI(func() { st.profileBusyID = "" })
+			return err
+		}
+		_ = u.RefreshSync()
+		u.updateUI(func() {
+			st.profileBusyID = ""
+			st.editingProfileID = prof.ID
+			st.config = gateway.Settings{
+				BaseURL:        prof.BaseURL,
+				Model:          prof.Model,
+				MaxTools:       prof.MaxTools,
+				TimeoutSeconds: prof.TimeoutSeconds,
+			}
+			st.maxToolsFloat = float64(clampInt(prof.MaxTools, 1, 12))
+			st.timeoutFloat = float64(clampInt(prof.TimeoutSeconds, 5, 180))
+			st.apiKey = ""
+			st.clearKey = false
+			st.pingResult = nil
+			st.pingErr = ""
+			st.pingDetail = ""
+		})
+		u.Notify("已切换当前模型：" + prof.Model)
+		return nil
+	})
+}
+
+func (u *DesktopUI) deleteProfile(st *settingsState, id string) {
+	if st.profileBusyID != "" || u.Client == nil {
+		return
+	}
+	st.profileBusyID = id
+	u.RunAsync(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := u.Client.DeleteModelProfile(ctx, id); err != nil {
+			u.updateUI(func() { st.profileBusyID = "" })
+			return err
+		}
+		_ = u.RefreshSync()
+		u.updateUI(func() {
+			st.profileBusyID = ""
+			if st.editingProfileID == id {
+				st.editingProfileID = ""
+				if u.State != nil {
+					for _, p := range u.State.Profiles {
+						if p.Active {
+							st.editingProfileID = p.ID
+							st.config = gateway.Settings{
+								BaseURL:        p.BaseURL,
+								Model:          p.Model,
+								MaxTools:       p.MaxTools,
+								TimeoutSeconds: p.TimeoutSeconds,
+							}
+							st.maxToolsFloat = float64(clampInt(p.MaxTools, 1, 12))
+							st.timeoutFloat = float64(clampInt(p.TimeoutSeconds, 5, 180))
+							break
+						}
+					}
+				}
 			}
 		})
+		u.Notify("已删除模型配置")
+		return nil
 	})
 }
 
@@ -416,6 +705,13 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 	st.errDetail = ""
 	st.testResult = nil
 
+	profile := gateway.ModelProfile{
+		ID:             st.editingProfileID,
+		BaseURL:        cfg.BaseURL,
+		Model:          cfg.Model,
+		MaxTools:       cfg.MaxTools,
+		TimeoutSeconds: cfg.TimeoutSeconds,
+	}
 	apiKey := st.apiKey
 	clearKey := st.clearKey
 	testIntent := st.testIntent
@@ -424,34 +720,8 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.TimeoutSeconds+20)*time.Second)
 		defer cancel()
 
-		if runTest {
-			res, err := u.Client.TestModel(ctx, cfg, apiKey, clearKey, testIntent)
-			if err != nil {
-				if IsUnauthorized(err) {
-					u.updateUI(func() { st.busyMode = "" })
-					return err
-				}
-				_ = u.RefreshSync()
-				title, detail := splitAPIError(err)
-				u.updateUI(func() {
-					st.busyMode = ""
-					st.errTitle = title
-					st.errDetail = detail
-				})
-				return nil
-			}
-			_ = u.RefreshSync()
-			u.updateUI(func() {
-				st.busyMode = ""
-				st.apiKey = ""
-				st.clearKey = false
-				st.testResult = &res
-			})
-			u.Notify("路由配置已保存并通过实时校验")
-			return nil
-		}
-
-		if err := u.Client.SaveSettings(ctx, cfg, apiKey, clearKey); err != nil {
+		saved, err := u.Client.SaveModelProfile(ctx, profile, apiKey, clearKey)
+		if err != nil {
 			if IsUnauthorized(err) {
 				u.updateUI(func() { st.busyMode = "" })
 				return err
@@ -465,13 +735,45 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 			return nil
 		}
 
+		if runTest {
+			res, err := u.Client.TestModel(ctx, cfg, "", false, testIntent)
+			if err != nil {
+				if IsUnauthorized(err) {
+					u.updateUI(func() { st.busyMode = "" })
+					return err
+				}
+				_ = u.RefreshSync()
+				title, detail := splitAPIError(err)
+				u.updateUI(func() {
+					st.busyMode = ""
+					st.editingProfileID = saved.ID
+					st.apiKey = ""
+					st.clearKey = false
+					st.errTitle = title
+					st.errDetail = detail
+				})
+				return nil
+			}
+			_ = u.RefreshSync()
+			u.updateUI(func() {
+				st.busyMode = ""
+				st.editingProfileID = saved.ID
+				st.apiKey = ""
+				st.clearKey = false
+				st.testResult = &res
+			})
+			u.Notify("路由配置已保存并通过实时校验")
+			return nil
+		}
+
 		_ = u.RefreshSync()
 		u.updateUI(func() {
 			st.busyMode = ""
+			st.editingProfileID = saved.ID
 			st.apiKey = ""
 			st.clearKey = false
 		})
-		u.Notify("路由配置已保存")
+		u.Notify("模型配置已保存并设为当前模型")
 		return nil
 	})
 }
