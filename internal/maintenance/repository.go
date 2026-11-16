@@ -3,17 +3,18 @@ package maintenance
 import (
 	"context"
 	"fmt"
+	"gatewaylab/internal/jsonutil"
+	"gatewaylab/internal/maintenance/sandbox"
+	"gatewaylab/internal/secrets"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"gatewaylab/internal/maintenance/sandbox"
 )
 
 var branchName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
-var secretEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 var gitSHA = regexp.MustCompile(`^[0-9a-fA-F]{40}([0-9a-fA-F]{24})?$`)
 
 func validateRepository(r RepositorySource) error {
@@ -42,7 +43,7 @@ func validateRepository(r RepositorySource) error {
 			return invalid("仓库文件必须是不含 .. 的相对路径")
 		}
 	}
-	if r.EventsEnabled && (r.Project == "" || !secretEnvName.MatchString(r.WebhookSecretEnv)) {
+	if r.EventsEnabled && (r.Project == "" || !secrets.ValidEnvName(r.WebhookSecretEnv)) {
 		return invalid("开启仓库事件需要 project 和 webhook 密钥环境变量名称")
 	}
 	return nil
@@ -52,7 +53,7 @@ func (m *Maintainer) repositoryDocuments(ctx context.Context, r *MaintenanceRun)
 	if source == nil {
 		return nil, nil
 	}
-	dir, err := filepath.Abs(filepath.Join(m.dir, "maintenance", "repositories", maintenanceDigest(source.URL)[:24]))
+	dir, err := filepath.Abs(filepath.Join(m.dir, "maintenance", "repositories", jsonutil.MustDigest(source.URL)[:24]))
 	if err != nil {
 		return nil, fmt.Errorf("resolve repository cache: %w", err)
 	}

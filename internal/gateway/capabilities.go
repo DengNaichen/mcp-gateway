@@ -1,19 +1,16 @@
 package gateway
 
 import (
-	"gatewaylab/internal/fault"
-
 	"context"
+	"slices"
+
+	"gatewaylab/internal/fault"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/routing"
-	"slices"
 )
 
-func capability(t registry.Tool) routing.Capability             { return routing.Summarize(t) }
-func summarizeTools(tools []registry.Tool) []routing.Capability { return routing.SummarizeTools(tools) }
-
 func (g *Gateway) ToolSchema(ctx context.Context, id, actor string) (registry.Tool, error) {
-	if err := g.checkExecutionScope(ctx); err != nil {
+	if err := g.scope.CheckExecutionScope(ctx); err != nil {
 		return registry.Tool{}, err
 	}
 	reg := g.Snapshot()
@@ -50,7 +47,7 @@ func (g *Gateway) Catalog(ctx context.Context, actor string, includeDemo bool) C
 		count := 0
 		for _, tool := range reg.Tools {
 			if tool.ServerID == server.ID && g.authorizedTool(ctx, tool, actor) {
-				out.Tools = append(out.Tools, capability(tool))
+				out.Tools = append(out.Tools, routing.Summarize(tool))
 				count++
 			}
 		}

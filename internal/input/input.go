@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gatewaylab/internal/fault"
 	"io"
 	"os"
 )
@@ -34,10 +33,10 @@ func ReadFileBounded(path string, limit int64) ([]byte, error) {
 	}
 	return b, nil
 }
-func EnsureJSONEnd(dec *json.Decoder) error {
+func EnsureJSONEnd(dec *json.Decoder, invalid func(string) error) error {
 	var more any
 	if err := dec.Decode(&more); !errors.Is(err, io.EOF) {
-		return fault.New(fault.Invalid, "产物必须是单个 JSON 对象", nil)
+		return invalid("产物必须是单个 JSON 对象")
 	}
 	return nil
 }

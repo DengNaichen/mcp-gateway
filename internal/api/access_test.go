@@ -3,9 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"gatewaylab/internal/access"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/registry"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -13,6 +10,10 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"gatewaylab/internal/access"
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/registry"
 )
 
 const adminTestToken = "admin-test-token-01234567890123456789"
@@ -39,7 +40,7 @@ func sharedGateway(t *testing.T) *gateway.Gateway {
 		respond(w, 200, map[string]any{"status": "ok", "token": "private", "email": "person@example.com", "logs": []any{map[string]any{"user": map[string]any{"ssn": "123-45-6789"}}}})
 	}))
 	t.Cleanup(upstream.Close)
-	if err := g.SaveServer(registry.Server{ID: "service", Name: "Service", Kind: "http", Endpoint: upstream.URL, Enabled: true, RedactEmails: true, RedactFields: []string{"logs.user.ssn"}}); err != nil {
+	if err := g.Registry().SaveServer(registry.Server{ID: "service", Name: "Service", Kind: "http", Endpoint: upstream.URL, Enabled: true, RedactEmails: true, RedactFields: []string{"logs.user.ssn"}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"read", "write"} {
@@ -47,7 +48,7 @@ func sharedGateway(t *testing.T) *gateway.Gateway {
 		if name == "write" {
 			tool.Method = "POST"
 		}
-		if err := g.SaveTool(tool); err != nil {
+		if err := g.Registry().SaveTool(tool); err != nil {
 			t.Fatal(err)
 		}
 	}

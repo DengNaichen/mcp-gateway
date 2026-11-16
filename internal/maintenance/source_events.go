@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"regexp"
@@ -166,7 +167,7 @@ func (m *Maintainer) dispatchSignals() error {
 			latest[signal.ServerID] = signal
 		}
 	}
-	for _, id := range sortedKeys(latest) {
+	for _, id := range slices.Sorted(maps.Keys(latest)) {
 		source, ok := m.sources[id]
 		if !ok || source.Repository == nil || !source.Repository.EventsEnabled {
 			if err := store.MaintenanceDeliveries[sourceSignal](m.db).Assign(id, "disabled"); err != nil {

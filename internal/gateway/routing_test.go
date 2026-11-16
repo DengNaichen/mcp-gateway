@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"gatewaylab/internal/model"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/routing"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/routing"
 )
 
 const systemOneMaxQuestions = model.SystemOneMaxQuestions

@@ -7,13 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gatewaylab/internal/procutil"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 
+	"gatewaylab/internal/input"
+	"gatewaylab/internal/procutil"
 	"gatewaylab/internal/registry"
 )
 
@@ -197,11 +198,11 @@ func CallAdapterFile(ctx context.Context, policy Policy, s registry.Server, t re
 	for k, v := range s.Env {
 		env[k] = os.ExpandEnv(v)
 	}
-	input, err := json.Marshal(map[string]any{"tool": t.Name, "arguments": args, "endpoint": policy.AdapterEndpoint(s.Endpoint), "headers": headers, "env": env})
+	payload, err := json.Marshal(map[string]any{"tool": t.Name, "arguments": args, "endpoint": policy.AdapterEndpoint(s.Endpoint), "headers": headers, "env": env})
 	if err != nil {
 		return nil, fmt.Errorf("encode adapter input: %w", err)
 	}
-	b, err := policy.RunNode(ctx, filepath.Dir(p), []string{p}, input, true, 8<<20)
+	b, err := policy.RunNode(ctx, filepath.Dir(p), []string{p}, payload, true, 8<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +211,7 @@ func CallAdapterFile(ctx context.Context, policy Policy, s registry.Server, t re
 	if err := dec.Decode(&out); err != nil {
 		return nil, fmt.Errorf("decode adapter result: %w", err)
 	}
-	if err := ensureJSONEnd(dec); err != nil {
+	if err := input.EnsureJSONEnd(dec, invalid); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -222,12 +223,4 @@ var _ io.Writer = (*limitedOutput)(nil)
 type PiOptions struct {
 	Provider string
 	Model    string
-}
-
-func ensureJSONEnd(dec *json.Decoder) error {
-	var more any
-	if err := dec.Decode(&more); !errors.Is(err, io.EOF) {
-		return invalid("产物必须是单个 JSON 对象")
-	}
-	return nil
 }

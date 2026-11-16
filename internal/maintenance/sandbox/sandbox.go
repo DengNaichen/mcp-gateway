@@ -3,6 +3,8 @@ package sandbox
 import (
 	"context"
 	"crypto/rand"
+	"gatewaylab/internal/secrets"
+
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -13,7 +15,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -199,7 +200,7 @@ func piEnvironment(extra map[string]string) []string {
 	keys = append(keys, strings.Split(os.Getenv("GATEWAY_PI_ENV"), ",")...)
 	for _, key := range keys {
 		key = strings.TrimSpace(key)
-		if secretEnvName.MatchString(key) {
+		if secrets.ValidEnvName(key) {
 			if value, ok := os.LookupEnv(key); ok {
 				extra[key] = value
 			}
@@ -215,5 +216,3 @@ func loopbackHost(host string) bool {
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
 }
-
-var secretEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)

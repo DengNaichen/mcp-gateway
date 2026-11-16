@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/scope"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,6 +11,9 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/scope"
 )
 
 type scopeAgentMeta struct {

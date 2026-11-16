@@ -2,10 +2,11 @@ package api
 
 import (
 	"encoding/json"
-	"gatewaylab/internal/gateway"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/gateway"
 )
 
 // Exercise the actual transport adapters after domain errors lost HTTP status fields.

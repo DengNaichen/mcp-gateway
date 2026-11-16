@@ -1,8 +1,9 @@
 package api
 
 import (
-	"gatewaylab/internal/gateway"
 	"net/http"
+
+	"gatewaylab/internal/gateway"
 )
 
 type server struct{ *gateway.Gateway }

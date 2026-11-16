@@ -1,8 +1,9 @@
 package api
 
 import (
-	"gatewaylab/internal/input"
 	"net/http"
+
+	"gatewaylab/internal/input"
 )
 
 func (g *server) registerSourceEvents(mux *http.ServeMux) {

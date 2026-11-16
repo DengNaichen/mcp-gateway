@@ -2,9 +2,10 @@ package api
 
 import (
 	"context"
-	"gatewaylab/internal/gateway"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/gateway"
 )
 
 func TestSummaryDiscoveryAndSchemaAuthorization(t *testing.T) {

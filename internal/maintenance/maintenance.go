@@ -2,9 +2,7 @@ package maintenance
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"gatewaylab/internal/jsonutil"
 	"gatewaylab/internal/maintenance/sandbox"
 	"gatewaylab/internal/store"
 )
@@ -259,16 +258,9 @@ func serverTools(reg Registry, id string) []Tool {
 	slices.SortFunc(out, func(a, b Tool) int { return strings.Compare(a.ID, b.ID) })
 	return out
 }
-func maintenanceDigest(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic("non-JSON maintenance value: " + err.Error())
-	}
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
-}
+
 func catalogDigest(s Server, ts []Tool) string {
-	return maintenanceDigest(struct {
+	return jsonutil.MustDigest(struct {
 		Server Server
 		Tools  []Tool
 	}{s, ts})

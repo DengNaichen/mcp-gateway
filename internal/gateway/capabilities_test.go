@@ -3,19 +3,21 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"gatewaylab/internal/model"
-	"gatewaylab/internal/registry"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/routing"
 )
 
 func TestRoutingModelReceivesSummariesOnly(t *testing.T) {
 	schema := objectSchema(map[string]any{"payload": map[string]any{"type": "string", "description": strings.Repeat("large schema ", 5000)}})
 	candidates := []registry.Tool{{ID: "s.large", ServerID: "s", Name: "large", Description: "Inspect payload", InputSchema: schema, Adapter: "private.mjs", Revision: "private"}}
 	full := mustJSON(t, candidates)
-	small := mustJSON(t, summarizeTools(candidates))
+	small := mustJSON(t, routing.SummarizeTools(candidates))
 	if len(small)*20 >= len(full) {
 		t.Fatal("summary did not materially reduce payload")
 	}

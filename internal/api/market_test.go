@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/market"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/market"
 )
 
 func TestOAuthBrowserSignInAndImportMCP(t *testing.T) {

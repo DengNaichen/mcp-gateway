@@ -3,12 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"gatewaylab/internal/activity"
-	"gatewaylab/internal/clientconfig"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/model"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/scope"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +14,13 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/activity"
+	"gatewaylab/internal/clientconfig"
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/scope"
 )
 
 func TestScopeAPIClientContract(t *testing.T) {

@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/activity"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/scope"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -14,6 +11,10 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/activity"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/scope"
 )
 
 const logsDefaultTimelineLimit = 150

@@ -3,12 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"gatewaylab/internal/activity"
-	"gatewaylab/internal/buildinfo"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/market"
-	"gatewaylab/internal/model"
-	"gatewaylab/internal/registry"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +13,13 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/activity"
+	"gatewaylab/internal/buildinfo"
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/market"
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
 )
 
 func TestParseDesktopFlagsAndPSNFiltering(t *testing.T) {

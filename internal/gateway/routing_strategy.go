@@ -2,9 +2,10 @@ package gateway
 
 import (
 	"context"
+	"os"
+
 	"gatewaylab/internal/model"
 	"gatewaylab/internal/routing"
-	"os"
 )
 
 const routingProtocol = routing.Protocol

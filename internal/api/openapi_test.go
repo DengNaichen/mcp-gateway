@@ -3,9 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"gatewaylab/internal/input"
-	"gatewaylab/internal/openapi"
-	"gatewaylab/internal/registry"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"gatewaylab/internal/input"
+	"gatewaylab/internal/openapi"
+	"gatewaylab/internal/registry"
 	upstreamclient "gatewaylab/internal/upstream"
 )
 

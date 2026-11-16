@@ -2,12 +2,13 @@ package api
 
 import (
 	"encoding/json"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/routing"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/routing"
 )
 
 // useKeywordModel points the gateway at a local Decisions server that rates a
@@ -83,7 +84,7 @@ func useKeywordModel(t *testing.T, g *gateway.Gateway) {
 		respond(w, 200, decisionFixture(status, probabilities...))
 	}))
 	t.Cleanup(server.Close)
-	settings, _ := g.Config()
+	settings, _ := g.Model().Config()
 	settings.BaseURL, settings.Model = server.URL, "fixture"
 	if err := g.SaveSettings(settings, "", false); err != nil {
 		t.Fatal(err)

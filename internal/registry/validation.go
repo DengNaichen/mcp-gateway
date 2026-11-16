@@ -28,7 +28,7 @@ func (e *ValidationError) Unwrap() error        { return e.Cause }
 func (e *ValidationError) Is(target error) bool { return target == ErrInvalid }
 func invalid(message string) error              { return &ValidationError{Message: message} }
 
-var pathVariable = regexp.MustCompile(`\{([^{}]+)\}`)
+var PathVariable = regexp.MustCompile(`\{([^{}]+)\}`)
 
 func CompileSchema(schema map[string]any) (*jsonschema.Schema, error) {
 	if schema == nil {
@@ -89,7 +89,7 @@ func ValidateMapping(t Tool) error {
 		}
 		seen[p.In+":"+p.Name] = true
 	}
-	for _, match := range pathVariable.FindAllStringSubmatch(t.Path, -1) {
+	for _, match := range PathVariable.FindAllStringSubmatch(t.Path, -1) {
 		if !seen["path:"+match[1]] {
 			return invalid("HTTP 路径模板缺少映射")
 		}

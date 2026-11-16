@@ -2,6 +2,7 @@ package maintenance
 
 import (
 	"fmt"
+	"gatewaylab/internal/jsonutil"
 	"path/filepath"
 	"strings"
 )
@@ -22,7 +23,7 @@ func (m *Maintainer) AdapterPath(t Tool) (string, error) {
 	run, ok := m.runs[t.Revision]
 	want := run.Artifacts[t.Adapter]
 	m.mu.Unlock()
-	if !ok || run.ServerID != t.ServerID || want == "" || maintenanceDigest(string(b)) != want {
+	if !ok || run.ServerID != t.ServerID || want == "" || jsonutil.MustDigest(string(b)) != want {
 		return "", invalid("适配器文件与已验证版本不一致")
 	}
 	return filepath.Join(dir, t.Adapter), nil

@@ -5,9 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gatewaylab/internal/api"
-	"gatewaylab/internal/buildinfo"
-	"gatewaylab/internal/gateway"
 	"log/slog"
 	"net"
 	"net/http"
@@ -15,6 +12,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gatewaylab/internal/api"
+	"gatewaylab/internal/buildinfo"
+	"gatewaylab/internal/gateway"
 )
 
 type instanceMode string

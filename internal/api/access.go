@@ -1,10 +1,11 @@
 package api
 
 import (
-	"gatewaylab/internal/access"
 	"net"
 	"net/http"
 	"strings"
+
+	"gatewaylab/internal/access"
 )
 
 func invocationEndpoint(r *http.Request) bool {

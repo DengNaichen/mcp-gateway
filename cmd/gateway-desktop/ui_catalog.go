@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"gatewaylab/internal/registry"
 	"slices"
 	"sort"
 	"strings"
@@ -11,6 +10,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/registry"
 )
 
 const catalogPageSize = 40

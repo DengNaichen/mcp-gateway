@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/scope"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/scope"
 )
 
 type playgroundDemoExample struct {

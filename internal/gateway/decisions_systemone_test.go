@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/model"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/routing"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/routing"
 )
 
 func systemOneFixture(status string, start int, probabilities ...float64) map[string]any {

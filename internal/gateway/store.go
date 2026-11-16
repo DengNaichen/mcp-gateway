@@ -1,9 +1,15 @@
 package gateway
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
+	"os"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+
 	"gatewaylab/internal/access"
 	"gatewaylab/internal/activity"
 	"gatewaylab/internal/demo"
@@ -18,12 +24,6 @@ import (
 	"gatewaylab/internal/store"
 	"gatewaylab/internal/upstream"
 	"gatewaylab/internal/workspace"
-	"log/slog"
-	"os"
-	"sync"
-	"time"
-
-	"github.com/google/uuid"
 )
 
 type Gateway struct {
@@ -45,16 +45,14 @@ type Gateway struct {
 	execution           sandbox.Policy
 	routing             routing.Options
 	maintenance         *maintenance.Maintainer
-	scopeKey            []byte
 	scope               *scope.Service
-	clock               func() time.Time
 }
 
 type Options struct{ OpenBrowser func(string) error }
 
 func New(dir, baseURL string) (*Gateway, error) { return NewWithOptions(dir, baseURL, Options{}) }
 func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
-	execution, err := loadExecutionPolicy()
+	execution, err := sandbox.LoadPolicy()
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +88,6 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
 		baseURL:    baseURL,
 		db:         db,
 		storage:    storage,
-		scopeKey:   scopeKey,
 	}
 	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupEnv, OpenBrowser: opts.OpenBrowser})
 	if err := g.loadRegistry(); err != nil {
@@ -98,7 +95,7 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
 	}
 	g.scope, err = scope.New(scope.Options{
 		DB: db, Dir: dir, BaseURL: baseURL, Key: scopeKey,
-		Clock: g.now, Shared: g.access != nil, Snapshot: g.Snapshot,
+		Clock: time.Now, Shared: g.access != nil, Snapshot: g.Snapshot,
 		AdminCaller: g.isAdminCaller, IdentityAllowsTool: g.identityAllowsTool,
 	})
 	if err != nil {
@@ -140,14 +137,12 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	g.market = market.New(market.Options{Dir: dir, Snapshot: g.Snapshot, SaveServer: g.SaveServer, ImportMCP: g.ImportMCP, SetRuntimeSecret: g.setRuntimeSecret, ErrorDetail: g.ErrorDetail})
+	g.market = market.New(market.Options{Dir: dir, Snapshot: g.Snapshot, SaveServer: g.Registry().SaveServer, ImportMCP: g.ImportMCP, SetRuntimeSecret: g.setRuntimeSecret, ErrorDetail: g.ErrorDetail})
 	ready = true
 	return g, nil
 }
 
 func (g *Gateway) Snapshot() registry.Registry { return g.registry.Snapshot() }
-
-func (g *Gateway) Config() (model.Settings, bool) { return g.model.Config() }
 
 func (g *Gateway) lookupEnv(key string) string {
 	if g == nil {
@@ -169,8 +164,6 @@ func (g *Gateway) record(kind, actor, status, title string, started time.Time, d
 }
 
 func newID() string { return fmt.Sprintf("%x", time.Now().UnixNano()) }
-
-func (g *Gateway) ModelProfiles() []model.ModelProfile { return g.model.ModelProfiles() }
 
 // Model owns its state lock. This coordination prevents model configuration
 // changing between maintenance fingerprint validation and catalog publication.
@@ -195,8 +188,4 @@ func (g *Gateway) DeleteModelProfile(id string) error {
 	g.publicationConfigMu.Lock()
 	defer g.publicationConfigMu.Unlock()
 	return g.model.DeleteModelProfile(id)
-}
-func (g *Gateway) PingModel(ctx context.Context, s model.Settings, profileID, apiKey string, clearKey bool) (model.PingModelResult, error) {
-	out, err := g.model.PingModel(ctx, s, profileID, apiKey, clearKey)
-	return out, err
 }

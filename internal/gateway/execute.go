@@ -1,17 +1,18 @@
 package gateway
 
 import (
-	"gatewaylab/internal/access"
-	"gatewaylab/internal/fault"
-
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/upstream"
 	"slices"
 	"time"
+
+	"gatewaylab/internal/access"
+	"gatewaylab/internal/fault"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/scope"
+	"gatewaylab/internal/upstream"
 )
 
 func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
@@ -69,7 +70,7 @@ func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
 func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeResult, retErr error) {
 	req.Actor = access.RequestActor(ctx, req.Actor)
 	started := time.Now()
-	scopeEv := scopeEventForContext(ctx)
+	scopeEv := scope.EventForContext(ctx)
 	defer func() {
 		status := "success"
 		detail := map[string]any{"tool_id": req.ToolID, "fields": req.Fields, "scope": scopeEv}
@@ -79,7 +80,7 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 		}
 		g.record("invoke", req.Actor, status, req.ToolID, started, detail)
 	}()
-	if err := g.checkExecutionScope(ctx); err != nil {
+	if err := g.scope.CheckExecutionScope(ctx); err != nil {
 		return result, err
 	}
 	r := g.Snapshot()
@@ -96,7 +97,7 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	if req.Arguments == nil {
 		req.Arguments = map[string]any{}
 	}
-	schema, err := compileSchema(t.InputSchema)
+	schema, err := registry.CompileSchema(t.InputSchema)
 	if err != nil {
 		return result, fault.New(fault.Internal, "工具 schema 无效", err)
 	}

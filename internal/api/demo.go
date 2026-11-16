@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/demo"
 	"net/http"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"gatewaylab/internal/demo"
+	"gatewaylab/internal/mcputil"
 )
 
 func (g *server) demoServer() *mcp.Server {
@@ -21,7 +23,7 @@ func (g *server) demoServer() *mcp.Server {
 			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 				return nil, fmt.Errorf("decode demo arguments: %w", err)
 			}
-			return toolResult(demo.Data(tool.Name, args))
+			return mcputil.Result(demo.Data(tool.Name, args))
 		})
 	}
 	return s

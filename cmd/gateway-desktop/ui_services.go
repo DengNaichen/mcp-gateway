@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gatewaylab/internal/maintenance"
-	"gatewaylab/internal/registry"
 	"regexp"
 	"sort"
 	"strconv"
@@ -15,6 +13,9 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/maintenance"
+	"gatewaylab/internal/registry"
 )
 
 const servicesToolPageSize = 30

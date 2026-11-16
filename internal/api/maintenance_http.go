@@ -1,9 +1,10 @@
 package api
 
 import (
+	"net/http"
+
 	"gatewaylab/internal/access"
 	"gatewaylab/internal/maintenance"
-	"net/http"
 )
 
 func (g *server) registerMaintenance(mux *http.ServeMux) {

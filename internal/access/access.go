@@ -13,10 +13,10 @@ import (
 	"gatewaylab/internal/fault"
 	"gatewaylab/internal/input"
 	"gatewaylab/internal/registry"
+	"gatewaylab/internal/secrets"
 	"net"
 	"net/url"
 	"os"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -69,7 +69,7 @@ func LoadPolicy(baseURL string) (*Policy, error) {
 	if err := decoder.Decode(&config); err != nil {
 		return nil, fmt.Errorf("decode access configuration: %w", err)
 	}
-	if err := input.EnsureJSONEnd(decoder); err != nil {
+	if err := input.EnsureJSONEnd(decoder, invalid); err != nil {
 		return nil, err
 	}
 	if len(config.Principals) == 0 || len(config.Principals) > 1000 {
@@ -89,7 +89,7 @@ func LoadPolicy(baseURL string) (*Policy, error) {
 		}
 		var hash [32]byte
 		if entry.TokenEnv != "" {
-			if !secretEnvName.MatchString(entry.TokenEnv) {
+			if !secrets.ValidEnvName(entry.TokenEnv) {
 				return nil, invalid("token_env 必须是环境变量名称")
 			}
 			token := os.Getenv(entry.TokenEnv)
@@ -239,5 +239,3 @@ func (p *Policy) Login(token string) (Principal, string, time.Time, error) {
 	p.sessions[id] = authSession{Principal: principal, Expires: expires}
 	return principal, id, expires, nil
 }
-
-var secretEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)

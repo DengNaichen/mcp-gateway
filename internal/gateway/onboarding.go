@@ -1,24 +1,23 @@
 package gateway
 
 import (
-	"gatewaylab/internal/access"
-	"gatewaylab/internal/activity"
-	"gatewaylab/internal/fault"
-
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
+	"time"
+
+	"gatewaylab/internal/access"
+	"gatewaylab/internal/activity"
+	"gatewaylab/internal/fault"
+	"gatewaylab/internal/jsonutil"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/scope"
 	"gatewaylab/internal/store"
 	"gatewaylab/internal/upstream"
-	"os"
-	"slices"
-	"strings"
-	"time"
 )
 
 type ConnectionCheck struct {
@@ -42,18 +41,11 @@ type SetupStatus struct {
 }
 
 func digest(v any) (string, error) {
-	b, err := json.Marshal(v)
+	sum, err := jsonutil.Digest(v)
 	if err != nil {
 		return "", fmt.Errorf("encode connection fingerprint: %w", err)
 	}
-	return fmt.Sprintf("%x", sha256.Sum256(b)), nil
-}
-
-func sourceFingerprintWithLookup(s registry.Server, lookup func(string) string) (string, error) {
-	return upstream.Fingerprint(s, lookup)
-}
-func sourceFingerprint(s registry.Server) (string, error) {
-	return sourceFingerprintWithLookup(s, os.Getenv)
+	return sum, nil
 }
 
 func (g *Gateway) modelFingerprint() (string, error) {
@@ -70,13 +62,6 @@ func (g *Gateway) realTools() []registry.Tool {
 		}
 	}
 	return out
-}
-
-func checkEnvironmentWithLookup(s registry.Server, lookup func(string) string) error {
-	return upstream.CheckEnvironment(s, lookup)
-}
-func checkEnvironment(s registry.Server) error {
-	return checkEnvironmentWithLookup(s, os.Getenv)
 }
 
 func (g *Gateway) saveCheck(id, fingerprint string, check ConnectionCheck) error {
@@ -114,7 +99,7 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 			continue
 		}
 		out.Sources++
-		fingerprint, err := sourceFingerprintWithLookup(s, g.lookupEnv)
+		fingerprint, err := upstream.Fingerprint(s, g.lookupEnv)
 		if err != nil {
 			return out, err
 		}
@@ -126,7 +111,7 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 			out.SourceChecks[s.ID] = *check
 		}
 	}
-	settings, _ := g.Config()
+	settings, _ := g.Model().Config()
 	out.ModelConfigured = strings.TrimSpace(settings.Model) != ""
 	fingerprint, err := g.modelFingerprint()
 	if err != nil {
@@ -149,10 +134,10 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 }
 
 func (g *Gateway) TestSource(ctx context.Context, s registry.Server) (check ConnectionCheck, retErr error) {
-	if err := g.SaveServer(s); err != nil {
+	if err := g.Registry().SaveServer(s); err != nil {
 		return check, err
 	}
-	fingerprint, err := sourceFingerprintWithLookup(s, g.lookupEnv)
+	fingerprint, err := upstream.Fingerprint(s, g.lookupEnv)
 	if err != nil {
 		return check, err
 	}
@@ -176,7 +161,7 @@ func (g *Gateway) TestSource(ctx context.Context, s registry.Server) (check Conn
 		check.Message = fmt.Sprintf("MCP 已连接，读取到 %d 个工具。请选择需要开放给 Agent 的工具。", count)
 		return check, nil
 	}
-	if err := checkEnvironmentWithLookup(s, g.lookupEnv); err != nil {
+	if err := upstream.CheckEnvironment(s, g.lookupEnv); err != nil {
 		return check, fault.New(fault.Invalid, "请求头引用的环境变量尚未设置", err)
 	}
 	status, err := upstream.CheckHTTPConnectivity(ctx, s, g.lookupEnv)
@@ -221,7 +206,7 @@ func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult,
 	if err != nil {
 		return DiscoverResult{}, err
 	}
-	result, routeErr := g.Discover(withInternalScopeBypass(ctx), DiscoverRequest{Intent: intent, Actor: "developer"})
+	result, routeErr := g.Discover(scope.WithInternalBypass(ctx), DiscoverRequest{Intent: intent, Actor: "developer"})
 	check := ConnectionCheck{Status: "success", Message: "Decisions 已响应，回答格式、概率和候选映射校验通过", CheckedAt: time.Now()}
 	if routeErr != nil {
 		check.Status = "error"

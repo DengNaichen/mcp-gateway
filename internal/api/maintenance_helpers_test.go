@@ -3,10 +3,11 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/registry"
 	"os"
 	"slices"
 	"strings"
+
+	"gatewaylab/internal/registry"
 )
 
 func writeJSON(path string, v any) error {

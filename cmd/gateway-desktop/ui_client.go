@@ -6,15 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gatewaylab/internal/access"
-	"gatewaylab/internal/activity"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/maintenance"
-	"gatewaylab/internal/market"
-	"gatewaylab/internal/model"
-	"gatewaylab/internal/openapi"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/scope"
 	"io"
 	"math"
 	"net/http"
@@ -24,6 +15,16 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"gatewaylab/internal/access"
+	"gatewaylab/internal/activity"
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/maintenance"
+	"gatewaylab/internal/market"
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/openapi"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/scope"
 )
 
 // ErrUnauthorized indicates the shared gateway rejected a request with HTTP 401.

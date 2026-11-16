@@ -1,9 +1,10 @@
 package api
 
 import (
+	"net/http"
+
 	"gatewaylab/internal/gateway"
 	"gatewaylab/internal/routing"
-	"net/http"
 )
 
 func discoveryPresentation(result gateway.DiscoverResult, summary bool) any {

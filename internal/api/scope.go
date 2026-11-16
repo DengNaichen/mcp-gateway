@@ -2,13 +2,14 @@ package api
 
 import (
 	"context"
-	"gatewaylab/internal/scope"
 	"net/http"
+
+	"gatewaylab/internal/scope"
 )
 
 func (g *server) registerScopes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/scopes", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, http.StatusOK, g.ScopeOverview())
+		respond(w, http.StatusOK, g.Scope().ScopeOverview())
 	})
 	mux.HandleFunc("PUT /api/scopes/mode", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
@@ -18,7 +19,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		if err := g.SetScopeMode(in.Enforce); err != nil {
+		if err := g.Scope().SetScopeMode(in.Enforce); err != nil {
 			fail(w, err)
 			return
 		}
@@ -30,7 +31,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		repo, err := g.SaveRepository(r.Context(), in)
+		repo, err := g.Scope().SaveRepository(r.Context(), in)
 		if err != nil {
 			fail(w, err)
 			return
@@ -38,7 +39,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 		respond(w, http.StatusOK, repo)
 	})
 	mux.HandleFunc("DELETE /api/scopes/repositories/{id}", func(w http.ResponseWriter, r *http.Request) {
-		if err := g.DeleteRepository(r.PathValue("id")); err != nil {
+		if err := g.Scope().DeleteRepository(r.PathValue("id")); err != nil {
 			fail(w, err)
 			return
 		}
@@ -50,7 +51,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		rule, err := g.SaveScopeRule(in)
+		rule, err := g.Scope().SaveScopeRule(in)
 		if err != nil {
 			fail(w, err)
 			return
@@ -59,7 +60,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("DELETE /api/scopes/rules", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		if err := g.DeleteScopeRule(q.Get("repo_key"), q.Get("agent_key")); err != nil {
+		if err := g.Scope().DeleteScopeRule(q.Get("repo_key"), q.Get("agent_key")); err != nil {
 			fail(w, err)
 			return
 		}
@@ -82,7 +83,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 		respond(w, http.StatusOK, out)
 	})
 	mux.HandleFunc("GET /api/scopes/snippets", func(w http.ResponseWriter, r *http.Request) {
-		out, err := g.ScopeSnippet(r.URL.Query().Get("agent"))
+		out, err := g.Scope().ScopeSnippet(r.URL.Query().Get("agent"))
 		if err != nil {
 			fail(w, err)
 			return

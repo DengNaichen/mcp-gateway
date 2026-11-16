@@ -6,8 +6,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"gatewaylab/internal/maintenance"
-	"gatewaylab/internal/procutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/maintenance"
+	"gatewaylab/internal/procutil"
 )
 
 func testGit(t *testing.T, dir string, args ...string) string {

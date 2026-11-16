@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"gatewaylab/internal/registry"
 	"math"
 	"sync"
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/registry"
 )
 
 // overviewLocalState holds UI-thread state local to the Overview page.

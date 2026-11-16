@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"gatewaylab/internal/buildinfo"
-	"gatewaylab/internal/clientconfig"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +12,9 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/buildinfo"
+	"gatewaylab/internal/clientconfig"
 )
 
 // ViewID identifies a top-level control plane page.

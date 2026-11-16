@@ -1,12 +1,13 @@
 package main
 
 import (
-	"gatewaylab/internal/clientconfig"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/clientconfig"
 )
 
 func TestClientPageAndLocalActions(t *testing.T) {

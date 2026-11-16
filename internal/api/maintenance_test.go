@@ -3,10 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/maintenance"
-	"gatewaylab/internal/maintenance/sandbox"
-	"gatewaylab/internal/registry"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +12,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/maintenance"
+	"gatewaylab/internal/maintenance/sandbox"
+	"gatewaylab/internal/registry"
 )
 
 func testGateway(t *testing.T) (*gateway.Gateway, string) { return testGatewayOptions(t, "", nil) }
@@ -54,7 +55,7 @@ func testGatewayOptions(t *testing.T, command string, policy *sandbox.Policy) (*
 		}
 	})
 	useKeywordModel(t, g)
-	if err := g.SaveServer(registry.Server{ID: "service", Name: "Service", Kind: "http", Endpoint: "http://127.0.0.1:1", Enabled: true}); err != nil {
+	if err := g.Registry().SaveServer(registry.Server{ID: "service", Name: "Service", Kind: "http", Endpoint: "http://127.0.0.1:1", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	reference := filepath.Join(t.TempDir(), "api.json")
@@ -158,7 +159,7 @@ func TestMaintenanceConflictInvalidAndCancellation(t *testing.T) {
 	r := waitRun(t, m, enqueueTest(t, m, false).ID, "ready")
 	server := r.Server
 	server.Description = "manual edit"
-	if err := g.SaveServer(server); err != nil {
+	if err := g.Registry().SaveServer(server); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.Publish(r.ID, false); err == nil {
@@ -197,7 +198,7 @@ func TestMaintenanceAdapterInvoke(t *testing.T) {
 	}))
 	defer upstream.Close()
 	t.Setenv("SERVICE_TEST_TOKEN", "test-token")
-	if err := g.SaveServer(registry.Server{ID: "service", Name: "Service", Kind: "http", Endpoint: upstream.URL, Enabled: true, Headers: map[string]string{"Authorization": "Bearer ${SERVICE_TEST_TOKEN}"}}); err != nil {
+	if err := g.Registry().SaveServer(registry.Server{ID: "service", Name: "Service", Kind: "http", Endpoint: upstream.URL, Enabled: true, Headers: map[string]string{"Authorization": "Bearer ${SERVICE_TEST_TOKEN}"}}); err != nil {
 		t.Fatal(err)
 	}
 	putSource(t, reference, "v1", "adapter")
@@ -231,7 +232,7 @@ func TestNativeMCPMaintenance(t *testing.T) {
 	g, _ := testGateway(t)
 	upstream := httptest.NewServer(Handler(g))
 	defer upstream.Close()
-	if err := g.SaveServer(registry.Server{ID: "native", Name: "Native", Kind: "mcp", Endpoint: upstream.URL + "/demo/mcp", Enabled: true}); err != nil {
+	if err := g.Registry().SaveServer(registry.Server{ID: "native", Name: "Native", Kind: "mcp", Endpoint: upstream.URL + "/demo/mcp", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	if err := g.Maintenance().SaveSource(maintenance.MaintenanceSource{ServerID: "native", IntervalMinutes: 60, TimeoutSeconds: 30, AutoPublish: true}); err != nil {
@@ -328,7 +329,7 @@ func TestMaintenanceUpdatesModelCandidates(t *testing.T) {
 		respond(w, 200, decisionFixture("selected", 0.9))
 	}))
 	defer modelServer.Close()
-	settings, _ := g.Config()
+	settings, _ := g.Model().Config()
 	settings.BaseURL = modelServer.URL
 	settings.Model = "fixture"
 	if err := g.SaveSettings(settings, "", false); err != nil {

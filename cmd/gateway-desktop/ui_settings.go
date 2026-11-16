@@ -4,15 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/model"
-	"gatewaylab/internal/registry"
 	"math"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
 )
 
 type settingsState struct {

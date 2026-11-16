@@ -3,15 +3,16 @@ package market
 import (
 	"context"
 	"encoding/json"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/secrets"
-	"gatewaylab/internal/store"
-	"gatewaylab/internal/upstream"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/secrets"
+	"gatewaylab/internal/store"
+	"gatewaylab/internal/upstream"
 )
 
 func TestMarketServersCuratedAndRegistrySearch(t *testing.T) {
@@ -120,10 +121,10 @@ func TestInstallMarketServerSecretsAndArgs(t *testing.T) {
 	if !strings.Contains(hdr, "${") || strings.Contains(hdr, "github_pat_secret123") {
 		t.Fatalf("expected env var placeholder in header, got %q", hdr)
 	}
-	if got := os.Expand(hdr, testSecrets.Lookup); got != "Bearer github_pat_secret123" {
+	if got := os.Expand(hdr, g.secrets.Lookup); got != "Bearer github_pat_secret123" {
 		t.Fatalf("expected in-memory secret expansion, got %q", got)
 	}
-	if err := upstream.CheckEnvironment(res.Server, testSecrets.Lookup); err != nil {
+	if err := upstream.CheckEnvironment(res.Server, g.secrets.Lookup); err != nil {
 		t.Fatalf("upstream.CheckEnvironment failed: %v", err)
 	}
 
@@ -187,22 +188,23 @@ func TestMarketIconCacheAndAllowlist(t *testing.T) {
 	}
 }
 
-var testSecrets secrets.Store
-
-type testService struct{ *Service }
+type testService struct {
+	*Service
+	secrets *secrets.Store
+}
 
 func (g *testService) Close() {}
 func testMarket(t *testing.T) (*testService, error) {
-	testSecrets = secrets.Store{}
+	runtimeSecrets := &secrets.Store{}
 	db, err := store.Open(t.TempDir())
 	if err != nil {
 		return nil, err
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := registry.New(registry.Registry{}, store.Registry(db.DB).Save)
-	us := upstream.New(upstream.Config{LookupEnv: testSecrets.Lookup})
+	us := upstream.New(upstream.Config{LookupEnv: runtimeSecrets.Lookup})
 	t.Cleanup(func() { _ = us.Close() })
-	svc := New(Options{Dir: t.TempDir(), Snapshot: reg.Snapshot, SaveServer: reg.SaveServer, SetRuntimeSecret: testSecrets.Set, ErrorDetail: func(e error) string { return e.Error() }, ImportMCP: func(ctx context.Context, id string) (int, error) {
+	svc := New(Options{Dir: t.TempDir(), Snapshot: reg.Snapshot, SaveServer: reg.SaveServer, SetRuntimeSecret: runtimeSecrets.Set, ErrorDetail: func(e error) string { return e.Error() }, ImportMCP: func(ctx context.Context, id string) (int, error) {
 		var server registry.Server
 		for _, s := range reg.Snapshot().Servers {
 			if s.ID == id {
@@ -212,5 +214,5 @@ func testMarket(t *testing.T) (*testService, error) {
 		tools, err := us.ImportTools(ctx, server)
 		return len(tools), err
 	}})
-	return &testService{svc}, nil
+	return &testService{svc, runtimeSecrets}, nil
 }

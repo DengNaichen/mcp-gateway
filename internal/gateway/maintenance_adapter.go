@@ -2,19 +2,18 @@ package gateway
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
+	"iter"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"gatewaylab/internal/jsonutil"
 	"gatewaylab/internal/maintenance"
 	"gatewaylab/internal/maintenance/sandbox"
 	"gatewaylab/internal/openapi"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/scope"
 	"gatewaylab/internal/upstream"
-	"iter"
-	"time"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func (g *Gateway) acceptanceRoutingFingerprint(serverID string) string {
@@ -39,7 +38,7 @@ func (g *Gateway) routingFingerprintForRegistryLocked(serverID string, reg regis
 		principals = g.access.Principals()
 	}
 	settings, key := g.model.RuntimeConfig()
-	return maintenanceDigest([]any{routingProtocol, settings, key, other, principals, g.execution})
+	return jsonutil.MustDigest([]any{routingProtocol, settings, key, other, principals, g.execution})
 }
 
 // maintenanceAdapter keeps orchestration independent of Gateway and its locks.
@@ -105,15 +104,4 @@ func (g *Gateway) callAdapter(ctx context.Context, s registry.Server, t registry
 		return nil, err
 	}
 	return sandbox.CallAdapterFile(ctx, g.execution, s, t, args, p)
-}
-
-var loadExecutionPolicy = sandbox.LoadPolicy
-
-func maintenanceDigest(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic("non-JSON maintenance value: " + err.Error())
-	}
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
 }

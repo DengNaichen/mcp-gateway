@@ -6,9 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/fault"
-	"gatewaylab/internal/input"
-	"gatewaylab/internal/registry"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,6 +16,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gatewaylab/internal/fault"
+	"gatewaylab/internal/input"
+	"gatewaylab/internal/registry"
 )
 
 // MarketInput describes a single header, environment variable, or command argument
@@ -360,7 +362,7 @@ func fetchOfficialMCPRegistry(ctx context.Context, query string) ([]MarketServer
 	if err != nil {
 		return nil, fmt.Errorf("无法连接官方 MCP Registry: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("官方 MCP Registry 返回 HTTP %d", resp.StatusCode)
 	}
@@ -691,7 +693,7 @@ func (g *Service) MarketIcon(ctx context.Context, id, rawURL string) ([]byte, st
 	if err != nil {
 		return nil, "", err
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, "", fmt.Errorf("icon fetch returned HTTP %d", resp.StatusCode)
 	}
@@ -730,3 +732,9 @@ type Service struct {
 }
 
 func New(opts Options) *Service { return &Service{Options: opts, dir: opts.Dir} }
+
+func closeBody(resp *http.Response) {
+	if err := resp.Body.Close(); err != nil {
+		slog.Debug("close upstream response", "error", err)
+	}
+}

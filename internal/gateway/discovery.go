@@ -1,15 +1,16 @@
 package gateway
 
 import (
-	"gatewaylab/internal/access"
-	"gatewaylab/internal/fault"
-
 	"context"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/routing"
 	"slices"
 	"strings"
 	"time"
+
+	"gatewaylab/internal/access"
+	"gatewaylab/internal/fault"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/routing"
+	"gatewaylab/internal/scope"
 )
 
 func (g *Gateway) Discover(ctx context.Context, req DiscoverRequest) (DiscoverResult, error) {
@@ -19,7 +20,7 @@ func (g *Gateway) Discover(ctx context.Context, req DiscoverRequest) (DiscoverRe
 func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, catalog registry.Registry, record bool) (result DiscoverResult, retErr error) {
 	req.Actor = access.RequestActor(ctx, req.Actor)
 	started := time.Now()
-	scopeEv := scopeEventForContext(ctx)
+	scopeEv := scope.EventForContext(ctx)
 	defer func() {
 		result.DurationMS = time.Since(started).Milliseconds()
 		if !record {
@@ -32,7 +33,7 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, cat
 			g.record("discover", req.Actor, result.Status, req.Intent, started, result)
 		}
 	}()
-	if err := g.checkExecutionScope(ctx); err != nil {
+	if err := g.scope.CheckExecutionScope(ctx); err != nil {
 		return result, err
 	}
 	if strings.TrimSpace(req.Intent) == "" {

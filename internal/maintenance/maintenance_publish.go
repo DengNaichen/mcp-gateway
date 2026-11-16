@@ -3,14 +3,14 @@ package maintenance
 import (
 	"encoding/json"
 	"fmt"
+	"gatewaylab/internal/jsonutil"
+	"gatewaylab/internal/store"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
-
-	"gatewaylab/internal/store"
 )
 
 func sourceIdentity(s MaintenanceSource) string {
@@ -18,7 +18,7 @@ func sourceIdentity(s MaintenanceSource) string {
 	s.Enabled = false
 	s.IntervalMinutes = 0
 	s.AutoPublish = false
-	return maintenanceDigest(s)
+	return jsonutil.MustDigest(s)
 }
 
 // Publish changes registry and job state in one SQLite transaction. Both the
@@ -50,7 +50,7 @@ func (m *Maintainer) PublishAs(id string, rollback, approved bool, actor string)
 			return domainError(ErrConflict, "独立契约与路由验收未通过，不能发布", nil)
 		}
 		suite, ok := m.suites[r.ServerID]
-		if !ok || maintenanceDigest(suite) != r.Acceptance.Fingerprint {
+		if !ok || jsonutil.MustDigest(suite) != r.Acceptance.Fingerprint {
 			return domainError(ErrConflict, "验收用例已变化，请重新检查", nil)
 		}
 		if m.router.RoutingFingerprint(r.ServerID) != r.Acceptance.RoutingFingerprint {
@@ -159,7 +159,7 @@ func changes(r MaintenanceRun) []ToolChange {
 		i := slices.IndexFunc(r.Before, func(old Tool) bool { return old.ID == t.ID })
 		if i < 0 {
 			out = append(out, ToolChange{ID: t.ID, Kind: "added", After: &t})
-		} else if maintenanceDigest(r.Before[i]) != maintenanceDigest(t) {
+		} else if jsonutil.MustDigest(r.Before[i]) != jsonutil.MustDigest(t) {
 			out = append(out, ToolChange{ID: t.ID, Kind: "changed", Before: &r.Before[i], After: &t})
 		}
 	}
@@ -189,7 +189,7 @@ func checkArtifacts(dir string, artifacts map[string]string) error {
 		if err != nil {
 			return err
 		}
-		if maintenanceDigest(string(b)) != want {
+		if jsonutil.MustDigest(string(b)) != want {
 			return domainError(ErrConflict, "版本文件已被修改，请重新生成", nil)
 		}
 	}

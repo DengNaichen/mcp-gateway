@@ -3,6 +3,9 @@ package api
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+	"net/http"
+
 	"gatewaylab/internal/fault"
 	"gatewaylab/internal/maintenance"
 	"gatewaylab/internal/maintenance/sandbox"
@@ -12,8 +15,6 @@ import (
 	"gatewaylab/internal/routing"
 	"gatewaylab/internal/scope"
 	"gatewaylab/internal/upstream"
-	"log/slog"
-	"net/http"
 )
 
 type appError struct {

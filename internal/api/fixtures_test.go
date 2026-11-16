@@ -2,10 +2,11 @@ package api
 
 import (
 	"fmt"
+	"testing"
+
 	"gatewaylab/internal/gateway"
 	"gatewaylab/internal/model"
 	"gatewaylab/internal/workspace"
-	"testing"
 )
 
 type decisionQuestion = model.Question

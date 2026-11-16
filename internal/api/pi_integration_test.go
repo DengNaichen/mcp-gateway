@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/maintenance/sandbox"
-	"gatewaylab/internal/registry"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +11,9 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+
+	"gatewaylab/internal/maintenance/sandbox"
+	"gatewaylab/internal/registry"
 )
 
 // Exercises the installed Pi binary, its real tools and RPC events against a

@@ -3,15 +3,16 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/maintenance"
-	"gatewaylab/internal/registry"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/maintenance"
+	"gatewaylab/internal/registry"
 )
 
 // Explicit opt-in: only GETs. Tokens and log contents are never printed or saved.
@@ -22,7 +23,7 @@ func TestLiveGitLabMaintenanceChangeAndRollback(t *testing.T) {
 	}
 	g, _ := testGateway(t)
 	m := g.Maintenance()
-	if err := g.SaveServer(registry.Server{ID: "gitlab", Name: "GitLab CI", Kind: "http", Endpoint: endpoint, Enabled: true, Headers: map[string]string{"Private-Token": "${GATEWAY_TEST_GITLAB_TOKEN}"}, RedactEmails: true}); err != nil {
+	if err := g.Registry().SaveServer(registry.Server{ID: "gitlab", Name: "GitLab CI", Kind: "http", Endpoint: endpoint, Enabled: true, Headers: map[string]string{"Private-Token": "${GATEWAY_TEST_GITLAB_TOKEN}"}, RedactEmails: true}); err != nil {
 		t.Fatal(err)
 	}
 	spec, err := os.ReadFile("../../examples/gitlab-openapi.yaml")

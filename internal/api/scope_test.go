@@ -5,13 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/buildinfo"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/maintenance"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/routing"
-	"gatewaylab/internal/scope"
-	"gatewaylab/internal/workspace"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -25,6 +18,14 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"gatewaylab/internal/buildinfo"
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/maintenance"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/routing"
+	"gatewaylab/internal/scope"
+	"gatewaylab/internal/workspace"
 )
 
 func initGitRepoForScopeTest(t *testing.T, dir, remoteURL string, withCommit bool) string {
@@ -110,7 +111,7 @@ func registerMultiServiceUpstream(t *testing.T, g *gateway.Gateway) {
 		{"gitlab", "GitLab", "CI Pipeline 与合并请求"},
 		{"roster", "Roster", "团队任务与 Spec 管理"},
 	} {
-		if err := g.SaveServer(registry.Server{
+		if err := g.Registry().SaveServer(registry.Server{
 			ID:          srv.id,
 			Name:        srv.name,
 			Description: srv.desc,
@@ -131,7 +132,7 @@ func registerMultiServiceUpstream(t *testing.T, g *gateway.Gateway) {
 			{"get", "Get single item in " + srv.id, true, "GET", []string{"developer"}},
 			{"mutate", "Create or update item in " + srv.id, false, "POST", []string{"developer"}},
 		} {
-			if err := g.SaveTool(registry.Tool{
+			if err := g.Registry().SaveTool(registry.Tool{
 				ID:          srv.id + "." + spec.name,
 				ServerID:    srv.id,
 				Name:        spec.name,
@@ -156,10 +157,10 @@ func TestScopeRulesSurviveRegistryReconciliation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer g.Close()
-	if err := g.SaveServer(registry.Server{ID: "svc", Name: "Svc", Description: "legacy", Kind: "http", Endpoint: "http://127.0.0.1:9999", Enabled: true}); err != nil {
+	if err := g.Registry().SaveServer(registry.Server{ID: "svc", Name: "Svc", Description: "legacy", Kind: "http", Endpoint: "http://127.0.0.1:9999", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	overview := g.ScopeOverview()
+	overview := g.Scope().ScopeOverview()
 	if overview.Enforce {
 		t.Fatal("default enforce must be false")
 	}
@@ -170,24 +171,24 @@ func TestScopeRulesSurviveRegistryReconciliation(t *testing.T) {
 	// Bind a repo + rule referencing 'svc', then reconcile servers/tools via SaveServer/SaveTool
 	// and confirm rules survive reconciliation.
 	repoDir := initGitRepoForScopeTest(t, filepath.Join(t.TempDir(), "app"), "", false)
-	repo, err := g.SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "app", Path: repoDir})
+	repo, err := g.Scope().SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "app", Path: repoDir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.SaveScopeRule(scope.ScopeRule{
+	if _, err := g.Scope().SaveScopeRule(scope.ScopeRule{
 		RepoKey:  repo.ID,
 		AgentKey: "*",
 		Grants:   []scope.ServiceGrant{{ServerID: "svc", Access: "rw"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.SaveServer(registry.Server{ID: "svc", Name: "Svc Updated", Description: "updated", Kind: "http", Endpoint: "http://127.0.0.1:9999", Enabled: true}); err != nil {
+	if err := g.Registry().SaveServer(registry.Server{ID: "svc", Name: "Svc Updated", Description: "updated", Kind: "http", Endpoint: "http://127.0.0.1:9999", Enabled: true}); err != nil {
 		t.Fatalf("SaveServer failed after scope_rules added: %v", err)
 	}
-	if err := g.SaveTool(registry.Tool{ID: "svc.ping", ServerID: "svc", Name: "ping", Description: "ping", InputSchema: objectSchema(map[string]any{}), Enabled: true, ReadOnly: true, Actors: []string{"developer"}, Method: "GET", Path: "/ping"}); err != nil {
+	if err := g.Registry().SaveTool(registry.Tool{ID: "svc.ping", ServerID: "svc", Name: "ping", Description: "ping", InputSchema: objectSchema(map[string]any{}), Enabled: true, ReadOnly: true, Actors: []string{"developer"}, Method: "GET", Path: "/ping"}); err != nil {
 		t.Fatalf("SaveTool failed after scope_rules added: %v", err)
 	}
-	after := g.ScopeOverview()
+	after := g.Scope().ScopeOverview()
 	if len(after.Rules) != 2 {
 		t.Fatalf("scope_rules lost after writeRegistry: %+v", after.Rules)
 	}
@@ -344,15 +345,15 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	}
 
 	// --- Bind repositories & configure precedence rules ---
-	boundMain, err := g.SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "mcp-gateway", Path: repoMain})
+	boundMain, err := g.Scope().SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "mcp-gateway", Path: repoMain})
 	if err != nil {
 		t.Fatal(err)
 	}
-	boundEmpty, err := g.SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "fresh-empty", Path: repoEmpty})
+	boundEmpty, err := g.Scope().SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "fresh-empty", Path: repoEmpty})
 	if err != nil {
 		t.Fatal(err)
 	}
-	boundDir, err := g.SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "proj", Path: dirProj})
+	boundDir, err := g.Scope().SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "proj", Path: dirProj})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,13 +375,13 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 		{RepoKey: boundEmpty.ID, AgentKey: "*", Grants: []scope.ServiceGrant{{ServerID: "github", Access: "ro"}}},
 		{RepoKey: boundDir.ID, AgentKey: "*", Grants: []scope.ServiceGrant{{ServerID: "gitlab", Access: "rw"}}},
 	} {
-		if _, err := g.SaveScopeRule(r); err != nil {
+		if _, err := g.Scope().SaveScopeRule(r); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	// Enable enforcement!
-	if err := g.SetScopeMode(true); err != nil {
+	if err := g.Scope().SetScopeMode(true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -442,7 +443,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 		t.Fatalf("evil clone with spoofed RemoteHint got tools! %s", evilText)
 	}
 	// Verify repoEvilClone was recorded in scope_observations!
-	ov := g.ScopeOverview()
+	ov := g.Scope().ScopeOverview()
 	if !slices.ContainsFunc(ov.Observed, func(o scope.ObservedRepo) bool { return o.Root == repoEvilClone && o.LastAgent == "codex" }) {
 		t.Fatalf("expected evil-clone in Observed, got %+v", ov.Observed)
 	}
@@ -535,7 +536,7 @@ func TestSingleServiceScopeSkipsHierarchicalSelectServices(t *testing.T) {
 	}))
 	t.Cleanup(modelSrv.Close)
 
-	settings, _ := g.Config()
+	settings, _ := g.Model().Config()
 	settings.BaseURL, settings.Model = modelSrv.URL, "gpt-6-luna"
 	if err := g.SaveSettings(settings, "", false); err != nil {
 		t.Fatal(err)
@@ -551,18 +552,18 @@ func TestSingleServiceScopeSkipsHierarchicalSelectServices(t *testing.T) {
 
 	// 2. Scoped to single service (roster only) -> selectServices MUST be skipped (0 new calls)!
 	repoDir := initGitRepoForScopeTest(t, filepath.Join(t.TempDir(), "single-svc"), "", false)
-	repo, err := g.SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "single-svc", Path: repoDir})
+	repo, err := g.Scope().SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "single-svc", Path: repoDir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.SaveScopeRule(scope.ScopeRule{
+	if _, err := g.Scope().SaveScopeRule(scope.ScopeRule{
 		RepoKey:  repo.ID,
 		AgentKey: "*",
 		Grants:   []scope.ServiceGrant{{ServerID: "roster", Access: "ro"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.SetScopeMode(true); err != nil {
+	if err := g.Scope().SetScopeMode(true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -792,18 +793,18 @@ func TestEndToEndGatewayHookBinaryToGatewayMCP(t *testing.T) {
 	registerMultiServiceUpstream(t, g)
 
 	repoDir := initGitRepoForScopeTest(t, filepath.Join(t.TempDir(), "e2e-repo"), "git@github.com:DengNaichen/mcp-gateway.git", true)
-	repo, err := g.SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "e2e-repo", Path: repoDir})
+	repo, err := g.Scope().SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "e2e-repo", Path: repoDir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.SaveScopeRule(scope.ScopeRule{
+	if _, err := g.Scope().SaveScopeRule(scope.ScopeRule{
 		RepoKey:  repo.ID,
 		AgentKey: "claude",
 		Grants:   []scope.ServiceGrant{{ServerID: "github", Access: "ro"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.SetScopeMode(true); err != nil {
+	if err := g.Scope().SetScopeMode(true); err != nil {
 		t.Fatal(err)
 	}
 

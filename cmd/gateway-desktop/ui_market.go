@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"gatewaylab/internal/market"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/market"
 )
 
 type marketIconEntry struct {

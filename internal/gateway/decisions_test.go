@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"gatewaylab/internal/model"
-	"gatewaylab/internal/registry"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
 )
 
 func decisionFixture(status string, probabilities ...float64) map[string]any {

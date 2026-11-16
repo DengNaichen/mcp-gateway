@@ -6,15 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
+	"gatewaylab/internal/input"
 	"gatewaylab/internal/registry"
 )
 
@@ -55,7 +55,7 @@ func parameterParts(v any) (parts []string, object bool, err error) {
 		}
 		return parts, false, nil
 	case map[string]any:
-		for _, key := range sortedKeys(x) {
+		for _, key := range slices.Sorted(maps.Keys(x)) {
 			part, err := scalar(x[key])
 			if err != nil {
 				return nil, true, err
@@ -197,7 +197,7 @@ func BuildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args ma
 			}
 		}
 	}
-	if pathVariable.MatchString(path) {
+	if registry.PathVariable.MatchString(path) {
 		return nil, invalid("缺少路径参数")
 	}
 	endpoint := strings.TrimRight(s.Endpoint, "/") + path
@@ -300,7 +300,7 @@ func callMappedHTTPWithLookup(ctx context.Context, s Server, t Tool, args map[st
 		return nil, fmt.Errorf("send mapped request: %w", err)
 	}
 	defer closeBody(resp)
-	b, err := readBounded(resp.Body, 8<<20)
+	b, err := input.ReadBounded(resp.Body, 8<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -308,15 +308,4 @@ func callMappedHTTPWithLookup(ctx context.Context, s Server, t Tool, args map[st
 		return nil, fmt.Errorf("downstream returned http %d", resp.StatusCode)
 	}
 	return MappedResponse(t, resp.StatusCode, b)
-}
-
-var pathVariable = regexp.MustCompile(`\{([^{}]+)\}`)
-
-func sortedKeys[T any](m map[string]T) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

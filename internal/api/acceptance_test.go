@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/maintenance"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/maintenance"
 )
 
 func logsAcceptance(version, mode string) maintenance.AcceptanceSuite {
@@ -134,7 +135,7 @@ func TestMaintenancePublicationRejectsChangedModelConfiguration(t *testing.T) {
 	g, _ := testGateway(t)
 	g.StartMaintenance(context.Background())
 	run := waitRun(t, g.Maintenance(), enqueueTest(t, g.Maintenance(), false).ID, "ready")
-	settings, _ := g.Config()
+	settings, _ := g.Model().Config()
 	settings.Model = "changed-after-acceptance"
 	if err := g.SaveSettings(settings, "", false); err != nil {
 		t.Fatal(err)
