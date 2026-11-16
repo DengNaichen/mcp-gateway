@@ -47,10 +47,7 @@ jobs:
       - name: Test release policy and worktree runtime
         run: node --test scripts/release-policy.test.mjs scripts/worktree-runtime.test.mjs
 
-      # GO-2026-6859 (net/http, fixed in go1.27.4) hits go.mod's go 1.27.3; remove
-      # continue-on-error once the Go version is bumped.
       - name: Vulnerability scan (govulncheck)
-        continue-on-error: true
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   package:
