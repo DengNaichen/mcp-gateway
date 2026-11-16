@@ -53,13 +53,14 @@ type AccessInfo struct {
 
 // Bootstrap mirrors the JSON response of GET /api/bootstrap.
 type Bootstrap struct {
-	Access        AccessInfo          `json:"access"`
-	Registry      gateway.Registry    `json:"registry"`
-	Settings      gateway.Settings    `json:"settings"`
-	KeyConfigured bool                `json:"key_configured"`
-	Events        []gateway.Event     `json:"events"`
-	MCPURL        string              `json:"mcp_url"`
-	Setup         gateway.SetupStatus `json:"setup"`
+	Access        AccessInfo             `json:"access"`
+	Registry      gateway.Registry       `json:"registry"`
+	Settings      gateway.Settings       `json:"settings"`
+	KeyConfigured bool                   `json:"key_configured"`
+	Profiles      []gateway.ModelProfile `json:"profiles"`
+	Events        []gateway.Event        `json:"events"`
+	MCPURL        string                 `json:"mcp_url"`
+	Setup         gateway.SetupStatus    `json:"setup"`
 }
 
 // AuthMeResponse mirrors GET /api/auth/me.
@@ -214,6 +215,48 @@ func (c *APIClient) SaveSettings(ctx context.Context, settings gateway.Settings,
 		ClearKey: clearKey,
 	}
 	return c.doJSON(ctx, http.MethodPut, "/settings", payload, nil)
+}
+
+func (c *APIClient) PingModel(ctx context.Context, settings gateway.Settings, profileID, apiKey string, clearKey bool) (gateway.PingModelResult, error) {
+	payload := struct {
+		gateway.Settings
+		ProfileID string `json:"profile_id,omitempty"`
+		APIKey    string `json:"api_key,omitempty"`
+		ClearKey  bool   `json:"clear_key,omitempty"`
+	}{
+		Settings:  settings,
+		ProfileID: profileID,
+		APIKey:    apiKey,
+		ClearKey:  clearKey,
+	}
+	var out gateway.PingModelResult
+	err := c.doJSON(ctx, http.MethodPost, "/model/ping", payload, &out)
+	return out, err
+}
+
+func (c *APIClient) SaveModelProfile(ctx context.Context, profile gateway.ModelProfile, apiKey string, clearKey bool) (gateway.ModelProfile, error) {
+	payload := struct {
+		gateway.ModelProfile
+		APIKey   string `json:"api_key,omitempty"`
+		ClearKey bool   `json:"clear_key,omitempty"`
+	}{
+		ModelProfile: profile,
+		APIKey:       apiKey,
+		ClearKey:     clearKey,
+	}
+	var out gateway.ModelProfile
+	err := c.doJSON(ctx, http.MethodPut, "/model-profiles", payload, &out)
+	return out, err
+}
+
+func (c *APIClient) ActivateModelProfile(ctx context.Context, id string) (gateway.ModelProfile, error) {
+	var out gateway.ModelProfile
+	err := c.doJSON(ctx, http.MethodPost, "/model-profiles/"+url.PathEscape(id)+"/activate", nil, &out)
+	return out, err
+}
+
+func (c *APIClient) DeleteModelProfile(ctx context.Context, id string) error {
+	return c.doJSON(ctx, http.MethodDelete, "/model-profiles/"+url.PathEscape(id), nil, nil)
 }
 
 func (c *APIClient) TestModel(ctx context.Context, settings gateway.Settings, apiKey string, clearKey bool, intent string) (gateway.DiscoverResult, error) {

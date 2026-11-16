@@ -32,6 +32,7 @@ func openDatabase(path string) (*sql.DB, error) {
 CREATE TABLE IF NOT EXISTS servers (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
 CREATE TABLE IF NOT EXISTS tools (id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES servers(id), definition TEXT NOT NULL CHECK(json_valid(definition)));
 CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), definition TEXT NOT NULL CHECK(json_valid(definition)));
+CREATE TABLE IF NOT EXISTS model_profiles (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
 CREATE TABLE IF NOT EXISTS activity (id TEXT PRIMARY KEY, time TEXT NOT NULL, kind TEXT NOT NULL, actor TEXT NOT NULL, status TEXT NOT NULL, title TEXT NOT NULL, duration_ms INTEGER NOT NULL, detail TEXT NOT NULL CHECK(json_valid(detail)));
 CREATE INDEX IF NOT EXISTS activity_by_time ON activity(time DESC);
 CREATE TABLE IF NOT EXISTS connection_checks (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, definition TEXT NOT NULL CHECK(json_valid(definition)));
@@ -169,6 +170,51 @@ func (g *Gateway) persistSettings(s Settings) error {
 		return fmt.Errorf("persist model settings: %w", err)
 	}
 	return nil
+}
+
+func (g *Gateway) loadModelProfiles() ([]ModelProfile, error) {
+	rows, err := g.db.Query("SELECT definition FROM model_profiles ORDER BY rowid")
+	if err != nil {
+		return nil, fmt.Errorf("query model profiles: %w", err)
+	}
+	defer closeRows(rows)
+	var profiles []ModelProfile
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("read model profile: %w", err)
+		}
+		var p ModelProfile
+		if err := json.Unmarshal([]byte(raw), &p); err != nil {
+			return nil, fmt.Errorf("decode model profile: %w", err)
+		}
+		p.KeyConfigured = false
+		profiles = append(profiles, p)
+	}
+	return profiles, rows.Err()
+}
+
+func (g *Gateway) persistModelProfiles(profiles []ModelProfile) error {
+	tx, err := g.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin model profiles transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec("DELETE FROM model_profiles"); err != nil {
+		return fmt.Errorf("clear model profiles: %w", err)
+	}
+	for _, p := range profiles {
+		stored := p
+		stored.KeyConfigured = false
+		b, err := json.Marshal(stored)
+		if err != nil {
+			return fmt.Errorf("encode model profile: %w", err)
+		}
+		if _, err := tx.Exec("INSERT INTO model_profiles(id,definition) VALUES(?,?)", stored.ID, string(b)); err != nil {
+			return fmt.Errorf("persist model profile: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 func (g *Gateway) loadEvents() error {

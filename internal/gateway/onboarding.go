@@ -247,6 +247,53 @@ func (g *Gateway) EnableTools(id string, ids []string) error {
 	return nil
 }
 
+func (g *Gateway) PingModel(ctx context.Context, s Settings, profileID, apiKey string, clearKey bool) (PingModelResult, error) {
+	s.BaseURL = strings.TrimSpace(s.BaseURL)
+	s.Model = strings.TrimSpace(s.Model)
+	if err := validateURL(s.BaseURL); err != nil {
+		return PingModelResult{}, err
+	}
+	if s.Model == "" {
+		return PingModelResult{}, invalid("请填写路由模型名称")
+	}
+	if s.TimeoutSeconds < 5 || s.TimeoutSeconds > 180 {
+		s.TimeoutSeconds = 30
+	}
+
+	effectiveKey := strings.TrimSpace(apiKey)
+	if clearKey {
+		effectiveKey = ""
+	} else if effectiveKey == "" {
+		g.mu.RLock()
+		if profileID != "" {
+			effectiveKey = g.profileKeys[profileID]
+		}
+		if effectiveKey == "" && profileID == "" {
+			effectiveKey = g.apiKey
+		}
+		if effectiveKey == "" {
+			// Fallback to active key if editing the currently active profile before it was re-keyed.
+			for _, p := range g.profiles {
+				if p.ID == profileID && p.Active {
+					effectiveKey = g.apiKey
+					break
+				}
+			}
+		}
+		g.mu.RUnlock()
+	}
+
+	started := time.Now()
+	if _, err := askDecisions(ctx, s, effectiveKey, "ping", []string{"Connectivity check."}); err != nil {
+		return PingModelResult{}, err
+	}
+	return PingModelResult{
+		OK:         true,
+		Model:      s.Model,
+		DurationMS: time.Since(started).Milliseconds(),
+	}, nil
+}
+
 func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult, error) {
 	tools := g.realTools()
 	if len(tools) == 0 {
@@ -397,6 +444,24 @@ func (g *Gateway) registerSetup(mux *http.ServeMux) {
 			return
 		}
 		respond(w, 200, map[string]bool{"saved": true})
+	})
+	mux.HandleFunc("POST /api/model/ping", func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Settings
+			ProfileID string `json:"profile_id"`
+			APIKey    string `json:"api_key"`
+			ClearKey  bool   `json:"clear_key"`
+		}
+		if err := decode(w, r, &input); err != nil {
+			fail(w, err)
+			return
+		}
+		result, err := g.PingModel(r.Context(), input.Settings, input.ProfileID, input.APIKey, input.ClearKey)
+		if err != nil {
+			respond(w, 400, map[string]any{"error": "模型连接测试失败", "detail": g.errorDetail(err)})
+			return
+		}
+		respond(w, 200, result)
 	})
 	mux.HandleFunc("POST /api/setup/model", func(w http.ResponseWriter, r *http.Request) {
 		var input struct {

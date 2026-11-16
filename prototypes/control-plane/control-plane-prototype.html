@@ -644,6 +644,63 @@
       font-size: 13px;
       color: var(--ink-strong);
       background: var(--bg-canvas);
+      transition: border-color 0.15s ease;
+    }
+    textarea.input-area:focus, input.input-line:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .field-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      gap: 8px;
+    }
+    .field-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink-strong);
+    }
+    .btn-link {
+      border: none;
+      background: transparent;
+      color: var(--ink-muted);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btn-link:hover {
+      color: var(--danger);
+      background: var(--danger-bg);
+    }
+    .stepper {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .stepper .input-line {
+      width: 84px;
+      text-align: center;
+    }
+    .result-box {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: var(--bg-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .result-box.ok {
+      border-color: var(--success-border);
+      background: #f6fef9;
+    }
+    .result-box.err {
+      border-color: var(--danger-border);
+      background: #fef6f6;
     }
   </style>
 </head>
@@ -1274,7 +1331,388 @@ Args:
       `;
     }
 
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    const SETTINGS_STORAGE_KEY = "mcp_gateway_proto_profiles_v1";
+    const DEFAULT_MODELS = [
+      {
+        id: "m-gemini",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+        modelId: "gemini-decision-1",
+        hasKey: true,
+        maxResults: 4,
+        timeoutSec: 45,
+        verifyIntent: "",
+        active: true,
+        savedAt: "22:54:48"
+      },
+      {
+        id: "m-openai",
+        baseUrl: "https://api.openai.com/v1",
+        modelId: "gpt-5-mini",
+        hasKey: true,
+        maxResults: 4,
+        timeoutSec: 30,
+        verifyIntent: "",
+        active: false,
+        savedAt: "21:18:10"
+      }
+    ];
+
+    function loadSavedModels() {
+      try {
+        const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+        if (!raw) return DEFAULT_MODELS.map(m => ({ ...m }));
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) && parsed.length ? parsed : DEFAULT_MODELS.map(m => ({ ...m }));
+      } catch {
+        return DEFAULT_MODELS.map(m => ({ ...m }));
+      }
+    }
+
+    function persistModelsList() {
+      try {
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(savedModels));
+      } catch {}
+    }
+
+    let savedModels = loadSavedModels();
+    const initialActive = savedModels.find(m => m.active) || savedModels[0];
+    let editingModelId = initialActive ? initialActive.id : null;
+    let settingsDraft = {
+      baseUrl: initialActive?.baseUrl || "",
+      modelId: initialActive?.modelId || "",
+      hasKey: Boolean(initialActive?.hasKey),
+      apiKeyInput: "",
+      maxResults: initialActive?.maxResults || 4,
+      timeoutSec: initialActive?.timeoutSec || 45,
+      verifyIntent: initialActive?.verifyIntent || ""
+    };
+    let settingsDirty = false;
+    let advancedExpanded = false;
+    let modelTestState = {
+      status: "passed", // idle | testing | passed | error
+      message: `${settingsDraft.modelId} 已响应`,
+      latencyMs: 342
+    };
+    let routeVerifyState = {
+      status: "idle", // idle | running | passed | error
+      timestamp: initialActive?.savedAt || "22:54:48",
+      latencyMs: 2112,
+      tool: "github.add_comment_to_pending_review",
+      detail: "Decisions 相关性概率 95.5%，精选占比 99.8%"
+    };
+
+    function nowTimeStr() {
+      const d = new Date();
+      return d.toTimeString().slice(0, 8);
+    }
+
+    function applyPreset(kind) {
+      editingModelId = null;
+      if (kind === "openai") {
+        settingsDraft.baseUrl = "https://api.openai.com/v1";
+        settingsDraft.modelId = "gpt-5-mini";
+      } else {
+        settingsDraft.baseUrl = "https://generativelanguage.googleapis.com/v1beta";
+        settingsDraft.modelId = "gemini-decision-1";
+      }
+      settingsDirty = true;
+      modelTestState = { status: "idle", message: "模型配置已变更，点击「测试连接」验证可用性", latencyMs: null };
+      render();
+    }
+
+    function updateSettingField(field, value) {
+      settingsDraft[field] = value;
+      settingsDirty = true;
+      if (field === "baseUrl" || field === "modelId" || field === "apiKeyInput") {
+        modelTestState = { status: "idle", message: "模型配置已变更，点击「测试连接」验证可用性", latencyMs: null };
+      }
+      renderDirtyBadgesOnly();
+    }
+
+    function clearStoredApiKey() {
+      settingsDraft.hasKey = false;
+      settingsDraft.apiKeyInput = "";
+      settingsDirty = true;
+      modelTestState = { status: "idle", message: "API Key 已清除，请重新输入后测试连接", latencyMs: null };
+      render();
+    }
+
+    function toggleAdvancedSettings() {
+      advancedExpanded = !advancedExpanded;
+      render();
+    }
+
+    function stepSetting(field, delta, min, max) {
+      const next = Math.min(max, Math.max(min, Number(settingsDraft[field] || min) + delta));
+      settingsDraft[field] = next;
+      settingsDirty = true;
+      render();
+    }
+
+    function renderDirtyBadgesOnly() {
+      const saveBtn = document.getElementById("btn-save-settings");
+      if (saveBtn) {
+        saveBtn.className = settingsDirty ? "btn btn-primary" : "btn";
+        saveBtn.textContent = settingsDirty ? "保存配置" : "保存配置";
+      }
+    }
+
+    function runModelTest() {
+      const hasUrl = settingsDraft.baseUrl.trim().length > 0;
+      const hasModel = settingsDraft.modelId.trim().length > 0;
+      const hasAnyKey = settingsDraft.hasKey || settingsDraft.apiKeyInput.trim().length > 0;
+
+      if (!hasUrl || !hasModel || !hasAnyKey) {
+        modelTestState = {
+          status: "error",
+          message: !hasAnyKey ? "连接失败：请先输入 API Key" : "连接失败：请填写 Base URL 与 Model ID",
+          latencyMs: null
+        };
+        render();
+        return;
+      }
+
+      modelTestState = { status: "testing", message: "正在测试模型连接...", latencyMs: null };
+      render();
+
+      setTimeout(() => {
+        const keyVal = settingsDraft.apiKeyInput.trim().toLowerCase();
+        if (keyVal === "invalid" || settingsDraft.baseUrl.includes("invalid")) {
+          modelTestState = {
+            status: "error",
+            message: "连接失败：401 Unauthorized（API Key 无效或无权访问该模型）",
+            latencyMs: 218
+          };
+        } else {
+          const latency = 240 + Math.floor(Math.random() * 220);
+          modelTestState = {
+            status: "passed",
+            message: `${escapeHtml(settingsDraft.modelId.trim())} 已响应`,
+            latencyMs: latency
+          };
+        }
+        render();
+      }, 420);
+    }
+
+    function persistAllSettings() {
+      const nextHasKey = settingsDraft.apiKeyInput.trim().length > 0 ? true : settingsDraft.hasKey;
+      const baseUrl = settingsDraft.baseUrl.trim();
+      const modelId = settingsDraft.modelId.trim();
+      if (!baseUrl || !modelId) return null;
+
+      const now = nowTimeStr();
+      const existing = editingModelId
+        ? savedModels.find(m => m.id === editingModelId)
+        : savedModels.find(m => m.modelId === modelId && m.baseUrl === baseUrl);
+
+      let targetId;
+      if (existing) {
+        existing.baseUrl = baseUrl;
+        existing.modelId = modelId;
+        existing.hasKey = nextHasKey;
+        existing.maxResults = Math.min(12, Math.max(1, Number(settingsDraft.maxResults) || 4));
+        existing.timeoutSec = Math.min(180, Math.max(5, Number(settingsDraft.timeoutSec) || 45));
+        existing.verifyIntent = settingsDraft.verifyIntent.trim();
+        existing.savedAt = now;
+        targetId = existing.id;
+      } else {
+        targetId = "m-" + Date.now();
+        savedModels.unshift({
+          id: targetId,
+          baseUrl,
+          modelId,
+          hasKey: nextHasKey,
+          maxResults: Math.min(12, Math.max(1, Number(settingsDraft.maxResults) || 4)),
+          timeoutSec: Math.min(180, Math.max(5, Number(settingsDraft.timeoutSec) || 45)),
+          verifyIntent: settingsDraft.verifyIntent.trim(),
+          active: true,
+          savedAt: now
+        });
+      }
+
+      savedModels.forEach(m => { m.active = (m.id === targetId); });
+      editingModelId = targetId;
+      settingsDraft.baseUrl = baseUrl;
+      settingsDraft.modelId = modelId;
+      settingsDraft.hasKey = nextHasKey;
+      settingsDraft.apiKeyInput = "";
+      settingsDirty = false;
+      persistModelsList();
+      return savedModels.find(m => m.id === targetId);
+    }
+
+    function saveAllSettings() {
+      const saved = persistAllSettings();
+      if (!saved) {
+        modelTestState = { status: "error", message: "请填写 Base URL 与 Model ID 后再保存", latencyMs: null };
+      }
+      render();
+    }
+
+    function activateSavedModel(id) {
+      const target = savedModels.find(m => m.id === id);
+      if (!target) return;
+      savedModels.forEach(m => { m.active = (m.id === id); });
+      persistModelsList();
+      editSavedModel(id);
+    }
+
+    function editSavedModel(id) {
+      const target = savedModels.find(m => m.id === id);
+      if (!target) return;
+      editingModelId = target.id;
+      settingsDraft = {
+        baseUrl: target.baseUrl,
+        modelId: target.modelId,
+        hasKey: Boolean(target.hasKey),
+        apiKeyInput: "",
+        maxResults: target.maxResults,
+        timeoutSec: target.timeoutSec,
+        verifyIntent: target.verifyIntent || ""
+      };
+      settingsDirty = false;
+      modelTestState = { status: "idle", message: `已载入 ${escapeHtml(target.modelId)}，可点击测试连接`, latencyMs: null };
+      render();
+    }
+
+    function deleteSavedModel(id) {
+      if (savedModels.length <= 1) return;
+      const idx = savedModels.findIndex(m => m.id === id);
+      if (idx === -1) return;
+      const wasActive = savedModels[idx].active;
+      savedModels.splice(idx, 1);
+      if (wasActive && savedModels.length) {
+        savedModels[0].active = true;
+      }
+      if (editingModelId === id && savedModels.length) {
+        editSavedModel(savedModels[0].id);
+        return;
+      }
+      persistModelsList();
+      render();
+    }
+
+    function saveAndRunRouteVerify() {
+      const saved = persistAllSettings();
+      if (!saved || !saved.hasKey) {
+        routeVerifyState = {
+          status: "error",
+          timestamp: nowTimeStr(),
+          latencyMs: null,
+          tool: "",
+          detail: "模型配置不完整（缺少 Base URL、Model ID 或 API Key），无法运行路由校验。"
+        };
+        render();
+        return;
+      }
+
+      routeVerifyState = { status: "running", timestamp: nowTimeStr(), latencyMs: null, tool: "", detail: "" };
+      render();
+
+      setTimeout(() => {
+        const latency = 1280 + Math.floor(Math.random() * 950);
+        const intent = saved.verifyIntent || "默认语义路由探针";
+        modelTestState = {
+          status: "passed",
+          message: `${escapeHtml(saved.modelId)} 已响应`,
+          latencyMs: 310
+        };
+        routeVerifyState = {
+          status: "passed",
+          timestamp: nowTimeStr(),
+          latencyMs: latency,
+          tool: "github.add_comment_to_pending_review",
+          detail: `意图「${escapeHtml(intent)}」匹配成功 · 相关性概率 95.5%，精选占比 99.8%`
+        };
+        render();
+      }, 650);
+    }
+
+    function renderModelTestStatus() {
+      if (modelTestState.status === "testing") {
+        return `<span class="quiet-meta"><span class="dot dot-warn"></span>正在测试模型连接...</span>`;
+      }
+      if (modelTestState.status === "passed") {
+        return `<span class="quiet-meta" style="color:var(--success);font-weight:500;"><span class="dot dot-ok"></span>模型测试通过 · ${modelTestState.message} · ${modelTestState.latencyMs} ms</span>`;
+      }
+      if (modelTestState.status === "error") {
+        return `<span class="quiet-meta" style="color:var(--danger);font-weight:500;"><span class="dot dot-err"></span>${modelTestState.message}</span>`;
+      }
+      return `<span class="quiet-meta"><span class="dot dot-muted"></span>${modelTestState.message}</span>`;
+    }
+
     function renderSettings() {
+      const hasConfiguredKey = settingsDraft.hasKey;
+      const keyStatusHtml = hasConfiguredKey
+        ? `<div style="display:flex;align-items:center;gap:6px;">
+             <span class="quiet-meta"><span class="dot dot-ok"></span>已配置</span>
+             <button class="btn-link" type="button" onclick="clearStoredApiKey()">清除</button>
+           </div>`
+        : `<span class="quiet-meta"><span class="dot dot-muted"></span>未配置</span>`;
+
+      let verifyBoxHtml = "";
+      if (routeVerifyState.status === "running") {
+        verifyBoxHtml = `
+          <div class="result-box">
+            <span class="quiet-meta"><span class="dot dot-warn"></span>正在运行路由校验...</span>
+          </div>`;
+      } else if (routeVerifyState.status === "passed") {
+        verifyBoxHtml = `
+          <div class="result-box ok">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+              <span class="quiet-meta" style="color:var(--success);font-weight:600;"><span class="dot dot-ok"></span>路由校验通过 · selected · ${routeVerifyState.timestamp}</span>
+              <span class="quiet-meta mono">${routeVerifyState.latencyMs} ms</span>
+            </div>
+            <div style="font-size:12.5px;color:var(--ink-body);">
+              <span class="mono" style="font-weight:600;color:var(--ink-strong);">${routeVerifyState.tool}</span>
+              — ${routeVerifyState.detail}
+            </div>
+          </div>`;
+      } else if (routeVerifyState.status === "error") {
+        verifyBoxHtml = `
+          <div class="result-box err">
+            <span class="quiet-meta" style="color:var(--danger);font-weight:600;"><span class="dot dot-err"></span>路由校验失败 · ${routeVerifyState.timestamp}</span>
+            <div style="font-size:12.5px;color:var(--danger);">${routeVerifyState.detail}</div>
+          </div>`;
+      }
+
+      const savedModelsRowsHtml = savedModels.map(m => {
+        const isEditing = m.id === editingModelId;
+        return `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-bottom:1px solid var(--border);${isEditing ? 'background:var(--bg-subtle);' : ''}">
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:3px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="mono" style="font-size:13px;font-weight:600;color:var(--ink-strong);">${escapeHtml(m.modelId)}</span>
+                ${m.active
+                  ? `<span class="quiet-meta" style="color:var(--success);font-weight:500;"><span class="dot dot-ok"></span>使用中</span>`
+                  : `<span class="quiet-meta"><span class="dot dot-muted"></span>备用</span>`}
+              </div>
+              <div class="mono" style="font-size:12px;color:var(--ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.baseUrl)}</div>
+            </div>
+
+            <div class="quiet-meta mono" style="flex-shrink:0;">
+              ${m.hasKey ? 'Key 已配置' : '未配置 Key'} · 上限 ${m.maxResults} · ${m.timeoutSec}s
+            </div>
+
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+              ${!m.active ? `<button class="btn" type="button" onclick="activateSavedModel('${m.id}')">设为当前</button>` : ''}
+              <button class="btn" type="button" onclick="editSavedModel('${m.id}')">${isEditing ? '编辑中' : '编辑'}</button>
+              ${savedModels.length > 1 ? `<button class="btn-link" type="button" onclick="deleteSavedModel('${m.id}')">删除</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join("");
+
       return `
         <div class="section-header">
           <h1 class="section-title">访问与路由</h1>
@@ -1300,21 +1738,95 @@ Args:
         <div class="card">
           <div class="card-header">
             <h2 class="card-title">Decisions 语义路由模型</h2>
-            <span class="quiet-meta"><span class="dot dot-ok"></span>Key 已就绪</span>
+            <div style="display:flex;gap:8px;">
+              <button class="btn" type="button" onclick="applyPreset('openai')">OpenAI 预设</button>
+              <button class="btn" type="button" onclick="applyPreset('gemini')">Gemini 预设</button>
+            </div>
           </div>
+
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
             <div>
-              <div style="font-size:12px;font-weight:600;margin-bottom:5px;">Base URL</div>
-              <input class="input-line mono" value="https://api.openai.com/v1" />
+              <div class="field-label-row"><span class="field-label">Base URL</span></div>
+              <input class="input-line mono" value="${escapeHtml(settingsDraft.baseUrl)}" oninput="updateSettingField('baseUrl', this.value)" placeholder="https://api.openai.com/v1" />
             </div>
             <div>
-              <div style="font-size:12px;font-weight:600;margin-bottom:5px;">Model ID</div>
-              <input class="input-line mono" value="gpt-6-luna" />
+              <div class="field-label-row"><span class="field-label">Model ID</span></div>
+              <input class="input-line mono" value="${escapeHtml(settingsDraft.modelId)}" oninput="updateSettingField('modelId', this.value)" placeholder="gpt-5-mini" />
             </div>
           </div>
-          <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:6px;">
-            <button class="btn">仅保存配置</button>
-            <button class="btn btn-primary">保存并校验</button>
+
+          <div>
+            <div class="field-label-row">
+              <span class="field-label">API Key</span>
+              ${keyStatusHtml}
+            </div>
+            <input class="input-line mono" type="password" value="${escapeHtml(settingsDraft.apiKeyInput)}" oninput="updateSettingField('apiKeyInput', this.value)" placeholder="${hasConfiguredKey ? '留空保持当前 Key' : '输入 API Key（输入 invalid 可模拟失败）'}" />
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:10px;padding-top:2px;">
+            <button type="button" onclick="toggleAdvancedSettings()" style="display:flex;align-items:center;justify-content:space-between;width:100%;background:transparent;border:none;padding:2px 0;cursor:pointer;text-align:left;">
+              <span style="font-size:12.5px;font-weight:600;color:var(--ink-body);display:flex;align-items:center;gap:6px;">
+                <span style="display:inline-block;width:12px;color:var(--ink-muted);">${advancedExpanded ? '▾' : '▸'}</span>
+                高级设置 · 路由策略与校验
+              </span>
+              <span class="quiet-meta mono">上限 ${settingsDraft.maxResults} · 超时 ${settingsDraft.timeoutSec}s</span>
+            </button>
+
+            ${advancedExpanded ? `
+              <div style="display:flex;flex-direction:column;gap:14px;padding:12px 14px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                  <div>
+                    <div class="field-label-row"><span class="field-label">单次返回上限 (1–12)</span></div>
+                    <div class="stepper">
+                      <input class="input-line mono" value="${settingsDraft.maxResults}" oninput="updateSettingField('maxResults', this.value)" />
+                      <button class="btn" type="button" onclick="stepSetting('maxResults', -1, 1, 12)">−</button>
+                      <button class="btn" type="button" onclick="stepSetting('maxResults', 1, 1, 12)">+</button>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="field-label-row"><span class="field-label">请求超时 (5–180 秒)</span></div>
+                    <div class="stepper">
+                      <input class="input-line mono" value="${settingsDraft.timeoutSec}" oninput="updateSettingField('timeoutSec', this.value)" />
+                      <button class="btn" type="button" onclick="stepSetting('timeoutSec', -5, 5, 180)">−</button>
+                      <button class="btn" type="button" onclick="stepSetting('timeoutSec', 5, 5, 180)">+</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="field-label-row"><span class="field-label">校验意图（可选）</span></div>
+                  <input class="input-line" value="${escapeHtml(settingsDraft.verifyIntent)}" oninput="updateSettingField('verifyIntent', this.value)" placeholder="留空自动生成" />
+                </div>
+
+                ${verifyBoxHtml}
+
+                <div style="display:flex;justify-content:flex-end;">
+                  <button class="btn" type="button" onclick="saveAndRunRouteVerify()">运行路由校验</button>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:4px;">
+            ${renderModelTestStatus()}
+            <div style="display:flex;gap:8px;flex-shrink:0;">
+              <button class="btn" type="button" onclick="runModelTest()" ${modelTestState.status === 'testing' ? 'disabled' : ''}>
+                ${modelTestState.status === 'testing' ? '测试中...' : '测试连接'}
+              </button>
+              <button id="btn-save-settings" class="${settingsDirty ? 'btn btn-primary' : 'btn'}" type="button" onclick="saveAllSettings()">
+                保存配置
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-flush">
+          <div class="card-header" style="padding:16px 20px;border-bottom:1px solid var(--border);">
+            <h2 class="card-title">已保存的模型</h2>
+            <span class="quiet-meta">${savedModels.length} 个配置</span>
+          </div>
+          <div>
+            ${savedModelsRowsHtml}
           </div>
         </div>
       `;

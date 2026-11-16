@@ -143,7 +143,7 @@ func (g *Gateway) Handler(assets fs.FS) http.Handler {
 		g.mu.RLock()
 		events := slices.Clone(g.events)
 		g.mu.RUnlock()
-		respond(w, 200, map[string]any{"registry": g.Snapshot(), "settings": settings, "key_configured": key, "events": events, "mcp_url": g.baseURL + "/mcp", "setup": setup, "access": map[string]any{"shared": g.access != nil, "actor": requestActor(r.Context(), "")}})
+		respond(w, 200, map[string]any{"registry": g.Snapshot(), "settings": settings, "key_configured": key, "profiles": g.ModelProfiles(), "events": events, "mcp_url": g.baseURL + "/mcp", "setup": setup, "access": map[string]any{"shared": g.access != nil, "actor": requestActor(r.Context(), "")}})
 	})
 	mux.HandleFunc("PUT /api/settings", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
@@ -160,6 +160,38 @@ func (g *Gateway) Handler(assets fs.FS) http.Handler {
 			return
 		}
 		respond(w, 200, map[string]bool{"saved": true})
+	})
+	mux.HandleFunc("PUT /api/model-profiles", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			ModelProfile
+			APIKey   string `json:"api_key"`
+			ClearKey bool   `json:"clear_key"`
+		}
+		if err := decode(w, r, &in); err != nil {
+			fail(w, err)
+			return
+		}
+		saved, err := g.SaveModelProfile(in.ModelProfile, in.APIKey, in.ClearKey)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		respond(w, 200, saved)
+	})
+	mux.HandleFunc("POST /api/model-profiles/{id}/activate", func(w http.ResponseWriter, r *http.Request) {
+		activated, err := g.ActivateModelProfile(r.PathValue("id"))
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		respond(w, 200, activated)
+	})
+	mux.HandleFunc("DELETE /api/model-profiles/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := g.DeleteModelProfile(r.PathValue("id")); err != nil {
+			fail(w, err)
+			return
+		}
+		respond(w, 200, map[string]bool{"deleted": true})
 	})
 	mux.HandleFunc("PUT /api/servers", func(w http.ResponseWriter, r *http.Request) {
 		var in Server
