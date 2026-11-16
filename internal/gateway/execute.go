@@ -6,158 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
-	"net/http"
-	"net/url"
-	"os"
-	"os/exec"
 	"slices"
-	"strings"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/auth"
+	"gatewaylab/internal/upstream"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
-
-type headerTransport struct {
-	headers map[string]string
-	expand  func(string) string
-	base    http.RoundTripper
-}
-
-func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	r := req.Clone(req.Context())
-	expand := t.expand
-	if expand == nil {
-		expand = os.ExpandEnv
-	}
-	for k, v := range t.headers {
-		r.Header.Set(k, expand(v))
-	}
-	return t.base.RoundTrip(r)
-}
-
-func (g *Gateway) connectMCP(ctx, processContext context.Context, s Server) (*mcp.ClientSession, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	client := mcp.NewClient(&mcp.Implementation{Name: "gateway-lab", Version: "0.0.1"}, nil)
-	if err := checkEnvironmentWithLookup(s, g.lookupEnv); err != nil {
-		return nil, err
-	}
-	if s.Transport == "stdio" {
-		command := exec.CommandContext(processContext, s.Command, s.Args...)
-		command.Dir = s.WorkDir
-		command.Env = processEnvironment(nil)
-		for key, value := range s.Env {
-			command.Env = append(command.Env, key+"="+g.expandEnv(value))
-		}
-		command.Stderr = os.Stderr
-		session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
-		if err != nil {
-			return nil, fmt.Errorf("start stdio mcp server: %w", err)
-		}
-		return session, nil
-	}
-	httpClient := &http.Client{Transport: headerTransport{headers: s.Headers, expand: g.expandEnv, base: http.DefaultTransport}, CheckRedirect: noRedirect}
-	var oauthHandler auth.OAuthHandler
-	if s.OAuth && s.Headers["Authorization"] == "" {
-		h, cleanup, err := g.oauthHandlerForServer(s.ID)
-		if err != nil {
-			return nil, fmt.Errorf("setup oauth handler: %w", err)
-		}
-		defer cleanup()
-		oauthHandler = h
-	}
-	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
-		Endpoint:             s.Endpoint,
-		HTTPClient:           httpClient,
-		OAuthHandler:         oauthHandler,
-		DisableStandaloneSSE: true,
-		MaxRetries:           -1,
-	}, nil)
-	if err != nil {
-		return nil, fmt.Errorf("connect native mcp server: %w", err)
-	}
-	return session, nil
-}
-
-func closeSession(session *mcp.ClientSession) {
-	if err := session.Close(); err != nil {
-		slog.Debug("close mcp session", "error", err)
-	}
-}
-
-type stdioSession struct {
-	fingerprint string
-	session     *mcp.ClientSession
-	cancel      context.CancelFunc
-}
-
-// Keep a local process alive across discovery and calls so stateful tools can
-// preserve their session. Reconfiguration or gateway shutdown closes it.
-func (g *Gateway) mcpSession(ctx context.Context, s Server) (*mcp.ClientSession, func(), error) {
-	if s.Transport != "stdio" {
-		session, err := g.connectMCP(ctx, ctx, s)
-		if err != nil {
-			return nil, nil, err
-		}
-		return session, func() { closeSession(session) }, nil
-	}
-	fingerprint, err := sourceFingerprintWithLookup(s, g.lookupEnv)
-	if err != nil {
-		return nil, nil, err
-	}
-	g.sessionMu.Lock()
-	defer g.sessionMu.Unlock()
-	if g.sessions == nil {
-		g.sessions = map[string]stdioSession{}
-	}
-	if current, ok := g.sessions[s.ID]; ok {
-		if current.fingerprint == fingerprint {
-			return current.session, func() {}, nil
-		}
-		closeSession(current.session)
-		current.cancel()
-		delete(g.sessions, s.ID)
-	}
-	processContext, cancel := context.WithCancel(context.Background())
-	session, err := g.connectMCP(ctx, processContext, s)
-	if err != nil {
-		cancel()
-		return nil, nil, err
-	}
-	g.sessions[s.ID] = stdioSession{fingerprint, session, cancel}
-	return session, func() {}, nil
-}
-
-func (g *Gateway) forgetClosedSession(id string, session *mcp.ClientSession, err error) {
-	if !errors.Is(err, mcp.ErrConnectionClosed) {
-		return
-	}
-	g.sessionMu.Lock()
-	defer g.sessionMu.Unlock()
-	if current, ok := g.sessions[id]; ok && current.session == session {
-		closeSession(current.session)
-		current.cancel()
-		delete(g.sessions, id)
-	}
-}
-
-func (g *Gateway) closeDownstreams() error {
-	g.sessionMu.Lock()
-	defer g.sessionMu.Unlock()
-	var result error
-	for id, current := range g.sessions {
-		if err := current.session.Close(); err != nil {
-			result = errors.Join(result, fmt.Errorf("close stdio server %s: %w", id, err))
-		}
-		current.cancel()
-		delete(g.sessions, id)
-	}
-	return result
-}
 
 func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
 	r := g.Snapshot()
@@ -171,36 +26,9 @@ func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	session, release, err := g.mcpSession(ctx, r.Servers[i])
+	imported, err := g.upstream.ImportTools(ctx, r.Servers[i])
 	if err != nil {
-		return 0, problem(502, "连接 MCP 服务失败", err)
-	}
-	defer release()
-	imported := []Tool{}
-	for t, err := range session.Tools(ctx, nil) {
-		if err != nil {
-			g.forgetClosedSession(id, session, err)
-			return 0, problem(502, "读取下游 tools/list 失败", err)
-		}
-		b, err := json.Marshal(t.InputSchema)
-		if err != nil {
-			return 0, fmt.Errorf("encode imported schema: %w", err)
-		}
-		var schema map[string]any
-		if err := json.Unmarshal(b, &schema); err != nil {
-			return 0, problem(502, "下游工具的 inputSchema 无效", err)
-		}
-		if _, err := compileSchema(schema); err != nil {
-			return 0, problem(502, "下游工具 schema 无法编译", err)
-		}
-		tool := Tool{ID: id + "." + t.Name, ServerID: id, Name: t.Name, Description: t.Description, InputSchema: schema, Tags: []string{}, Actors: []string{"developer"}}
-		if t.Annotations != nil {
-			tool.ReadOnly = t.Annotations.ReadOnlyHint
-		}
-		if !validID(tool.ID) {
-			return 0, invalid("下游工具名称组合后不是有效工具 ID")
-		}
-		imported = append(imported, tool)
+		return 0, upstreamError(err)
 	}
 	// Commit all imported definitions atomically. New and changed definitions
 	// remain disabled until their local owner explicitly enables them again.
@@ -281,170 +109,47 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	if t.Adapter != "" {
 		data, err = g.callAdapter(ctx, s, t, req.Arguments)
 	} else if s.Kind == "mcp" {
-		data, err = g.callMCP(ctx, s, t, req.Arguments)
+		data, err = g.upstream.CallMCP(ctx, s, t, req.Arguments)
 	} else {
-		data, err = callHTTPWithLookup(ctx, s, t, req.Arguments, g.lookupEnv)
+		data, err = upstream.CallHTTPWithLookup(ctx, s, t, req.Arguments, g.lookupEnv)
 	}
 	if err != nil {
 		return result, problem(502, "下游工具调用失败", err)
 	}
-	data = redactResponseWithLookup(data, s, g.lookupEnv)
+	data = upstream.RedactResponseWithLookup(data, s, g.lookupEnv)
 	if len(req.Fields) > 0 {
-		data = project(data, req.Fields)
+		data = upstream.Project(data, req.Fields)
 	}
 	return InvokeResult{ID: newID(), ToolID: t.ID, Protocol: s.Kind, Data: data, DurationMS: time.Since(started).Milliseconds()}, nil
 }
 
-func callHTTP(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
-	return callHTTPWithLookup(ctx, s, t, args, os.Getenv)
+func upstreamError(err error) error {
+	var e *upstream.Error
+	if errors.As(err, &e) {
+		status := 502
+		if errors.Is(e, upstream.ErrInvalid) {
+			status = 400
+		}
+		return problem(status, e.Message, e.Cause)
+	}
+	return err
 }
+func (g *Gateway) mcpSession(ctx context.Context, s Server) (*mcp.ClientSession, func(), error) {
+	return g.upstream.Session(ctx, s)
+}
+func (g *Gateway) forgetClosedSession(id string, s *mcp.ClientSession, err error) {
+	g.upstream.ForgetClosedSession(id, s, err)
+}
+func (g *Gateway) closeDownstreams() error { return g.upstream.Close() }
 
-func callHTTPWithLookup(ctx context.Context, s Server, t Tool, args map[string]any, lookup func(string) string) (any, error) {
-	if lookup == nil {
-		lookup = os.Getenv
-	}
-	if t.HTTP != nil {
-		return callMappedHTTPWithLookup(ctx, s, t, args, lookup)
-	}
-	if err := checkEnvironmentWithLookup(s, lookup); err != nil {
-		return nil, err
-	}
-	endpoint := strings.TrimRight(s.Endpoint, "/") + "/" + strings.TrimLeft(t.Path, "/")
-	method := t.Method
-	if method == "" {
-		method = http.MethodGet
-	}
-	var body io.Reader
-	if method == http.MethodGet || method == http.MethodDelete {
-		u, err := url.Parse(endpoint)
-		if err != nil {
-			return nil, fmt.Errorf("parse tool endpoint: %w", err)
-		}
-		q := u.Query()
-		for k, v := range args {
-			if text, ok := v.(string); ok {
-				q.Set(k, text)
-			} else {
-				b, err := json.Marshal(v)
-				if err != nil {
-					return nil, fmt.Errorf("encode query argument: %w", err)
-				}
-				q.Set(k, string(b))
-			}
-		}
-		u.RawQuery = q.Encode()
-		endpoint = u.String()
-	} else {
-		b, err := json.Marshal(args)
-		if err != nil {
-			return nil, fmt.Errorf("encode tool arguments: %w", err)
-		}
-		body = bytes.NewReader(b)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
-	if err != nil {
-		return nil, fmt.Errorf("create downstream request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	for k, v := range s.Headers {
-		req.Header.Set(k, os.Expand(v, lookup))
-	}
-	resp, err := (&http.Client{CheckRedirect: noRedirect}).Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("send downstream request: %w", err)
-	}
-	defer closeBody(resp)
-	b, err := io.ReadAll(io.LimitReader(resp.Body, (8<<20)+1))
-	if err != nil {
-		return nil, fmt.Errorf("read downstream response: %w", err)
-	}
-	if len(b) > 8<<20 {
-		return nil, fmt.Errorf("downstream response exceeds 8 mb")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("downstream returned http %d", resp.StatusCode)
-	}
-	var data any
-	if err := json.Unmarshal(b, &data); err != nil {
-		return map[string]any{"text": string(b)}, nil
-	}
-	return data, nil
+// These forwarding functions support the maintenance adapter until B3 integration.
+func callHTTP(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
+	return upstream.CallHTTP(ctx, s, t, args)
+}
+func redactResponseWithLookup(data any, s Server, lookup func(string) string) any {
+	return upstream.RedactResponseWithLookup(data, s, lookup)
 }
 
 func (g *Gateway) callMCP(ctx context.Context, s Server, t Tool, args map[string]any) (any, error) {
-	session, release, err := g.mcpSession(ctx, s)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: t.Name, Arguments: args})
-	if err != nil {
-		g.forgetClosedSession(s.ID, session, err)
-		return nil, fmt.Errorf("call native mcp tool: %w", err)
-	}
-	if result.IsError {
-		messages := []string{}
-		for _, content := range result.Content {
-			if text, ok := content.(*mcp.TextContent); ok {
-				messages = append(messages, text.Text)
-			}
-		}
-		message := strings.Join(messages, "\n")
-		if len(message) > 4000 {
-			message = message[:4000]
-		}
-		return nil, fmt.Errorf("native mcp tool returned an execution error: %s", message)
-	}
-	if result.StructuredContent != nil {
-		return result.StructuredContent, nil
-	}
-	if len(result.Content) == 1 {
-		if content, ok := result.Content[0].(*mcp.TextContent); ok {
-			var data any
-			if err := json.Unmarshal([]byte(content.Text), &data); err == nil {
-				return data, nil
-			}
-			return map[string]any{"text": content.Text}, nil
-		}
-	}
-	return map[string]any{"content": result.Content}, nil
-}
-
-// project applies nested field paths to objects and each item of an array.
-// It is a response-size feature, not a substitute for authorization/redaction.
-func project(value any, fields []string) any {
-	if arr, ok := value.([]any); ok {
-		out := make([]any, len(arr))
-		for i, v := range arr {
-			out[i] = project(v, fields)
-		}
-		return out
-	}
-	obj, ok := value.(map[string]any)
-	if !ok {
-		return value
-	}
-	groups := map[string][]string{}
-	for _, field := range fields {
-		head, tail, found := strings.Cut(strings.TrimSpace(field), ".")
-		if head == "" {
-			continue
-		}
-		if !found {
-			groups[head] = append(groups[head], "")
-		} else {
-			groups[head] = append(groups[head], tail)
-		}
-	}
-	out := map[string]any{}
-	for head, children := range groups {
-		if v, ok := obj[head]; ok {
-			if slices.Contains(children, "") {
-				out[head] = v
-			} else {
-				out[head] = project(v, children)
-			}
-		}
-	}
-	return out
+	return g.upstream.CallMCP(ctx, s, t, args)
 }

@@ -1,0 +1,114 @@
+package upstream
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func TestHTTPMappingWireContract(t *testing.T) {
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.EscapedPath() != "/api/team%2Fproject" || r.URL.Query().Get("filter[state]") != "open" || !reflect.DeepEqual(r.URL.Query()["tag"], []string{"one", "two"}) {
+			t.Errorf("URL=%s", r.URL)
+		}
+		if r.Header.Get("Authorization") != "Bearer injected" || r.Header.Get("X-Enabled") != "true" || r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("headers=%v", r.Header)
+		}
+		cookie, err := r.Cookie("locale")
+		if err != nil || cookie.Value != "en+US" {
+			t.Errorf("cookie=%v err=%v", cookie, err)
+		}
+		b, _ := io.ReadAll(r.Body)
+		if string(b) != `{"name":"example"}` {
+			t.Errorf("body=%s", b)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":42}`)
+	}))
+	defer host.Close()
+	tool := Tool{Method: "POST", Path: "/api/{project}", HTTP: &HTTPMapping{Body: true, Parameters: []HTTPParameter{
+		{Name: "project", In: "path", Style: "simple"}, {Name: "filter", In: "query", Style: "deepObject", Explode: true}, {Name: "tag", In: "query", Style: "form", Explode: true}, {Name: "X-Enabled", In: "header", Style: "simple"}, {Name: "locale", In: "cookie", Style: "form"},
+	}, Responses: map[string]HTTPResponse{"2XX": {MediaType: "application/json", Schema: map[string]any{"type": "object", "required": []any{"id"}, "properties": map[string]any{"id": map[string]any{"type": "integer"}}}}}}}
+	args := map[string]any{"path": map[string]any{"project": "team/project"}, "query": map[string]any{"filter": map[string]any{"state": "open"}, "tag": []any{"one", "two"}}, "headers": map[string]any{"X-Enabled": true}, "cookies": map[string]any{"locale": "en US"}, "body": map[string]any{"name": "example"}}
+	raw, err := CallHTTPWithLookup(context.Background(), Server{Endpoint: host.URL, Headers: map[string]string{"Authorization": "Bearer ${KEY}"}}, tool, args, func(string) string { return "injected" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(raw, map[string]any{"id": float64(42)}) {
+		t.Fatalf("result=%v", raw)
+	}
+}
+
+func TestHTTPRedirectsStayAtConfiguredOrigin(t *testing.T) {
+	reached := false
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+	defer target.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, http.StatusFound) }))
+	defer source.Close()
+	for _, mapped := range []bool{false, true} {
+		tool := Tool{Method: "GET", Path: "/tool"}
+		if mapped {
+			tool.HTTP = &HTTPMapping{Responses: map[string]HTTPResponse{"200": {MediaType: "empty"}}}
+		}
+		_, err := CallHTTP(context.Background(), Server{Endpoint: source.URL}, tool, map[string]any{})
+		if err == nil || err.Error() != "downstream returned http 302" {
+			t.Fatalf("mapped=%v err=%v", mapped, err)
+		}
+	}
+	if reached {
+		t.Fatal("followed downstream redirect")
+	}
+}
+
+func TestMappedRequestAndResponseValidation(t *testing.T) {
+	source := Server{Endpoint: "https://example.invalid"}
+	tool := Tool{Method: "GET", Path: "/api/{id}", HTTP: &HTTPMapping{Parameters: []HTTPParameter{{Name: "id", In: "path", Style: "simple"}}, Responses: map[string]HTTPResponse{"200": {MediaType: "application/json", Schema: map[string]any{"type": "integer"}}, "204": {MediaType: "empty"}, "default": {MediaType: "text/plain"}}}}
+	for _, value := range []string{".", ".."} {
+		_, err := BuildMappedRequest(context.Background(), source, tool, map[string]any{"path": map[string]any{"id": value}})
+		if !errors.Is(err, ErrInvalid) || err.Error() != "路径参数不能是相对路径片段" {
+			t.Fatalf("path %q: %v", value, err)
+		}
+	}
+	if _, err := BuildMappedRequest(context.Background(), source, tool, map[string]any{}); !errors.Is(err, ErrInvalid) || err.Error() != "缺少路径参数" {
+		t.Fatalf("missing path: %v", err)
+	}
+	if _, err := MappedResponse(tool, 200, []byte(`"wrong"`)); err == nil || !strings.Contains(err.Error(), "upstream response violates schema") {
+		t.Fatalf("schema validation: %v", err)
+	}
+	if _, err := MappedResponse(tool, 204, []byte("unexpected")); err == nil || err.Error() != "unexpected body for empty response" {
+		t.Fatalf("empty response: %v", err)
+	}
+	text, err := MappedResponse(tool, 201, []byte("hello"))
+	if err != nil || !reflect.DeepEqual(text, map[string]any{"text": "hello"}) {
+		t.Fatalf("default response: %v %v", text, err)
+	}
+}
+
+func TestCredentialsAreRedactedBeforeProjection(t *testing.T) {
+	source := Server{Headers: map[string]string{"Authorization": "Bearer ${KEY}"}, Env: map[string]string{"KEY": "${KEY}"}, RedactEmails: true, RedactFields: []string{"items.private"}}
+	data := map[string]any{"message": "Bearer secret-value-12345 user@example.com", "nested": map[string]any{"apiKey": "another secret"}, "items": []any{map[string]any{"public": "visible", "private": "hidden", "password": "hidden"}}}
+	redacted := RedactResponseWithLookup(data, source, func(string) string { return "secret-value-12345" })
+	projected := Project(redacted, []string{"message", "nested.apiKey", "items.public", "items.private"})
+	b, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"secret-value", "another secret", "hidden", "user@example.com"} {
+		if strings.Contains(string(b), secret) {
+			t.Fatalf("credential leaked: %s", b)
+		}
+	}
+	if !strings.Contains(string(b), `"public":"visible"`) || !strings.Contains(string(b), `"private":"[redacted]"`) {
+		t.Fatalf("projection=%s", b)
+	}
+	original, _ := json.Marshal(data)
+	if !strings.Contains(string(original), "another secret") {
+		t.Fatal("redaction mutated input")
+	}
+}

@@ -1,4 +1,4 @@
-package gateway
+package upstream
 
 import (
 	"context"
@@ -16,8 +16,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var openBrowserURL = defaultOpenBrowserURL
-
 func defaultOpenBrowserURL(rawURL string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -31,10 +29,10 @@ func defaultOpenBrowserURL(rawURL string) error {
 	return cmd.Start()
 }
 
-func (g *Gateway) oauthHandlerForServer(serverID string) (*auth.AuthorizationCodeHandler, func(), error) {
-	g.mu.RLock()
-	existingTS := g.oauthTokens[serverID]
-	g.mu.RUnlock()
+func (u *Service) oauthHandlerForServer(serverID string) (*auth.AuthorizationCodeHandler, func(), error) {
+	u.oauthMu.RLock()
+	existingTS := u.oauthTokens[serverID]
+	u.oauthMu.RUnlock()
 
 	if existingTS != nil {
 		h, err := auth.NewAuthorizationCodeHandler(&auth.AuthorizationCodeHandlerConfig{
@@ -53,9 +51,9 @@ func (g *Gateway) oauthHandlerForServer(serverID string) (*auth.AuthorizationCod
 			AcceptUnadvertisedIss: true,
 			Client:                &http.Client{Timeout: 30 * time.Second},
 			AuthorizationCodeFetcher: func(ctx context.Context, _ *auth.AuthorizationArgs) (*auth.AuthorizationResult, error) {
-				g.mu.Lock()
-				delete(g.oauthTokens, serverID)
-				g.mu.Unlock()
+				u.oauthMu.Lock()
+				delete(u.oauthTokens, serverID)
+				u.oauthMu.Unlock()
 				return nil, fmt.Errorf("OAuth 授权已失效，请重新触发同步以完成浏览器登录")
 			},
 		})
@@ -141,7 +139,7 @@ func (g *Gateway) oauthHandlerForServer(serverID string) (*auth.AuthorizationCod
 		AcceptUnadvertisedIss: true,
 		Client:                &http.Client{Timeout: 30 * time.Second},
 		AuthorizationCodeFetcher: func(ctx context.Context, args *auth.AuthorizationArgs) (*auth.AuthorizationResult, error) {
-			if err := openBrowserURL(args.URL); err != nil {
+			if err := u.openBrowser(args.URL); err != nil {
 				return nil, fmt.Errorf("打开浏览器进行 OAuth 登录失败: %w", err)
 			}
 			select {
@@ -153,12 +151,12 @@ func (g *Gateway) oauthHandlerForServer(serverID string) (*auth.AuthorizationCod
 		},
 		NewTokenSource: func(ctx context.Context, cfg *oauth2.Config, tok *oauth2.Token) (oauth2.TokenSource, error) {
 			ts := cfg.TokenSource(context.Background(), tok)
-			g.mu.Lock()
-			if g.oauthTokens == nil {
-				g.oauthTokens = map[string]oauth2.TokenSource{}
+			u.oauthMu.Lock()
+			if u.oauthTokens == nil {
+				u.oauthTokens = map[string]oauth2.TokenSource{}
 			}
-			g.oauthTokens[serverID] = ts
-			g.mu.Unlock()
+			u.oauthTokens[serverID] = ts
+			u.oauthMu.Unlock()
 			return ts, nil
 		},
 	})

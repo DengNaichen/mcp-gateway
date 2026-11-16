@@ -1,4 +1,4 @@
-package gateway
+package upstream
 
 import (
 	"os"
@@ -8,11 +8,11 @@ import (
 
 var emailPattern = regexp.MustCompile(`\b[A-Za-z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\b`)
 
-func redactResponse(data any, s Server) any {
-	return redactResponseWithLookup(data, s, os.Getenv)
+func RedactResponse(data any, s Server) any {
+	return RedactResponseWithLookup(data, s, os.Getenv)
 }
 
-func redactResponseWithLookup(data any, s Server, lookup func(string) string) any {
+func RedactResponseWithLookup(data any, s Server, lookup func(string) string) any {
 	if lookup == nil {
 		lookup = os.Getenv
 	}

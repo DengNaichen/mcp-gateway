@@ -1,6 +1,6 @@
 //go:build unix
 
-package gateway
+package upstream
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 )
 
 // Cancel the whole job process group, including bash/node descendants.
-func configureProcess(cmd *exec.Cmd) {
+func ConfigureProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)

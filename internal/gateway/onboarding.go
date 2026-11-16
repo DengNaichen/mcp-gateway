@@ -16,9 +16,8 @@ import (
 	"time"
 
 	"gatewaylab/internal/store"
+	"gatewaylab/internal/upstream"
 	"gatewaylab/internal/workspace"
-
-	"golang.org/x/oauth2"
 )
 
 type ConnectionCheck struct {
@@ -50,19 +49,8 @@ func digest(v any) (string, error) {
 }
 
 func sourceFingerprintWithLookup(s Server, lookup func(string) string) (string, error) {
-	if lookup == nil {
-		lookup = os.Getenv
-	}
-	values := map[string]string{}
-	for k, v := range s.Headers {
-		values["header:"+k] = os.Expand(v, lookup)
-	}
-	for k, v := range s.Env {
-		values["env:"+k] = os.Expand(v, lookup)
-	}
-	return digest([]any{s, values})
+	return upstream.Fingerprint(s, lookup)
 }
-
 func sourceFingerprint(s Server) (string, error) {
 	return sourceFingerprintWithLookup(s, os.Getenv)
 }
@@ -84,27 +72,8 @@ func (g *Gateway) realTools() []Tool {
 }
 
 func checkEnvironmentWithLookup(s Server, lookup func(string) string) error {
-	if lookup == nil {
-		lookup = os.Getenv
-	}
-	for _, values := range []map[string]string{s.Headers, s.Env} {
-		for _, value := range values {
-			missing := []string{}
-			os.Expand(value, func(key string) string {
-				v := lookup(key)
-				if v == "" {
-					missing = append(missing, key)
-				}
-				return v
-			})
-			if len(missing) > 0 {
-				return fmt.Errorf("gateway process environment is missing: %s; export the variables and restart the gateway", strings.Join(missing, ", "))
-			}
-		}
-	}
-	return nil
+	return upstream.CheckEnvironment(s, lookup)
 }
-
 func checkEnvironment(s Server) error {
 	return checkEnvironmentWithLookup(s, os.Getenv)
 }
@@ -283,18 +252,7 @@ func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult,
 func (g *Gateway) errorDetail(err error) string {
 	message := err.Error()
 	_, key := g.model.RuntimeConfig()
-	g.mu.RLock()
-	tokenSources := make([]oauth2.TokenSource, 0, len(g.oauthTokens))
-	for _, ts := range g.oauthTokens {
-		tokenSources = append(tokenSources, ts)
-	}
-	g.mu.RUnlock()
-	secrets := []string{key}
-	for _, ts := range tokenSources {
-		if tok, err := ts.Token(); err == nil && tok != nil && tok.AccessToken != "" {
-			secrets = append(secrets, tok.AccessToken)
-		}
-	}
+	secrets := append([]string{key}, g.upstream.TokenSecrets()...)
 	for _, s := range g.Snapshot().Servers {
 		for _, v := range s.Headers {
 			expanded := g.expandEnv(v)
