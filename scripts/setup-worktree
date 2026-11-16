@@ -1,7 +1,30 @@
 #!/usr/bin/env sh
 # Set up frontend dependencies and isolated runtime configuration for the
-# current checkout (or an explicit path). See .agents/skills/git-workflow/SKILL.md.
+# current checkout (or an explicit path), then install git hooks (lefthook).
+# See .agents/skills/git-workflow/SKILL.md.
 set -eu
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-exec node "$script_dir/worktree-runtime.mjs" setup "$@"
+node "$script_dir/worktree-runtime.mjs" setup "$@"
+
+# Hooks live in the common git dir shared by all worktrees. lefthook is pinned in
+# tools/go.mod (kept out of the app module graph); build it to a stable path in the
+# common git dir so the installed hook does not point into the go build cache.
+# Idempotent, and must never fail setup.
+target=$PWD
+for arg in "$@"; do
+  case "$arg" in --*) ;; *) target=$arg; break ;; esac
+done
+install_hooks() {
+  cd "$target"
+  root=$(git rev-parse --show-toplevel)
+  common=$(cd "$root" && cd "$(git rev-parse --git-common-dir)" && pwd)
+  mkdir -p "$common/lefthook-bin"
+  go build -modfile="$root/tools/go.mod" -o "$common/lefthook-bin/lefthook" github.com/evilmartians/lefthook/v2
+  "$common/lefthook-bin/lefthook" install
+}
+if install_hooks >/dev/null 2>&1; then
+  echo "git hooks installed (lefthook); bypass with LEFTHOOK=0"
+else
+  echo "warning: could not install git hooks; run scripts/setup-worktree again" >&2
+fi

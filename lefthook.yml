@@ -1,0 +1,16 @@
+# Git hooks managed by lefthook (pinned in tools/go.mod; installed by scripts/setup-worktree).
+# Bypass in emergencies: LEFTHOOK=0 git commit ...
+pre-commit:
+  parallel: false
+  jobs:
+    - name: go-fmt
+      glob: "*.go"
+      run: scripts/precommit-go fmt {staged_files}
+    - name: go-lint
+      glob: "*.go"
+      run: scripts/precommit-go lint {staged_files}
+
+pre-push:
+  jobs:
+    - name: check-foundation
+      run: python3 scripts/check-foundation.py

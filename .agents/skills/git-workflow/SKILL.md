@@ -84,6 +84,15 @@ scripts/new-worktree <branch> [--base <ref>] [--no-setup]
 
 ## 提交与验证
 
+### Git hooks（lefthook）
+
+配置见 [lefthook.yml](../../../lefthook.yml)，lefthook 固定在独立的 [tools/go.mod](../../../tools/go.mod)（不进入应用模块依赖图，Dependabot 单独跟踪 `/tools`）；`scripts/setup-worktree` 将其构建到公共 git 目录下的 `lefthook-bin/` 并执行 `install`（幂等；手动运行用 `go tool -modfile=tools/go.mod lefthook ...`；hook 位于所有 worktree 共享的公共 git 目录，在执行提交的 worktree 内运行该 worktree 的 `lefthook.yml`）。主 checkout 需自行运行一次 `scripts/setup-worktree`。
+
+- `pre-commit`（仅暂存的 `*.go`，无 Go 文件时跳过，通常 1–3 秒）：`golangci-lint fmt -d` 只检查格式、不改文件，失败时提示运行 `golangci-lint fmt` 并重新暂存；`golangci-lint run --new-from-rev=HEAD` 只对涉及的包报告新增问题。逻辑见 [scripts/precommit-go](../../../scripts/precommit-go)，从 `PATH` 或 `$(go env GOPATH)/bin` 查找 `golangci-lint`，缺失时提示安装 v2.15.0。
+- `pre-push`：运行 `python3 scripts/check-foundation.py`（约 1 秒）。
+- 不在 hook 中运行 `go test` 与 race 套件，仍须按下节手动验证。
+- 紧急绕过：`LEFTHOOK=0 git commit ...`（或 `git push`）；绕过后须自行保证 CI 通过。
+
 按改动范围运行对应验证（对齐 CI）：
 
 ```sh
