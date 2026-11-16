@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -193,9 +192,7 @@ func (g *Gateway) Handler() http.Handler {
 			fail(w, err)
 			return
 		}
-		g.mu.RLock()
-		events := slices.Clone(g.events)
-		g.mu.RUnlock()
+		events := g.activity.Recent()
 		respond(w, 200, map[string]any{"registry": g.Snapshot(), "settings": settings, "key_configured": key, "profiles": g.ModelProfiles(), "events": events, "mcp_url": g.baseURL + "/mcp", "setup": setup, "scopes": g.ScopeOverview(), "access": map[string]any{"shared": g.access != nil, "actor": requestActor(r.Context(), "")}})
 	})
 	mux.HandleFunc("PUT /api/settings", func(w http.ResponseWriter, r *http.Request) {
@@ -352,9 +349,7 @@ func (g *Gateway) Handler() http.Handler {
 		respond(w, 200, out)
 	})
 	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
-		g.mu.RLock()
-		events := slices.Clone(g.events)
-		g.mu.RUnlock()
+		events := g.activity.Recent()
 		respond(w, 200, events)
 	})
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {

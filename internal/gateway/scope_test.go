@@ -472,9 +472,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	}
 
 	// --- Verify Activity Logs contain detail.scope ---
-	g.mu.RLock()
-	events := slices.Clone(g.events)
-	g.mu.RUnlock()
+	events := g.activity.Recent()
 	foundDiscoverScope := false
 	foundInvokeScope := false
 	for _, ev := range events {

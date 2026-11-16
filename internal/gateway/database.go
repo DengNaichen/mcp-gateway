@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"gatewaylab/internal/activity"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/store"
 )
@@ -69,13 +70,7 @@ func (g *Gateway) persistModelProfiles(profiles []ModelProfile) error {
 	}
 	return tx.Commit()
 }
-func (g *Gateway) loadEvents() error {
-	events, err := store.Activity(g.db).Recent(100)
-	if err != nil {
-		return err
-	}
-	for _, e := range events {
-		g.events = append(g.events, Event(e))
-	}
-	return nil
+func (g *Gateway) loadEvents() (err error) {
+	g.activity, err = activity.New(store.Activity(g.db))
+	return err
 }

@@ -11,7 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"gatewaylab/internal/activity"
 	"gatewaylab/internal/registry"
+	"gatewaylab/internal/secrets"
 	"gatewaylab/internal/store"
 	"gatewaylab/internal/workspace"
 
@@ -27,9 +29,9 @@ type Gateway struct {
 	apiKey         string
 	profiles       []ModelProfile
 	profileKeys    map[string]string
-	runtimeSecrets map[string]string
+	runtimeSecrets secrets.Store
 	oauthTokens    map[string]oauth2.TokenSource
-	events         []Event
+	activity       *activity.Service
 	dir            string
 	baseURL        string
 	db             *sql.DB
@@ -77,15 +79,13 @@ func New(dir, baseURL string) (*Gateway, error) {
 	}
 	db := storage.DB
 	g := &Gateway{
-		instanceID:     uuid.NewString(),
-		execution:      execution,
-		access:         access,
-		dir:            dir,
-		baseURL:        baseURL,
-		events:         []Event{},
-		profileKeys:    map[string]string{},
-		runtimeSecrets: map[string]string{},
-		oauthTokens:    map[string]oauth2.TokenSource{},
+		instanceID:  uuid.NewString(),
+		execution:   execution,
+		access:      access,
+		dir:         dir,
+		baseURL:     baseURL,
+		profileKeys: map[string]string{},
+		oauthTokens: map[string]oauth2.TokenSource{},
 		settings: Settings{
 			BaseURL: "https://api.openai.com/v1", Model: "gpt-6-luna", MaxTools: 4, TimeoutSeconds: 45,
 		},
@@ -168,35 +168,18 @@ func (g *Gateway) Config() (Settings, bool) {
 }
 
 func (g *Gateway) lookupEnv(key string) string {
-	if g != nil {
-		g.mu.RLock()
-		v := g.runtimeSecrets[key]
-		g.mu.RUnlock()
-		if v != "" {
-			return v
-		}
+	if g == nil {
+		return os.Getenv(key)
 	}
-	return os.Getenv(key)
+	return g.runtimeSecrets.Lookup(key)
 }
 
-func (g *Gateway) expandEnv(value string) string {
-	return os.Expand(value, g.lookupEnv)
-}
+func (g *Gateway) expandEnv(value string) string { return os.Expand(value, g.lookupEnv) }
 
 func (g *Gateway) setRuntimeSecret(key, value string) {
-	if g == nil || strings.TrimSpace(key) == "" {
-		return
+	if g != nil {
+		g.runtimeSecrets.Set(key, value)
 	}
-	g.mu.Lock()
-	if g.runtimeSecrets == nil {
-		g.runtimeSecrets = map[string]string{}
-	}
-	if value == "" {
-		delete(g.runtimeSecrets, key)
-	} else {
-		g.runtimeSecrets[key] = value
-	}
-	g.mu.Unlock()
 }
 
 func validateSettings(s Settings) error {
@@ -457,21 +440,7 @@ func allowed(t Tool, actor string) bool {
 }
 
 func (g *Gateway) record(kind, actor, status, title string, started time.Time, detail any) {
-	b, err := json.Marshal(detail)
-	if err != nil {
-		slog.Error("encode activity", "error", err)
-		return
-	}
-	e := Event{ID: newID(), Time: time.Now(), Kind: kind, Actor: actorName(actor), Status: status, Title: title, DurationMS: time.Since(started).Milliseconds(), Detail: b}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.events = append([]Event{e}, g.events...)
-	if len(g.events) > 100 {
-		g.events = g.events[:100]
-	}
-	if err := store.Activity(g.db).Insert(store.ActivityRow(e)); err != nil {
-		slog.Error("persist activity log", "error", err)
-	}
+	g.activity.Record(kind, actor, status, title, started, detail)
 }
 
 func newID() string { return fmt.Sprintf("%x", time.Now().UnixNano()) }

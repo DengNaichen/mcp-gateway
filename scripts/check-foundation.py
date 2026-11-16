@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify assignment A's package boundaries using Go's actual dependency graph."""
+"""Verify foundation and policy package boundaries using Go's actual dependency graph."""
 import json
 from pathlib import Path
 import re
@@ -7,13 +7,18 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 output = subprocess.check_output(
-    ["go", "list", "-json", "./internal/registry", "./internal/store"],
+    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi"],
     cwd=root, text=True,
 )
 allowed = {
     "gatewaylab/internal/registry": set(),
     "gatewaylab/internal/store": {"gatewaylab/internal/registry"},
 }
+allowed.update({
+    "gatewaylab/internal/secrets": set(),
+    "gatewaylab/internal/activity": {"gatewaylab/internal/store", "gatewaylab/internal/registry"},
+    "gatewaylab/internal/openapi": {"gatewaylab/internal/registry"},
+})
 decoder = json.JSONDecoder()
 while output.strip():
     package, end = decoder.raw_decode(output.lstrip())
@@ -28,4 +33,4 @@ for path in sorted((root / "internal/gateway").glob("*.go")):
     if path.name.endswith("_test.go"):
         continue
     assert not re.search(r'\b(?:SELECT|INSERT INTO|UPDATE|DELETE FROM|CREATE TABLE|ALTER TABLE|PRAGMA)\b', path.read_text()), f"SQL outside store: {path.relative_to(root)}"
-print("PASS: registry/store dependency direction; gateway contains no SQL")
+print("PASS: foundation/policy dependency direction; gateway contains no SQL")

@@ -1,11 +1,10 @@
 package gateway
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
+	"gatewaylab/internal/activity"
 	"gatewaylab/internal/registry"
 )
 
@@ -109,16 +108,7 @@ type InvokeResult struct {
 	DurationMS int64  `json:"duration_ms"`
 }
 
-type Event struct {
-	ID         string          `json:"id"`
-	Time       time.Time       `json:"time"`
-	Kind       string          `json:"kind"`
-	Actor      string          `json:"actor"`
-	Status     string          `json:"status"`
-	Title      string          `json:"title"`
-	DurationMS int64           `json:"duration_ms"`
-	Detail     json.RawMessage `json:"detail,omitempty"`
-}
+type Event = activity.Event
 
 type appError struct {
 	status  int

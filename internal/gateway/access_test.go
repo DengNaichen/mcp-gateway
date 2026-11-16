@@ -85,9 +85,7 @@ func TestAccessIdentityScopeAndRedaction(t *testing.T) {
 	if got := call("POST", "/api/invoke", writerTestToken, `{"tool_id":"service.write","arguments":{}}`); got.Code != 200 {
 		t.Fatalf("authorized write failed: %d %s", got.Code, got.Body)
 	}
-	g.mu.RLock()
-	actor := g.events[0].Actor
-	g.mu.RUnlock()
+	actor := g.activity.Recent()[0].Actor
 	if actor != "writer" {
 		t.Fatalf("audit actor was not server-derived: %s", actor)
 	}
