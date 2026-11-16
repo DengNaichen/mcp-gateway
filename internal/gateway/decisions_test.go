@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -20,7 +22,7 @@ func decisionFixture(status string, probabilities ...float64) map[string]any {
 }
 
 func TestDecisionsRouting(t *testing.T) {
-	candidates := []Tool{{ID: "s.a"}, {ID: "s.b"}, {ID: "s.c"}}
+	candidates := []registry.Tool{{ID: "s.a"}, {ID: "s.b"}, {ID: "s.c"}}
 	for _, tc := range []struct {
 		name, status  string
 		probabilities []float64
@@ -61,7 +63,7 @@ func TestDecisionsRouting(t *testing.T) {
 			defer server.Close()
 			// Full endpoints and base URLs must both work.
 			for _, suffix := range []string{"/v1", "/v1/decisions/"} {
-				d, usage, err := selectWithModel(context.Background(), Settings{BaseURL: server.URL + suffix, Model: "gpt-6-luna", MaxTools: 2, TimeoutSeconds: 5}, "test-key", DiscoverRequest{Intent: "inspect"}, candidates)
+				d, usage, err := selectWithModel(context.Background(), model.Settings{BaseURL: server.URL + suffix, Model: "gpt-6-luna", MaxTools: 2, TimeoutSeconds: 5}, "test-key", DiscoverRequest{Intent: "inspect"}, candidates)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -95,7 +97,7 @@ func TestDecisionsRejectsInvalidAnswers(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			_, _, err := selectWithModel(context.Background(), Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{}, []Tool{{ID: "s.a"}})
+			_, _, err := selectWithModel(context.Background(), model.Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{}, []registry.Tool{{ID: "s.a"}})
 			if err == nil {
 				t.Fatal("invalid answer accepted")
 			}
@@ -117,8 +119,8 @@ func TestRoutingInputPutsIntentBeforeCandidates(t *testing.T) {
 		respond(w, 200, decisionFixture("selected", 0.9))
 	}))
 	defer server.Close()
-	tools := []Tool{{ID: "s.a", Name: "a", Description: "first"}}
-	if _, _, err := selectWithModel(context.Background(), Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "find it", Context: "known"}, tools); err != nil {
+	tools := []registry.Tool{{ID: "s.a", Name: "a", Description: "first"}}
+	if _, _, err := selectWithModel(context.Background(), model.Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "find it", Context: "known"}, tools); err != nil {
 		t.Fatal(err)
 	}
 	intentAt, contextAt, candidatesAt := strings.Index(input, `"intent"`), strings.Index(input, `"context"`), strings.Index(input, `"candidates"`)
@@ -129,9 +131,9 @@ func TestRoutingInputPutsIntentBeforeCandidates(t *testing.T) {
 
 // The per-request tool limit is per provider: OpenAI keeps its original 100, Gemini allows more.
 func TestRoutingToolLimitIsPerProvider(t *testing.T) {
-	tools := make([]Tool, openAIMaxTools+1)
+	tools := make([]registry.Tool, openAIMaxTools+1)
 	for i := range tools {
-		tools[i] = Tool{ID: fmt.Sprintf("s.t%03d", i)}
+		tools[i] = registry.Tool{ID: fmt.Sprintf("s.t%03d", i)}
 	}
 	probabilities := make([]float64, len(tools))
 	var openAICalls int
@@ -140,7 +142,7 @@ func TestRoutingToolLimitIsPerProvider(t *testing.T) {
 		respond(w, 200, decisionFixture("no_match", probabilities...))
 	}))
 	defer openAI.Close()
-	_, _, err := selectWithModel(context.Background(), Settings{BaseURL: openAI.URL, Model: "gpt-6-luna", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "x"}, tools)
+	_, _, err := selectWithModel(context.Background(), model.Settings{BaseURL: openAI.URL, Model: "gpt-6-luna", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "x"}, tools)
 	if err == nil || !strings.Contains(err.Error(), "100") || openAICalls != 0 {
 		t.Fatalf("OpenAI path must reject %d tools before calling the model: err=%v calls=%d", len(tools), err, openAICalls)
 	}
@@ -148,7 +150,7 @@ func TestRoutingToolLimitIsPerProvider(t *testing.T) {
 		respond(w, 200, geminiFixture("no_match", probabilities...))
 	}))
 	defer gemini.Close()
-	if _, _, err := selectWithModel(context.Background(), Settings{BaseURL: gemini.URL, Model: "gemini-decision-1", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "x"}, tools); err != nil {
+	if _, _, err := selectWithModel(context.Background(), model.Settings{BaseURL: gemini.URL, Model: "gemini-decision-1", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "x"}, tools); err != nil {
 		t.Fatalf("Gemini path must accept %d tools: %v", len(tools), err)
 	}
 }

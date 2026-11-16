@@ -3,6 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"gatewaylab/internal/activity"
+	"gatewaylab/internal/clientconfig"
+	"gatewaylab/internal/gateway"
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/scope"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,9 +18,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"gatewaylab/internal/clientconfig"
-	"gatewaylab/internal/gateway"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -178,10 +181,10 @@ func TestScopeAPIClientContract(t *testing.T) {
 	if _, err := c.Discover(ctx, gateway.DiscoverRequest{Intent: "check prs"}); err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	if _, err := c.DiscoverScoped(ctx, gateway.DiscoverRequest{Intent: "check prs"}, &SimScope{RepoKey: "repo-1", AgentKey: "codex"}); err != nil {
+	if _, err := c.DiscoverScoped(ctx, gateway.DiscoverRequest{Intent: "check prs"}, &scope.SimScope{RepoKey: "repo-1", AgentKey: "codex"}); err != nil {
 		t.Fatalf("DiscoverScoped: %v", err)
 	}
-	if _, err := c.InvokeScoped(ctx, gateway.InvokeRequest{ToolID: "github.list_prs", Arguments: map[string]any{}}, &SimScope{RepoKey: "*", AgentKey: "claude"}); err != nil {
+	if _, err := c.InvokeScoped(ctx, gateway.InvokeRequest{ToolID: "github.list_prs", Arguments: map[string]any{}}, &scope.SimScope{RepoKey: "*", AgentKey: "claude"}); err != nil {
 		t.Fatalf("InvokeScoped: %v", err)
 	}
 
@@ -242,8 +245,8 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 		MCPURL:        "http://127.0.0.1:8788/mcp",
 		KeyConfigured: true,
 		Access:        AccessInfo{Shared: false, Actor: "developer"},
-		Registry: gateway.Registry{
-			Servers: []gateway.Server{
+		Registry: registry.Registry{
+			Servers: []registry.Server{
 				{
 					ID:          "github",
 					Name:        "GitHub MCP",
@@ -263,7 +266,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 					Enabled:     true,
 				},
 			},
-			Tools: []gateway.Tool{
+			Tools: []registry.Tool{
 				{
 					ID:          "github.list_prs",
 					ServerID:    "github",
@@ -293,7 +296,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 				},
 			},
 		},
-		Settings: gateway.Settings{
+		Settings: model.Settings{
 			BaseURL:        "https://api.openai.com/v1",
 			Model:          "gpt-6-luna",
 			MaxTools:       4,
@@ -309,7 +312,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 		Scopes: ScopeOverview{
 			Enforce:     false,
 			HookBinPath: "/Users/test/.mcp-gateway/bin/mcp-gateway-hook",
-			Repositories: []ScopeRepository{
+			Repositories: []scope.Repository{
 				{
 					ID:            "repo-gw",
 					Name:          "mcp-gateway",
@@ -341,7 +344,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 					},
 				},
 			},
-			Observed: []ObservedRepo{
+			Observed: []scope.ObservedRepo{
 				{
 					Fingerprint:  "fp-obs-1",
 					Name:         "new-service",
@@ -354,7 +357,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 				},
 			},
 		},
-		Events: []gateway.Event{
+		Events: []activity.Event{
 			{
 				ID:         "ev-scope-1",
 				Time:       now,
@@ -396,7 +399,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 			var in SaveRepositoryInput
 			_ = json.Unmarshal(raw, &in)
 			newID := "repo-" + in.Name
-			repo := ScopeRepository{
+			repo := scope.Repository{
 				ID:            newID,
 				Name:          in.Name,
 				GitCommonDirs: in.GitCommonDirs,
@@ -446,14 +449,14 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 			}
 			_ = json.Unmarshal(raw, &in)
 			agents := computeLocalScopePreview(&boot, in.RepoKey, in.Actor)
-			_ = json.NewEncoder(w).Encode(ScopePreviewResponse{
+			_ = json.NewEncoder(w).Encode(scope.ScopePreviewResponse{
 				RepoKey: in.RepoKey,
 				Agents:  agents,
 			})
 
 		case r.Method == http.MethodGet && r.URL.Path == "/api/scopes/snippets":
 			ag := r.URL.Query().Get("agent")
-			_ = json.NewEncoder(w).Encode(ScopeSnippetResponse{
+			_ = json.NewEncoder(w).Encode(scope.ScopeSnippetResponse{
 				Agent:        ag,
 				ConfigPath:   "/Users/test/." + ag + "/hooks.json",
 				MCPURL:       "http://127.0.0.1:8788/mcp?agent=" + ag,
@@ -565,7 +568,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 	waitAsyncIdle(t, tester, uiApp)
 	stateMu.Lock()
 	repoCountAfterBind := len(boot.Scopes.Repositories)
-	var boundNewSvc ScopeRepository
+	var boundNewSvc scope.Repository
 	if repoCountAfterBind >= 2 {
 		boundNewSvc = boot.Scopes.Repositories[1]
 	}
@@ -688,18 +691,18 @@ func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 	boot := Bootstrap{
 		MCPURL: "http://127.0.0.1:8788/mcp",
 		Access: AccessInfo{Shared: false, Actor: "developer"},
-		Registry: gateway.Registry{
-			Servers: []gateway.Server{
+		Registry: registry.Registry{
+			Servers: []registry.Server{
 				{ID: "github", Name: "GitHub MCP", Enabled: true},
 			},
-			Tools: []gateway.Tool{
+			Tools: []registry.Tool{
 				{ID: "github.list_prs", ServerID: "github", Name: "list_prs", Enabled: true, ReadOnly: true, Actors: []string{"developer"}},
 				{ID: "github.merge_pr", ServerID: "github", Name: "merge_pr", Enabled: true, ReadOnly: false, Actors: []string{"developer"}},
 			},
 		},
 		Scopes: ScopeOverview{
 			Enforce: false,
-			Repositories: []ScopeRepository{
+			Repositories: []scope.Repository{
 				{
 					ID:            "repo-1",
 					Name:          "alpha-repo",
@@ -768,7 +771,7 @@ func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 				Actor   string `json:"actor"`
 			}
 			_ = json.Unmarshal(raw, &in)
-			_ = json.NewEncoder(w).Encode(ScopePreviewResponse{
+			_ = json.NewEncoder(w).Encode(scope.ScopePreviewResponse{
 				RepoKey: in.RepoKey,
 				Agents:  computeLocalScopePreview(&boot, in.RepoKey, in.Actor),
 			})
@@ -881,8 +884,8 @@ func waitAsyncIdle(t *testing.T, tester *ui.Tester, uiApp *DesktopUI) {
 	}
 }
 
-func slicesDeleteObserved(in []ObservedRepo, name string) []ObservedRepo {
-	var out []ObservedRepo
+func slicesDeleteObserved(in []scope.ObservedRepo, name string) []scope.ObservedRepo {
+	var out []scope.ObservedRepo
 	for _, o := range in {
 		if o.Name != name {
 			out = append(out, o)

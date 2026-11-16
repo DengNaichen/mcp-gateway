@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/egoist/mygo/ui"
 	"testing"
+
+	"github.com/egoist/mygo/ui"
 )
 
 func TestSailThemeTracksAppearance(t *testing.T) {

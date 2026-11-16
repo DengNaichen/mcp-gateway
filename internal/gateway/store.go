@@ -4,25 +4,30 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log/slog"
-	"os"
-	"slices"
-	"sync"
-	"time"
-
+	"gatewaylab/internal/access"
 	"gatewaylab/internal/activity"
+	"gatewaylab/internal/demo"
+	"gatewaylab/internal/maintenance"
+	"gatewaylab/internal/maintenance/sandbox"
+	"gatewaylab/internal/market"
 	"gatewaylab/internal/model"
 	"gatewaylab/internal/registry"
+	"gatewaylab/internal/routing"
 	"gatewaylab/internal/scope"
 	"gatewaylab/internal/secrets"
 	"gatewaylab/internal/store"
 	"gatewaylab/internal/upstream"
 	"gatewaylab/internal/workspace"
+	"log/slog"
+	"os"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 type Gateway struct {
+	market     *market.Service
 	instanceID string
 	// publicationConfigMu serializes model mutations with final maintenance
 	// fingerprint validation and catalog publication; domain state owns its own locks.
@@ -36,21 +41,24 @@ type Gateway struct {
 	db                  *sql.DB
 	storage             *store.Store
 	upstream            *upstream.Service
-	access              *accessPolicy
-	execution           executionPolicy
-	routing             routingOptions
-	maintenance         *Maintainer
+	access              *access.Policy
+	execution           sandbox.Policy
+	routing             routing.Options
+	maintenance         *maintenance.Maintainer
 	scopeKey            []byte
 	scope               *scope.Service
 	clock               func() time.Time
 }
 
-func New(dir, baseURL string) (*Gateway, error) {
+type Options struct{ OpenBrowser func(string) error }
+
+func New(dir, baseURL string) (*Gateway, error) { return NewWithOptions(dir, baseURL, Options{}) }
+func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
 	execution, err := loadExecutionPolicy()
 	if err != nil {
 		return nil, err
 	}
-	access, err := loadAccessPolicy(baseURL)
+	policy, err := access.LoadPolicy(baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -77,14 +85,14 @@ func New(dir, baseURL string) (*Gateway, error) {
 	g := &Gateway{
 		instanceID: uuid.NewString(),
 		execution:  execution,
-		access:     access,
+		access:     policy,
 		dir:        dir,
 		baseURL:    baseURL,
 		db:         db,
 		storage:    storage,
 		scopeKey:   scopeKey,
 	}
-	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupEnv})
+	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupEnv, OpenBrowser: opts.OpenBrowser})
 	if err := g.loadRegistry(); err != nil {
 		return nil, err
 	}
@@ -96,12 +104,12 @@ func New(dir, baseURL string) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	count, err := store.Settings[Settings](db).Count()
+	count, err := store.Settings[model.Settings](db).Count()
 	if err != nil {
 		return nil, fmt.Errorf("read settings count: %w", err)
 	}
 	if count == 0 {
-		if err := g.registry.Update(func(Registry) (Registry, error) { return seedRegistry(baseURL), nil }); err != nil {
+		if err := g.registry.Update(func(registry.Registry) (registry.Registry, error) { return demo.Registry(baseURL), nil }); err != nil {
 			return nil, err
 		}
 	}
@@ -132,13 +140,14 @@ func New(dir, baseURL string) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
+	g.market = market.New(market.Options{Dir: dir, Snapshot: g.Snapshot, SaveServer: g.SaveServer, ImportMCP: g.ImportMCP, SetRuntimeSecret: g.setRuntimeSecret, ErrorDetail: g.ErrorDetail})
 	ready = true
 	return g, nil
 }
 
-func (g *Gateway) Snapshot() Registry { return g.registry.Snapshot() }
+func (g *Gateway) Snapshot() registry.Registry { return g.registry.Snapshot() }
 
-func (g *Gateway) Config() (Settings, bool) { return g.model.Config() }
+func (g *Gateway) Config() (model.Settings, bool) { return g.model.Config() }
 
 func (g *Gateway) lookupEnv(key string) string {
 	if g == nil {
@@ -155,50 +164,39 @@ func (g *Gateway) setRuntimeSecret(key, value string) {
 	}
 }
 
-func actorName(actor string) string {
-	if actor == "" {
-		return "developer"
-	}
-	return actor
-}
-
-func allowed(t Tool, actor string) bool {
-	return t.Enabled && (slices.Contains(t.Actors, "*") || slices.Contains(t.Actors, actorName(actor)))
-}
-
 func (g *Gateway) record(kind, actor, status, title string, started time.Time, detail any) {
 	g.activity.Record(kind, actor, status, title, started, detail)
 }
 
 func newID() string { return fmt.Sprintf("%x", time.Now().UnixNano()) }
 
-func (g *Gateway) ModelProfiles() []ModelProfile { return g.model.ModelProfiles() }
+func (g *Gateway) ModelProfiles() []model.ModelProfile { return g.model.ModelProfiles() }
 
 // Model owns its state lock. This coordination prevents model configuration
 // changing between maintenance fingerprint validation and catalog publication.
-func (g *Gateway) SaveSettings(s Settings, key string, clearKey bool) error {
+func (g *Gateway) SaveSettings(s model.Settings, key string, clearKey bool) error {
 	g.publicationConfigMu.Lock()
 	defer g.publicationConfigMu.Unlock()
-	return modelError(g.model.SaveSettings(s, key, clearKey))
+	return g.model.SaveSettings(s, key, clearKey)
 }
-func (g *Gateway) SaveModelProfile(p ModelProfile, key string, clearKey bool) (ModelProfile, error) {
+func (g *Gateway) SaveModelProfile(p model.ModelProfile, key string, clearKey bool) (model.ModelProfile, error) {
 	g.publicationConfigMu.Lock()
 	defer g.publicationConfigMu.Unlock()
 	out, err := g.model.SaveModelProfile(p, key, clearKey)
-	return out, modelError(err)
+	return out, err
 }
-func (g *Gateway) ActivateModelProfile(id string) (ModelProfile, error) {
+func (g *Gateway) ActivateModelProfile(id string) (model.ModelProfile, error) {
 	g.publicationConfigMu.Lock()
 	defer g.publicationConfigMu.Unlock()
 	out, err := g.model.ActivateModelProfile(id)
-	return out, modelError(err)
+	return out, err
 }
 func (g *Gateway) DeleteModelProfile(id string) error {
 	g.publicationConfigMu.Lock()
 	defer g.publicationConfigMu.Unlock()
-	return modelError(g.model.DeleteModelProfile(id))
+	return g.model.DeleteModelProfile(id)
 }
-func (g *Gateway) PingModel(ctx context.Context, s Settings, profileID, apiKey string, clearKey bool) (PingModelResult, error) {
+func (g *Gateway) PingModel(ctx context.Context, s model.Settings, profileID, apiKey string, clearKey bool) (model.PingModelResult, error) {
 	out, err := g.model.PingModel(ctx, s, profileID, apiKey, clearKey)
-	return out, modelError(err)
+	return out, err
 }

@@ -1,10 +1,10 @@
 package gateway
 
 import (
+	"gatewaylab/internal/activity"
+
 	"errors"
 	"fmt"
-
-	"gatewaylab/internal/activity"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/store"
 )

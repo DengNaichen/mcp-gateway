@@ -1,0 +1,19 @@
+package gateway
+
+import (
+	"gatewaylab/internal/access"
+	"gatewaylab/internal/activity"
+
+	"gatewaylab/internal/maintenance"
+	"gatewaylab/internal/market"
+	"gatewaylab/internal/scope"
+)
+
+func (g *Gateway) Access() *access.Policy               { return g.access }
+func (g *Gateway) Activity() *activity.Service          { return g.activity }
+func (g *Gateway) Maintenance() *maintenance.Maintainer { return g.maintenance }
+func (g *Gateway) Scope() *scope.Service                { return g.scope }
+func (g *Gateway) Market() *market.Service              { return g.market }
+func (g *Gateway) DataDir() string                      { return g.dir }
+func (g *Gateway) BaseURL() string                      { return g.baseURL }
+func (g *Gateway) InstanceID() string                   { return g.instanceID }

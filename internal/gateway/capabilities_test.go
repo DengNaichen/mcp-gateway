@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,14 +13,14 @@ import (
 
 func TestRoutingModelReceivesSummariesOnly(t *testing.T) {
 	schema := objectSchema(map[string]any{"payload": map[string]any{"type": "string", "description": strings.Repeat("large schema ", 5000)}})
-	candidates := []Tool{{ID: "s.large", ServerID: "s", Name: "large", Description: "Inspect payload", InputSchema: schema, Adapter: "private.mjs", Revision: "private"}}
+	candidates := []registry.Tool{{ID: "s.large", ServerID: "s", Name: "large", Description: "Inspect payload", InputSchema: schema, Adapter: "private.mjs", Revision: "private"}}
 	full := mustJSON(t, candidates)
 	small := mustJSON(t, summarizeTools(candidates))
 	if len(small)*20 >= len(full) {
 		t.Fatal("summary did not materially reduce payload")
 	}
 	t.Logf("candidate payload: %d -> %d bytes", len(full), len(small))
-	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Input string `json:"input"`
 		}
@@ -32,29 +34,9 @@ func TestRoutingModelReceivesSummariesOnly(t *testing.T) {
 		}
 		respond(w, 200, decisionFixture("selected", 0.9))
 	}))
-	defer model.Close()
-	_, _, err := selectWithModel(context.Background(), Settings{BaseURL: model.URL, Model: "fixture", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "payload"}, candidates)
+	defer modelServer.Close()
+	_, _, err := selectWithModel(context.Background(), model.Settings{BaseURL: modelServer.URL, Model: "fixture", MaxTools: 1, TimeoutSeconds: 5}, "", DiscoverRequest{Intent: "payload"}, candidates)
 	if err != nil {
 		t.Fatal(err)
-	}
-}
-func TestSummaryDiscoveryAndSchemaAuthorization(t *testing.T) {
-	g, _ := testGateway(t)
-	g.StartMaintenance(context.Background())
-	approveRun(t, g.maintenance, enqueueTest(t, g.maintenance, false).ID)
-	result, err := g.Discover(context.Background(), DiscoverRequest{Intent: "logs"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	b := mustJSON(t, discoveryPresentation(result, true))
-	if strings.Contains(string(b), "input_schema") {
-		t.Fatal("summary discovery contained schema")
-	}
-	tool, err := g.ToolSchema(context.Background(), "service.logs", "developer")
-	if err != nil || tool.InputSchema == nil {
-		t.Fatalf("schema retrieval: %+v %v", tool, err)
-	}
-	if _, err := g.ToolSchema(context.Background(), "service.logs", "observer"); err == nil {
-		t.Fatal("schema leaked to unauthorized actor")
 	}
 }

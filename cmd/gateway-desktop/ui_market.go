@@ -3,12 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"gatewaylab/internal/market"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
-
-	"gatewaylab/internal/gateway"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -26,13 +25,13 @@ type marketPageState struct {
 	query         string
 	registryQuery string
 	filter        string // "all" | "http" | "stdio" | "installed"
-	items         []gateway.MarketServer
+	items         []market.MarketServer
 	registryErr   string
 	fetchErr      string
 
 	installingID string
 	showModal    bool
-	modalItem    *gateway.MarketServer
+	modalItem    *market.MarketServer
 	modalInputs  map[string]string
 	modalErr     string
 
@@ -128,8 +127,8 @@ func (u *DesktopUI) renderMarket(c *ui.Context) {
 	}
 
 	q := strings.ToLower(strings.TrimSpace(st.query))
-	var featuredFiltered []gateway.MarketServer
-	var registryFiltered []gateway.MarketServer
+	var featuredFiltered []market.MarketServer
+	var registryFiltered []market.MarketServer
 	for _, item := range st.items {
 		item.Installed = item.Installed || installedByID[item.ServerID]
 		if !marketMatchesFilter(item, st.filter) {
@@ -195,7 +194,7 @@ func renderMarketFilterPill(c *ui.Context, st *marketPageState, id, label string
 	}
 }
 
-func marketMatchesFilter(item gateway.MarketServer, filter string) bool {
+func marketMatchesFilter(item market.MarketServer, filter string) bool {
 	switch filter {
 	case "http":
 		return item.Transport == "http"
@@ -208,7 +207,7 @@ func marketMatchesFilter(item gateway.MarketServer, filter string) bool {
 	}
 }
 
-func marketMatchesLocalQuery(item gateway.MarketServer, q string) bool {
+func marketMatchesLocalQuery(item market.MarketServer, q string) bool {
 	if !item.Featured {
 		return true
 	}
@@ -218,7 +217,7 @@ func marketMatchesLocalQuery(item gateway.MarketServer, q string) bool {
 	return strings.Contains(haystack, q)
 }
 
-func (u *DesktopUI) renderMarketGrid(c *ui.Context, st *marketPageState, items []gateway.MarketServer, cols int, prefix string) {
+func (u *DesktopUI) renderMarketGrid(c *ui.Context, st *marketPageState, items []market.MarketServer, cols int, prefix string) {
 	for start := 0; start < len(items); start += cols {
 		end := start + cols
 		if end > len(items) {
@@ -228,7 +227,7 @@ func (u *DesktopUI) renderMarketGrid(c *ui.Context, st *marketPageState, items [
 		ui.Row(c).Key(fmt.Sprintf("mkt-row-%s-%d", prefix, rowIdx)).FillWidth().Gap(14).AlignItems(ui.Stretch).Children(func() {
 			for i := start; i < end; i++ {
 				item := items[i]
-				ui.Column(c).Key("mkt-cell-"+prefix+"-"+item.ID).Grow(1).MinWidth(0).Children(func() {
+				ui.Column(c).Key("mkt-cell-" + prefix + "-" + item.ID).Grow(1).MinWidth(0).Children(func() {
 					u.renderMarketCard(c, st, item)
 				})
 			}
@@ -239,7 +238,7 @@ func (u *DesktopUI) renderMarketGrid(c *ui.Context, st *marketPageState, items [
 	}
 }
 
-func (u *DesktopUI) renderMarketCard(c *ui.Context, st *marketPageState, item gateway.MarketServer) {
+func (u *DesktopUI) renderMarketCard(c *ui.Context, st *marketPageState, item market.MarketServer) {
 	ui.Column(c).
 		FillWidth().
 		Grow(1).
@@ -323,7 +322,7 @@ func renderMarketChip(c *ui.Context, label string) {
 		})
 }
 
-func marketHasRequiredInputs(item gateway.MarketServer) bool {
+func marketHasRequiredInputs(item market.MarketServer) bool {
 	for _, inp := range item.Inputs {
 		if inp.Required {
 			return true
@@ -332,7 +331,7 @@ func marketHasRequiredInputs(item gateway.MarketServer) bool {
 	return false
 }
 
-func marketAuthChipLabel(item gateway.MarketServer) string {
+func marketAuthChipLabel(item market.MarketServer) string {
 	if item.SignIn {
 		return "需登录"
 	}
@@ -355,7 +354,7 @@ func marketAuthChipLabel(item gateway.MarketServer) string {
 	return ""
 }
 
-func (u *DesktopUI) renderMarketIcon(c *ui.Context, st *marketPageState, item gateway.MarketServer) {
+func (u *DesktopUI) renderMarketIcon(c *ui.Context, st *marketPageState, item market.MarketServer) {
 	var entry *marketIconEntry
 	if item.Icon != "" && u.Client != nil {
 		st.iconMu.Lock()
@@ -430,7 +429,7 @@ func (u *DesktopUI) loadMarketIconAsync(st *marketPageState, id, iconURL string)
 	}()
 }
 
-func (u *DesktopUI) renderMarketInstallModal(c *ui.Context, st *marketPageState, item gateway.MarketServer) {
+func (u *DesktopUI) renderMarketInstallModal(c *ui.Context, st *marketPageState, item market.MarketServer) {
 	ui.DialogBase(c.Key("mkt-install-dialog"), &st.showModal, func(backdrop, panel ui.Element) {
 		backdrop.Background(ui.RGBA(10, 37, 64, 0.42))
 		panel.Width(500).
@@ -552,7 +551,7 @@ func (u *DesktopUI) fetchMarket(st *marketPageState, query string) {
 	})
 }
 
-func (u *DesktopUI) installFromMarket(st *marketPageState, item gateway.MarketServer, inputs map[string]string) {
+func (u *DesktopUI) installFromMarket(st *marketPageState, item market.MarketServer, inputs map[string]string) {
 	if st.installingID != "" || u.Client == nil {
 		return
 	}
@@ -562,7 +561,7 @@ func (u *DesktopUI) installFromMarket(st *marketPageState, item gateway.MarketSe
 		copiedInputs[k] = v
 	}
 	spec := item
-	req := gateway.InstallMarketRequest{
+	req := market.InstallMarketRequest{
 		ID:     item.ID,
 		Inputs: copiedInputs,
 	}

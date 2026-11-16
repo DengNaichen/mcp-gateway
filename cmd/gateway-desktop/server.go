@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gatewaylab/internal/api"
+	"gatewaylab/internal/buildinfo"
+	"gatewaylab/internal/gateway"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,9 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"gatewaylab/internal/buildinfo"
-	"gatewaylab/internal/gateway"
 )
 
 type instanceMode string
@@ -221,7 +221,7 @@ func startOrAttachGateway(ctx context.Context, addr, dataDir string) (*gatewayRu
 	g.StartMaintenance(maintCtx)
 
 	server := &http.Server{
-		Handler:           g.Handler(),
+		Handler:           api.Handler(g),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       90 * time.Second,
 	}

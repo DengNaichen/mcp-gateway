@@ -2,10 +2,10 @@ package gateway
 
 import (
 	"errors"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/store"
 	"testing"
 	"time"
-
-	"gatewaylab/internal/store"
 )
 
 func TestRegistryOperationsDoNotAcquirePublicationConfigMutex(t *testing.T) {
@@ -18,7 +18,7 @@ func TestRegistryOperationsDoNotAcquirePublicationConfigMutex(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_ = g.Snapshot()
-		done <- g.SaveServer(Server{ID: "independent", Name: "Independent", Kind: "http", Endpoint: "https://example.com"})
+		done <- g.SaveServer(registry.Server{ID: "independent", Name: "Independent", Kind: "http", Endpoint: "https://example.com"})
 	}()
 	select {
 	case err := <-done:

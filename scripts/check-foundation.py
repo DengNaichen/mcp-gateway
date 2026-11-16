@@ -14,7 +14,7 @@ allowed = {
     "gatewaylab/internal/registry": set(),
     "gatewaylab/internal/store": {"gatewaylab/internal/registry"},
     "gatewaylab/internal/routing": {"gatewaylab/internal/registry"},
-    "gatewaylab/internal/upstream": {"gatewaylab/internal/registry", "gatewaylab/internal/procutil"},
+    "gatewaylab/internal/upstream": {"gatewaylab/internal/registry", "gatewaylab/internal/procutil", "gatewaylab/internal/fault"},
 }
 allowed.update({
     "gatewaylab/internal/secrets": set(),

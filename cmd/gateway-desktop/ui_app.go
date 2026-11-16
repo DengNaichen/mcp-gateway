@@ -3,15 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"gatewaylab/internal/buildinfo"
+	"gatewaylab/internal/clientconfig"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"gatewaylab/internal/buildinfo"
-	"gatewaylab/internal/clientconfig"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"

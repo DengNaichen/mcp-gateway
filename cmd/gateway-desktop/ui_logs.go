@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"gatewaylab/internal/activity"
+	"gatewaylab/internal/registry"
+	"gatewaylab/internal/scope"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
-
-	"gatewaylab/internal/gateway"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -106,7 +107,7 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 	st := logsStateFor(u)
 	events := u.State.Events
 
-	toolByID := make(map[string]gateway.Tool, len(u.State.Registry.Tools))
+	toolByID := make(map[string]registry.Tool, len(u.State.Registry.Tools))
 	for _, t := range u.State.Registry.Tools {
 		toolByID[t.ID] = t
 	}
@@ -146,14 +147,14 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 		}
 	}
 
-	filtered := make([]gateway.Event, 0, len(events))
+	filtered := make([]activity.Event, 0, len(events))
 	for _, ev := range events {
 		if logsMatchesFilters(ev, st) {
 			filtered = append(filtered, ev)
 		}
 	}
 
-	var activeEvent *gateway.Event
+	var activeEvent *activity.Event
 	if len(filtered) > 0 {
 		for i := range filtered {
 			if filtered[i].ID == st.selectedID {
@@ -272,8 +273,8 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 func (u *DesktopUI) renderLogsTimelinePane(
 	c *ui.Context,
 	st *logsPageState,
-	filtered []gateway.Event,
-	activeEvent *gateway.Event,
+	filtered []activity.Event,
+	activeEvent *activity.Event,
 ) {
 	visibleCount := len(filtered)
 	if st.timelineLimit <= 0 {
@@ -401,8 +402,8 @@ func (u *DesktopUI) renderLogsTimelinePane(
 func (u *DesktopUI) renderLogsInspectorPane(
 	c *ui.Context,
 	st *logsPageState,
-	ev gateway.Event,
-	toolByID map[string]gateway.Tool,
+	ev activity.Event,
+	toolByID map[string]registry.Tool,
 ) {
 	parsed := logsParseEventDetail(ev, toolByID)
 
@@ -675,7 +676,7 @@ func logsMetricTile(c *ui.Context, label, value, sub string, mono bool) {
 		})
 }
 
-func logsMatchesFilters(ev gateway.Event, st *logsPageState) bool {
+func logsMatchesFilters(ev activity.Event, st *logsPageState) bool {
 	switch st.kindIdx {
 	case 1:
 		if ev.Kind != "discover" {
@@ -755,7 +756,7 @@ func logsKindBadgeLabel(kind string) string {
 	}
 }
 
-func logsParseEventDetail(ev gateway.Event, toolByID map[string]gateway.Tool) logsParsedDetail {
+func logsParseEventDetail(ev activity.Event, toolByID map[string]registry.Tool) logsParsedDetail {
 	var out logsParsedDetail
 
 	var detailAny any
@@ -970,7 +971,7 @@ func hasSegmentPathPrefix(target, anchor string) bool {
 	return strings.HasPrefix(t, a+sep)
 }
 
-func logsMatchedBoundRepo(state *Bootstrap, sc logsParsedScope) *ScopeRepository {
+func logsMatchedBoundRepo(state *Bootstrap, sc logsParsedScope) *scope.Repository {
 	if state == nil {
 		return nil
 	}
@@ -1014,7 +1015,7 @@ func logsMatchedBoundRepo(state *Bootstrap, sc logsParsedScope) *ScopeRepository
 		return nil
 	}
 	if sc.Root != "" {
-		var best *ScopeRepository
+		var best *scope.Repository
 		bestLen := -1
 		for i := range state.Scopes.Repositories {
 			repo := &state.Scopes.Repositories[i]
