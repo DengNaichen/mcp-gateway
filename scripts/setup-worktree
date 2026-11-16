@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+# Set up frontend dependencies and isolated runtime configuration for the
+# current checkout (or an explicit path). See .agents/skills/git-workflow/SKILL.md.
+set -eu
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+exec node "$script_dir/worktree-runtime.mjs" setup "$@"
