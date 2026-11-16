@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -111,4 +112,64 @@ func TestCredentialsAreRedactedBeforeProjection(t *testing.T) {
 	if !strings.Contains(string(original), "another secret") {
 		t.Fatal("redaction mutated input")
 	}
+}
+
+// FuzzBuildMappedRequest checks parameter serialization. For any string value a
+// path parameter must stay inside its own path segment (escaped, never
+// injecting "/" or changing the host) and a query value must round-trip.
+// Arbitrary JSON argument shapes must only ever return errors, never panic.
+func FuzzBuildMappedRequest(f *testing.F) {
+	f.Add("42", `{"path":{"id":"x"},"query":{"q":["a","b"],"o":{"k":"v"},"p":1.5},"headers":{"X-Test":"v"},"cookies":{"c":{"a":"b"}},"body":{"k":[1]}}`)
+	f.Add("a/b", `{"path":{"id":["a","b/c"]}}`)
+	f.Add("..", `{"path":{"id":{"a":"b"}}}`)
+	f.Add(".", `{"path":{"id":null}}`)
+	f.Add("%2e%2e", `{"query":{"o":{"x":[1]}}}`)
+	f.Add("a?b#c", `[]`)
+	f.Add("../../etc/passwd", `{"path":"x","query":7}`)
+	f.Add("@evil.example/", `{"cookies":{"c":[1,"2"]},"headers":{"X-Test":{"a":1}}}`)
+	f.Add("\x00\xff ", `{"path":{"id":1e400}}`)
+	f.Add("", `{}`)
+	server := Server{Endpoint: "https://api.example.invalid/base/"}
+	tool := Tool{Method: "POST", Path: "/items/{id}/sub", HTTP: &HTTPMapping{Body: true, Parameters: []HTTPParameter{
+		{Name: "id", In: "path", Style: "simple"},
+		{Name: "q", In: "query", Style: "form", Explode: true},
+		{Name: "o", In: "query", Style: "deepObject", Explode: true},
+		{Name: "p", In: "query", Style: "pipeDelimited"},
+		{Name: "X-Test", In: "header", Style: "simple"},
+		{Name: "c", In: "cookie", Style: "form", Explode: true},
+	}}}
+	f.Fuzz(func(t *testing.T, value, raw string) {
+		var args map[string]any
+		if json.Unmarshal([]byte(raw), &args) == nil {
+			_, _ = BuildMappedRequest(context.Background(), server, tool, args)
+		}
+		req, err := BuildMappedRequest(context.Background(), server, tool, map[string]any{
+			"path":  map[string]any{"id": value},
+			"query": map[string]any{"q": value},
+		})
+		if value == "." || value == ".." {
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatalf("relative path segment %q accepted: %v", value, err)
+			}
+			return
+		}
+		if err != nil {
+			t.Fatalf("valid string arguments rejected for %q: %v", value, err)
+		}
+		if req.URL.Host != "api.example.invalid" || req.URL.Scheme != "https" || req.URL.User != nil {
+			t.Fatalf("value %q changed request authority: %s", value, req.URL)
+		}
+		if want := "/base/items/" + url.PathEscape(value) + "/sub"; req.URL.EscapedPath() != want {
+			t.Fatalf("escaped path %q, want %q", req.URL.EscapedPath(), want)
+		}
+		if req.URL.Path != "/base/items/"+value+"/sub" {
+			t.Fatalf("path value did not round-trip: %q", req.URL.Path)
+		}
+		if n := strings.Count(req.URL.EscapedPath(), "/"); n != 4 {
+			t.Fatalf("path segments injected for %q: %q", value, req.URL.EscapedPath())
+		}
+		if req.URL.Fragment != "" || req.URL.Query().Get("q") != value {
+			t.Fatalf("query value did not round-trip for %q: %q", value, req.URL.RawQuery)
+		}
+	})
 }

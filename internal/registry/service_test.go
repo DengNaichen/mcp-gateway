@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -106,4 +107,38 @@ func TestRegistryValidationUsesDomainErrors(t *testing.T) {
 	if err := service.SaveTool(tool); !errors.Is(err, ErrInvalid) || err.Error() != "server_id 不存在" {
 		t.Fatal(err)
 	}
+}
+
+// FuzzValidateMapping checks the promise that a mapping accepted by
+// ValidateMapping defines a path parameter for every {variable} in the path.
+func FuzzValidateMapping(f *testing.F) {
+	f.Add("/items/{id}", "id")
+	f.Add("/items/{id}/sub/{other}", "id")
+	f.Add("/items/{id}", "")
+	f.Add("/{a}{b}", "a")
+	f.Add("/{{id}}", "id")
+	f.Add("/{ id }", " id ")
+	f.Add("/{}", "")
+	f.Add("/plain", "unused")
+	f.Add("/{é}/{\x00}", "é")
+	f.Fuzz(func(t *testing.T, path, name string) {
+		tool := Tool{
+			Path: path,
+			HTTP: &HTTPMapping{
+				Parameters: []HTTPParameter{{Name: name, In: "path", Style: "simple"}},
+				Responses:  map[string]HTTPResponse{"200": {MediaType: "empty"}},
+			},
+		}
+		if err := ValidateMapping(tool); err != nil {
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatalf("unexpected error class: %v", err)
+			}
+			return
+		}
+		for _, match := range PathVariable.FindAllStringSubmatch(path, -1) {
+			if match[1] != name || strings.ContainsAny(match[1], "{}") {
+				t.Fatalf("accepted path %q with unmapped variable %q (mapped %q)", path, match[1], name)
+			}
+		}
+	})
 }
