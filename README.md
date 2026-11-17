@@ -457,4 +457,4 @@ make release  # 显式打包 Stable；不上传、不安装
 
 版本号统一维护在 `internal/buildinfo/profiles.json`；Dev 自动附加 Git 短 SHA 和 dirty 标记。身份编译进程序，Finder 启动不依赖渠道环境变量。Dev 使用 `GATEWAY_DEV_DATA_DIR` / `GATEWAY_DEV_PUBLIC_URL`，Stable 继续使用原来的 `GATEWAY_DATA_DIR` / `GATEWAY_PUBLIC_URL`；显式 `-data`、`-addr` 仍优先。
 
-正式上传通过 `.agents/skills/release/scripts/release-macos-local.sh --upload` 或 tag 发布工作流执行，要求干净工作区、HEAD 对应版本 tag，且该版本尚未正式发布。已发布版本必须升版，不能覆盖上传。普通 CI 只保留 Dev 测试包。
+正式上传通过 `.agents/skills/release/scripts/release-macos-local.sh --upload` 或 tag 发布工作流执行，要求干净工作区、HEAD 对应版本 tag，且该版本尚未正式发布。已发布版本必须升版，不能覆盖上传。日常 CI 全部在 Linux 执行，并交叉生成 macOS arm64/amd64 的 Dev 与 Stable `.app`；校验包身份、Mach-O 架构和配套 CLI 后，仅保留未签名 Dev `.tar.gz` 测试包（保留执行权限）。Developer ID 签名、Apple 公证、DMG 与正式发布仅在 Release 工作流的 macOS runner 上执行。

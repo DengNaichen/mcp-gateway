@@ -10,3 +10,12 @@ Used temporarily for this personal app. The app name and branding will be revisi
 Run `scripts/generate-icons.cjs` from the repository root to regenerate `icon.png` and `tray.png`; dependency setup is documented at the top of that script. The tray variant omits the background for macOS template rendering; the official paths remain unchanged.
 
 `icon-dev.svg` / `icon-dev.png` add a visible orange DEV badge for the development bundle. Regenerate only these files with `NODE_PATH=<icon-tools>/node_modules node scripts/generate-dev-icon.cjs`; the Stable icon is not modified.
+
+## Service brands
+
+The matrix embeds the same official organization avatars used by the MCP market for common services, so these headers also work offline:
+
+- [GitHub](services/github.png): https://github.com/github.png?size=96
+- [Linear](services/linear.png): https://github.com/linear.png?size=96
+
+Other service brands use the shared market image cache; unknown services use the theme's server icon.
