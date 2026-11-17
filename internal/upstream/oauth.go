@@ -53,17 +53,11 @@ func defaultOpenBrowserURL(rawURL string) error {
 
 func (u *Service) oauthHandlerForServer(server Server) (*auth.AuthorizationCodeHandler, func(), error) {
 	serverID := oauthSessionKey(server)
-	u.oauthMu.RLock()
-	existingTS := u.oauthTokens[serverID]
-	u.oauthMu.RUnlock()
-
-	if existingTS == nil {
-		var err error
-		existingTS, err = u.restoreOAuth(serverID)
-		if err != nil {
-			return nil, nil, err
-		}
+	existingTS, err := u.cachedOAuth(serverID)
+	if err != nil {
+		return nil, nil, err
 	}
+
 	if existingTS != nil {
 		h, err := auth.NewAuthorizationCodeHandler(&auth.AuthorizationCodeHandlerConfig{
 			RedirectURL: "http://127.0.0.1/callback",

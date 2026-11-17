@@ -194,3 +194,30 @@ func TestOAuthSessionPersistenceFailureRetriesWithoutLeaking(t *testing.T) {
 		t.Fatal("did not retry persistence")
 	}
 }
+
+func TestConcurrentOAuthRestoreSharesRefreshSource(t *testing.T) {
+	raw, _ := json.Marshal(oauthSession{Config: oauth2.Config{Endpoint: oauth2.Endpoint{TokenURL: "https://auth.example/token"}}, Token: oauth2.Token{AccessToken: "saved", RefreshToken: "refresh"}})
+	service := New(Config{LoadOAuth: func(string) string { return string(raw) }})
+	sources := make(chan oauth2.TokenSource, 16)
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Go(func() {
+			source, err := service.cachedOAuth("key")
+			if err != nil {
+				t.Error(err)
+			}
+			sources <- source
+		})
+	}
+	wg.Wait()
+	close(sources)
+	var first oauth2.TokenSource
+	for source := range sources {
+		if first == nil {
+			first = source
+		}
+		if source != first {
+			t.Fatal("concurrent restore created independent refresh sources")
+		}
+	}
+}

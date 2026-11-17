@@ -37,6 +37,20 @@ func (u *Service) clearOAuth(key string) error {
 	return nil
 }
 
+// Serialize restoration so concurrent first requests share one refresh source.
+// Refresh-token rotation must never race through independent token sources.
+func (u *Service) cachedOAuth(key string) (oauth2.TokenSource, error) {
+	u.oauthInitMu.Lock()
+	defer u.oauthInitMu.Unlock()
+	u.oauthMu.RLock()
+	source := u.oauthTokens[key]
+	u.oauthMu.RUnlock()
+	if source != nil {
+		return source, nil
+	}
+	return u.restoreOAuth(key)
+}
+
 func (u *Service) restoreOAuth(key string) (oauth2.TokenSource, error) {
 	if u.loadOAuth == nil {
 		return nil, nil

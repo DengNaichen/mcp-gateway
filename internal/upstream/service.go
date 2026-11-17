@@ -20,6 +20,7 @@ type Service struct {
 	saveOAuth   func(string, string) error
 	sessionMu   sync.Mutex
 	sessions    map[string]stdioSession
+	oauthInitMu sync.Mutex
 	oauthMu     sync.RWMutex
 	oauthTokens map[string]oauth2.TokenSource
 }
