@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
 	"gatewaylab/internal/workspace"
+	pluginassets "gatewaylab/plugins"
 )
 
 type fakeRunner struct {
@@ -255,7 +258,8 @@ func TestAllClientsInstallUpdateRemoveAndLegacyMigration(t *testing.T) {
 	endpoint2 := "http://127.0.0.1:9797/mcp"
 
 	// Pre-populate legacy clientconfig entries so we verify automatic upgrade & revoke.
-	for _, id := range clientOrder {
+	clientIDs := clientconfig.ClientIDs()
+	for _, id := range clientIDs {
 		if err := cc.Write(id, endpoint1); err != nil {
 			t.Fatalf("legacy cc.Write(%s): %v", id, err)
 		}
@@ -271,7 +275,7 @@ func TestAllClientsInstallUpdateRemoveAndLegacyMigration(t *testing.T) {
 		}
 	}
 
-	for _, id := range clientOrder {
+	for _, id := range clientIDs {
 		if err := mgr.Install(id, endpoint1); err != nil {
 			t.Fatalf("Install(%s): %v", id, err)
 		}
@@ -297,7 +301,7 @@ func TestAllClientsInstallUpdateRemoveAndLegacyMigration(t *testing.T) {
 		}
 	}
 
-	for _, id := range clientOrder {
+	for _, id := range clientIDs {
 		if err := mgr.Update(id, endpoint2); err != nil {
 			t.Fatalf("Update(%s): %v", id, err)
 		}
@@ -316,8 +320,8 @@ func TestAllClientsInstallUpdateRemoveAndLegacyMigration(t *testing.T) {
 		}
 	}
 
-	// Remove all 5 and confirm clean state.
-	for _, id := range clientOrder {
+	// Remove all 6 and confirm clean state.
+	for _, id := range clientIDs {
 		if err := mgr.Remove(id); err != nil {
 			t.Fatalf("Remove(%s): %v", id, err)
 		}
@@ -565,4 +569,98 @@ func TestRealInstalledCLIsEndToEnd(t *testing.T) {
 func mustJSON(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+func TestEmbeddedAssetsHaveNoDeadFilesAndTemplatesRender(t *testing.T) {
+	expectedAssets := []string{
+		"antigravity/README.md",
+		"antigravity/rules/AGENTS.md",
+		"mcp-gateway/README.md",
+		"mcp-gateway/assets/icon.png",
+		"mcp-gateway/rules/mcp-gateway.mdc",
+		"mcp-gateway/scripts/run-gateway-hook",
+		"mcp-gateway/skills/mcp-gateway/SKILL.md",
+		"opencode/index.js",
+		"pi/README.md",
+		"pi/extensions/mcp-gateway.ts",
+	}
+	var actual []string
+	if err := fs.WalkDir(pluginassets.Files, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		actual = append(actual, p)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(actual)
+	if !slices.Equal(actual, expectedAssets) {
+		t.Fatalf("embedded plugin assets mismatch:\ngot:  %v\nwant: %v", actual, expectedAssets)
+	}
+
+	for _, slug := range []string{"mcp-gateway", "mcp-gateway-dev"} {
+		mgr := &Manager{slug: slug, version: "0.0.4", appName: "MCP Gateway"}
+		for _, fn := range []func() (renderedBundle, error){
+			func() (renderedBundle, error) {
+				return mgr.renderClaudeMarketplace("http://127.0.0.1:8788/mcp", "/bin/hook", "/data/dir")
+			},
+			func() (renderedBundle, error) {
+				return mgr.renderCodexMarketplace("http://127.0.0.1:8788/mcp", "/bin/hook", "/data/dir")
+			},
+			func() (renderedBundle, error) {
+				return mgr.renderCursorPlugin("http://127.0.0.1:8788/mcp", "/bin/hook", "/data/dir")
+			},
+			func() (renderedBundle, error) {
+				return mgr.renderOpenCodePlugin("http://127.0.0.1:8788/mcp", "/bin/hook", "/data/dir")
+			},
+			func() (renderedBundle, error) {
+				return mgr.renderPiPackage("http://127.0.0.1:8788/mcp", "/bin/hook", "/data/dir")
+			},
+			func() (renderedBundle, error) {
+				return mgr.renderAntigravityPlugin("http://127.0.0.1:8788/mcp", "/bin/hook", "/data/dir")
+			},
+		} {
+			if _, err := fn(); err != nil {
+				t.Fatalf("render failed for slug %s: %v", slug, err)
+			}
+		}
+	}
+
+	if _, err := renderTemplateAsset("opencode/index.js", templateReplacement{old: "NONEXISTENT_PLACEHOLDER", new: "x"}); err == nil {
+		t.Fatal("expected missing placeholder to return error")
+	}
+}
+
+func TestWorkspaceAndClientConfigHostParity(t *testing.T) {
+	if !slices.Equal(clientconfig.ClientIDs(), workspace.KnownAgents) {
+		t.Fatalf("host catalog IDs mismatch: clientconfig=%v workspace=%v", clientconfig.ClientIDs(), workspace.KnownAgents)
+	}
+	home := t.TempDir()
+	env := map[string]string{
+		"CODEX_HOME":          filepath.Join(home, "custom-codex"),
+		"CLAUDE_CONFIG_DIR":   filepath.Join(home, "custom-claude"),
+		"XDG_CONFIG_HOME":     filepath.Join(home, "custom-xdg"),
+		"PI_CODING_AGENT_DIR": filepath.Join(home, "custom-pi"),
+	}
+	getenv := func(k string) string { return env[k] }
+	for _, id := range clientconfig.ClientIDs() {
+		if gotCC, gotWS := clientconfig.ClientEndpoint("http://127.0.0.1:8788", id), workspace.AgentMCPURL("http://127.0.0.1:8788", id); gotCC != gotWS {
+			t.Fatalf("endpoint mismatch for %s: clientconfig=%q workspace=%q", id, gotCC, gotWS)
+		}
+		spec, err := workspace.BuildSnippet(workspace.SnippetOptions{
+			Agent:    id,
+			Endpoint: "http://127.0.0.1:8788/mcp",
+			BinPath:  "/bin/hook",
+			HomeDir:  home,
+			Getenv:   getenv,
+		})
+		if err != nil {
+			t.Fatalf("BuildSnippet(%s): %v", id, err)
+		}
+		wantDir := clientconfig.HostConfigDir(id, home, getenv)
+		if !strings.HasPrefix(spec.ConfigPath, wantDir+string(filepath.Separator)) {
+			t.Fatalf("config dir mismatch for %s: snippet=%q hostConfigDir=%q", id, spec.ConfigPath, wantDir)
+		}
+	}
 }

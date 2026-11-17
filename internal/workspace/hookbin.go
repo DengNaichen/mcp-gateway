@@ -22,6 +22,63 @@ func IsMetaTool(name string) bool {
 	return slices.Contains(MetaToolNames, name)
 }
 
+// MetaToolShape describes the required and allowed top-level argument keys for
+// a Gateway meta-tool so prefix-less hooks (e.g. Cursor MCP:<tool>) only sign
+// payloads matching Gateway's contract.
+type MetaToolShape struct {
+	RequiredStrings []string
+	RequiredObjects []string
+	AllowedFields   []string
+}
+
+var metaToolShapes = map[string]MetaToolShape{
+	"discover_tools": {
+		RequiredStrings: []string{"intent"},
+		AllowedFields:   []string{"intent", "context", "actor", "services", "summary_only", "include_demo"},
+	},
+	"get_tool_schema": {
+		RequiredStrings: []string{"tool_id"},
+		AllowedFields:   []string{"tool_id", "actor"},
+	},
+	"invoke_tool": {
+		RequiredStrings: []string{"tool_id"},
+		RequiredObjects: []string{"arguments"},
+		AllowedFields:   []string{"tool_id", "arguments", "fields", "actor"},
+	},
+}
+
+// MatchesMetaToolInputShape reports whether input conforms to the required and
+// allowed top-level fields for op (ignoring reserved _gw_ctx* fields).
+func MatchesMetaToolInputShape(op string, input map[string]any) bool {
+	if input == nil {
+		return false
+	}
+	shape, ok := metaToolShapes[op]
+	if !ok {
+		return false
+	}
+	for _, field := range shape.RequiredStrings {
+		val, ok := input[field].(string)
+		if !ok || val == "" {
+			return false
+		}
+	}
+	for _, field := range shape.RequiredObjects {
+		if _, ok := input[field].(map[string]any); !ok {
+			return false
+		}
+	}
+	for key := range input {
+		if IsReservedContextField(key) {
+			continue
+		}
+		if !slices.Contains(shape.AllowedFields, key) {
+			return false
+		}
+	}
+	return true
+}
+
 // SlugRegex returns a regular-expression fragment matching both hyphen and
 // underscore normalizations of slug (e.g. "mcp[-_]gateway[-_]dev").
 func SlugRegex(slug string) string {
@@ -60,6 +117,18 @@ func CursorPreToolMatcher() string {
 func AntigravityPreToolMatcher(slug string) string {
 	sr := SlugRegex(slug)
 	return "^(?:mcp__(?:(?:plugin_)?[A-Za-z0-9_-]+?_)?" + sr + "__|mcp_(?:" + sr + "_){1,2})(discover_tools|get_tool_schema|invoke_tool)$"
+}
+
+// PluginToolMatcher returns the regex string matching Gateway meta-tools in
+// OpenCode and Pi (including direct and plugin-namespaced forms).
+func PluginToolMatcher(slug string) string {
+	return "^(?:mcp__(?:plugin_[A-Za-z0-9_-]+?_)?)?(?:" + SlugRegex(slug) + ")[-_]{1,2}(discover_tools|get_tool_schema|invoke_tool)$"
+}
+
+// PluginToolRegexLiteral returns the JS/TS regex literal matching Gateway
+// meta-tools in OpenCode and Pi (including direct and plugin-namespaced forms).
+func PluginToolRegexLiteral(slug string) string {
+	return "/" + PluginToolMatcher(slug) + "/"
 }
 
 // DefaultHookBinPath returns ~/.<slug>/bin/<slug>-hook.
@@ -169,21 +238,13 @@ func SyncHookBinary(homeDir string) (string, error) {
 	return target, nil
 }
 
-// ResolveHookBinary returns the best available hook binary path. When dataDir is
-// within homeDir, it opportunistically syncs a built binary into ~/.<slug>/bin/<slug>-hook;
-// otherwise (e.g. isolated unit tests using temp dataDir) it avoids mutating $HOME.
+// ResolveHookBinary returns the best available hook binary path without mutating
+// the user's home directory. Callers that want to install or update the hook
+// binary in ~/.<slug>/bin must invoke SyncHookBinary explicitly.
 func ResolveHookBinary(homeDir, dataDir string) string {
+	_ = dataDir
 	if strings.TrimSpace(homeDir) == "" {
 		homeDir, _ = resolveHomeDir()
-	}
-	if homeDir != "" && dataDir != "" {
-		if absData, err1 := filepath.Abs(dataDir); err1 == nil {
-			if absHome, err2 := filepath.Abs(homeDir); err2 == nil && HasPathPrefix(absData, absHome) {
-				if synced, err := SyncHookBinary(homeDir); err == nil && synced != "" {
-					return synced
-				}
-			}
-		}
 	}
 	installed := DefaultHookBinPath(homeDir)
 	if isExecutableFile(installed) {
@@ -296,7 +357,6 @@ func BuildSnippet(opts SnippetOptions) (SnippetSpec, error) {
 		home, _ = resolveHomeDir()
 	}
 	slug := buildinfo.Current().Slug
-	slugRe := SlugRegex(slug)
 
 	binPath := strings.TrimSpace(opts.BinPath)
 	if binPath == "" {
@@ -414,7 +474,7 @@ func BuildSnippet(opts SnippetOptions) (SnippetSpec, error) {
 		cfgPath := filepath.Join(xdg, "opencode", "plugins", slug+".js")
 		binJSON := mustJSONLiteral(binPath)
 		extraJSON := mustJSONLiteral(extraArgs)
-		toolRegex := fmt.Sprintf("/^(?:mcp__)?%s[-_]{1,2}(discover_tools|get_tool_schema|invoke_tool)$/", slugRe)
+		toolRegex := PluginToolRegexLiteral(slug)
 		js := fmt.Sprintf(`import { spawn } from "node:child_process";
 
 const BIN = %s;
@@ -488,7 +548,7 @@ export default {
 		cfgPath := filepath.Join(piDir, "extensions", slug+".ts")
 		binJSON := mustJSONLiteral(binPath)
 		extraJSON := mustJSONLiteral(extraArgs)
-		toolRegex := fmt.Sprintf("/^(?:mcp__)?%s[-_]{1,2}(discover_tools|get_tool_schema|invoke_tool)$/", slugRe)
+		toolRegex := PluginToolRegexLiteral(slug)
 		ts := fmt.Sprintf(`import { spawnSync } from "node:child_process";
 
 const BIN = %s;

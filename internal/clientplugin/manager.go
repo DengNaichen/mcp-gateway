@@ -29,7 +29,7 @@ func validateEndpoint(endpoint string) (string, error) {
 }
 
 func (m *Manager) legacyStatusMap(endpoint string) map[string]clientconfig.Status {
-	out := make(map[string]clientconfig.Status, len(clientOrder))
+	out := make(map[string]clientconfig.Status, len(clientconfig.ClientIDs()))
 	if m.clientConfigs == nil {
 		return out
 	}
@@ -77,8 +77,9 @@ func (m *Manager) Statuses(endpoint string) []Status {
 		return ok && (row.CanRevoke || row.CanUpdate || row.State == "已有配置")
 	}
 
-	out := make([]Status, 0, len(clientOrder))
-	for _, id := range clientOrder {
+	ids := clientconfig.ClientIDs()
+	out := make([]Status, 0, len(ids))
+	for _, id := range ids {
 		switch id {
 		case ClientCodex:
 			out = append(out, m.observeCodex(endpoint, hasLegacy(id)))
@@ -111,7 +112,7 @@ func (m *Manager) apply(id, endpoint string, update bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if !isKnownClient(id) {
+	if _, ok := clientconfig.LookupClient(id); !ok {
 		return errClientUnknown
 	}
 	validURL, err := validateEndpoint(endpoint)
@@ -171,7 +172,7 @@ func (m *Manager) VerificationPrompt(id, endpoint string) string {
 			"2. Call `discover_tools` with `{\"intent\": \"list available gateway capabilities\", \"summary_only\": true}`.\n"+
 			"3. Report the discovered tool IDs and whether workspace scope signing succeeded, or stop and report any exact error (`scope_required`, auth, or connection failure).",
 		m.appName,
-		clientDisplayName(id),
+		clientconfig.ClientDisplayName(id),
 		agentURL,
 		m.slug,
 	)

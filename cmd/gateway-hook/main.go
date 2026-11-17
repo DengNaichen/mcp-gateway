@@ -213,7 +213,7 @@ func handleHostHook(ctx context.Context, platform, explicitDataDir string, stdin
 		if !ok {
 			return emitHostNoop(platform, stdout)
 		}
-		if !passesCursorInputShapeGate(matchedOp, inputObj) {
+		if !workspace.MatchesMetaToolInputShape(matchedOp, inputObj) {
 			return emitHostNoop(platform, stdout)
 		}
 		op = matchedOp
@@ -391,73 +391,13 @@ func normalizeMetaToolOp(raw string) (string, bool) {
 	if op, ok := matchCursorMetaTool(s); ok {
 		return op, true
 	}
-	re, err := regexp.Compile("^(?:mcp__(?:plugin_[A-Za-z0-9_-]+?_)?)?" + workspace.SlugRegex(buildinfo.Current().Slug) + "[-_]{1,2}(discover_tools|get_tool_schema|invoke_tool)$")
+	re, err := regexp.Compile(workspace.PluginToolMatcher(buildinfo.Current().Slug))
 	if err == nil {
 		if m := re.FindStringSubmatch(s); len(m) == 2 {
 			return m[1], true
 		}
 	}
 	return "", false
-}
-
-// passesCursorInputShapeGate ensures Cursor's prefix-less MCP:<tool> hook only
-// injects _gw_ctx* when the input strictly conforms to Gateway's allowed & required
-// top-level keys for that meta-tool, leaving identically-named third-party tools untouched.
-func passesCursorInputShapeGate(op string, input map[string]any) bool {
-	if input == nil {
-		return false
-	}
-	var allowed map[string]bool
-	switch op {
-	case "discover_tools":
-		intent, ok := input["intent"].(string)
-		if !ok || intent == "" {
-			return false
-		}
-		allowed = map[string]bool{
-			"intent":       true,
-			"context":      true,
-			"actor":        true,
-			"services":     true,
-			"summary_only": true,
-			"include_demo": true,
-		}
-	case "get_tool_schema":
-		toolID, ok := input["tool_id"].(string)
-		if !ok || toolID == "" {
-			return false
-		}
-		allowed = map[string]bool{
-			"tool_id": true,
-			"actor":   true,
-		}
-	case "invoke_tool":
-		toolID, ok := input["tool_id"].(string)
-		if !ok || toolID == "" {
-			return false
-		}
-		if _, argsOK := input["arguments"].(map[string]any); !argsOK {
-			return false
-		}
-		allowed = map[string]bool{
-			"tool_id":   true,
-			"arguments": true,
-			"fields":    true,
-			"actor":     true,
-		}
-	default:
-		return false
-	}
-
-	for key := range input {
-		if workspace.IsReservedContextField(key) {
-			continue
-		}
-		if !allowed[key] {
-			return false
-		}
-	}
-	return true
 }
 
 func resolveWorkspaceWithRoots(ctx context.Context, event map[string]any, rootKeys ...string) (cwd string, ambiguous bool) {

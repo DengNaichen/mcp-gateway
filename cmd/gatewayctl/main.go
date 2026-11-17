@@ -19,15 +19,6 @@ import (
 	"gatewaylab/internal/clientplugin"
 )
 
-var allPluginClients = []string{
-	clientplugin.ClientCodex,
-	clientplugin.ClientClaude,
-	clientplugin.ClientCursor,
-	clientplugin.ClientOpenCode,
-	clientplugin.ClientPi,
-	clientplugin.ClientAntigravity,
-}
-
 func run() error {
 	return runWithArgs(os.Args[1:], os.Stdout)
 }
@@ -129,11 +120,12 @@ func runPluginCommand(args []string, defaultURL string, stdout io.Writer) error 
 	action := args[0]
 	fs := flag.NewFlagSet("gatewayctl plugin "+action, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	clientFlag := fs.String("client", "", "Target client (codex|claude|cursor|opencode|pi|antigravity|all)")
+	clientList := strings.Join(clientconfig.ClientIDs(), "|")
+	clientFlag := fs.String("client", "", "Target client ("+clientList+"|all)")
 	urlFlag := fs.String("url", defaultURL, "Gateway base or MCP endpoint URL")
 	homeFlag := fs.String("home", "", "Override user home directory")
 	stateFlag := fs.String("state", "", "Override plugin state directory")
-	dataFlag := fs.String("data", os.Getenv("GATEWAY_DATA_DIR"), "Gateway data directory")
+	dataFlag := fs.String("data", "", "Gateway data directory")
 	binFlag := fs.String("bin", "", "Override hook binary path")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
@@ -149,7 +141,7 @@ func runPluginCommand(args []string, defaultURL string, stdout io.Writer) error 
 		target = "all"
 	}
 	if target == "" {
-		return fmt.Errorf("plugin %s requires -client <codex|claude|cursor|opencode|pi|antigravity|all>", action)
+		return fmt.Errorf("plugin %s requires -client <%s|all>", action, clientList)
 	}
 
 	targets, isAll, err := resolvePluginTargets(target)
@@ -161,6 +153,14 @@ func runPluginCommand(args []string, defaultURL string, stdout io.Writer) error 
 	if err != nil {
 		return err
 	}
+	dataDir := strings.TrimSpace(*dataFlag)
+	if dataDir != "" {
+		if abs, absErr := filepath.Abs(dataDir); absErr == nil {
+			dataDir = abs
+		}
+	} else if strings.TrimSpace(*homeFlag) == "" && strings.TrimSpace(os.Getenv("GATEWAY_CLIENT_CONFIG_HOME")) == "" {
+		dataDir = clientconfig.ResolveClientDataDir("", configEnv)
+	}
 	slug := buildinfo.Current().Slug
 	stateDir := strings.TrimSpace(*stateFlag)
 	if stateDir == "" {
@@ -169,7 +169,7 @@ func runPluginCommand(args []string, defaultURL string, stdout io.Writer) error 
 	mgr := clientplugin.New(clientplugin.Options{
 		HomeDir:       home,
 		StateDir:      stateDir,
-		DataDir:       strings.TrimSpace(*dataFlag),
+		DataDir:       dataDir,
 		BinPath:       strings.TrimSpace(*binFlag),
 		Getenv:        configEnv,
 		ClientConfigs: clientconfig.New(home, filepath.Join(home, "."+slug, "client-config"), configEnv),
@@ -194,15 +194,14 @@ func runPluginCommand(args []string, defaultURL string, stdout io.Writer) error 
 
 func resolvePluginTargets(target string) ([]string, bool, error) {
 	norm := strings.ToLower(strings.TrimSpace(target))
+	ids := clientconfig.ClientIDs()
 	if norm == "all" {
-		return append([]string(nil), allPluginClients...), true, nil
+		return ids, true, nil
 	}
-	for _, id := range allPluginClients {
-		if norm == id {
-			return []string{id}, false, nil
-		}
+	if spec, ok := clientconfig.LookupClient(norm); ok {
+		return []string{spec.ID}, false, nil
 	}
-	return nil, false, fmt.Errorf("unknown client %q (expected codex, claude, cursor, opencode, pi, antigravity, or all)", target)
+	return nil, false, fmt.Errorf("unknown client %q (expected %s, or all)", target, strings.Join(ids, ", "))
 }
 
 func resolvePluginHome(override string) (string, func(string) string, error) {
@@ -220,14 +219,7 @@ func resolvePluginHome(override string) (string, func(string) string, error) {
 }
 
 func resolveMCPEndpoint(raw string) string {
-	trimmed := strings.TrimRight(strings.TrimSpace(raw), "/")
-	if trimmed == "" {
-		return "http://" + buildinfo.DefaultAddr() + "/mcp"
-	}
-	if strings.HasSuffix(trimmed, "/mcp") {
-		return trimmed
-	}
-	return trimmed + "/mcp"
+	return clientconfig.ClientEndpoint(raw, "")
 }
 
 func applyPluginAction(stdout io.Writer, mgr *clientplugin.Manager, mcpURL string, targets []string, isAll, update bool) error {

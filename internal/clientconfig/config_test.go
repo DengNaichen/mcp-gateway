@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gatewaylab/internal/buildinfo"
 )
 
 func TestLifecycle(t *testing.T) {
@@ -321,5 +323,62 @@ func TestUpgradeLegacyURLWithoutAgentQuery(t *testing.T) {
 				t.Fatalf("expected upgraded url with ?agent=%s, got %v (%v)", id, got, err)
 			}
 		})
+	}
+}
+
+func TestHostCatalogAndResolveClientDataDir(t *testing.T) {
+	ids := ClientIDs()
+	if len(ids) != 6 || len(Specs()) != 6 {
+		t.Fatalf("expected 6 canonical hosts, got ids=%v specs=%d", ids, len(Specs()))
+	}
+	for _, id := range ids {
+		spec, ok := LookupClient(" " + id + " ")
+		if !ok || spec.ID != id {
+			t.Fatalf("LookupClient(%q) failed: %v %+v", id, ok, spec)
+		}
+		if ClientDisplayName(id) != spec.Name {
+			t.Fatalf("ClientDisplayName(%q) = %q, want %q", id, ClientDisplayName(id), spec.Name)
+		}
+		if HostConfigDir(id, "/tmp/home", func(string) string { return "" }) == "" {
+			t.Fatalf("HostConfigDir(%q) returned empty", id)
+		}
+	}
+	if got := ClientEndpoint("http://127.0.0.1:8788", "codex"); got != "http://127.0.0.1:8788/mcp?agent=codex" {
+		t.Fatalf("ClientEndpoint normalization failed: %q", got)
+	}
+
+	baseCfgDir := t.TempDir()
+	desktopDir := filepath.Join(baseCfgDir, buildinfo.Current().Slug)
+	envMap := map[string]string{}
+	getenv := func(k string) string { return envMap[k] }
+	cfgFn := func() (string, error) { return baseCfgDir, nil }
+
+	// 1. Nothing set and Desktop dir absent -> ""
+	if got := resolveClientDataDir("", getenv, cfgFn); got != "" {
+		t.Fatalf("expected empty when nothing set and desktop dir absent, got %q", got)
+	}
+	// 2. Desktop dir present -> <UserConfigDir>/<slug>
+	if err := os.MkdirAll(desktopDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got := resolveClientDataDir("", getenv, cfgFn); got != desktopDir {
+		t.Fatalf("expected desktopDir %q, got %q", desktopDir, got)
+	}
+	// 3. GATEWAY_DATA_DIR overrides desktop dir
+	envData := filepath.Join(t.TempDir(), "env-data")
+	envMap["GATEWAY_DATA_DIR"] = envData
+	if got := resolveClientDataDir("", getenv, cfgFn); got != envData {
+		t.Fatalf("expected GATEWAY_DATA_DIR %q, got %q", envData, got)
+	}
+	// 4. Channel-specific env key overrides GATEWAY_DATA_DIR
+	chData := filepath.Join(t.TempDir(), "ch-data")
+	envMap[buildinfo.EnvironmentKey("GATEWAY_DATA_DIR")] = chData
+	if got := resolveClientDataDir("", getenv, cfgFn); got != chData {
+		t.Fatalf("expected channel data dir %q, got %q", chData, got)
+	}
+	// 5. Explicit overrides all env vars
+	explicitData := filepath.Join(t.TempDir(), "explicit-data")
+	if got := resolveClientDataDir(explicitData, getenv, cfgFn); got != explicitData {
+		t.Fatalf("expected explicit data dir %q, got %q", explicitData, got)
 	}
 }

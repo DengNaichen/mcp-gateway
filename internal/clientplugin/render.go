@@ -68,29 +68,61 @@ func encodePrettyJSON(v any) []byte {
 	return buf.Bytes()
 }
 
-func (m *Manager) renderSkillMarkdown() []byte {
-	raw := string(mustReadAsset("mcp-gateway/skills/mcp-gateway/SKILL.md"))
+type templateReplacement struct {
+	old string
+	new string
+	all bool
+}
+
+func renderTemplateAsset(rel string, replacements ...templateReplacement) ([]byte, error) {
+	src := string(mustReadAsset(rel))
+	for _, rep := range replacements {
+		if !strings.Contains(src, rep.old) {
+			return nil, fmt.Errorf("plugin template %s missing placeholder %q", rel, rep.old)
+		}
+		if rep.all {
+			src = strings.ReplaceAll(src, rep.old, rep.new)
+		} else {
+			src = strings.Replace(src, rep.old, rep.new, 1)
+		}
+	}
+	return []byte(src), nil
+}
+
+func (m *Manager) renderSkillMarkdown() ([]byte, error) {
 	if m.slug == "mcp-gateway" {
-		return []byte(raw)
+		return mustReadAsset("mcp-gateway/skills/mcp-gateway/SKILL.md"), nil
 	}
 	// Replace frontmatter skill name and CLI references cleanly for Dev isolation.
-	raw = strings.Replace(raw, "name: mcp-gateway\n", "name: "+m.slug+"\n", 1)
-	raw = strings.ReplaceAll(raw, "gatewayctl ", m.slug+"ctl ")
-	return []byte(raw)
+	return renderTemplateAsset(
+		"mcp-gateway/skills/mcp-gateway/SKILL.md",
+		templateReplacement{old: "name: mcp-gateway\n", new: "name: " + m.slug + "\n"},
+		templateReplacement{old: "gatewayctl ", new: m.slug + "ctl ", all: true},
+	)
 }
 
-func (m *Manager) renderHookWrapper(hookBin, dataDir string) []byte {
-	raw := string(mustReadAsset("mcp-gateway/scripts/run-gateway-hook"))
-	raw = strings.Replace(raw, `default_bin=""`, `default_bin=`+workspace.ShellQuote(hookBin), 1)
-	raw = strings.Replace(raw, `default_slug="mcp-gateway"`, `default_slug=`+workspace.ShellQuote(m.slug), 1)
-	raw = strings.Replace(raw, `default_data_dir=""`, `default_data_dir=`+workspace.ShellQuote(dataDir), 1)
-	return []byte(raw)
+func (m *Manager) renderHookWrapper(hookBin, dataDir string) ([]byte, error) {
+	return renderTemplateAsset(
+		"mcp-gateway/scripts/run-gateway-hook",
+		templateReplacement{old: `default_bin=""`, new: `default_bin=` + workspace.ShellQuote(hookBin)},
+		templateReplacement{old: `default_slug="mcp-gateway"`, new: `default_slug=` + workspace.ShellQuote(m.slug)},
+		templateReplacement{old: `default_data_dir=""`, new: `default_data_dir=` + workspace.ShellQuote(dataDir)},
+	)
 }
 
-func (m *Manager) renderClaudeMarketplace(endpoint, hookBin, dataDir string) renderedBundle {
+func (m *Manager) renderClaudeMarketplace(endpoint, hookBin, dataDir string) (renderedBundle, error) {
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientClaude)
 	prefix := "plugins/" + m.slug + "/"
 	desc := fmt.Sprintf("Connects Claude Code to %s with semantic tool discovery, scoped invocation, and automatic workspace provenance signing.", m.appName)
+
+	hookScript, err := m.renderHookWrapper(hookBin, dataDir)
+	if err != nil {
+		return renderedBundle{}, err
+	}
+	skillMD, err := m.renderSkillMarkdown()
+	if err != nil {
+		return renderedBundle{}, err
+	}
 
 	marketplace := map[string]any{
 		"$schema":     "https://anthropic.com/claude-code/marketplace.schema.json",
@@ -157,8 +189,8 @@ func (m *Manager) renderClaudeMarketplace(endpoint, hookBin, dataDir string) ren
 		{RelPath: prefix + ".claude-plugin/plugin.json", Data: encodePrettyJSON(manifest), Perm: 0o644},
 		{RelPath: prefix + ".mcp.json", Data: encodePrettyJSON(mcpDoc), Perm: 0o644},
 		{RelPath: prefix + "hooks/hooks.json", Data: encodePrettyJSON(hooksDoc), Perm: 0o644},
-		{RelPath: prefix + "scripts/run-gateway-hook", Data: m.renderHookWrapper(hookBin, dataDir), Perm: 0o755},
-		{RelPath: prefix + "skills/" + m.slug + "/SKILL.md", Data: m.renderSkillMarkdown(), Perm: 0o644},
+		{RelPath: prefix + "scripts/run-gateway-hook", Data: hookScript, Perm: 0o755},
+		{RelPath: prefix + "skills/" + m.slug + "/SKILL.md", Data: skillMD, Perm: 0o644},
 		{RelPath: prefix + "README.md", Data: mustReadAsset("mcp-gateway/README.md"), Perm: 0o644},
 	}
 	return renderedBundle{
@@ -166,13 +198,22 @@ func (m *Manager) renderClaudeMarketplace(endpoint, hookBin, dataDir string) ren
 		Digest:    hashRenderedFiles(files, agentURL, hookBin, dataDir, m.version),
 		HookBin:   hookBin,
 		Endpoint:  agentURL,
-	}
+	}, nil
 }
 
-func (m *Manager) renderCodexMarketplace(endpoint, hookBin, dataDir string) renderedBundle {
+func (m *Manager) renderCodexMarketplace(endpoint, hookBin, dataDir string) (renderedBundle, error) {
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientCodex)
 	prefix := "plugins/" + m.slug + "/"
 	desc := fmt.Sprintf("Connects Codex to %s with semantic tool discovery, scoped invocation, and automatic workspace provenance signing.", m.appName)
+
+	hookScript, err := m.renderHookWrapper(hookBin, dataDir)
+	if err != nil {
+		return renderedBundle{}, err
+	}
+	skillMD, err := m.renderSkillMarkdown()
+	if err != nil {
+		return renderedBundle{}, err
+	}
 
 	marketplace := map[string]any{
 		"name":      m.slug,
@@ -253,8 +294,8 @@ func (m *Manager) renderCodexMarketplace(endpoint, hookBin, dataDir string) rend
 		{RelPath: prefix + ".codex-plugin/plugin.json", Data: encodePrettyJSON(manifest), Perm: 0o644},
 		{RelPath: prefix + ".mcp.json", Data: encodePrettyJSON(mcpDoc), Perm: 0o644},
 		{RelPath: prefix + "hooks/hooks.json", Data: encodePrettyJSON(hooksDoc), Perm: 0o644},
-		{RelPath: prefix + "scripts/run-gateway-hook", Data: m.renderHookWrapper(hookBin, dataDir), Perm: 0o755},
-		{RelPath: prefix + "skills/" + m.slug + "/SKILL.md", Data: m.renderSkillMarkdown(), Perm: 0o644},
+		{RelPath: prefix + "scripts/run-gateway-hook", Data: hookScript, Perm: 0o755},
+		{RelPath: prefix + "skills/" + m.slug + "/SKILL.md", Data: skillMD, Perm: 0o644},
 		{RelPath: prefix + "assets/icon.png", Data: mustReadAsset("mcp-gateway/assets/icon.png"), Perm: 0o644},
 		{RelPath: prefix + "README.md", Data: mustReadAsset("mcp-gateway/README.md"), Perm: 0o644},
 	}
@@ -263,11 +304,19 @@ func (m *Manager) renderCodexMarketplace(endpoint, hookBin, dataDir string) rend
 		Digest:    hashRenderedFiles(files, agentURL, hookBin, dataDir, m.version),
 		HookBin:   hookBin,
 		Endpoint:  agentURL,
-	}
+	}, nil
 }
 
-func (m *Manager) renderCursorPlugin(endpoint, hookBin, dataDir string) renderedBundle {
+func (m *Manager) renderCursorPlugin(endpoint, hookBin, dataDir string) (renderedBundle, error) {
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientCursor)
+	hookScript, err := m.renderHookWrapper(hookBin, dataDir)
+	if err != nil {
+		return renderedBundle{}, err
+	}
+	skillMD, err := m.renderSkillMarkdown()
+	if err != nil {
+		return renderedBundle{}, err
+	}
 	manifest := map[string]any{
 		"name":        m.slug,
 		"displayName": m.appName,
@@ -312,8 +361,8 @@ func (m *Manager) renderCursorPlugin(endpoint, hookBin, dataDir string) rendered
 		{RelPath: "mcp.json", Data: encodePrettyJSON(mcpDoc), Perm: 0o644},
 		{RelPath: "hooks/hooks.json", Data: encodePrettyJSON(hooksDoc), Perm: 0o644},
 		{RelPath: "rules/" + m.slug + ".mdc", Data: mustReadAsset("mcp-gateway/rules/mcp-gateway.mdc"), Perm: 0o644},
-		{RelPath: "skills/" + m.slug + "/SKILL.md", Data: m.renderSkillMarkdown(), Perm: 0o644},
-		{RelPath: "scripts/run-gateway-hook", Data: m.renderHookWrapper(hookBin, dataDir), Perm: 0o755},
+		{RelPath: "skills/" + m.slug + "/SKILL.md", Data: skillMD, Perm: 0o644},
+		{RelPath: "scripts/run-gateway-hook", Data: hookScript, Perm: 0o755},
 		{RelPath: "assets/icon.png", Data: mustReadAsset("mcp-gateway/assets/icon.png"), Perm: 0o644},
 		{RelPath: "README.md", Data: mustReadAsset("mcp-gateway/README.md"), Perm: 0o644},
 	}
@@ -322,10 +371,10 @@ func (m *Manager) renderCursorPlugin(endpoint, hookBin, dataDir string) rendered
 		Digest:    hashRenderedFiles(files, agentURL, hookBin, dataDir, m.version),
 		HookBin:   hookBin,
 		Endpoint:  agentURL,
-	}
+	}, nil
 }
 
-func (m *Manager) renderOpenCodePlugin(endpoint, hookBin, dataDir string) renderedBundle {
+func (m *Manager) renderOpenCodePlugin(endpoint, hookBin, dataDir string) (renderedBundle, error) {
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientOpenCode)
 	var extraArgs []string
 	if dataDir != "" {
@@ -335,28 +384,37 @@ func (m *Manager) renderOpenCodePlugin(endpoint, hookBin, dataDir string) render
 	urlJSON, _ := json.Marshal(agentURL)
 	binJSON, _ := json.Marshal(hookBin)
 	extraJSON, _ := json.Marshal(extraArgs)
-	toolRegex := fmt.Sprintf(`/^(?:mcp__(?:plugin_[A-Za-z0-9_-]+?_)?)?(?:%s)[-_]{1,2}(discover_tools|get_tool_schema|invoke_tool)$/`, workspace.SlugRegex(m.slug))
+	toolRegex := workspace.PluginToolRegexLiteral(m.slug)
 
-	src := string(mustReadAsset("opencode/index.js"))
-	src = strings.Replace(src, `const DEFAULT_SLUG = "mcp-gateway";`, `const DEFAULT_SLUG = `+string(slugJSON)+`;`, 1)
-	src = strings.Replace(src, `const DEFAULT_MCP_URL = "http://127.0.0.1:8788/mcp?agent=opencode";`, `const DEFAULT_MCP_URL = `+string(urlJSON)+`;`, 1)
-	src = strings.Replace(src, `const DEFAULT_HOOK_BIN = "";`, `const DEFAULT_HOOK_BIN = `+string(binJSON)+`;`, 1)
-	src = strings.Replace(src, `const DEFAULT_EXTRA_ARGS = [];`, `const DEFAULT_EXTRA_ARGS = `+string(extraJSON)+`;`, 1)
-	src = strings.Replace(src, `const TOOL_RE = /^(?:mcp__(?:plugin_[A-Za-z0-9_-]+?_)?)?(?:mcp[-_]gateway)[-_]{1,2}(discover_tools|get_tool_schema|invoke_tool)$/;`, `const TOOL_RE = `+toolRegex+`;`, 1)
+	src, err := renderTemplateAsset(
+		"opencode/index.js",
+		templateReplacement{old: `const DEFAULT_SLUG = "mcp-gateway";`, new: `const DEFAULT_SLUG = ` + string(slugJSON) + `;`},
+		templateReplacement{old: `const DEFAULT_MCP_URL = "http://127.0.0.1:8788/mcp?agent=opencode";`, new: `const DEFAULT_MCP_URL = ` + string(urlJSON) + `;`},
+		templateReplacement{old: `const DEFAULT_HOOK_BIN = "";`, new: `const DEFAULT_HOOK_BIN = ` + string(binJSON) + `;`},
+		templateReplacement{old: `const DEFAULT_EXTRA_ARGS = [];`, new: `const DEFAULT_EXTRA_ARGS = ` + string(extraJSON) + `;`},
+		templateReplacement{old: `const TOOL_RE = /^(?:mcp__(?:plugin_[A-Za-z0-9_-]+?_)?)?(?:mcp[-_]gateway)[-_]{1,2}(discover_tools|get_tool_schema|invoke_tool)$/;`, new: `const TOOL_RE = ` + toolRegex + `;`},
+	)
+	if err != nil {
+		return renderedBundle{}, err
+	}
+	skillMD, err := m.renderSkillMarkdown()
+	if err != nil {
+		return renderedBundle{}, err
+	}
 
 	files := []renderedFile{
-		{RelPath: "plugins/" + m.slug + ".js", Data: []byte(src), Perm: 0o644},
-		{RelPath: "skills/" + m.slug + "/SKILL.md", Data: m.renderSkillMarkdown(), Perm: 0o644},
+		{RelPath: "plugins/" + m.slug + ".js", Data: src, Perm: 0o644},
+		{RelPath: "skills/" + m.slug + "/SKILL.md", Data: skillMD, Perm: 0o644},
 	}
 	return renderedBundle{
 		RootFiles: files,
 		Digest:    hashRenderedFiles(files, agentURL, hookBin, dataDir, m.version),
 		HookBin:   hookBin,
 		Endpoint:  agentURL,
-	}
+	}, nil
 }
 
-func (m *Manager) renderPiPackage(endpoint, hookBin, dataDir string) renderedBundle {
+func (m *Manager) renderPiPackage(endpoint, hookBin, dataDir string) (renderedBundle, error) {
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientPi)
 	var extraArgs []string
 	if dataDir != "" {
@@ -366,14 +424,23 @@ func (m *Manager) renderPiPackage(endpoint, hookBin, dataDir string) renderedBun
 	urlJSON, _ := json.Marshal(agentURL)
 	binJSON, _ := json.Marshal(hookBin)
 	extraJSON, _ := json.Marshal(extraArgs)
-	toolRegex := fmt.Sprintf(`/^(?:mcp__(?:plugin_[A-Za-z0-9_-]+?_)?)?(?:%s)[-_]{1,2}(discover_tools|get_tool_schema|invoke_tool)$/`, workspace.SlugRegex(m.slug))
+	toolRegex := workspace.PluginToolRegexLiteral(m.slug)
 
-	extSrc := string(mustReadAsset("pi/extensions/mcp-gateway.ts"))
-	extSrc = strings.Replace(extSrc, `const DEFAULT_SLUG = "mcp-gateway";`, `const DEFAULT_SLUG = `+string(slugJSON)+`;`, 1)
-	extSrc = strings.Replace(extSrc, `const DEFAULT_MCP_URL = "http://127.0.0.1:8788/mcp?agent=pi";`, `const DEFAULT_MCP_URL = `+string(urlJSON)+`;`, 1)
-	extSrc = strings.Replace(extSrc, `const DEFAULT_HOOK_BIN = "";`, `const DEFAULT_HOOK_BIN = `+string(binJSON)+`;`, 1)
-	extSrc = strings.Replace(extSrc, `const DEFAULT_EXTRA_ARGS: string[] = [];`, `const DEFAULT_EXTRA_ARGS: string[] = `+string(extraJSON)+`;`, 1)
-	extSrc = strings.Replace(extSrc, `const TOOL_RE = /^(?:mcp__(?:plugin_[A-Za-z0-9_-]+?_)?)?(?:mcp[-_]gateway)[-_]{1,2}(discover_tools|get_tool_schema|invoke_tool)$/;`, `const TOOL_RE = `+toolRegex+`;`, 1)
+	extSrc, err := renderTemplateAsset(
+		"pi/extensions/mcp-gateway.ts",
+		templateReplacement{old: `const DEFAULT_SLUG = "mcp-gateway";`, new: `const DEFAULT_SLUG = ` + string(slugJSON) + `;`},
+		templateReplacement{old: `const DEFAULT_MCP_URL = "http://127.0.0.1:8788/mcp?agent=pi";`, new: `const DEFAULT_MCP_URL = ` + string(urlJSON) + `;`},
+		templateReplacement{old: `const DEFAULT_HOOK_BIN = "";`, new: `const DEFAULT_HOOK_BIN = ` + string(binJSON) + `;`},
+		templateReplacement{old: `const DEFAULT_EXTRA_ARGS: string[] = [];`, new: `const DEFAULT_EXTRA_ARGS: string[] = ` + string(extraJSON) + `;`},
+		templateReplacement{old: `const TOOL_RE = /^(?:mcp__(?:plugin_[A-Za-z0-9_-]+?_)?)?(?:mcp[-_]gateway)[-_]{1,2}(discover_tools|get_tool_schema|invoke_tool)$/;`, new: `const TOOL_RE = ` + toolRegex + `;`},
+	)
+	if err != nil {
+		return renderedBundle{}, err
+	}
+	skillMD, err := m.renderSkillMarkdown()
+	if err != nil {
+		return renderedBundle{}, err
+	}
 
 	pkgDoc := map[string]any{
 		"name":        "@dengnaichen/pi-" + m.slug,
@@ -393,8 +460,8 @@ func (m *Manager) renderPiPackage(endpoint, hookBin, dataDir string) renderedBun
 
 	files := []renderedFile{
 		{RelPath: "package.json", Data: encodePrettyJSON(pkgDoc), Perm: 0o644},
-		{RelPath: "extensions/" + m.slug + ".ts", Data: []byte(extSrc), Perm: 0o644},
-		{RelPath: "skills/" + m.slug + "/SKILL.md", Data: m.renderSkillMarkdown(), Perm: 0o644},
+		{RelPath: "extensions/" + m.slug + ".ts", Data: extSrc, Perm: 0o644},
+		{RelPath: "skills/" + m.slug + "/SKILL.md", Data: skillMD, Perm: 0o644},
 		{RelPath: "README.md", Data: mustReadAsset("pi/README.md"), Perm: 0o644},
 	}
 	return renderedBundle{
@@ -402,11 +469,19 @@ func (m *Manager) renderPiPackage(endpoint, hookBin, dataDir string) renderedBun
 		Digest:    hashRenderedFiles(files, agentURL, hookBin, dataDir, m.version),
 		HookBin:   hookBin,
 		Endpoint:  agentURL,
-	}
+	}, nil
 }
 
-func (m *Manager) renderAntigravityPlugin(endpoint, hookBin, dataDir string) renderedBundle {
+func (m *Manager) renderAntigravityPlugin(endpoint, hookBin, dataDir string) (renderedBundle, error) {
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientAntigravity)
+	hookScript, err := m.renderHookWrapper(hookBin, dataDir)
+	if err != nil {
+		return renderedBundle{}, err
+	}
+	skillMD, err := m.renderSkillMarkdown()
+	if err != nil {
+		return renderedBundle{}, err
+	}
 	desc := fmt.Sprintf("Connects Google Antigravity (CLI and Desktop) to %s with semantic tool discovery, rules, skills, and PreToolUse workspace provenance signing.", m.appName)
 	manifest := map[string]any{
 		"name":        m.slug,
@@ -451,9 +526,9 @@ func (m *Manager) renderAntigravityPlugin(endpoint, hookBin, dataDir string) ren
 		{RelPath: "mcp_config.json", Data: encodePrettyJSON(mcpDoc), Perm: 0o644},
 		{RelPath: "hooks.json", Data: encodePrettyJSON(hooksDoc), Perm: 0o644},
 		{RelPath: "rules/AGENTS.md", Data: mustReadAsset("antigravity/rules/AGENTS.md"), Perm: 0o644},
-		{RelPath: "skills/" + m.slug + "/SKILL.md", Data: m.renderSkillMarkdown(), Perm: 0o644},
-		{RelPath: "scripts/run-gateway-hook", Data: m.renderHookWrapper(hookBin, dataDir), Perm: 0o755},
-		{RelPath: "assets/icon.png", Data: mustReadAsset("antigravity/assets/icon.png"), Perm: 0o644},
+		{RelPath: "skills/" + m.slug + "/SKILL.md", Data: skillMD, Perm: 0o644},
+		{RelPath: "scripts/run-gateway-hook", Data: hookScript, Perm: 0o755},
+		{RelPath: "assets/icon.png", Data: mustReadAsset("mcp-gateway/assets/icon.png"), Perm: 0o644},
 		{RelPath: "README.md", Data: mustReadAsset("antigravity/README.md"), Perm: 0o644},
 	}
 	return renderedBundle{
@@ -461,5 +536,5 @@ func (m *Manager) renderAntigravityPlugin(endpoint, hookBin, dataDir string) ren
 		Digest:    hashRenderedFiles(files, agentURL, hookBin, dataDir, m.version),
 		HookBin:   hookBin,
 		Endpoint:  agentURL,
-	}
+	}, nil
 }
