@@ -1,8 +1,9 @@
 # Prototypes
 
-存放 MCP Gateway 控制面的 UI / 交互原型与设计规范文档。所有文档与链接使用仓库内相对路径。
+存放 MCP Gateway 控制面的 UI / 交互原型与设计规范文档。所有文档与链接使用仓库内相对路径；完整设计与交付流程见 [.agents/skills/prototype/SKILL.md](../.agents/skills/prototype/SKILL.md)。
 
-校验文档链接：`python3 scripts/check-doc-links.py`（从仓库根目录运行）。
+- 启动本地预览：`python3 .agents/skills/prototype/scripts/serve-prototype.py --open`
+- 校验原型与链接：`python3 .agents/skills/prototype/scripts/verify-prototype.py`（从仓库根目录运行）
 
 ## 索引
 

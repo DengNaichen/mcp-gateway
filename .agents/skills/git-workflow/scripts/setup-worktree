@@ -4,7 +4,7 @@
 # See .agents/skills/git-workflow/SKILL.md.
 set -eu
 
-script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+script_dir=$(CDPATH='' cd -P -- "$(dirname -- "$0")" && pwd -P)
 node "$script_dir/worktree-runtime.mjs" setup "$@"
 
 # Hooks live in the common git dir shared by all worktrees. lefthook is pinned in
@@ -26,5 +26,5 @@ install_hooks() {
 if install_hooks >/dev/null 2>&1; then
   echo "git hooks installed (lefthook); bypass with LEFTHOOK=0"
 else
-  echo "warning: could not install git hooks; run scripts/setup-worktree again" >&2
+  echo "warning: could not install git hooks; run .agents/skills/git-workflow/scripts/setup-worktree again" >&2
 fi

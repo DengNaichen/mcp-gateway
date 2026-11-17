@@ -1,4 +1,4 @@
-# Git hooks managed by lefthook (pinned in tools/go.mod; installed by scripts/setup-worktree).
+# Git hooks managed by lefthook (pinned in tools/go.mod; installed by .agents/skills/git-workflow/scripts/setup-worktree).
 # Bypass in emergencies: LEFTHOOK=0 git commit ...
 pre-commit:
   parallel: false

@@ -13,7 +13,7 @@ if [[ ! "$VERSION" =~ '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' ]]; then
   exit 1
 fi
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$(cd -P "$(dirname "$0")" && cd ../../../.. && pwd -P)"
 cd "$ROOT_DIR"
 
 if [[ "$(git branch --show-current)" != "main" ]]; then
