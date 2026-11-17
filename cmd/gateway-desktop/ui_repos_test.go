@@ -16,7 +16,6 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"gatewaylab/internal/activity"
-	"gatewaylab/internal/clientconfig"
 	"gatewaylab/internal/gateway"
 	"gatewaylab/internal/model"
 	"gatewaylab/internal/registry"
@@ -491,6 +490,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(cfgRoot, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GATEWAY_CLIENT_CONFIG_HOME", cfgRoot)
 
 	rt := &gatewayRuntime{
 		UIURL:  mockSrv.URL,
@@ -498,7 +498,6 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 		Mode:   modeAttached,
 	}
 	uiApp := NewDesktopUI(rt)
-	uiApp.ClientConfigs = clientconfig.New(cfgRoot, filepath.Join(cfgRoot, "receipts"), func(string) string { return "" })
 	stateMu.Lock()
 	bootCopy := boot
 	stateMu.Unlock()
@@ -626,8 +625,11 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 		t.Fatalf("nav 连接客户端: %v", err)
 	}
 	waitAsyncIdle(t, tester, uiApp)
-	if err := tester.Click("Cursor Hook 配置"); err != nil {
-		t.Fatalf("click Cursor Hook 配置: %v", err)
+	if err := tester.Click("Cursor 更多操作"); err != nil {
+		t.Fatalf("open Cursor 更多操作: %v", err)
+	}
+	if err := tester.ChooseMenuItem("查看 Hook 配置"); err != nil {
+		t.Fatalf("choose 查看 Hook 配置: %v", err)
 	}
 	waitAsyncIdle(t, tester, uiApp)
 	if !tester.HasText("/Users/test/.cursor/hooks.json") {

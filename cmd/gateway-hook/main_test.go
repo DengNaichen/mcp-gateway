@@ -65,6 +65,8 @@ func TestClaudeAndCodexPreToolUse(t *testing.T) {
 		toolName string
 	}{
 		{"claude", "mcp__" + slug + "__discover_tools"},
+		{"claude", "mcp__plugin_" + slug + "_" + slug + "__discover_tools"},
+		{"claude", "mcp__plugin_" + underscoreSlug + "_" + underscoreSlug + "__invoke_tool"},
 		{"codex", "mcp__" + underscoreSlug + "__invoke_tool"},
 	} {
 		inputMap := map[string]any{
@@ -131,6 +133,20 @@ func TestClaudeAndCodexPreToolUse(t *testing.T) {
 		if err != nil || claims.Cwd != cwd || claims.SID != "sess-abc" || claims.Ambiguous {
 			t.Fatalf("VerifyToken failed: %v %+v", err, claims)
 		}
+	}
+
+	// Unrelated plugin MCP tools must noop even when sharing meta-tool suffix.
+	unrelatedEv, _ := json.Marshal(map[string]any{
+		"hook_event_name": "PreToolUse",
+		"tool_name":       "mcp__plugin_other_other__discover_tools",
+		"cwd":             cwd,
+		"session_id":      "sess-abc",
+		"tool_input":      map[string]any{"intent": "find errors"},
+	})
+	out.Reset()
+	errBuf.Reset()
+	if code := runCLI([]string{"claude", "--data", dataDir}, bytes.NewReader(unrelatedEv), &out, &errBuf); code != 0 || out.Len() != 0 {
+		t.Fatalf("unrelated plugin tool should noop, got code=%d out=%q", code, out.String())
 	}
 }
 

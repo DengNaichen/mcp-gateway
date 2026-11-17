@@ -846,6 +846,67 @@
       flex-direction: column;
       gap: 14px;
     }
+    .client-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 20px;
+    }
+    .client-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--bg-subtle);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink-strong);
+      flex-shrink: 0;
+    }
+    .menu-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+    .menu-popover {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 6px);
+      min-width: 176px;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 10px 26px rgba(10, 37, 64, 0.12);
+      padding: 4px;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .menu-item {
+      width: 100%;
+      text-align: left;
+      border: none;
+      background: transparent;
+      color: var(--ink-body);
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 7px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .menu-item:hover {
+      background: var(--bg-subtle);
+      color: var(--ink-strong);
+    }
+    .menu-item.danger:hover {
+      background: var(--danger-bg);
+      color: var(--danger);
+    }
   </style>
 </head>
 <body>
@@ -864,6 +925,7 @@
             <button class="nav-item" data-page="market"><span class="nav-item-left"><span class="nav-dot"></span>MCP 市场</span></button>
             <button class="nav-item active" data-page="catalog"><span class="nav-item-left"><span class="nav-dot"></span>工具目录</span><span class="nav-count">18/26</span></button>
             <button class="nav-item" data-page="repos"><span class="nav-item-left"><span class="nav-dot"></span>仓库绑定</span><span class="nav-count" id="nav-repos-count">2</span></button>
+            <button class="nav-item" data-page="clients"><span class="nav-item-left"><span class="nav-dot"></span>连接客户端</span><span class="nav-count" id="nav-clients-count">5</span></button>
             <button class="nav-item" data-page="settings"><span class="nav-item-left"><span class="nav-dot"></span>访问与路由</span></button>
           </div>
           <div>
@@ -1046,7 +1108,63 @@ Args:
     let playgroundSimAgent = "*";
     let playgroundIntent = "排查 prod-core 下支付服务 Pod 频繁重启的原因";
     let activeHookModalAgent = null;
+    let activeVerifyModalClient = null;
+    let activeClientMenuId = null;
+    let clientsToast = "";
     let showAddRepoModal = false;
+
+    const CLIENT_PLUGINS = [
+      {
+        id: "claude",
+        name: "Claude Code",
+        glyph: "CC",
+        path: "~/.claude/plugins/installed_plugins.json",
+        state: "已安装",
+        detail: "v0.0.4 · 官方插件已启用（含 PreToolUse + mcp-gateway Skill）",
+        warning: "",
+        legacyMcp: false
+      },
+      {
+        id: "codex",
+        name: "Codex CLI",
+        glyph: "CX",
+        path: "~/.codex/plugins",
+        state: "待升级",
+        detail: "检测到旧版全局 MCP 条目，升级为官方插件时将自动撤回并注入 PreToolUse Hook",
+        warning: "若 Codex 首次提示审查插件 Hook，请在 Codex 中确认信任",
+        legacyMcp: true
+      },
+      {
+        id: "cursor",
+        name: "Cursor",
+        glyph: "CU",
+        path: "~/.cursor/plugins/local/mcp-gateway",
+        state: "需要更新",
+        detail: "已安装 v0.0.3 -> 可升级至 v0.0.4（更新 MCP 端口与 Hook 规则）",
+        warning: "",
+        legacyMcp: false
+      },
+      {
+        id: "opencode",
+        name: "OpenCode v2",
+        glyph: "OC",
+        path: "~/.config/opencode/plugins/mcp-gateway",
+        state: "未安装",
+        detail: "将写入 OpenCode 插件（tool.execute.before）与全局 mcp 端点配置",
+        warning: "",
+        legacyMcp: false
+      },
+      {
+        id: "pi",
+        name: "Pi",
+        glyph: "π",
+        path: "~/.pi/agent/settings.json",
+        state: "配置异常",
+        detail: "检测到 ~/.pi/agent/extensions/mcp-gateway.ts 被外部修改，请检查冲突后再安装",
+        warning: "不会静默覆盖现有文件",
+        legacyMcp: false
+      }
+    ];
 
     const REPOS = [
       {
@@ -1249,7 +1367,7 @@ Args:
         document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         currentPage = btn.dataset.page;
-        const titles = { overview: "运行大盘", services: "上游服务", market: "MCP 市场", catalog: "工具目录", repos: "仓库绑定", logs: "请求日志", playground: "路由沙盒", settings: "访问与路由" };
+        const titles = { overview: "运行大盘", services: "上游服务", market: "MCP 市场", catalog: "工具目录", repos: "仓库绑定", clients: "连接客户端", logs: "请求日志", playground: "路由沙盒", settings: "访问与路由" };
         document.getElementById("bc-title").textContent = titles[currentPage];
         render();
       });
@@ -1260,12 +1378,15 @@ Args:
       if (countEl) countEl.textContent = String(SERVICES.length);
       const cntEl = document.getElementById("nav-repos-count");
       if (cntEl) cntEl.textContent = String(REPOS.length);
+      const cliEl = document.getElementById("nav-clients-count");
+      if (cliEl) cliEl.textContent = String(CLIENT_PLUGINS.length);
       const root = document.getElementById("page-root");
       if (currentPage === "catalog") root.innerHTML = renderCatalog();
       else if (currentPage === "overview") root.innerHTML = renderOverview();
       else if (currentPage === "services") root.innerHTML = renderServices();
       else if (currentPage === "market") root.innerHTML = renderMarket();
       else if (currentPage === "repos") root.innerHTML = renderRepos();
+      else if (currentPage === "clients") root.innerHTML = renderClients();
       else if (currentPage === "logs") root.innerHTML = renderLogs();
       else if (currentPage === "playground") root.innerHTML = renderPlayground();
       else root.innerHTML = renderSettings();
@@ -2687,6 +2808,118 @@ Args:
       return `<span class="quiet-meta"><span class="dot dot-muted"></span>${modelTestState.message}</span>`;
     }
 
+    function verificationPromptFor(clientId) {
+      const target = CLIENT_PLUGINS.find(c => c.id === clientId);
+      const label = target ? target.name : clientId;
+      return `在 ${label} 中验证 mcp-gateway 官方插件：\n1. 执行一次 discover_tools 查询 "列出当前仓库可用工具"。\n2. 确认 Hook 已自动注入单次签名 _gw_ctx（无需手动传入 cwd）。\n3. 回复匹配的仓库名称、规则命中结果与前 3 条可用工具摘要。`;
+    }
+
+    function setClientPluginAction(id, action) {
+      const c = CLIENT_PLUGINS.find(x => x.id === id);
+      if (!c) return;
+      activeClientMenuId = null;
+      if (action === "install" || action === "upgrade" || action === "update") {
+        c.state = "已安装";
+        c.legacyMcp = false;
+        c.detail = action === "upgrade"
+          ? "已自动撤回旧版全局 MCP 并启用 v0.0.4 官方插件"
+          : "v0.0.4 · 官方插件已启用（MCP + Hook + mcp-gateway Skill）";
+        clientsToast = `${c.name} 官方插件已就绪`;
+      } else if (action === "remove") {
+        c.state = "未安装";
+        c.detail = "已卸载官方插件与对应 Hook";
+        clientsToast = `已卸载 ${c.name} 官方插件`;
+      } else if (action === "legacy-mcp") {
+        c.state = "待升级";
+        c.legacyMcp = true;
+        c.detail = "已写入全局 MCP 端点（尚未注入 Hook / Skill）";
+        clientsToast = `已为 ${c.name} 仅写入全局 MCP 配置`;
+      } else if (action === "check") {
+        c.state = "未安装";
+        c.warning = "";
+        c.detail = "冲突已清理，可直接安装官方插件";
+        clientsToast = `${c.name} 配置状态已校验`;
+      }
+      render();
+    }
+
+    function toggleClientMenu(id) {
+      activeClientMenuId = activeClientMenuId === id ? null : id;
+      render();
+    }
+
+    function copyClientVerifyPrompt(id) {
+      activeClientMenuId = null;
+      activeVerifyModalClient = id;
+      const txt = verificationPromptFor(id);
+      navigator.clipboard?.writeText(txt);
+      clientsToast = "已复制端到端验证 Prompt";
+      render();
+    }
+
+    function renderClients() {
+      const installedCount = CLIENT_PLUGINS.filter(c => c.state === "已安装").length;
+      const rows = CLIENT_PLUGINS.map((c, idx) => {
+        const divider = idx > 0 ? 'border-top:1px solid var(--border);' : '';
+        let primaryBtn = '';
+        if (c.state === "已安装") {
+          primaryBtn = `<button class="btn" type="button" onclick="activeVerifyModalClient='${c.id}';renderModals();">✓ 已安装</button>`;
+        } else if (c.state === "待升级") {
+          primaryBtn = `<button class="btn btn-primary" type="button" onclick="setClientPluginAction('${c.id}','upgrade')">升级为插件</button>`;
+        } else if (c.state === "需要更新") {
+          primaryBtn = `<button class="btn btn-primary" type="button" onclick="setClientPluginAction('${c.id}','update')">更新插件</button>`;
+        } else if (c.state === "配置异常" || c.state === "已有插件") {
+          primaryBtn = `<button class="btn" type="button" style="color:var(--danger);border-color:var(--danger-border);" onclick="setClientPluginAction('${c.id}','check')">检查配置</button>`;
+        } else {
+          primaryBtn = `<button class="btn btn-primary" type="button" onclick="setClientPluginAction('${c.id}','install')">安装插件</button>`;
+        }
+        const metaNote = c.warning
+          ? `<span class="quiet-meta" style="color:var(--warn);">· ${esc(c.warning)}</span>`
+          : `<span class="quiet-meta">· ${esc(c.detail)}</span>`;
+        const menuOpen = activeClientMenuId === c.id;
+        return `
+          <div class="client-row" style="${divider}">
+            <div style="display:flex;align-items:center;gap:12px;min-width:0;flex:1;">
+              <div class="client-icon">${esc(c.glyph)}</div>
+              <div style="min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="font-size:13.5px;font-weight:600;color:var(--ink-strong);">${esc(c.name)}</span>
+                <button class="btn-link mono" type="button" title="打开配置位置：${esc(c.path)}" onclick="clientsToast='配置目录：${esc(c.path)}';render();">↗</button>
+                ${metaNote}
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+              ${primaryBtn}
+              <div class="menu-wrap">
+                <button class="btn" type="button" aria-label="${esc(c.name)} 更多操作" onclick="toggleClientMenu('${c.id}')">⋯</button>
+                ${menuOpen ? `
+                  <div class="menu-popover">
+                    <button class="menu-item" type="button" onclick="copyClientVerifyPrompt('${c.id}')">复制验证 Prompt</button>
+                    <button class="menu-item" type="button" onclick="activeClientMenuId=null;openHookModal('${c.id}')">查看 Hook 配置</button>
+                    <button class="menu-item" type="button" onclick="setClientPluginAction('${c.id}','legacy-mcp')">仅写入 MCP</button>
+                    <button class="menu-item danger" type="button" onclick="setClientPluginAction('${c.id}','remove')">卸载插件</button>
+                  </div>
+                ` : ""}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div class="section-header">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <h1 class="section-title">连接客户端</h1>
+            <span class="quiet-meta">官方插件已安装 ${installedCount} / ${CLIENT_PLUGINS.length}</span>
+          </div>
+          ${clientsToast ? `<span class="quiet-meta" style="color:var(--success);font-weight:500;"><span class="dot dot-ok"></span>${esc(clientsToast)}</span>` : ""}
+        </div>
+
+        <div class="card-flush" style="overflow:visible;">
+          ${rows}
+        </div>
+      `;
+    }
+
     function renderSettings() {
       const hasConfiguredKey = settingsDraft.hasKey;
       const keyStatusHtml = hasConfiguredKey
@@ -3029,6 +3262,31 @@ Args:
                     <span style="cursor:pointer;color:#fff;" onclick="navigator.clipboard?.writeText(HOOK_SNIPPETS['${activeHookModalAgent}'].snippet);alert('已复制 Hook 配置片段')">复制片段</span>
                   </div>
                   <pre>${esc(snip.snippet)}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+      if (activeVerifyModalClient) {
+        const cli = CLIENT_PLUGINS.find(c => c.id === activeVerifyModalClient);
+        const promptText = verificationPromptFor(activeVerifyModalClient);
+        modalRoot.innerHTML = `
+          <div class="modal-mask" onclick="activeVerifyModalClient=null;renderModals();">
+            <div class="modal-box" style="max-width:560px;" onclick="event.stopPropagation();">
+              <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+                <strong style="font-size:15px;color:var(--ink-strong);">客户端验证 Prompt · ${esc(cli ? cli.name : activeVerifyModalClient)}</strong>
+                <button class="btn" style="padding:2px 8px;" onclick="activeVerifyModalClient=null;renderModals();">关闭</button>
+              </div>
+              <div style="padding:18px 20px;display:flex;flex-direction:column;gap:12px;">
+                <div style="font-size:12.5px;color:var(--ink-muted);">粘贴到对应 Coding Agent 会话中，确认 MCP 工具发现与 PreToolUse Hook 仓库签名链路已连通：</div>
+                <div class="code-navy">
+                  <div class="code-navy-hdr">
+                    <span>Verification Prompt</span>
+                    <span style="cursor:pointer;color:#fff;" onclick="navigator.clipboard?.writeText(verificationPromptFor('${activeVerifyModalClient}'));clientsToast='已复制验证 Prompt';activeVerifyModalClient=null;render();">复制并关闭</span>
+                  </div>
+                  <pre>${esc(promptText)}</pre>
                 </div>
               </div>
             </div>

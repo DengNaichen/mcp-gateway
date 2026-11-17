@@ -1,0 +1,20 @@
+{
+  "name": "mcp-gateway",
+  "displayName": "MCP Gateway",
+  "version": "0.0.4",
+  "description": "Connects Cursor to MCP Gateway with semantic tool discovery, rules, skills, and preToolUse workspace provenance signing.",
+  "author": {
+    "name": "Naicheng Deng",
+    "url": "https://github.com/DengNaichen"
+  },
+  "homepage": "https://github.com/DengNaichen/mcp-gateway",
+  "repository": "https://github.com/DengNaichen/mcp-gateway",
+  "license": "GPL-3.0",
+  "logo": "assets/icon.png",
+  "keywords": ["mcp", "gateway", "tool-discovery", "scope", "coding-agent"],
+  "category": "developer-tools",
+  "skills": "./skills/",
+  "rules": "./rules/",
+  "hooks": "./hooks/hooks-cursor.json",
+  "mcpServers": "./mcp.json"
+}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -425,6 +426,29 @@ func TestBuildSnippetAllAgents(t *testing.T) {
 			if !strings.Contains(spec.Snippet, `pi.on("tool_call"`) {
 				t.Fatalf("pi snippet missing tool_call listener:\n%s", spec.Snippet)
 			}
+		}
+	}
+}
+
+func TestNativePreToolMatcherPluginNamespaces(t *testing.T) {
+	re := regexp.MustCompile(NativePreToolMatcher("mcp-gateway-dev"))
+	for _, match := range []string{
+		"mcp__mcp-gateway-dev__discover_tools",
+		"mcp__mcp_gateway_dev__invoke_tool",
+		"mcp__plugin_mcp-gateway-dev_mcp-gateway-dev__discover_tools",
+		"mcp__plugin_mcp_gateway_dev_mcp_gateway_dev__get_tool_schema",
+	} {
+		if !re.MatchString(match) {
+			t.Fatalf("expected matcher to match %q", match)
+		}
+	}
+	for _, miss := range []string{
+		"mcp__other__discover_tools",
+		"mcp__plugin_other_other__discover_tools",
+		"mcp__mcp-gateway__discover_tools",
+	} {
+		if re.MatchString(miss) {
+			t.Fatalf("expected matcher NOT to match %q", miss)
 		}
 	}
 }
