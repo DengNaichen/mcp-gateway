@@ -293,7 +293,7 @@ func (p openAPIImporter) operation(serverID, id, name, method, path string, item
 		if name == "" || !slices.Contains([]string{"path", "query", "header", "cookie"}, in) {
 			return t, invalid("参数位置或名称无效")
 		}
-		if in == "header" && slices.Contains([]string{"authorization", "proxy-authorization", "host", "cookie", "connection", "content-length", "content-type"}, strings.ToLower(name)) {
+		if in == "header" && isForbiddenHeader(name) {
 			return t, invalid("认证和协议请求头请通过服务配置设置：" + name)
 		}
 		if param["content"] != nil || param["allowReserved"] == true {
@@ -320,13 +320,7 @@ func (p openAPIImporter) operation(serverID, id, name, method, path string, item
 		if !registry.SupportedParameterStyle(in, style, explode) {
 			return t, invalid("不支持的参数序列化：" + in + "/" + style)
 		}
-		group := in
-		if in == "header" {
-			group = "headers"
-		}
-		if in == "cookie" {
-			group = "cookies"
-		}
+		group := argumentGroup(in)
 		if groups[group] == nil {
 			groups[group] = objectSchema(map[string]any{})
 		}
@@ -512,4 +506,31 @@ func objectSchema(properties map[string]any, required ...string) map[string]any 
 		required = []string{}
 	}
 	return map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}
+}
+
+// Mirrors internal/upstream/http_mapping.go; openapi and upstream are sibling
+// packages under registry and cannot cross-import.
+var forbiddenHeaders = []string{
+	"authorization",
+	"proxy-authorization",
+	"host",
+	"cookie",
+	"connection",
+	"content-length",
+	"content-type",
+}
+
+func isForbiddenHeader(name string) bool {
+	return slices.Contains(forbiddenHeaders, strings.ToLower(name))
+}
+
+func argumentGroup(in string) string {
+	switch in {
+	case "header":
+		return "headers"
+	case "cookie":
+		return "cookies"
+	default:
+		return in
+	}
 }

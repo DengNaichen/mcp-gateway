@@ -49,23 +49,14 @@ func (r RegistryRepository) Load() (registry.Registry, error) {
 	return result, nil
 }
 func (r RegistryRepository) Save(reg registry.Registry) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin registry transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err := WriteRegistry(tx, reg); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit registry: %w", err)
-	}
-	return nil
+	return RunTx(r.db, func(tx DBTX) error {
+		return WriteRegistry(tx, reg)
+	})
 }
 
 // WriteRegistry reconciles by primary key, retaining row identity and touching
 // only changed definitions. It can share a publication transaction with jobs.
-func WriteRegistry(tx *sql.Tx, reg registry.Registry) error {
+func WriteRegistry(tx DBTX, reg registry.Registry) error {
 	// Upsert parents before children, then prune children before parents. Never
 	// REPLACE a server: SQLite implements REPLACE as DELETE followed by INSERT.
 	for position, s := range reg.Servers {

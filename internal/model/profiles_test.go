@@ -247,3 +247,73 @@ func openTestService(dir string) (*testService, error) {
 	return &testService{svc, storage}, nil
 }
 func (g *testService) Close() error { return g.storage.Close() }
+
+func TestProfileMutationsAreAtomicAcrossTablesAndMemory(t *testing.T) {
+	g, err := openTestService(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+
+	second, err := g.SaveModelProfile(ModelProfile{
+		BaseURL:        "https://api.openai.com/v1",
+		Model:          "gpt-test-2",
+		MaxTools:       5,
+		TimeoutSeconds: 30,
+	}, "key-2", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeCfg, beforeHasKey := g.Config()
+	beforeProfiles := g.ModelProfiles()
+
+	// Abort any write to settings after model_profiles has already been modified in the tx.
+	if _, err := g.storage.Exec(`CREATE TRIGGER fail_settings_update BEFORE UPDATE ON settings BEGIN SELECT RAISE(ABORT, 'inject failure'); END;`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.SaveModelProfile(ModelProfile{
+		ID:             second.ID,
+		BaseURL:        "https://api.openai.com/v1",
+		Model:          "gpt-test-updated",
+		MaxTools:       7,
+		TimeoutSeconds: 40,
+	}, "key-updated", false); err == nil {
+		t.Fatal("expected trigger failure on SaveModelProfile")
+	}
+	if _, err := g.ActivateModelProfile("default"); err == nil {
+		t.Fatal("expected trigger failure on ActivateModelProfile")
+	}
+	if err := g.DeleteModelProfile(second.ID); err == nil {
+		t.Fatal("expected trigger failure on DeleteModelProfile")
+	}
+
+	// Also fail SaveSettings after settings update by rejecting model_profiles insert.
+	if _, err := g.storage.Exec(`DROP TRIGGER fail_settings_update; CREATE TRIGGER fail_profiles_insert BEFORE INSERT ON model_profiles BEGIN SELECT RAISE(ABORT, 'inject profile failure'); END;`); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.SaveSettings(Settings{
+		BaseURL:        "https://api.openai.com/v1",
+		Model:          "gpt-broken",
+		MaxTools:       9,
+		TimeoutSeconds: 60,
+	}, "key-broken", false); err == nil {
+		t.Fatal("expected trigger failure on SaveSettings")
+	}
+
+	// Neither SQLite nor in-memory snapshots should reflect any partial writes.
+	afterCfg, afterHasKey := g.Config()
+	if afterCfg != beforeCfg || afterHasKey != beforeHasKey {
+		t.Fatalf("in-memory config mutated on failed tx: %+v vs %+v", afterCfg, beforeCfg)
+	}
+	if got := g.ModelProfiles(); len(got) != len(beforeProfiles) || got[0].Model != beforeProfiles[0].Model {
+		t.Fatalf("in-memory profiles mutated on failed tx: %+v vs %+v", got, beforeProfiles)
+	}
+	storedSettings, err := store.Settings[Settings](g.storage.DB).Load()
+	if err != nil || storedSettings != beforeCfg {
+		t.Fatalf("sqlite settings mutated on failed tx: %+v err=%v", storedSettings, err)
+	}
+	storedProfiles, err := store.ModelProfiles[ModelProfile](g.storage.DB).List()
+	if err != nil || len(storedProfiles) != len(beforeProfiles) || storedProfiles[0].Model != beforeProfiles[0].Model {
+		t.Fatalf("sqlite model_profiles mutated on failed tx: %+v err=%v", storedProfiles, err)
+	}
+}

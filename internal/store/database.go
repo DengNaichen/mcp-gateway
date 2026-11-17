@@ -72,18 +72,9 @@ func migrateDatabase(db *sql.DB) error {
 		version = 5
 	}
 	if version < 6 {
-		tx, err := db.Begin()
-		if err != nil {
-			return fmt.Errorf("begin v6 migration: %w", err)
-		}
-		committed := false
-		defer func() {
-			if !committed {
-				_ = tx.Rollback()
-			}
-		}()
-		// Scope grants intentionally outlive registry entries for owner review.
-		if _, err := tx.Exec(`
+		if err := RunTx(db, func(tx DBTX) error {
+			// Scope grants intentionally outlive registry entries for owner review.
+			if _, err := tx.Exec(`
 CREATE TABLE IF NOT EXISTS scope_state (
 	id INTEGER PRIMARY KEY CHECK(id=1),
 	definition TEXT NOT NULL CHECK(json_valid(definition))
@@ -105,46 +96,43 @@ CREATE TABLE IF NOT EXISTS scope_observations (
 );
 CREATE INDEX IF NOT EXISTS scope_observations_by_last_seen ON scope_observations(last_seen DESC);
 `); err != nil {
-			return fmt.Errorf("create v6 scope tables: %w", err)
+				return fmt.Errorf("create v6 scope tables: %w", err)
+			}
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO scope_state(id, definition) VALUES(1, '{"enforce":false}')`); err != nil {
+				return fmt.Errorf("seed scope_state: %w", err)
+			}
+			defaultRule, err := json.Marshal(map[string]any{"repo_key": "*", "agent_key": "*", "grants": []any{}, "updated_at": time.Now().UTC().Format(time.RFC3339)})
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO scope_rules(repo_key, agent_key, definition) VALUES('*', '*', ?)`, string(defaultRule)); err != nil {
+				return fmt.Errorf("seed default scope rule: %w", err)
+			}
+			if _, err := tx.Exec("PRAGMA user_version=6"); err != nil {
+				return fmt.Errorf("set sqlite user_version=6: %w", err)
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("migrate v6: %w", err)
 		}
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO scope_state(id, definition) VALUES(1, '{"enforce":false}')`); err != nil {
-			return fmt.Errorf("seed scope_state: %w", err)
-		}
-		defaultRule, err := json.Marshal(map[string]any{"repo_key": "*", "agent_key": "*", "grants": []any{}, "updated_at": time.Now().UTC().Format(time.RFC3339)})
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO scope_rules(repo_key, agent_key, definition) VALUES('*', '*', ?)`, string(defaultRule)); err != nil {
-			return fmt.Errorf("seed default scope rule: %w", err)
-		}
-		if _, err := tx.Exec("PRAGMA user_version=6"); err != nil {
-			return fmt.Errorf("set sqlite user_version=6: %w", err)
-		}
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit v6 migration: %w", err)
-		}
-		committed = true
 		version = 6
 	}
 	if version < 7 {
-		tx, err := db.Begin()
-		if err != nil {
-			return fmt.Errorf("begin v7 migration: %w", err)
-		}
-		defer func() { _ = tx.Rollback() }()
-		for _, query := range []string{
-			"ALTER TABLE servers ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
-			"ALTER TABLE tools ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
-			"UPDATE servers SET position=rowid",
-			"UPDATE tools SET position=rowid",
-			"PRAGMA user_version=7",
-		} {
-			if _, err := tx.Exec(query); err != nil {
-				return fmt.Errorf("migrate registry ordering: %w", err)
+		if err := RunTx(db, func(tx DBTX) error {
+			for _, query := range []string{
+				"ALTER TABLE servers ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
+				"ALTER TABLE tools ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
+				"UPDATE servers SET position=rowid",
+				"UPDATE tools SET position=rowid",
+				"PRAGMA user_version=7",
+			} {
+				if _, err := tx.Exec(query); err != nil {
+					return fmt.Errorf("migrate registry ordering: %w", err)
+				}
 			}
-		}
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit v7 migration: %w", err)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("migrate v7: %w", err)
 		}
 	}
 	return nil

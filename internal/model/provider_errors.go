@@ -15,11 +15,18 @@ import (
 	"gatewaylab/internal/retry"
 )
 
-// decisionsRetry bounds retries of one provider HTTP call. The caller's
+// decisionsClient bounds retries of one provider HTTP call. The caller's
 // TimeoutSeconds context is the total budget; retry.Do never sleeps past it.
 // Server-requested delays above MaxDelay are surfaced to the caller instead.
-// Tests swap it via fastRetry, so tests in this package must not run in parallel.
-var decisionsRetry = retry.Policy{MaxAttempts: 4, BaseDelay: 500 * time.Millisecond, MaxDelay: 30 * time.Second}
+type decisionsClient struct {
+	retry retry.Policy
+}
+
+func defaultClient() decisionsClient {
+	return decisionsClient{
+		retry: retry.Policy{MaxAttempts: 4, BaseDelay: 500 * time.Millisecond, MaxDelay: 30 * time.Second},
+	}
+}
 
 func retryVerdict(err error) retry.Verdict {
 	var e *Error

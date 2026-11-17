@@ -16,6 +16,10 @@ type ChoiceAnswer struct {
 // AskChoice sends one choice question over input and returns the pick and, when
 // the provider reports it, the probability of every option.
 func AskChoice(ctx context.Context, s Settings, key, input, instructions string, choices []Choice) (ChoiceAnswer, Usage, error) {
+	return defaultClient().askChoice(ctx, s, key, input, instructions, choices)
+}
+
+func (c decisionsClient) askChoice(ctx context.Context, s Settings, key, input, instructions string, choices []Choice) (ChoiceAnswer, Usage, error) {
 	proto, endpoint, err := resolveDecisionProtocol(s)
 	if err != nil {
 		return ChoiceAnswer{}, Usage{}, err
@@ -38,7 +42,7 @@ func AskChoice(ctx context.Context, s Settings, key, input, instructions string,
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.TimeoutSeconds)*time.Second)
 	defer cancel()
-	b, err := postDecisions(ctx, call, key)
+	b, err := c.post(ctx, call, key)
 	if err != nil {
 		return ChoiceAnswer{}, Usage{}, err
 	}

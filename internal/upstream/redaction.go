@@ -8,15 +8,28 @@ import (
 
 var emailPattern = regexp.MustCompile(`\b[A-Za-z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\b`)
 
+// RedactResponse redacts configured secrets, runtime lookup secrets, and
+// active OAuth access tokens held by u.
+func (u *Service) RedactResponse(data any, s Server) any {
+	if u == nil {
+		return RedactResponse(data, s)
+	}
+	return redactResponse(data, s, u.lookupEnv, u.TokenSecrets()...)
+}
+
 func RedactResponse(data any, s Server) any {
 	return RedactResponseWithLookup(data, s, os.Getenv)
 }
 
 func RedactResponseWithLookup(data any, s Server, lookup func(string) string) any {
+	return redactResponse(data, s, lookup)
+}
+
+func redactResponse(data any, s Server, lookup func(string) string, extraSecrets ...string) any {
 	if lookup == nil {
 		lookup = os.Getenv
 	}
-	secrets := []string{}
+	secrets := append([]string(nil), extraSecrets...)
 	for _, value := range s.Headers {
 		expanded := os.Expand(value, lookup)
 		secrets = append(secrets, expanded, strings.TrimPrefix(expanded, "Bearer "))

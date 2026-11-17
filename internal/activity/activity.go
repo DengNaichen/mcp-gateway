@@ -26,6 +26,7 @@ type Event struct {
 type Repository interface {
 	Recent(int) ([]store.ActivityRow, error)
 	Insert(store.ActivityRow) error
+	LatestAgent() (*store.ActivityRow, error)
 }
 
 const (
@@ -56,22 +57,36 @@ type Service struct {
 	repo    Repository
 }
 
+func eventFromRow(row store.ActivityRow) Event {
+	ev := Event(row)
+	ev.Detail = slices.Clone(ev.Detail)
+	return ev
+}
+
 func New(repo Repository) (*Service, error) {
 	rows, err := repo.Recent(pulseLoadLimit)
 	if err != nil {
 		return nil, err
 	}
 	cutoff := time.Now().Add(-pulseWindow - time.Duration(PulseBucketMinutes)*time.Minute)
-	s := &Service{repo: repo, events: []Event{}}
+	s := &Service{repo: repo, events: make([]Event, 0, min(len(rows), recentEventLimit))}
 	for i, row := range rows {
 		if i < recentEventLimit {
-			s.events = append(s.events, Event(row))
+			s.events = append(s.events, eventFromRow(row))
 		}
 		if !row.Time.Before(cutoff) {
 			s.history = append(s.history, pulseEntry{time: row.Time, status: row.Status})
 		}
 	}
 	return s, nil
+}
+func (s *Service) LatestAgent() (*Event, error) {
+	row, err := s.repo.LatestAgent()
+	if err != nil || row == nil {
+		return nil, err
+	}
+	ev := eventFromRow(*row)
+	return &ev, nil
 }
 func (s *Service) Recent() []Event {
 	s.mu.RLock()

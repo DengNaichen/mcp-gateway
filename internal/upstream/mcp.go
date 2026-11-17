@@ -51,6 +51,7 @@ func (u *Service) connectMCP(ctx, processContext context.Context, s Server) (*mc
 			command.Env = append(command.Env, key+"="+u.expandEnv(value))
 		}
 		command.Stderr = os.Stderr
+		procutil.ConfigureProcess(command)
 		session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
 		if err != nil {
 			return nil, fmt.Errorf("start stdio mcp server: %w", err)

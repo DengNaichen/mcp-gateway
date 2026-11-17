@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"gatewaylab/internal/registry"
 )
 
 func mustJSON(t *testing.T, v any) []byte {
@@ -48,5 +52,43 @@ func TestSandboxPolicyRejectsSharedLocal(t *testing.T) {
 	t.Setenv("GATEWAY_AUTH_FILE", "configured")
 	if _, err := LoadPolicy(); err == nil {
 		t.Fatal("shared mode permitted host execution")
+	}
+}
+
+func TestCallAdapterFileWithLookupUsesInjectedLookup(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("Node.js is required for adapter tests")
+	}
+	dir := t.TempDir()
+	adapterPath := filepath.Join(dir, "echo.mjs")
+	script := `import fs from 'node:fs';const input=JSON.parse(fs.readFileSync(0,'utf8'));console.log(JSON.stringify({headers:input.headers,env:input.env}));`
+	if err := os.WriteFile(adapterPath, []byte(script), 0600); err != nil {
+		t.Fatal(err)
+	}
+	server := registry.Server{
+		Endpoint: "https://example.invalid",
+		Headers:  map[string]string{"Authorization": "Bearer ${RUNTIME_TOKEN}"},
+		Env:      map[string]string{"API_KEY": "${RUNTIME_KEY}"},
+	}
+	lookup := func(k string) string {
+		switch k {
+		case "RUNTIME_TOKEN":
+			return "tok-123"
+		case "RUNTIME_KEY":
+			return "key-456"
+		default:
+			return ""
+		}
+	}
+	out, err := CallAdapterFileWithLookup(context.Background(), Policy{Mode: "local"}, server, registry.Tool{Name: "echo"}, map[string]any{}, adapterPath, lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"headers": map[string]any{"Authorization": "Bearer tok-123"},
+		"env":     map[string]any{"API_KEY": "key-456"},
+	}
+	if !reflect.DeepEqual(out, want) {
+		t.Fatalf("got %#v, want %#v", out, want)
 	}
 }
