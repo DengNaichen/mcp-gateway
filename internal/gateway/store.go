@@ -113,7 +113,9 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupServerEnv, OpenBrowser: opts.OpenBrowser})
+	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupServerEnv, OpenBrowser: opts.OpenBrowser, LoadOAuth: g.credentials.Get, SaveOAuth: func(key, value string) error {
+		return g.credentials.Update(map[string]string{key: value}, nil)
+	}})
 	if err := g.loadRegistry(); err != nil {
 		return nil, err
 	}

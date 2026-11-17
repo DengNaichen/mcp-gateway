@@ -10,10 +10,14 @@ import (
 type Config struct {
 	LookupEnv   func(string, string) string
 	OpenBrowser func(string) error
+	LoadOAuth   func(string) string
+	SaveOAuth   func(string, string) error
 }
 type Service struct {
 	lookupEnv   func(string, string) string
 	openBrowser func(string) error
+	loadOAuth   func(string) string
+	saveOAuth   func(string, string) error
 	sessionMu   sync.Mutex
 	sessions    map[string]stdioSession
 	oauthMu     sync.RWMutex
@@ -27,7 +31,7 @@ func New(config Config) *Service {
 	if config.OpenBrowser == nil {
 		config.OpenBrowser = defaultOpenBrowserURL
 	}
-	return &Service{lookupEnv: config.LookupEnv, openBrowser: config.OpenBrowser, sessions: map[string]stdioSession{}, oauthTokens: map[string]oauth2.TokenSource{}}
+	return &Service{lookupEnv: config.LookupEnv, openBrowser: config.OpenBrowser, loadOAuth: config.LoadOAuth, saveOAuth: config.SaveOAuth, sessions: map[string]stdioSession{}, oauthTokens: map[string]oauth2.TokenSource{}}
 }
 func (u *Service) serverLookup(s Server) func(string) string {
 	return func(key string) string { return u.lookupEnv(s.ID, key) }
@@ -44,6 +48,10 @@ func (u *Service) TokenSecrets() []string {
 	u.oauthMu.RUnlock()
 	secrets := []string{}
 	for _, ts := range sources {
+		if session, ok := ts.(*oauthSessionSource); ok {
+			secrets = append(secrets, session.secrets()...)
+			continue
+		}
 		if tok, err := ts.Token(); err == nil && tok != nil && tok.AccessToken != "" {
 			secrets = append(secrets, tok.AccessToken)
 		}

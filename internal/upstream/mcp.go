@@ -112,7 +112,7 @@ func (u *Service) connectMCP(ctx, processContext context.Context, s Server) (*mc
 	httpClient := &http.Client{Transport: headerTransport{headers: s.Headers, expand: func(value string) string { return os.Expand(value, u.serverLookup(s)) }, base: http.DefaultTransport}, CheckRedirect: noRedirect}
 	var oauthHandler auth.OAuthHandler
 	if s.OAuth && s.Headers["Authorization"] == "" {
-		h, cleanup, err := u.oauthHandlerForServer(s.ID)
+		h, cleanup, err := u.oauthHandlerForServer(s)
 		if err != nil {
 			return nil, fmt.Errorf("setup oauth handler: %w", err)
 		}

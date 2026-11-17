@@ -159,7 +159,7 @@ macOS 桌面端默认使用系统 Keychain。模型密钥按档案保存；上�
 
 凭据命名空间由构建渠道和规范化数据目录决定；Dev、Stable、独立 worktree 与临时测试目录不会共用。更新应用但沿用相同渠道和数据目录时仍可恢复。历史环境变量引用不变；需要在服务凭据栏重新填写一次，已有进程环境不会被自动导入。移除引用、删除服务或模型档案会清理相应保存值。系统钥匙串不可访问时明确报错，不回退到明文文件。
 
-无界面后端及非 macOS 默认使用内存与环境变量。`GATEWAY_CREDENTIAL_STORE=keychain` 可在 macOS 无界面部署启用钥匙串，`GATEWAY_CREDENTIAL_STORE=memory` 可显式使用内存模式（重启不保留），其他值会报错。远程 MCP 浏览器 OAuth 会话仍使用原有进程内 TokenSource；本节保存的是模型 Key 与服务 Header/Env 凭据。
+无界面后端及非 macOS 默认使用内存与环境变量。`GATEWAY_CREDENTIAL_STORE=keychain` 可在 macOS 无界面部署启用钥匙串，`GATEWAY_CREDENTIAL_STORE=memory` 可显式使用内存模式（重启不保留），其他值会报错。远程 MCP 浏览器 OAuth 会话使用同一凭据存储，按服务与端点隔离保存客户端注册信息、访问令牌和刷新令牌；刷新后的轮换令牌也会保存。
 
 ## 接入本地 Agent
 
@@ -272,7 +272,7 @@ Flags 放在子命令之前。`-url` 可指定网关地址，本机无认证模�
 原生 MCP 下游支持 Streamable HTTP 和 stdio，使用官方 MCP Go SDK 处理协议、初始化、session 与响应。对于开启 `oauth: true` 的远程 Streamable HTTP MCP 服务（包括通过「MCP 市场」一键安装的需要登录的远程服务），网关支持**交互式浏览器 OAuth 2.0 + PKCE 与动态客户端注册（DCR）**：
 
 - 同步或调用触发未授权响应时，网关自动在本机 loopback 临时端口启动回调服务并拉起系统浏览器完成登录；
-- 校验授权 URL 仅允许 `https`（或本机 `http` loopback），获取的 `oauth2.TokenSource` 仅驻留进程内存，不写入 SQLite；
+- 校验授权 URL 仅允许 `https`（或本机 `http` loopback），OAuth 客户端信息与令牌使用当前实例的凭据存储（macOS 桌面端默认为系统钥匙串），重启后自动恢复、到期自动刷新并保存轮换令牌，不写入 SQLite；内存模式重启后需重新授权；
 - 当前不支持旧版 HTTP+SSE transport。
 
 ## SQLite
