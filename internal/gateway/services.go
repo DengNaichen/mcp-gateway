@@ -28,6 +28,7 @@ type ModelQueries interface {
 	Config() (model.Settings, bool)
 	ModelProfiles() []model.ModelProfile
 	PingModel(context.Context, model.Settings, string, string, bool) (model.PingModelResult, error)
+	VerifyModelConnection(context.Context, model.ModelProfile, string, bool) error
 }
 
 func (g *Gateway) Model() ModelQueries { return g.model }

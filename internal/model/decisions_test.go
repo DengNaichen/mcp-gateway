@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -35,4 +36,24 @@ func respond(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func TestHTMLResponseReportsClearEndpointHint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<!doctype html><html><body>SPA</body></html>"))
+	}))
+	defer server.Close()
+
+	_, err := AskDecisions(context.Background(), Settings{BaseURL: server.URL + "/systemone?token=secret", Model: "jev", MaxTools: 4, TimeoutSeconds: 5}, "", "ping", []string{"check"})
+	var modelErr *Error
+	if !errors.As(err, &modelErr) || modelErr.Code != CodeBadResponse {
+		t.Fatalf("expected CodeBadResponse, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "HTML") || !strings.Contains(err.Error(), "/v1") || !strings.Contains(err.Error(), server.URL+"/systemone") {
+		t.Fatalf("expected HTML/BaseURL hint, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "token=secret") {
+		t.Fatalf("query string leaked into error message: %v", err)
+	}
 }

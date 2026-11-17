@@ -3,8 +3,10 @@ package model
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"gatewaylab/internal/store"
@@ -146,6 +148,84 @@ func TestPingModelDirectConnectivity(t *testing.T) {
 		TimeoutSeconds: 15,
 	}, "", "wrong-key", false); err == nil {
 		t.Fatalf("expected ping error with wrong key")
+	}
+}
+
+func TestVerifyModelConnectionReusesRecentPing(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.URL.Path != "/v1/systemone" || r.Header.Get("Authorization") != "Bearer ok-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":{"message":"invalid api key"}}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"answers": map[string]any{
+				"route_status": map[string]any{"type": "choice", "choice": "no_match"},
+				"tool_0":       map[string]any{"type": "noul", "noul": 0.1},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	g, err := openTestService(t.TempDir())
+	if err != nil {
+		t.Fatalf("new gateway: %v", err)
+	}
+	defer g.Close()
+
+	prof := ModelProfile{
+		BaseURL:        srv.URL + "/v1",
+		Model:          "jev",
+		MaxTools:       4,
+		TimeoutSeconds: 15,
+	}
+
+	// Failing ping must reject verification without caching.
+	if err := g.VerifyModelConnection(context.Background(), prof, "bad-key", false); err == nil {
+		t.Fatal("expected VerifyModelConnection to fail with bad key")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected 1 upstream call, got %d", calls.Load())
+	}
+
+	// Passing ping caches the connection signature so saving with different MaxTools skips re-pinging.
+	if _, err := g.PingModel(context.Background(), Settings{
+		BaseURL:        prof.BaseURL,
+		Model:          prof.Model,
+		MaxTools:       prof.MaxTools,
+		TimeoutSeconds: prof.TimeoutSeconds,
+	}, "", "ok-key", false); err != nil {
+		t.Fatalf("PingModel failed: %v", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("expected 2 upstream calls after PingModel, got %d", calls.Load())
+	}
+
+	prof.MaxTools = 8
+	if err := g.VerifyModelConnection(context.Background(), prof, "ok-key", false); err != nil {
+		t.Fatalf("expected cached verification to succeed, got %v", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("expected cached ping to avoid extra upstream call, got %d", calls.Load())
+	}
+
+	// Changing TimeoutSeconds invalidates the cached ping signature and triggers a fresh ping.
+	prof.TimeoutSeconds = 30
+	if err := g.VerifyModelConnection(context.Background(), prof, "ok-key", false); err != nil {
+		t.Fatalf("expected fresh verification after timeout change, got %v", err)
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("expected 3 upstream calls after timeout change, got %d", calls.Load())
+	}
+
+	// Invalid profile fields return ErrInvalid immediately without touching upstream.
+	if err := g.VerifyModelConnection(context.Background(), ModelProfile{BaseURL: srv.URL + "/v1", Model: "", MaxTools: 4, TimeoutSeconds: 15}, "ok-key", false); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("expected ErrInvalid, got %v", err)
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("invalid profile should not call upstream, got %d", calls.Load())
 	}
 }
 
