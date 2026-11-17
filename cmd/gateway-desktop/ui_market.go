@@ -347,19 +347,7 @@ func marketAuthChipLabel(item apitypes.MarketServer) string {
 }
 
 func (u *DesktopUI) renderMarketIcon(c *ui.Context, st *marketPageState, item apitypes.MarketServer) {
-	var entry *marketIconEntry
-	if item.Icon != "" && u.Client != nil {
-		st.iconMu.Lock()
-		entry = st.icons[item.Icon]
-		if entry == nil {
-			entry = &marketIconEntry{loading: true}
-			st.icons[item.Icon] = entry
-			st.iconMu.Unlock()
-			u.loadMarketIconAsync(st, item.ID, item.Icon)
-		} else {
-			st.iconMu.Unlock()
-		}
-	}
+	entry := u.marketIcon(st, item)
 
 	ui.Box(c).
 		Size(34, 34).
@@ -385,6 +373,25 @@ func (u *DesktopUI) renderMarketIcon(c *ui.Context, st *marketPageState, item ap
 			}
 			ui.Text(c, initial).FontSize(13).FontWeight(700).TextColor(SailInkStrong)
 		})
+}
+
+// marketIcon shares the cached brand asset between market cards and service headers.
+func (u *DesktopUI) marketIcon(st *marketPageState, item apitypes.MarketServer) *marketIconEntry {
+	var entry *marketIconEntry
+	if item.Icon != "" && u.Client != nil {
+		st.iconMu.Lock()
+		entry = st.icons[item.Icon]
+		if entry == nil {
+			entry = &marketIconEntry{loading: true}
+			st.icons[item.Icon] = entry
+			st.iconMu.Unlock()
+			u.loadMarketIconAsync(st, item.ID, item.Icon)
+		} else {
+			st.iconMu.Unlock()
+		}
+	}
+
+	return entry
 }
 
 func (u *DesktopUI) loadMarketIconAsync(st *marketPageState, id, iconURL string) {
