@@ -13,9 +13,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Go caches are saved only by pushes to main (one fresh entry per run) and
+# restored everywhere else by prefix, so PRs always start from the latest
+# main build cache instead of one frozen at the last go.sum change.
+env:
+  SAVE_GO_CACHE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
 jobs:
-  checks:
-    name: Checks (Linux)
+  test:
+    name: Test (Linux)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,6 +32,18 @@ jobs:
         with:
           go-version-file: go.mod
           check-latest: true
+          cache: false
+
+      - name: Restore Go cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-test-${{ hashFiles('go.sum') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            go-${{ runner.os }}-test-${{ hashFiles('go.sum') }}-
+            go-${{ runner.os }}-test-
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -35,13 +53,14 @@ jobs:
       - name: Check Markdown links
         run: python3 scripts/check-doc-links.py
 
-      - name: Go vet
-        run: go vet ./...
-
+      # golangci-lint's standard set already includes govet.
       - name: Lint (golangci-lint)
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.15.0
+
+      - name: Check package boundaries
+        run: python3 scripts/check-foundation.py
 
       - name: Run Go tests
         run: CGO_ENABLED=0 go test -count=1 ./...
@@ -49,20 +68,54 @@ jobs:
       - name: Run Go tests with race detector
         run: CGO_ENABLED=1 go test -race -count=1 ./internal/... ./cmd/...
 
-      - name: Check package boundaries
-        run: python3 scripts/check-foundation.py
-
       - name: Test stable channel
         run: CGO_ENABLED=0 go test -ldflags="-X gatewaylab/internal/buildinfo.channel=stable" ./...
 
       - name: Test release policy and worktree runtime
         run: node --test scripts/release-policy.test.mjs .agents/skills/git-workflow/scripts/worktree-runtime.test.mjs
 
-      - name: Vulnerability scan (govulncheck)
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - name: Save Go cache
+        if: env.SAVE_GO_CACHE == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-test-${{ hashFiles('go.sum') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      # Daily CI cross-compiles on Linux. Signing, notarization and DMGs
-      # remain in release.yml on macOS.
+  # Daily CI cross-compiles on Linux. Signing, notarization and DMGs remain in
+  # release.yml on macOS. Runs in parallel with tests and keeps its own cache
+  # so darwin build artifacts are reused.
+  package:
+    name: Package (macOS cross-build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: false
+
+      - name: Restore Go cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-package-${{ hashFiles('go.sum') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            go-${{ runner.os }}-package-${{ hashFiles('go.sum') }}-
+            go-${{ runner.os }}-package-
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
       - name: Cross-package macOS Dev and Stable apps (unsigned)
         run: |
           node scripts/build-channel.mjs package dev -platform darwin/arm64,darwin/amd64 -skip-dmg
@@ -81,3 +134,28 @@ jobs:
           name: mcp-gateway-dev-unsigned-${{ github.sha }}
           path: build/dev/*/*-unsigned.tar.gz
           if-no-files-found: error
+
+      - name: Save Go cache
+        if: env.SAVE_GO_CACHE == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-package-${{ hashFiles('go.sum') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+  # Single required status check (main-ci ruleset). Keeps the check name
+  # stable while the work above runs in parallel jobs.
+  checks:
+    name: Checks (Linux)
+    needs: [test, package]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all CI jobs to succeed
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+          PACKAGE_RESULT: ${{ needs.package.result }}
+        run: |
+          echo "test=$TEST_RESULT package=$PACKAGE_RESULT"
+          [[ "$TEST_RESULT" == success && "$PACKAGE_RESULT" == success ]]

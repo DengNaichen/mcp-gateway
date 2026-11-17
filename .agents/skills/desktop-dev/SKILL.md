@@ -57,7 +57,7 @@ description: "管理 mcp-gateway 本地 Dev 桌面端的源码运行、macOS 本
 
 ## 日常 CI 的 Linux 交叉打包
 
-日常 CI 仅使用 Linux runner，在 `Checks (Linux)` 中运行测试和 macOS arm64/amd64 交叉打包：
+日常 CI 仅使用 Linux runner：`Test (Linux)` 与 `Package (macOS cross-build)` 两个 job 并行运行，再由必需检查 `Checks (Linux)` 汇总结果。其中打包 job 执行 macOS arm64/amd64 交叉打包：
 
 ```sh
 node scripts/build-channel.mjs package dev -platform darwin/arm64,darwin/amd64 -skip-dmg
