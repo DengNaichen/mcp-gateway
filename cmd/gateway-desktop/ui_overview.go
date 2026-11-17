@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
+	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
 
 	"github.com/egoist/mygo/ui"
@@ -30,22 +29,15 @@ type overviewLocalState struct {
 }
 
 var (
-	overviewStatesMu sync.Mutex
-	overviewStates   = make(map[*DesktopUI]*overviewLocalState)
-
 	ovIconClose = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`))
 	ovIconPlus  = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>`))
 )
 
 func (u *DesktopUI) overviewState() *overviewLocalState {
-	overviewStatesMu.Lock()
-	defer overviewStatesMu.Unlock()
-	st, ok := overviewStates[u]
-	if !ok {
-		st = &overviewLocalState{hoveredPulseIdx: -1}
-		overviewStates[u] = st
+	if u.overview == nil {
+		u.overview = &overviewLocalState{hoveredPulseIdx: -1}
 	}
-	return st
+	return u.overview
 }
 
 func (st *overviewLocalState) openDrawer(kind, id string) {
@@ -69,21 +61,13 @@ func (u *DesktopUI) overviewQuickVerifyModel(ov *overviewLocalState) {
 
 		_, err := u.Client.TestModel(ctx, settings, "", false, "")
 		if err != nil {
-			if IsUnauthorized(err) {
+			if apiclient.IsUnauthorized(err) {
 				u.updateUI(func() {
 					ov.testingModel = false
 				})
 				return err
 			}
-			title := err.Error()
-			detail := ""
-			var apiErr *APIError
-			if errors.As(err, &apiErr) {
-				if apiErr.Message != "" {
-					title = apiErr.Message
-				}
-				detail = apiErr.Detail
-			}
+			title, detail := splitAPIError(err)
 			u.updateUI(func() {
 				ov.testingModel = false
 				ov.testErrTitle = title
@@ -1456,8 +1440,7 @@ func (u *DesktopUI) renderOverviewToolDrawer(
 			}
 			if ovRenderDrawerArrowBtn(c, "ov-drawer-open-cat", "工具目录") {
 				ov.drawerOpen = false
-				catalogSelectToolFromLogs(u, t.ID, t.ServerID)
-				u.Navigate(ViewCatalog)
+				u.OpenCatalogTool(t.ID, t.ServerID)
 			}
 		},
 	)

@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
 
 	"github.com/egoist/mygo/ui"
@@ -40,29 +41,20 @@ type marketPageState struct {
 	icons  map[string]*marketIconEntry
 }
 
-var (
-	marketStatesMu sync.Mutex
-	marketStates   = map[*DesktopUI]*marketPageState{}
-)
-
-func getMarketState(u *DesktopUI) *marketPageState {
-	marketStatesMu.Lock()
-	defer marketStatesMu.Unlock()
-	st, ok := marketStates[u]
-	if !ok {
-		st = &marketPageState{
+func (u *DesktopUI) marketState() *marketPageState {
+	if u.market == nil {
+		u.market = &marketPageState{
 			filter:      "all",
 			modalInputs: map[string]string{},
 			icons:       map[string]*marketIconEntry{},
 		}
-		marketStates[u] = st
 	}
-	return st
+	return u.market
 }
 
 func (u *DesktopUI) renderMarket(c *ui.Context) {
 	state := u.State
-	st := getMarketState(u)
+	st := u.marketState()
 
 	if !st.loaded && !st.loading && u.Client != nil {
 		u.fetchMarket(st, "")
@@ -279,8 +271,7 @@ func (u *DesktopUI) renderMarketCard(c *ui.Context, st *marketPageState, item ap
 					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 						SailQuietStatus(c, "已接入", SailSuccessInk, SailSuccessInk)
 						if SailSmallButton(c.Key("mkt-view-"+item.ID), "查看").Clicked() {
-							u.SelectedServerID = item.ServerID
-							u.Navigate(ViewServices)
+							u.OpenServiceDetail(item.ServerID)
 						}
 					})
 				} else {
@@ -531,7 +522,7 @@ func (u *DesktopUI) fetchMarket(st *marketPageState, query string) {
 		defer cancel()
 		res, err := u.Client.MarketServers(ctx, query)
 		if err != nil {
-			if IsUnauthorized(err) {
+			if apiclient.IsUnauthorized(err) {
 				u.updateUI(func() { st.loading = false })
 				return err
 			}
@@ -579,7 +570,7 @@ func (u *DesktopUI) installFromMarket(st *marketPageState, item apitypes.MarketS
 		defer cancel()
 		res, err := u.Client.InstallMarketServer(ctx, req)
 		if err != nil {
-			if IsUnauthorized(err) {
+			if apiclient.IsUnauthorized(err) {
 				u.updateUI(func() { st.installingID = "" })
 				return err
 			}

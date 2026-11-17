@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
 )
 
@@ -50,7 +51,7 @@ func TestOpenAPIImportThroughAttachedGateway(t *testing.T) {
 	}))
 	defer specHost.Close()
 
-	client := NewAPIClient(attached.UIURL)
+	client := apiclient.New(attached.UIURL)
 	server := func(id string) apitypes.Server {
 		return apitypes.Server{ID: id, Name: id, Kind: "http", Transport: "http", Endpoint: "https://status.example.com", Enabled: true}
 	}
@@ -64,7 +65,7 @@ func TestOpenAPIImportThroughAttachedGateway(t *testing.T) {
 		t.Fatal("import without a document succeeded")
 	}
 
-	boot, err := NewAPIClient(owned.UIURL).Bootstrap(ctx)
+	boot, err := apiclient.New(owned.UIURL).Bootstrap(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -79,6 +79,46 @@ linters:
           deny:
             - pkg: gatewaylab/internal
               desc: "apitypes is the HTTP wire contract and imports no other internal package; convert domain values in internal/api"
+        leaf-buildinfo:
+          files: ["**/internal/buildinfo/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "buildinfo is a leaf package and imports no other internal package"
+        apiclient-layer:
+          files: ["**/internal/apiclient/**"]
+          list-mode: lax
+          allow:
+            - gatewaylab/internal/apitypes
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "apiclient is a leaf HTTP client over apitypes and must not import backend packages"
+        workspace-layer:
+          files: ["**/internal/workspace/**"]
+          list-mode: lax
+          allow:
+            - gatewaylab/internal/buildinfo
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "workspace may only import buildinfo"
+        clientconfig-layer:
+          files: ["**/internal/clientconfig/**"]
+          list-mode: lax
+          allow:
+            - gatewaylab/internal/buildinfo
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "clientconfig may only import buildinfo"
+        clientplugin-layer:
+          files: ["**/internal/clientplugin/**"]
+          list-mode: lax
+          allow:
+            - gatewaylab/internal/buildinfo
+            - gatewaylab/internal/clientconfig
+            - gatewaylab/internal/workspace
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "clientplugin may only import buildinfo, clientconfig, and workspace"
         store-layer:
           files: ["**/internal/store/**"]
           list-mode: lax
@@ -121,39 +161,11 @@ linters:
               desc: "sandbox may only import registry, procutil, input, secrets"
             - pkg: gatewaylab/internal/maintenance
               desc: "sandbox must not import its parent maintenance package; maintenance imports sandbox"
-        # Domain packages sit below api and gateway.
-        domain-no-upper-layers:
-          files:
-            - "**/internal/registry/**"
-            - "**/internal/store/**"
-            - "**/internal/secrets/**"
-            - "**/internal/activity/**"
-            - "**/internal/model/**"
-            - "**/internal/openapi/**"
-            - "**/internal/routing/**"
-            - "**/internal/upstream/**"
-            - "**/internal/scope/**"
-            - "**/internal/access/**"
-            - "**/internal/maintenance/**"
-            - "**/internal/market/**"
-            - "**/internal/demo/**"
-            - "**/internal/procutil/**"
-            - "**/internal/input/**"
-            - "**/internal/jsonutil/**"
-            - "**/internal/mcputil/**"
-            - "**/internal/fault/**"
-            - "**/internal/retry/**"
-            - "**/internal/contracttest/**"
-          list-mode: lax
-          deny:
-            - pkg: gatewaylab/internal/api
-              desc: "domain packages must not import api; the transport layer depends on domains, never the reverse"
-            - pkg: gatewaylab/internal/gateway
-              desc: "domain packages must not import gateway; gateway is the composition root, expose a small interface in the domain package instead"
         only-cmd-imports-api:
           files:
             - "**/internal/**"
             - "!**/internal/api/**"
+            - "!**/internal/apiclient/**"
           list-mode: lax
           deny:
             - pkg: gatewaylab/internal/api
@@ -167,6 +179,14 @@ linters:
           deny:
             - pkg: gatewaylab/internal/gateway
               desc: "only api and cmd/* may import gateway; define an interface in your own package and let gateway implement it"
+        apiclient-cmd-only:
+          files:
+            - "**/internal/**"
+            - "!**/internal/apiclient/**"
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal/apiclient
+              desc: "only cmd/* may import apiclient; backend packages must not depend on the HTTP client"
         clientconfig-local-only:
           files:
             - "**/internal/**"
@@ -179,21 +199,22 @@ linters:
             - pkg: gatewaylab/internal/clientplugin
               desc: "clientplugin installs plugins into MCP clients on the user's own machine; backend packages and /api must not reach it"
         # The desktop UI talks to the backend only through the /api HTTP
-        # contract. It may import the wire types and the few local-only
-        # packages listed; every other internal package is backend code.
+        # contract. It may import the wire types, typed apiclient, and the few
+        # local-only packages listed; every other internal package is backend code.
         desktop-http-contract:
           files:
             - "**/cmd/gateway-desktop/**"
             - "!**/cmd/gateway-desktop/server.go"
           list-mode: lax
           allow:
+            - gatewaylab/internal/apiclient
             - gatewaylab/internal/apitypes
             - gatewaylab/internal/buildinfo
             - gatewaylab/internal/clientconfig
             - gatewaylab/internal/clientplugin
           deny:
             - pkg: gatewaylab/internal
-              desc: "the desktop UI reaches the backend only over HTTP: use gatewaylab/internal/apitypes for request/response bodies and APIClient for calls; only server.go may import internal/api to host the backend"
+              desc: "the desktop UI reaches the backend only over HTTP: use gatewaylab/internal/apitypes and gatewaylab/internal/apiclient for calls; only server.go may import internal/api to host the backend"
         # server.go hosts the embedded backend; it opens it through api.Open
         # and never touches domain packages directly.
         desktop-host:

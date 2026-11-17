@@ -6,7 +6,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"gatewaylab/internal/apitypes"
@@ -16,12 +15,7 @@ import (
 
 const catalogPageSize = 40
 
-var (
-	catalogIconChevron = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`))
-
-	catalogStatesMu sync.Mutex
-	catalogStates   = make(map[*DesktopUI]*catalogPageState)
-)
+var catalogIconChevron = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`))
 
 type catalogSelectOption struct {
 	Value string
@@ -54,25 +48,19 @@ type catalogPageState struct {
 	togglingIDs map[string]bool
 }
 
-func catalogStateFor(u *DesktopUI) *catalogPageState {
-	catalogStatesMu.Lock()
-	defer catalogStatesMu.Unlock()
-	st, ok := catalogStates[u]
-	if !ok {
-		st = &catalogPageState{
+func (u *DesktopUI) catalogState() *catalogPageState {
+	if u.catalog == nil {
+		u.catalog = &catalogPageState{
 			serverFilter: "all",
 			actorFilter:  "all",
 			page:         1,
 			togglingIDs:  make(map[string]bool),
 		}
-		catalogStates[u] = st
 	}
-	return st
+	return u.catalog
 }
 
-// catalogSelectToolFromLogs allows the Logs trace inspector to jump directly to a tool in Catalog.
-func catalogSelectToolFromLogs(u *DesktopUI, toolID, serverID string) {
-	st := catalogStateFor(u)
+func (st *catalogPageState) focusTool(toolID, serverID string, serverByID map[string]apitypes.Server) {
 	st.query = ""
 	st.statusIdx = 0
 	st.accessIdx = 0
@@ -80,13 +68,8 @@ func catalogSelectToolFromLogs(u *DesktopUI, toolID, serverID string) {
 	st.page = 1
 	if serverID != "" {
 		st.serverFilter = serverID
-		if u.State != nil {
-			for _, s := range u.State.Registry.Servers {
-				if s.ID == serverID && s.Demo {
-					st.showDemo = true
-					break
-				}
-			}
+		if srv, ok := serverByID[serverID]; ok && srv.Demo {
+			st.showDemo = true
 		}
 	} else {
 		st.serverFilter = "all"
@@ -132,7 +115,7 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 	if u.State == nil {
 		return
 	}
-	st := catalogStateFor(u)
+	st := u.catalogState()
 	servers := u.State.Registry.Servers
 	tools := u.State.Registry.Tools
 	hitCounts := u.Telemetry.ToolHitCounts
@@ -151,20 +134,22 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 		}
 	}
 
-	// Consume cross-page navigation filters (e.g. from Overview rw card or Services page).
-	if u.CatalogFilterServerID != "" || u.CatalogFilterAccess != "" {
-		if u.CatalogFilterServerID != "" {
-			st.serverFilter = u.CatalogFilterServerID
-			if srv, ok := serverByID[u.CatalogFilterServerID]; ok && srv.Demo {
+	// Consume cross-page navigation intents (from Overview, Services, or Logs).
+	if toolID, serverID, ok := u.consumePendingCatalogTool(); ok {
+		st.focusTool(toolID, serverID, serverByID)
+	}
+	if filterServerID, filterAccess, ok := u.consumePendingCatalogFilter(); ok {
+		if filterServerID != "" {
+			st.serverFilter = filterServerID
+			if srv, found := serverByID[filterServerID]; found && srv.Demo {
 				st.showDemo = true
 			}
-			if u.CatalogFilterAccess == "" {
+			if filterAccess == "" {
 				st.accessIdx = 0
 			}
-			u.CatalogFilterServerID = ""
 		}
-		if u.CatalogFilterAccess != "" {
-			switch u.CatalogFilterAccess {
+		if filterAccess != "" {
+			switch filterAccess {
 			case "ro":
 				st.accessIdx = 1
 			case "rw":
@@ -172,7 +157,6 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 			default:
 				st.accessIdx = 0
 			}
-			u.CatalogFilterAccess = ""
 		}
 		st.page = 1
 	}
