@@ -40,7 +40,7 @@ description: "管理 mcp-gateway 本地 Dev 桌面端的源码运行、macOS 本
 
 ## 本地打包 Dev `.app` / `.dmg` 与安装启动
 
-- 仅生成 Dev `.app`（跳过 DMG，对齐 CI）：
+- 本机生成 Dev `.app`（跳过 DMG，macOS 上包含 ad-hoc 签名）：
   ```sh
   make package
   # 等价于：node scripts/build-channel.mjs package dev -skip-dmg
@@ -54,6 +54,18 @@ description: "管理 mcp-gateway 本地 Dev 桌面端的源码运行、macOS 本
   - `--test`：打包前先运行 `CGO_ENABLED=0 go test -count=1 ./...`。
   - `--install`：用 `ditto` 将 `MCP Gateway Dev.app` 安装到 `/Applications/MCP Gateway Dev.app`（不影响正式版 `/Applications/MCP Gateway.app`）。
   - `--open`：启动打包（或安装）后的 `MCP Gateway Dev.app`。直接双击/打开 `.app` 始终使用默认 Dev 端口 `8789` 与用户目录；如需多 worktree 并行调试请用 `worktree-runtime.mjs run desktop`。
+
+## 日常 CI 的 Linux 交叉打包
+
+日常 CI 仅使用 Linux runner，在 `Checks (Linux)` 中运行测试和 macOS arm64/amd64 交叉打包：
+
+```sh
+node scripts/build-channel.mjs package dev -platform darwin/arm64,darwin/amd64 -skip-dmg
+node scripts/build-channel.mjs package stable -platform darwin/arm64,darwin/amd64 -skip-dmg
+python3 scripts/verify-cross-packages.py
+```
+
+Linux 生成的 `.app` 未经 macOS 签名；CI 保留带执行权限的 Dev `.tar.gz`，不能将其视为正式发布包。macOS runner 仅用于 Release 工作流的签名、公证与 DMG。真实桌面运行与主题验收仍在本机 macOS 执行。
 
 ## 桌面端本地验收
 
