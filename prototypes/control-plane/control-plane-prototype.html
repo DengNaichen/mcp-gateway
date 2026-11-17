@@ -479,10 +479,62 @@
       display: flex;
       flex-direction: column;
       gap: 6px;
+      transition: border-color 0.12s, background 0.12s;
     }
+    .kpi-card.clickable { cursor: pointer; }
+    .kpi-card.clickable:hover { border-color: var(--border-strong); background: var(--bg-subtle); }
     .kpi-label { font-size: 12px; font-weight: 600; color: var(--ink-muted); }
     .kpi-val { font-size: 23px; font-weight: 700; color: var(--ink-strong); font-variant-numeric: tabular-nums; }
     .kpi-hint { font-size: 12px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+
+    .pulse-card {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .pulse-bars {
+      display: grid;
+      grid-template-columns: repeat(48, minmax(0, 1fr));
+      gap: 3px;
+      height: 46px;
+      align-items: end;
+      padding-top: 4px;
+    }
+    .pulse-slot {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      cursor: pointer;
+    }
+    .pulse-bar {
+      width: 100%;
+      border-radius: 2.5px 2.5px 1.5px 1.5px;
+      background: var(--success);
+      opacity: 0.78;
+      transition: opacity 0.12s, transform 0.12s, background 0.12s;
+      min-height: 3px;
+    }
+    .pulse-bar.empty {
+      background: var(--bg-muted);
+      opacity: 1;
+      height: 3px;
+    }
+    .pulse-bar.has-err {
+      opacity: 0.92;
+    }
+    .pulse-slot:hover .pulse-bar:not(.empty) {
+      opacity: 1;
+      transform: scaleY(1.06);
+      transform-origin: bottom;
+    }
+    .pulse-slot:hover .pulse-bar.empty {
+      background: var(--border-strong);
+    }
 
     .two-col {
       display: grid;
@@ -555,6 +607,52 @@
       box-shadow: 0 15px 35px rgba(26, 31, 54, 0.18);
       display: flex;
       flex-direction: column;
+    }
+    .slide-drawer-mask {
+      position: fixed;
+      inset: 0;
+      padding: 12px;
+      background: rgba(10, 37, 64, 0.18);
+      backdrop-filter: blur(1.5px);
+      display: flex;
+      justify-content: flex-end;
+      z-index: 190;
+    }
+    .slide-drawer {
+      width: min(460px, 100%);
+      height: 100%;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 12px 32px rgba(10, 37, 64, 0.14), 0 2px 6px rgba(10, 37, 64, 0.06);
+      display: flex;
+      flex-direction: column;
+    }
+    .slide-drawer-hdr {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .slide-drawer-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .slide-drawer-ftr {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
     }
 
     /* Structured Description Block */
@@ -1149,7 +1247,9 @@ Args:
     const LOGS = [
       { id: "ev-101", kind: "discover", status: "selected", title: "排查 prod-core 下支付服务 Pod 频繁重启原因", actor: "developer", ms: 42, time: "17:14:08", eligible: 5, tokens: "142 tok", scope: { agent: "codex", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "mcp-gateway · *", status: "matched" }, tools: [{ id: "k8s.describe_pod_events", reason: "匹配 Kubernetes Pod 重启与 Warning 事件诊断" }] },
       { id: "ev-102", kind: "discover", status: "no_match", title: "查询 Terraform 状态锁与变更计划", actor: "developer", ms: 8, time: "17:13:20", eligible: 0, reason: "当前仓库尚未绑定上游服务，命中全局默认 (*, *) -> 0 候选工具。", scope: { agent: "codex", repo_id: "", repo_name: "", root: "/Users/dev/Developer/infra-terraform", matched_rule: "* · *", status: "unconfigured" } },
-      { id: "ev-103", kind: "invoke", status: "error", title: "github.create_or_update_file", actor: "developer", ms: 6, time: "17:11:04", err: "403 scope_denied: Cursor 例外规则仅授予 GitHub MCP 只读 (RO) 权限", scope: { agent: "cursor", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "mcp-gateway · cursor", status: "matched" } }
+      { id: "ev-103", kind: "invoke", status: "error", title: "github.create_or_update_file", actor: "developer", ms: 6, time: "17:11:04", err: "403 scope_denied: Cursor 例外规则仅授予 GitHub MCP 只读 (RO) 权限", scope: { agent: "cursor", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "mcp-gateway · cursor", status: "matched" } },
+      { id: "ev-104", kind: "invoke", status: "selected", title: "github.list_pull_requests", actor: "developer", ms: 168, time: "17:08:41", eligible: 1, tokens: "96 tok", scope: { agent: "claude", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "mcp-gateway · *", status: "matched" }, tools: [{ id: "github.list_pull_requests", reason: "直接调用已授权只读工具" }] },
+      { id: "ev-105", kind: "discover", status: "selected", title: "查看 checkout 服务最近 50 行错误日志", actor: "developer", ms: 38, time: "17:04:19", eligible: 4, tokens: "118 tok", scope: { agent: "claude", repo_id: "repo-checkout", repo_name: "checkout-service", root: "/Users/dev/Developer/checkout-service", matched_rule: "checkout-service · *", status: "matched" }, tools: [{ id: "k8s.get_pod_logs", reason: "匹配容器日志检索工具" }] }
     ];
 
     function stripMd(s) {
@@ -1250,10 +1350,33 @@ Args:
         document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         currentPage = btn.dataset.page;
+        overviewDrawer = null;
         const titles = { overview: "概览", services: "上游服务", market: "MCP 市场", catalog: "工具目录", repos: "仓库绑定", clients: "连接客户端", logs: "请求日志", playground: "路由沙盒", settings: "访问与路由" };
         document.getElementById("bc-title").textContent = titles[currentPage];
         render();
       });
+    });
+
+    let overviewRightTab = "services";
+    let overviewDrawer = null; // { type: 'log' | 'service' | 'tool', id: string }
+
+    function openOverviewDrawer(type, id) {
+      overviewDrawer = { type, id };
+      renderModals();
+    }
+
+    function closeOverviewDrawer() {
+      overviewDrawer = null;
+      renderModals();
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && (overviewDrawer || activeHookModalAgent || showAddRepoModal)) {
+        overviewDrawer = null;
+        activeHookModalAgent = null;
+        showAddRepoModal = false;
+        renderModals();
+      }
     });
 
     function render() {
@@ -1289,104 +1412,166 @@ Args:
     }
 
     function renderOverview() {
+      const onlineServices = SERVICES.filter(s => s.tone === "ok").length;
+      const errorServices = SERVICES.filter(s => s.tone === "err");
+      const enabledToolsCount = TOOLS.filter(t => t.enabled).length;
       const topTools = [...TOOLS].filter(t => t.hits > 0).sort((a, b) => b.hits - a.hits).slice(0, 4);
       const maxHits = topTools[0] ? topTools[0].hits : 1;
+
+      const agentLabel = (id) => (AGENTS.find(a => a.id === id) || {}).label || id || "客户端";
+      const logDot = (st) => st === "selected" ? "ok" : st === "error" ? "err" : "warn";
+      const logSummary = (ev) => {
+        const src = ev.scope ? `${agentLabel(ev.scope.agent)} · ${ev.scope.repo_name || ev.scope.root.split('/').pop()}` : "";
+        const outcome = ev.status === "selected"
+          ? `命中 ${(ev.tools || []).length} 个工具`
+          : ev.status === "error"
+            ? (ev.err || "调用失败")
+            : "未命中工具";
+        return src ? `${src} · ${outcome}` : outcome;
+      };
+
+      const totalReq = 42;
+      const errorCount = LOGS.filter(l => l.status === "error").length;
+      const successRate = (((totalReq - errorCount) / totalReq) * 100).toFixed(1);
+
+      const pulseSeries = [
+        0,0,0,0, 0,0,0,0, 1,0,0,0, 0,1,2,0,
+        1,3,2,1, 4,2,0,1, 0,0,1,0, 2,1,3,2,
+        1,0,2,4, 3,2,1,0, 2,3,1,2, 3,1,2,5
+      ];
+      const pulseStartMin = 5 * 60 + 30; // 05:30 -> 17:30 (48 x 15m = 12h)
+      const fmtSlot = (idx) => {
+        const m0 = pulseStartMin + idx * 15;
+        const m1 = m0 + 15;
+        const pad = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+        return `${pad(m0)}–${pad(m1)}`;
+      };
+      const pulseBuckets = pulseSeries.map((n, idx) => ({
+        label: fmtSlot(idx),
+        n,
+        err: idx === 47 ? 1 : 0
+      }));
+      const maxBucket = Math.max(...pulseBuckets.map(b => b.n), 1);
+      const defaultPulseText = "峰值 17:15–17:30 · 5 次（4 成功 · 1 失败）";
+
       return `
         <div class="section-header">
           <h1 class="section-title">概览</h1>
           <div style="display:flex;gap:8px;">
             <button class="btn" onclick="switchPage('playground')">路由沙盒</button>
-            <button class="btn" onclick="switchPage('clients')">接入客户端</button>
             <button class="btn btn-primary" onclick="switchPage('services')">添加上游服务</button>
           </div>
         </div>
 
         <div class="kpi-grid">
           <div class="kpi-card">
-            <div class="kpi-label">语义路由命中率</div>
-            <div class="kpi-val">92.4%</div>
-            <div class="kpi-hint">近 42 次发现 · 1 错误</div>
+            <div class="kpi-label">网关请求</div>
+            <div class="kpi-val">${totalReq}</div>
+            <div class="kpi-hint">31 路由发现 · 11 工具执行</div>
           </div>
+
           <div class="kpi-card">
-            <div class="kpi-label">上下文收敛率</div>
-            <div class="kpi-val">88.9%</div>
-            <div class="kpi-hint">平均 18 候选 → 2.0 个</div>
+            <div class="kpi-label" style="display:flex;justify-content:space-between;align-items:center;">
+              <span>请求成功率</span>
+              ${errorCount > 0 ? `<span class="badge-rw" style="background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger);">${errorCount} 失败</span>` : ''}
+            </div>
+            <div class="kpi-val">${successRate}%</div>
+            <div class="kpi-hint">${errorCount > 0 ? `${errorCount} 次调用异常 · 1 次未命中` : '近 24h 无失败请求'}</div>
           </div>
+
           <div class="kpi-card">
-            <div class="kpi-label">路由决策延迟（P50）</div>
-            <div class="kpi-val">310 ms</div>
-            <div class="kpi-hint">P95 640 ms · gpt-6-luna</div>
+            <div class="kpi-label">上下文节省</div>
+            <div class="kpi-val">~89%</div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <div class="kpi-hint">平均 18 候选 → 2.0 个工具</div>
+              <div style="width:100%;height:4px;border-radius:999px;background:var(--bg-muted);overflow:hidden;" title="18 候选工具中仅下发约 11%">
+                <div style="width:11%;height:100%;border-radius:999px;background:var(--accent);"></div>
+              </div>
+            </div>
           </div>
+
           <div class="kpi-card">
-            <div class="kpi-label">已开放工具</div>
-            <div class="kpi-val">18 <span style="font-size:13px;font-weight:500;color:var(--ink-muted)">/ 26</span></div>
-            <div class="kpi-hint">16 只读 · 2 写操作 RW</div>
+            <div class="kpi-label">上游服务</div>
+            <div class="kpi-val">${onlineServices} <span style="font-size:13px;font-weight:500;color:var(--ink-muted)">/ ${SERVICES.length} 在线</span></div>
+            <div class="kpi-hint">${enabledToolsCount}/${TOOLS.length} 工具可用${errorServices.length > 0 ? ` · ${errorServices.length} 连接超时` : ''}</div>
           </div>
         </div>
 
-        <div class="two-col" style="grid-template-columns:1.35fr 1fr;align-items:start;">
-          <div style="display:flex;flex-direction:column;gap:20px;">
-            <div class="card-flush">
-              <div class="card-header" style="padding:16px 18px;border-bottom:1px solid var(--border);">
-                <h2 class="card-title">待关注异常</h2>
-                <button class="btn" style="padding:2px 8px;font-size:12px;" onclick="switchPage('logs')">全部日志</button>
-              </div>
-              <div class="hairline-row" onclick="switchPage('logs')">
-                <div class="row-main">
-                  <div class="row-title-line">
-                    <span class="dot dot-err"></span>
-                    <span class="row-name">billing.refund_charge</span>
-                  </div>
-                  <div class="row-summary">upstream HTTP 502: bad gateway (TLS handshake timeout)</div>
-                </div>
-                <div class="row-right"><span class="quiet-meta">184 ms</span></div>
-              </div>
-              <div class="hairline-row" onclick="switchPage('playground')">
-                <div class="row-main">
-                  <div class="row-title-line">
-                    <span class="dot dot-warn"></span>
-                    <span class="row-name" style="font-family:var(--sans);">删除生产数据库表 orders_archive</span>
-                  </div>
-                  <div class="row-summary">observer 身份未匹配任何写操作工具</div>
-                </div>
-                <div class="row-right"><span class="quiet-meta">未命中</span></div>
-              </div>
+        <div class="pulse-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div style="display:flex;align-items:baseline;gap:8px;">
+              <span style="font-size:13px;font-weight:600;color:var(--ink-strong);">请求脉冲</span>
+              <span class="quiet-meta">近 12 小时 · 每 15 分钟</span>
             </div>
+            <div id="pulse-readout" class="quiet-meta mono" style="font-size:11.5px;">${defaultPulseText}</div>
+          </div>
+          <div class="pulse-bars" onmouseleave="document.getElementById('pulse-readout').textContent='${defaultPulseText}';">
+            ${pulseBuckets.map(b => {
+              const hPct = b.n > 0 ? Math.max(18, Math.round((b.n / maxBucket) * 100)) : 0;
+              const okCount = Math.max(0, b.n - b.err);
+              const tip = b.n === 0
+                ? `${b.label} · 无请求`
+                : b.err > 0
+                  ? `${b.label} · ${b.n} 次（${okCount} 成功 · ${b.err} 失败）`
+                  : `${b.label} · ${b.n} 次（全部成功）`;
+              const cls = b.n === 0 ? 'empty' : (b.err > 0 ? 'has-err' : '');
+              let barStyle = "";
+              if (b.n > 0) {
+                barStyle = `height:${hPct}%;`;
+                if (b.err > 0) {
+                  const errPct = Math.max(22, Math.round((b.err / b.n) * 100));
+                  barStyle += `background:linear-gradient(to bottom, var(--danger) 0%, var(--danger) ${errPct}%, var(--success) ${errPct}%, var(--success) 100%);`;
+                }
+              }
+              return `
+                <div class="pulse-slot" title="${tip}" onmouseenter="document.getElementById('pulse-readout').textContent='${tip}';">
+                  <div class="pulse-bar ${cls}" style="${barStyle}"></div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-faint);" class="mono">
+            <span>12h 前</span>
+            <span>6h 前</span>
+            <span>现在</span>
+          </div>
+        </div>
 
-            <div class="card-flush">
-              <div class="card-header" style="padding:16px 18px;border-bottom:1px solid var(--border);">
-                <h2 class="card-title">热点工具</h2>
-                <button class="btn" style="padding:2px 8px;font-size:12px;" onclick="switchPage('catalog')">全部</button>
-              </div>
-              ${topTools.map(t => `
-                <div class="hairline-row" onclick="selectedToolId='${t.id}';switchPage('catalog')">
-                  <div class="row-main">
-                    <div class="row-title-line">
-                      <span class="row-name">${esc(t.name)}</span>
-                      <span class="row-sub">${esc(t.server)}</span>
-                      ${t.rw ? '<span class="badge-rw">写</span>' : ''}
-                    </div>
-                  </div>
-                  <div class="row-right" style="gap:10px;">
-                    <div style="width:60px;height:5px;border-radius:999px;background:var(--bg-muted);overflow:hidden;">
-                      <div style="width:${Math.round((t.hits / maxHits) * 100)}%;height:100%;background:var(--ink-body);border-radius:999px;"></div>
-                    </div>
-                    <span class="mono" style="width:42px;text-align:right;font-size:12px;font-weight:600;color:var(--ink-strong);">${t.hits} 次</span>
-                  </div>
-                </div>
-              `).join("")}
+        <div class="two-col" style="grid-template-columns:1.35fr 1fr;align-items:stretch;">
+          <div class="card-flush" style="height:100%;">
+            <div class="card-header" style="padding:14px 18px;border-bottom:1px solid var(--border);">
+              <h2 class="card-title">最近请求</h2>
+              <button class="btn" style="padding:2px 8px;font-size:12px;" onclick="switchPage('logs')">全部日志 ↗</button>
             </div>
+            ${LOGS.map(ev => `
+              <div class="hairline-row" onclick="openOverviewDrawer('log','${ev.id}')">
+                <div class="row-main">
+                  <div class="row-title-line">
+                    <span class="dot dot-${logDot(ev.status)}"></span>
+                    <span class="row-name" style="${ev.kind === 'discover' ? 'font-family:var(--sans);' : ''}">${esc(ev.title)}</span>
+                  </div>
+                  <div class="row-summary">${esc(logSummary(ev))}</div>
+                </div>
+                <div class="row-right" style="gap:10px;">
+                  <span class="mono quiet-meta">${ev.ms} ms</span>
+                  <span class="quiet-meta">${esc(ev.time)}</span>
+                </div>
+              </div>
+            `).join("")}
           </div>
 
-          <div class="card-flush">
-            <div class="card-header" style="padding:16px 18px;border-bottom:1px solid var(--border);">
-              <h2 class="card-title">上游服务</h2>
-              <button class="btn" style="padding:2px 8px;font-size:12px;" onclick="switchPage('services')">管理</button>
+          <div class="card-flush" style="height:100%;">
+            <div class="card-header" style="padding:12px 18px;border-bottom:1px solid var(--border);gap:10px;">
+              <div class="segmented">
+                <button class="seg-btn ${overviewRightTab==='services'?'active':''}" onclick="overviewRightTab='services';render();">上游服务</button>
+                <button class="seg-btn ${overviewRightTab==='tools'?'active':''}" onclick="overviewRightTab='tools';render();">高频工具</button>
+              </div>
+              <button class="btn" style="padding:2px 8px;font-size:12px;" onclick="switchPage('${overviewRightTab==='services'?'services':'catalog'}')">${overviewRightTab==='services'?'管理 ↗':'目录 ↗'}</button>
             </div>
-            ${SERVICES.map(s => {
+            ${overviewRightTab === 'services' ? SERVICES.map(s => {
               const rwCount = (SERVICE_TOOLS[s.id] || []).filter(t => t.rw).length;
               return `
-              <div class="hairline-row" onclick="switchPage('services')">
+              <div class="hairline-row" onclick="openOverviewDrawer('service','${s.id}')">
                 <div class="row-main">
                   <div class="row-title-line">
                     <span class="dot dot-${s.tone}"></span>
@@ -1396,11 +1581,27 @@ Args:
                   <div class="row-summary">${esc(s.proto)} · ${esc(s.tools)} 工具开放</div>
                 </div>
                 <div class="row-right">
-                  <span class="quiet-meta">${esc(s.status)}</span>
+                  <span class="quiet-meta" style="${s.tone === 'err' ? 'color:var(--danger);' : ''}">${esc(s.status)}</span>
                 </div>
               </div>
             `;
-            }).join("")}
+            }).join("") : topTools.map(t => `
+              <div class="hairline-row" onclick="openOverviewDrawer('tool','${t.id}')">
+                <div class="row-main">
+                  <div class="row-title-line">
+                    <span class="row-name">${esc(t.name)}</span>
+                    <span class="row-sub">${esc(t.server)}</span>
+                    ${t.rw ? '<span class="badge-rw">写</span>' : ''}
+                  </div>
+                </div>
+                <div class="row-right" style="gap:10px;">
+                  <div style="width:54px;height:5px;border-radius:999px;background:var(--bg-muted);overflow:hidden;">
+                    <div style="width:${Math.round((t.hits / maxHits) * 100)}%;height:100%;background:var(--ink-body);border-radius:999px;"></div>
+                  </div>
+                  <span class="mono" style="width:40px;text-align:right;font-size:12px;font-weight:600;color:var(--ink-strong);">${t.hits} 次</span>
+                </div>
+              </div>
+            `).join("")}
           </div>
         </div>
       `;
@@ -3146,6 +3347,117 @@ Args:
           </div>
         `;
         return;
+      }
+      if (currentPage === "overview" && overviewDrawer) {
+        const agentLabel = (id) => (AGENTS.find(a => a.id === id) || {}).label || id || "客户端";
+        let hdr = "";
+        let body = "";
+        let ftrAction = "";
+
+        if (overviewDrawer.type === "log") {
+          const ev = LOGS.find(l => l.id === overviewDrawer.id);
+          if (ev) {
+            const stText = ev.status === "selected" ? "成功命中" : ev.status === "error" ? "调用失败" : "未命中工具";
+            const dotCls = ev.status === "selected" ? "ok" : ev.status === "error" ? "err" : "warn";
+            hdr = `<span class="dot dot-${dotCls}"></span><span>请求详情</span>`;
+            body = `
+              <div>
+                <div style="font-size:15px;font-weight:600;color:var(--ink-strong);line-height:1.4;">${esc(ev.title)}</div>
+                <div class="quiet-meta" style="margin-top:4px;">${esc(ev.kind === 'discover' ? '路由发现' : '工具执行')} · ${esc(stText)} · ${ev.ms} ms · ${esc(ev.time)}</div>
+              </div>
+              <div style="border:1px solid var(--border);border-radius:6px;padding:10px 14px;background:var(--bg-subtle);">
+                <div class="kv-row"><span class="kv-k">状态</span><span class="kv-v">${esc(stText)}</span></div>
+                ${ev.scope ? `<div class="kv-row"><span class="kv-k">客户端</span><span class="kv-v">${esc(agentLabel(ev.scope.agent))}</span></div>` : ""}
+                ${ev.scope ? `<div class="kv-row"><span class="kv-k">仓库</span><span class="kv-v mono">${esc(ev.scope.repo_name || ev.scope.root)}</span></div>` : ""}
+                ${ev.tokens ? `<div class="kv-row"><span class="kv-k">路由 Token</span><span class="kv-v mono">${esc(ev.tokens)}</span></div>` : ""}
+              </div>
+              ${ev.err ? `<div style="border:1px solid var(--danger-border);background:var(--danger-bg);color:var(--danger);border-radius:6px;padding:10px 12px;font-size:12.5px;line-height:1.5;">${esc(ev.err)}</div>` : ""}
+              ${ev.reason ? `<div style="border:1px solid var(--border);background:var(--bg-subtle);color:var(--ink-body);border-radius:6px;padding:10px 12px;font-size:12.5px;line-height:1.5;">${esc(ev.reason)}</div>` : ""}
+              ${(ev.tools && ev.tools.length) ? `
+                <div>
+                  <div style="font-size:12px;font-weight:600;color:var(--ink-muted);margin-bottom:8px;">命中工具</div>
+                  <div class="card-flush">
+                    ${ev.tools.map(t => `
+                      <div class="hairline-row" style="cursor:default;">
+                        <div class="row-main">
+                          <div class="row-name">${esc(t.id)}</div>
+                          <div class="row-summary">${esc(t.reason)}</div>
+                        </div>
+                      </div>
+                    `).join("")}
+                  </div>
+                </div>
+              ` : ""}
+            `;
+            ftrAction = `<button class="btn" onclick="selectedLogId='${ev.id}';closeOverviewDrawer();switchPage('logs');">在请求日志中查看 ↗</button>`;
+          }
+        } else if (overviewDrawer.type === "service") {
+          const s = SERVICES.find(x => x.id === overviewDrawer.id);
+          if (s) {
+            const tools = SERVICE_TOOLS[s.id] || [];
+            const parsed = parseRichDescription(s.desc);
+            hdr = `<span class="dot dot-${s.tone}"></span><span>${esc(s.name)}</span>`;
+            body = `
+              <div style="border:1px solid var(--border);border-radius:6px;padding:10px 14px;background:var(--bg-subtle);">
+                <div class="kv-row"><span class="kv-k">协议</span><span class="kv-v">${esc(s.proto)}</span></div>
+                <div class="kv-row"><span class="kv-k">状态</span><span class="kv-v" style="${s.tone==='err'?'color:var(--danger);':''}">${esc(s.status)}</span></div>
+                <div class="kv-row"><span class="kv-k">开放工具</span><span class="kv-v mono">${esc(s.tools)}</span></div>
+              </div>
+              ${parsed.lead ? `<div class="desc-lead">${esc(parsed.lead)}</div>` : ""}
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--ink-muted);margin-bottom:8px;">下属工具（示例）</div>
+                <div class="card-flush">
+                  ${tools.map(t => `
+                    <div class="hairline-row" style="cursor:default;">
+                      <div class="row-main"><span class="row-name">${esc(t.name)}</span></div>
+                      <div class="row-right">${t.rw ? '<span class="badge-rw">写</span>' : '<span class="quiet-meta">只读</span>'}</div>
+                    </div>
+                  `).join("")}
+                </div>
+              </div>
+            `;
+            ftrAction = `<button class="btn" onclick="closeOverviewDrawer();switchPage('services');">前往上游服务管理 ↗</button>`;
+          }
+        } else if (overviewDrawer.type === "tool") {
+          const t = TOOLS.find(x => x.id === overviewDrawer.id);
+          if (t) {
+            const parsed = parseRichDescription(t.rawDescription);
+            hdr = `<span>工具详情</span>`;
+            body = `
+              <div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <span class="mono" style="font-size:15px;font-weight:600;color:var(--ink-strong);">${esc(t.name)}</span>
+                  ${t.rw ? '<span class="badge-rw">写操作 RW</span>' : '<span class="quiet-meta">只读 RO</span>'}
+                </div>
+                <div class="quiet-meta" style="margin-top:4px;">${esc(t.server)} · 累计调用 ${t.hits} 次 · ${t.enabled ? '已开放' : '已禁用'}</div>
+              </div>
+              <div class="desc-structured">
+                ${parsed.lead ? `<p class="desc-lead">${esc(parsed.lead)}</p>` : ""}
+                ${parsed.bullets.length ? `<ul class="desc-bullets">${parsed.bullets.slice(0, 5).map(renderBulletHTML).join("")}</ul>` : ""}
+              </div>
+            `;
+            ftrAction = `<button class="btn" onclick="selectedToolId='${t.id}';closeOverviewDrawer();switchPage('catalog');">在工具目录中编辑 ↗</button>`;
+          }
+        }
+
+        if (body) {
+          modalRoot.innerHTML = `
+            <div class="slide-drawer-mask" onclick="closeOverviewDrawer()">
+              <div class="slide-drawer" onclick="event.stopPropagation();">
+                <div class="slide-drawer-hdr">
+                  <div style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--ink-strong);">${hdr}</div>
+                  <button class="btn" style="padding:2px 8px;" onclick="closeOverviewDrawer()">关闭</button>
+                </div>
+                <div class="slide-drawer-body">${body}</div>
+                <div class="slide-drawer-ftr">
+                  <span class="quiet-meta">按 Esc 关闭 · 留在概览</span>
+                  ${ftrAction}
+                </div>
+              </div>
+            </div>
+          `;
+          return;
+        }
       }
       modalRoot.innerHTML = "";
     }
