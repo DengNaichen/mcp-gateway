@@ -513,6 +513,11 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 	}
 	waitAsyncIdle(t, tester, uiApp)
 
+	if err := tester.Click("单仓库详情"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+
 	// Verify Global Default initial state (`(*,*)` empty -> 默认无服务, 6-client preview -> 无权限).
 	if !tester.HasText("全局默认") || !tester.HasText("默认无服务") || !tester.HasText("六端生效预览") {
 		t.Fatal("expected global default and 6-client preview to render")
@@ -791,6 +796,11 @@ func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 
 	tester := ui.NewTester(uiApp.View, 1400, 920)
 	waitAsyncIdle(t, tester, uiApp)
+
+	if err := tester.Click("单仓库详情"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
 
 	// Toggle Enforce switch.
 	if err := tester.Click("启用仓库隔离拦截"); err != nil {
