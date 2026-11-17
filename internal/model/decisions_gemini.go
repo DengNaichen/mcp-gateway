@@ -82,30 +82,35 @@ func parseMapAnswersRange(b []byte, start, end int, includeStatus, geminiUsage b
 		Usage   mapUsage             `json:"usage"`
 	}
 	if err := json.Unmarshal(b, &response); err != nil {
-		return out, domainError(ErrUpstream, "Decisions 响应格式无效", err)
+		return out, badResponse("Decisions 响应格式无效", err)
 	}
 	out.Usage = response.Usage.toModelUsage(geminiUsage)
+	for _, answer := range response.Answers {
+		if answer.Type == "refusal" {
+			return out, refused()
+		}
+	}
 	wantCount := end - start
 	if includeStatus {
 		wantCount++
 	}
 	if len(response.Answers) != wantCount {
-		return out, domainError(ErrUpstream, "Decisions 回答数量与问题不一致", nil)
+		return out, badResponse("Decisions 回答数量与问题不一致", nil)
 	}
 	if includeStatus {
 		status, ok := response.Answers["route_status"]
 		if !ok || status.Type != "choice" {
-			return out, domainError(ErrUpstream, "Decisions 回答名称、顺序或类型不匹配", nil)
+			return out, badResponse("Decisions 回答名称、顺序或类型不匹配", nil)
 		}
 		out.Status = status.Choice
 	}
 	for i := start; i < end; i++ {
 		answer, ok := response.Answers[toolQuestionName(i)]
 		if !ok || answer.Type != "noul" {
-			return out, domainError(ErrUpstream, "Decisions 回答名称、顺序或类型不匹配", nil)
+			return out, badResponse("Decisions 回答名称、顺序或类型不匹配", nil)
 		}
 		if !validProbability(answer.Noul) {
-			return out, domainError(ErrUpstream, "Decisions 返回的相关性概率无效", nil)
+			return out, badResponse("Decisions 返回的相关性概率无效", nil)
 		}
 		out.Relevance = append(out.Relevance, *answer.Noul)
 	}

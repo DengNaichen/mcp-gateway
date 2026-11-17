@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
 	"strings"
 	"time"
 
-	"gatewaylab/internal/input"
+	"gatewaylab/internal/retry"
 )
 
 // Bump this when routing semantics change to invalidate saved checks/acceptance.
@@ -197,7 +199,33 @@ func buildDecisionsCalls(proto decisionProtocol, endpoint, model, input string, 
 	}
 }
 
+// postDecisions sends one provider request, retrying transient failures (rate
+// limits, 5xx, network errors) within ctx's deadline. Decisions calls are
+// read-only classifications, so repeating them is safe.
 func postDecisions(ctx context.Context, call decisionsCall, key string) ([]byte, error) {
+	policy := decisionsRetry
+	policy.OnRetry = func(attempt int, wait time.Duration, err error) {
+		slog.Warn("retrying decisions request", "attempt", attempt, "wait", wait, "error", err)
+	}
+	var limited error
+	b, err := retry.Do(ctx, policy, retryVerdict, func(ctx context.Context) ([]byte, error) {
+		b, err := postDecisionsOnce(ctx, call, key)
+		if errors.Is(err, ErrRateLimited) {
+			limited = err
+		}
+		return b, err
+	})
+	// A retry that ran out of budget hides the real cause: report the rate
+	// limit (and its RetryAfter) rather than the timeout it led to.
+	if errors.Is(err, ErrTimeout) && limited != nil {
+		return nil, limited
+	}
+	return b, err
+}
+
+const maxDecisionsResponse = 2 << 20
+
+func postDecisionsOnce(ctx context.Context, call decisionsCall, key string) ([]byte, error) {
 	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, call.endpoint, bytes.NewReader(call.body))
 	if err != nil {
 		return nil, fmt.Errorf("create decisions request: %w", err)
@@ -208,22 +236,18 @@ func postDecisions(ctx context.Context, call decisionsCall, key string) ([]byte,
 	}
 	resp, err := (&http.Client{CheckRedirect: noRedirect}).Do(hreq)
 	if err != nil {
-		return nil, domainError(ErrUpstream, "Decisions 服务连接失败或请求超时", err)
+		return nil, transportError(ctx, err)
 	}
 	defer closeBody(resp)
-	b, err := input.ReadBounded(resp.Body, 2<<20)
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxDecisionsResponse+1))
 	if err != nil {
-		return nil, domainError(ErrUpstream, "无法读取 Decisions 返回内容", err)
+		return nil, transportError(ctx, fmt.Errorf("无法读取 Decisions 返回内容: %w", err))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		message := string(b)
-		if key != "" {
-			message = strings.ReplaceAll(message, key, "[redacted]")
-		}
-		if len(message) > 1000 {
-			message = message[:1000]
-		}
-		return nil, domainError(ErrUpstream, fmt.Sprintf("Decisions 服务返回 HTTP %d: %s", resp.StatusCode, message), nil)
+		return nil, responseError(resp.StatusCode, resp.Header, b, key)
+	}
+	if len(b) > maxDecisionsResponse {
+		return nil, badResponse(fmt.Sprintf("Decisions 返回内容超过 %d 字节", maxDecisionsResponse), nil)
 	}
 	return b, nil
 }
@@ -256,11 +280,11 @@ func parseOpenAIAnswers(b []byte, n int) (Answers, error) {
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(b, &response); err != nil {
-		return out, domainError(ErrUpstream, "Decisions 响应格式无效", err)
+		return out, badResponse("Decisions 响应格式无效", err)
 	}
 	out.Usage = Usage{PromptTokens: response.Usage.InputTokens, CompletionTokens: response.Usage.OutputTokens}
 	if len(response.Answers) != n+1 {
-		return out, domainError(ErrUpstream, "Decisions 回答数量与问题不一致", nil)
+		return out, badResponse("Decisions 回答数量与问题不一致", nil)
 	}
 	for i, answer := range response.Answers {
 		wantName, wantType := "route_status", "choice"
@@ -268,14 +292,14 @@ func parseOpenAIAnswers(b []byte, n int) (Answers, error) {
 			wantName, wantType = toolQuestionName(i-1), "predicate"
 		}
 		if answer.Type == "refusal" {
-			return out, domainError(ErrUpstream, "Decisions 拒绝回答路由问题", nil)
+			return out, refused()
 		}
 		if answer.Name != wantName || answer.Type != wantType {
-			return out, domainError(ErrUpstream, "Decisions 回答名称、顺序或类型不匹配", nil)
+			return out, badResponse("Decisions 回答名称、顺序或类型不匹配", nil)
 		}
 		if i > 0 {
 			if !validProbability(answer.Probability) {
-				return out, domainError(ErrUpstream, "Decisions 返回的相关性概率无效", nil)
+				return out, badResponse("Decisions 返回的相关性概率无效", nil)
 			}
 			out.Relevance = append(out.Relevance, *answer.Probability)
 		}

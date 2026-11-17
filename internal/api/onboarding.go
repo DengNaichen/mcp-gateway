@@ -59,7 +59,7 @@ func (g *server) registerSetup(mux *http.ServeMux) {
 		}
 		result, err := g.Model().PingModel(r.Context(), input.Settings, input.ProfileID, input.APIKey, input.ClearKey)
 		if err != nil {
-			respond(w, 400, map[string]any{"error": "模型连接测试失败", "detail": g.ErrorDetail(err)})
+			respond(w, 400, withErrorCode(map[string]any{"error": "模型连接测试失败", "detail": g.ErrorDetail(err)}, err))
 			return
 		}
 		respond(w, 200, result)
@@ -81,7 +81,7 @@ func (g *server) registerSetup(mux *http.ServeMux) {
 		}
 		result, err := g.TestModel(r.Context(), input.Intent)
 		if err != nil {
-			respond(w, 400, map[string]any{"error": "配置已保存，模型路由尚未试通", "detail": g.ErrorDetail(err)})
+			respond(w, 400, withErrorCode(map[string]any{"error": "配置已保存，模型路由尚未试通", "detail": g.ErrorDetail(err)}, err))
 			return
 		}
 		respond(w, 200, result)

@@ -67,6 +67,12 @@ linters:
           deny:
             - pkg: gatewaylab/internal
               desc: "fault is a leaf package and imports no other internal package"
+        leaf-retry:
+          files: ["**/internal/retry/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "retry is a leaf package and imports no other internal package"
         store-layer:
           files: ["**/internal/store/**"]
           list-mode: lax
@@ -130,6 +136,7 @@ linters:
             - "**/internal/jsonutil/**"
             - "**/internal/mcputil/**"
             - "**/internal/fault/**"
+            - "**/internal/retry/**"
             - "**/internal/contracttest/**"
           list-mode: lax
           deny:

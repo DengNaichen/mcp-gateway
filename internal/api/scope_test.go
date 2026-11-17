@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -259,20 +260,20 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 
 	// --- Invariant 1: Even when enforce == false, invalid/expired/replayed/tampered/agent-mismatched _gw_ctx MUST fail 403 scope_invalid! ---
 	// 1a. Forged token string
-	_, err := codexSess.CallTool(context.Background(), &mcp.CallToolParams{
+	err := toolCallErr(codexSess.CallTool(context.Background(), &mcp.CallToolParams{
 		Name:      "discover_tools",
 		Arguments: map[string]any{"intent": "github list", ctxField: "v1.bad.sig"},
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "scope_invalid") {
 		t.Fatalf("expected scope_invalid when enforce==false on bad token, got: %v", err)
 	}
 
 	// 1b. Valid token used once succeeds, replayed a second time MUST fail 403 scope_invalid!
 	signedOnce := signMCPArgs(t, g, "codex", repoMain, false, "discover_tools", map[string]any{"intent": "github list"})
-	if _, err := codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: signedOnce}); err != nil {
+	if err := toolCallErr(codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: signedOnce})); err != nil {
 		t.Fatalf("first call with valid token failed: %v", err)
 	}
-	_, err = codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: signedOnce})
+	err = toolCallErr(codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: signedOnce}))
 	if err == nil || !strings.Contains(err.Error(), "scope_invalid") {
 		t.Fatalf("replayed JTI was not rejected with scope_invalid: %v", err)
 	}
@@ -280,14 +281,14 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	// 1c. Argument tampering after signing (ArgsHash mismatch) -> 403 scope_invalid!
 	tampered := signMCPArgs(t, g, "codex", repoMain, false, "invoke_tool", map[string]any{"tool_id": "github.list", "arguments": map[string]any{}})
 	tampered["tool_id"] = "github.mutate"
-	_, err = codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: tampered})
+	err = toolCallErr(codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: tampered}))
 	if err == nil || !strings.Contains(err.Error(), "scope_invalid") {
 		t.Fatalf("tampered arguments not rejected with scope_invalid: %v", err)
 	}
 
 	// 1d. Agent mismatch (?agent=claude URL receiving token signed for codex) -> 403 scope_invalid!
 	mismatch := signMCPArgs(t, g, "codex", repoMain, false, "discover_tools", map[string]any{"intent": "github list"})
-	_, err = claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: mismatch})
+	err = toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: mismatch}))
 	if err == nil || !strings.Contains(err.Error(), "scope_invalid") {
 		t.Fatalf("agent-mismatched token not rejected with scope_invalid: %v", err)
 	}
@@ -306,10 +307,10 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = codexSess.CallTool(context.Background(), &mcp.CallToolParams{
+	err = toolCallErr(codexSess.CallTool(context.Background(), &mcp.CallToolParams{
 		Name:      "discover_tools",
 		Arguments: map[string]any{"intent": "github", ctxField: expiredTok},
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "scope_invalid") {
 		t.Fatalf("expired token not rejected with scope_invalid: %v", err)
 	}
@@ -336,12 +337,15 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	// --- Check X-Gateway-Actor consistency on get_tool_schema ---
 	observerSess := connectAgent("codex", map[string]string{"X-Gateway-Actor": "observer"})
 	// github.get is developer-only; even if caller passes actor="developer" in args, X-Gateway-Actor="observer" must win and deny!
-	_, err = observerSess.CallTool(context.Background(), &mcp.CallToolParams{
+	denied, err := observerSess.CallTool(context.Background(), &mcp.CallToolParams{
 		Name:      "get_tool_schema",
 		Arguments: map[string]any{"tool_id": "github.get", "actor": "developer"},
 	})
-	if err == nil {
-		t.Fatal("get_tool_schema ignored X-Gateway-Actor header")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body, _ := denied.StructuredContent.(map[string]any); !denied.IsError || body["status"] != float64(http.StatusForbidden) {
+		t.Fatalf("get_tool_schema ignored X-Gateway-Actor header: %+v", denied)
 	}
 
 	// --- Bind repositories & configure precedence rules ---
@@ -386,17 +390,17 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	}
 
 	// --- Invariant 2: Missing _gw_ctx when enforce == true MUST return 403 scope_required (NEVER fall back to global pool!) ---
-	_, err = codexSess.CallTool(context.Background(), &mcp.CallToolParams{
+	err = toolCallErr(codexSess.CallTool(context.Background(), &mcp.CallToolParams{
 		Name:      "discover_tools",
 		Arguments: map[string]any{"intent": "roster list"},
-	})
+	}))
 	if err == nil || !strings.Contains(err.Error(), "scope_required") {
 		t.Fatalf("missing _gw_ctx did not return scope_required: %v", err)
 	}
 
 	// --- Invariant 3: Ambiguous workspace when enforce == true MUST return 403 ambiguous_workspace ---
 	ambigArgs := signMCPArgs(t, g, "cursor", "", true, "discover_tools", map[string]any{"intent": "roster list"})
-	_, err = cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: ambigArgs})
+	err = toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: ambigArgs}))
 	if err == nil || !strings.Contains(err.Error(), "ambiguous_workspace") {
 		t.Fatalf("ambiguous workspace did not return ambiguous_workspace: %v", err)
 	}
@@ -408,26 +412,26 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 		t.Fatalf("codex in linked worktree subdir failed authorized roster.mutate: %v %+v", err, res)
 	}
 	wtSubsetDenied := signMCPArgs(t, g, "codex", repoWTSub, false, "get_tool_schema", map[string]any{"tool_id": "github.get"})
-	if _, err := codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "get_tool_schema", Arguments: wtSubsetDenied}); err == nil {
+	if err := toolCallErr(codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "get_tool_schema", Arguments: wtSubsetDenied})); err == nil {
 		t.Fatal("codex accessed github.get excluded by ToolIDs subset")
 	}
 	wtSubsetAllowed := signMCPArgs(t, g, "codex", repoWTSub, false, "get_tool_schema", map[string]any{"tool_id": "github.list"})
-	if _, err := codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "get_tool_schema", Arguments: wtSubsetAllowed}); err != nil {
+	if err := toolCallErr(codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "get_tool_schema", Arguments: wtSubsetAllowed})); err != nil {
 		t.Fatalf("codex denied github.list included in ToolIDs subset: %v", err)
 	}
 
 	// Claude in repoMain: matches (mcp-gateway, *) -> roster RO (whole-rule replacement over (*, claude)!).
 	// So gitlab.list is DENIED, roster.mutate (write) is DENIED, and roster.list (read-only) is ALLOWED!
 	claudeGitlab := signMCPArgs(t, g, "claude", repoMain, false, "invoke_tool", map[string]any{"tool_id": "gitlab.list", "arguments": map[string]any{}})
-	if _, err := claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeGitlab}); err == nil {
+	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeGitlab})); err == nil {
 		t.Fatal("whole-rule replacement failed: claude inherited (*, claude) gitlab inside mcp-gateway")
 	}
 	claudeWrite := signMCPArgs(t, g, "claude", repoMain, false, "invoke_tool", map[string]any{"tool_id": "roster.mutate", "arguments": map[string]any{}})
-	if _, err := claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeWrite}); err == nil {
+	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeWrite})); err == nil {
 		t.Fatal("RO grant allowed write tool roster.mutate")
 	}
 	claudeRead := signMCPArgs(t, g, "claude", repoMain, false, "invoke_tool", map[string]any{"tool_id": "roster.list", "arguments": map[string]any{}})
-	if _, err := claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeRead}); err != nil {
+	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeRead})); err != nil {
 		t.Fatalf("claude denied authorized RO tool roster.list: %v", err)
 	}
 
@@ -450,21 +454,21 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 
 	// Meanwhile for claude in unconfigured repoEvilClone, (*, claude) -> gitlab RO applies!
 	claudeUnconf := signMCPArgs(t, g, "claude", repoEvilClone, false, "invoke_tool", map[string]any{"tool_id": "gitlab.list", "arguments": map[string]any{}})
-	if _, err := claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeUnconf}); err != nil {
+	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeUnconf})); err != nil {
 		t.Fatalf("claude in unconfigured repo should match (*, claude) gitlab.list: %v", err)
 	}
 
 	// --- Invariant 6: Empty `git init` repo without origin & Dir segment-boundary (/proj != /proj-old) ---
 	emptyRead := signMCPArgs(t, g, "cursor", repoEmpty, false, "invoke_tool", map[string]any{"tool_id": "github.list", "arguments": map[string]any{}})
-	if _, err := cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: emptyRead}); err != nil {
+	if err := toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: emptyRead})); err != nil {
 		t.Fatalf("empty git init repo failed to match CommonDir: %v", err)
 	}
 	projOK := signMCPArgs(t, g, "cursor", dirProj, false, "invoke_tool", map[string]any{"tool_id": "gitlab.mutate", "arguments": map[string]any{}})
-	if _, err := cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: projOK}); err != nil {
+	if err := toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: projOK})); err != nil {
 		t.Fatalf("/proj dir anchor failed: %v", err)
 	}
 	projOldDenied := signMCPArgs(t, g, "cursor", dirProjOld, false, "invoke_tool", map[string]any{"tool_id": "gitlab.mutate", "arguments": map[string]any{}})
-	if _, err := cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: projOldDenied}); err == nil {
+	if err := toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: projOldDenied})); err == nil {
 		t.Fatal("/proj-old erroneously matched /proj dir anchor!")
 	}
 
@@ -472,7 +476,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	// to inherit `dirProj`'s RootPaths grants!
 	nestedUntrustedGit := initGitRepoForScopeTest(t, filepath.Join(dirProj, "nested-untrusted-git"), "", false)
 	nestedDenied := signMCPArgs(t, g, "cursor", nestedUntrustedGit, false, "invoke_tool", map[string]any{"tool_id": "gitlab.mutate", "arguments": map[string]any{}})
-	if _, err := cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: nestedDenied}); err == nil {
+	if err := toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: nestedDenied})); err == nil {
 		t.Fatal("unbound Git repo nested inside bound KindDir RootPaths inherited parent dir grants!")
 	}
 
@@ -858,4 +862,22 @@ func TestEndToEndGatewayHookBinaryToGatewayMCP(t *testing.T) {
 	if err != nil || res.IsError {
 		t.Fatalf("end-to-end hook -> MCP call failed: %v %+v", err, res)
 	}
+}
+
+// toolCallErr folds an isError tool result into an error, so assertions treat
+// tool-level failures (now reported as results, per MCP) like call failures.
+func toolCallErr(res *mcp.CallToolResult, err error) error {
+	if err != nil {
+		return err
+	}
+	if res.IsError {
+		var text []string
+		for _, c := range res.Content {
+			if tc, ok := c.(*mcp.TextContent); ok {
+				text = append(text, tc.Text)
+			}
+		}
+		return errors.New(strings.Join(text, "\n"))
+	}
+	return nil
 }

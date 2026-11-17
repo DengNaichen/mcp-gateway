@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -36,6 +37,30 @@ func (g *server) ensureMCPCallScope(ctx context.Context, req *mcp.CallToolReques
 	return g.Scope().ResolveMCPToolCallScope(ctx, mcpHeader(req, "X-Gateway-Agent"), toolName, raw)
 }
 
+// toolError reports a failed meta-tool call as a tool result with isError set,
+// as the MCP spec asks for tool execution errors. The agent gets the same
+// machine-readable body as HTTP callers (code, retry_after_seconds) plus the
+// HTTP-equivalent status, so it can decide to wait, fix input or change
+// approach without parsing prose. The message keeps the full (redacted) cause
+// chain, which agents need to correct their arguments.
+func (g *server) toolError(err error) (*mcp.CallToolResult, error) {
+	app := httpError(err)
+	switch {
+	case app == nil:
+		slog.Error("gateway tool call failed", "error", err)
+		app = &appError{status: 500}
+	case app.cause != nil:
+		slog.Warn("gateway tool call failed", "status", app.status, "error", err)
+	}
+	payload := app.payload(g.ErrorDetail(err))
+	payload["status"] = app.status
+	b, encodeErr := json.Marshal(payload)
+	if encodeErr != nil {
+		return nil, fmt.Errorf("encode tool error: %w", encodeErr)
+	}
+	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}, StructuredContent: payload}, nil
+}
+
 func (g *server) mcpServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "gateway-lab", Version: "0.0.1"}, nil)
 	s.AddTool(&mcp.Tool{Name: "discover_tools", Description: "Describe your current task to discover a small set of authorized tools. Returns real tool IDs, schemas and usage reasons. Use invoke_tool to execute them. Rediscover as the task changes.", InputSchema: metaToolSchema(map[string]any{
@@ -47,11 +72,11 @@ func (g *server) mcpServer() *mcp.Server {
 		scopedCtx, cleanArgs, scopeErr := g.ensureMCPCallScope(ctx, req, "discover_tools")
 		if scopeErr != nil {
 			g.RecordAgentTool("discover_tools", access.RequestActor(ctx, mcpHeader(req, "X-Gateway-Actor")), started, scopeErr)
-			return nil, scopeErr
+			return g.toolError(scopeErr)
 		}
 		var in gateway.DiscoverRequest
 		if err := json.Unmarshal(cleanArgs, &in); err != nil {
-			return nil, fmt.Errorf("decode discovery arguments: %w", err)
+			return g.toolError(invalid(fmt.Sprintf("discover_tools 参数无效: %v", err)))
 		}
 		if hdrActor := mcpHeader(req, "X-Gateway-Actor"); hdrActor != "" {
 			in.Actor = hdrActor
@@ -59,28 +84,28 @@ func (g *server) mcpServer() *mcp.Server {
 		out, err := g.Discover(scopedCtx, in)
 		g.RecordAgentTool("discover_tools", access.RequestActor(scopedCtx, in.Actor), started, err)
 		if err != nil {
-			return nil, err
+			return g.toolError(err)
 		}
 		return mcputil.Result(discoveryPresentation(out, in.SummaryOnly))
 	})
 	s.AddTool(&mcp.Tool{Name: "get_tool_schema", Description: "Read the current schema of an enabled authorized tool after summary discovery.", InputSchema: metaToolSchema(map[string]any{"tool_id": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}}, "tool_id")}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		scopedCtx, cleanArgs, scopeErr := g.ensureMCPCallScope(ctx, req, "get_tool_schema")
 		if scopeErr != nil {
-			return nil, scopeErr
+			return g.toolError(scopeErr)
 		}
 		var in struct {
 			ToolID string `json:"tool_id"`
 			Actor  string `json:"actor"`
 		}
 		if err := json.Unmarshal(cleanArgs, &in); err != nil {
-			return nil, invalid("schema 请求参数无效")
+			return g.toolError(invalid("schema 请求参数无效"))
 		}
 		if hdrActor := mcpHeader(req, "X-Gateway-Actor"); hdrActor != "" {
 			in.Actor = hdrActor
 		}
 		tool, err := g.ToolSchema(scopedCtx, in.ToolID, in.Actor)
 		if err != nil {
-			return nil, err
+			return g.toolError(err)
 		}
 		return mcputil.Result(tool)
 	})
@@ -91,11 +116,11 @@ func (g *server) mcpServer() *mcp.Server {
 		scopedCtx, cleanArgs, scopeErr := g.ensureMCPCallScope(ctx, req, "invoke_tool")
 		if scopeErr != nil {
 			g.RecordAgentTool("invoke_tool", access.RequestActor(ctx, mcpHeader(req, "X-Gateway-Actor")), started, scopeErr)
-			return nil, scopeErr
+			return g.toolError(scopeErr)
 		}
 		var in gateway.InvokeRequest
 		if err := json.Unmarshal(cleanArgs, &in); err != nil {
-			return nil, fmt.Errorf("decode invocation arguments: %w", err)
+			return g.toolError(invalid(fmt.Sprintf("invoke_tool 参数无效: %v", err)))
 		}
 		if hdrActor := mcpHeader(req, "X-Gateway-Actor"); hdrActor != "" {
 			in.Actor = hdrActor
@@ -103,7 +128,7 @@ func (g *server) mcpServer() *mcp.Server {
 		out, err := g.Invoke(scopedCtx, in)
 		g.RecordAgentTool("invoke_tool", access.RequestActor(scopedCtx, in.Actor), started, err)
 		if err != nil {
-			return nil, err
+			return g.toolError(err)
 		}
 		return mcputil.Result(out)
 	})
