@@ -6,7 +6,7 @@ Artifacts are retained under a printed /tmp directory. Only spawned processes st
 import json, os, pathlib, plistlib, subprocess, tempfile, time, tomllib, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[4]
 ARTIFACTS = pathlib.Path(tempfile.mkdtemp(prefix="gateway-channels-"))
 CLIENTS = ["codex", "claude", "cursor", "opencode", "pi"]
 processes, sockets, states = {}, {}, {}

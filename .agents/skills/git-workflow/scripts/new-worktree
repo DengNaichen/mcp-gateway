@@ -3,16 +3,16 @@
 # base, then run worktree setup. See .agents/skills/git-workflow/SKILL.md.
 set -eu
 
-script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-repo_root=$(dirname -- "$script_dir")
+script_dir=$(CDPATH='' cd -P -- "$(dirname -- "$0")" && pwd -P)
+repo_root=$(CDPATH='' cd -- "$script_dir/../../../.." && pwd -P)
 
 usage() {
-	printf '%s\n' "usage: scripts/new-worktree <branch> [--base <ref>] [--no-setup]" >&2
+	printf '%s\n' "usage: .agents/skills/git-workflow/scripts/new-worktree <branch> [--base <ref>] [--no-setup]" >&2
 	exit 2
 }
 
 fail() {
-	printf 'scripts/new-worktree: %s\n' "$1" >&2
+	printf '.agents/skills/git-workflow/scripts/new-worktree: %s\n' "$1" >&2
 	exit 1
 }
 
@@ -105,15 +105,18 @@ else
 fi
 
 if [ "$run_setup" -eq 1 ]; then
-	if [ -x "$target/scripts/setup-worktree" ]; then
+	if [ -x "$target/.agents/skills/git-workflow/scripts/setup-worktree" ]; then
+		setup_ok=1
+		(cd "$target" && .agents/skills/git-workflow/scripts/setup-worktree --if-needed) >&2 || setup_ok=0
+	elif [ -x "$target/scripts/setup-worktree" ]; then
 		setup_ok=1
 		(cd "$target" && scripts/setup-worktree --if-needed) >&2 || setup_ok=0
 	else
 		setup_ok=1
-		node "$primary/scripts/worktree-runtime.mjs" setup "$target" --if-needed >&2 || setup_ok=0
+		node "$primary/.agents/skills/git-workflow/scripts/worktree-runtime.mjs" setup "$target" --if-needed >&2 || setup_ok=0
 	fi
 	if [ "$setup_ok" -eq 0 ]; then
-		printf '%s\n' "scripts/new-worktree: worktree created at $target, but setup failed; fix the cause, then run scripts/setup-worktree in that worktree." >&2
+		printf '%s\n' ".agents/skills/git-workflow/scripts/new-worktree: worktree created at $target, but setup failed; fix the cause, then run .agents/skills/git-workflow/scripts/setup-worktree in that worktree." >&2
 		exit 1
 	fi
 fi

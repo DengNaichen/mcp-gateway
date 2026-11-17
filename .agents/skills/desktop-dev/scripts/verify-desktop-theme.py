@@ -1,5 +1,5 @@
 import subprocess,os,json,time,pathlib,tempfile
-ROOT=pathlib.Path(__file__).resolve().parents[1]
+ROOT=pathlib.Path(__file__).resolve().parents[4]
 os.chdir(ROOT)
 root=pathlib.Path(tempfile.mkdtemp(prefix='gateway-theme-'));sock=str(root/'control.sock')
 env=dict(os.environ,GATEWAY_CLIENT_CONFIG_HOME=str(root/'clients'),GATEWAY_DESKTOP_CONTROL=sock)

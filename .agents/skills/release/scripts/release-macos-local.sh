@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$(cd -P "$(dirname "$0")" && cd ../../../.. && pwd -P)"
 ENV_FILE="$ROOT_DIR/.env.release"
 
 if [[ -f "$ENV_FILE" ]]; then
