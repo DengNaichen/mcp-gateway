@@ -27,6 +27,20 @@ func (g *server) registerServers(mux *http.ServeMux) {
 		}
 		respond(w, 200, apitypes.SyncServerResult{Imported: n})
 	})
+	mux.HandleFunc("POST /api/servers/openapi", func(w http.ResponseWriter, r *http.Request) {
+		var in apitypes.ImportOpenAPIRequest
+		// A 4 MB document can grow when JSON-escaped; the gateway enforces 4 MB itself.
+		if _, err := decodeRawLimit(w, r, &in, 8<<20); err != nil {
+			fail(w, err)
+			return
+		}
+		n, err := g.ImportOpenAPI(r.Context(), domainServer(in.Server), []byte(in.Spec), in.SpecURL, in.OperationIDs)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		respond(w, 200, apitypes.ImportOpenAPIResult{Imported: n})
+	})
 	mux.HandleFunc("PUT /api/tools", func(w http.ResponseWriter, r *http.Request) {
 		var in apitypes.Tool
 		if err := decode(w, r, &in); err != nil {

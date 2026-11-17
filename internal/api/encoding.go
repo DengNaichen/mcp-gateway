@@ -18,7 +18,11 @@ func respond(w http.ResponseWriter, status int, data any) {
 }
 
 func decodeRaw(w http.ResponseWriter, r *http.Request, out any) ([]byte, error) {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	return decodeRawLimit(w, r, out, 1<<20)
+}
+
+func decodeRawLimit(w http.ResponseWriter, r *http.Request, out any, limit int64) ([]byte, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, problem(400, "请求过大或无法读取", err)

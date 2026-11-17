@@ -98,3 +98,17 @@ type Catalog struct {
 	Servers []CatalogServer `json:"servers"`
 	Tools   []Capability    `json:"tools"`
 }
+
+// ImportOpenAPIRequest is sent to POST /api/servers/openapi. The server parses
+// Spec (OpenAPI 3.0/3.1 JSON or YAML) or, when Spec is empty, downloads SpecURL.
+type ImportOpenAPIRequest struct {
+	Server       Server   `json:"server"`
+	Spec         string   `json:"spec,omitempty"`
+	SpecURL      string   `json:"spec_url,omitempty"`
+	OperationIDs []string `json:"operation_ids,omitempty"`
+}
+
+// ImportOpenAPIResult is returned by POST /api/servers/openapi.
+type ImportOpenAPIResult struct {
+	Imported int `json:"imported"`
+}

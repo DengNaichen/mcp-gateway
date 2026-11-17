@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"gatewaylab/internal/apitypes"
-	"gatewaylab/internal/openapi"
 )
 
 // ErrUnauthorized indicates the shared gateway rejected a request with HTTP 401.
@@ -375,57 +374,14 @@ func (c *APIClient) ToolSchema(ctx context.Context, toolID, actor string) (apity
 	return out, err
 }
 
-// ImportOpenAPI saves the HTTP server, parses the OpenAPI 3.0/3.1 document
-// (from specBytes or fetched from specURL), and registers each generated tool.
+// ImportOpenAPI asks the gateway to register server and the tools generated
+// from an OpenAPI 3.0/3.1 document: specBytes when given, otherwise the
+// document the gateway downloads from specURL.
 func (c *APIClient) ImportOpenAPI(ctx context.Context, server apitypes.Server, specBytes []byte, specURL string, operationIDs []string) (int, error) {
-	data := bytes.TrimSpace(specBytes)
-	if len(data) == 0 && strings.TrimSpace(specURL) != "" {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSpace(specURL), nil)
-		if err != nil {
-			return 0, fmt.Errorf("构造 OpenAPI URL 请求失败: %w", err)
-		}
-		resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-		if err != nil {
-			return 0, fmt.Errorf("下载 OpenAPI 文档失败: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return 0, fmt.Errorf("下载 OpenAPI 文档失败: HTTP %d", resp.StatusCode)
-		}
-		fetched, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-		if err != nil {
-			return 0, fmt.Errorf("读取 OpenAPI 文档失败: %w", err)
-		}
-		data = fetched
-	}
-	if len(data) == 0 {
-		return 0, errors.New("请提供 OpenAPI JSON/YAML 内容或文档 URL")
-	}
-
-	server.Kind = "http"
-	imported, err := openapi.ImportOpenAPI(server.ID, data, operationIDs)
-	if err != nil {
-		return 0, err
-	}
-	// Temporary bridge until the server owns OpenAPI import: the parser still
-	// returns domain tools, which reach the API in their wire encoding.
-	raw, err := json.Marshal(imported)
-	if err != nil {
-		return 0, err
-	}
-	var tools []apitypes.Tool
-	if err := json.Unmarshal(raw, &tools); err != nil {
-		return 0, err
-	}
-	if _, err := c.SaveServer(ctx, server); err != nil {
-		return 0, err
-	}
-	for _, tool := range tools {
-		if _, err := c.SaveTool(ctx, tool); err != nil {
-			return 0, fmt.Errorf("保存工具 %s 失败: %w", tool.ID, err)
-		}
-	}
-	return len(tools), nil
+	req := apitypes.ImportOpenAPIRequest{Server: server, Spec: string(specBytes), SpecURL: strings.TrimSpace(specURL), OperationIDs: operationIDs}
+	var out apitypes.ImportOpenAPIResult
+	err := c.doJSON(ctx, http.MethodPost, "/servers/openapi", req, &out)
+	return out.Imported, err
 }
 
 func (c *APIClient) Maintenance(ctx context.Context) (apitypes.MaintenanceStatus, error) {
