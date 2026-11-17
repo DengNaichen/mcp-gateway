@@ -338,6 +338,9 @@ func wireRunDetails(d maintenance.RunDetails) apitypes.MaintenanceRunDetails {
 // --- activity, setup, access ---
 
 func wireEvent(e activity.Event) apitypes.Event { return apitypes.Event(e) }
+func wirePulseBucket(b activity.PulseBucket) apitypes.PulseBucket {
+	return apitypes.PulseBucket(b)
+}
 func wireCheck(c gateway.ConnectionCheck) apitypes.ConnectionCheck {
 	return apitypes.ConnectionCheck(c)
 }

@@ -56,6 +56,14 @@ type AccessInfo struct {
 	Actor  string `json:"actor"`
 }
 
+// PulseBucket aggregates gateway requests over a 15-minute window.
+type PulseBucket struct {
+	Start time.Time `json:"start"`
+	End   time.Time `json:"end"`
+	Total int       `json:"total"`
+	Error int       `json:"error"`
+}
+
 // Bootstrap is returned by GET /api/bootstrap: everything the control plane
 // needs to render its first screen.
 type Bootstrap struct {
@@ -64,6 +72,7 @@ type Bootstrap struct {
 	KeyConfigured bool           `json:"key_configured"`
 	Profiles      []ModelProfile `json:"profiles"`
 	Events        []Event        `json:"events"`
+	Pulse         []PulseBucket  `json:"pulse,omitempty"`
 	MCPURL        string         `json:"mcp_url"`
 	Setup         SetupStatus    `json:"setup"`
 	Scopes        ScopeOverview  `json:"scopes"`

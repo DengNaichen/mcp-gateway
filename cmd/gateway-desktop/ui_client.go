@@ -459,6 +459,7 @@ type GatewayTelemetry struct {
 	NeedsContextCount int
 	ErrorCount        int
 	HitRatePct        *float64
+	SuccessRatePct    *float64
 	AvgEligible       *float64
 	AvgSelectedOnHit  *float64
 	CompressionPct    *float64
@@ -469,6 +470,7 @@ type GatewayTelemetry struct {
 	ToolHitCounts     map[string]int
 	TopTools          []TopToolItem
 	AttentionItems    []BlindSpotItem
+	PulseBuckets      []apitypes.PulseBucket
 }
 
 type ActorServerCount struct {
@@ -639,6 +641,11 @@ func ComputeGatewayTelemetry(state apitypes.Bootstrap) GatewayTelemetry {
 		v := (float64(selectedCount) / float64(discoverCount)) * 100
 		hitRatePct = &v
 	}
+	var successRatePct *float64
+	if len(events) > 0 {
+		v := (float64(len(events)-errorCount) / float64(len(events))) * 100
+		successRatePct = &v
+	}
 	var avgEligible *float64
 	if eligibleSamples > 0 {
 		v := eligibleSum / float64(eligibleSamples)
@@ -728,6 +735,8 @@ func ComputeGatewayTelemetry(state apitypes.Bootstrap) GatewayTelemetry {
 		attentionItems = attentionItems[:7]
 	}
 
+	pulseBuckets := computePulseBuckets(state, time.Now())
+
 	return GatewayTelemetry{
 		SampleSize:        len(events),
 		DiscoverCount:     discoverCount,
@@ -738,6 +747,7 @@ func ComputeGatewayTelemetry(state apitypes.Bootstrap) GatewayTelemetry {
 		NeedsContextCount: needsContextCount,
 		ErrorCount:        errorCount,
 		HitRatePct:        hitRatePct,
+		SuccessRatePct:    successRatePct,
 		AvgEligible:       avgEligible,
 		AvgSelectedOnHit:  avgSelectedOnHit,
 		CompressionPct:    compressionPct,
@@ -748,7 +758,45 @@ func ComputeGatewayTelemetry(state apitypes.Bootstrap) GatewayTelemetry {
 		ToolHitCounts:     toolHitCounts,
 		TopTools:          topTools,
 		AttentionItems:    attentionItems,
+		PulseBuckets:      pulseBuckets,
 	}
+}
+
+func computePulseBuckets(state apitypes.Bootstrap, now time.Time) []apitypes.PulseBucket {
+	const (
+		bucketCount = 48
+		slotDur     = 15 * time.Minute
+	)
+	if len(state.Pulse) == bucketCount {
+		out := make([]apitypes.PulseBucket, bucketCount)
+		copy(out, state.Pulse)
+		return out
+	}
+
+	end := now.Truncate(slotDur).Add(slotDur)
+	start := end.Add(-time.Duration(bucketCount) * slotDur)
+	out := make([]apitypes.PulseBucket, bucketCount)
+	for i := range out {
+		bStart := start.Add(time.Duration(i) * slotDur)
+		out[i] = apitypes.PulseBucket{
+			Start: bStart,
+			End:   bStart.Add(slotDur),
+		}
+	}
+	for _, ev := range state.Events {
+		if ev.Time.Before(start) || !ev.Time.Before(end) {
+			continue
+		}
+		idx := int(ev.Time.Sub(start) / slotDur)
+		if idx < 0 || idx >= bucketCount {
+			continue
+		}
+		out[idx].Total++
+		if ev.Status == "error" || ev.Status == "failed" {
+			out[idx].Error++
+		}
+	}
+	return out
 }
 
 // ComputeActorMatrix computes per-actor reachable services and read/write tool counts.

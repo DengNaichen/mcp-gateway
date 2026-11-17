@@ -168,6 +168,15 @@
               "null"
             ]
           },
+          "pulse": {
+            "items": {
+              "$ref": "#/components/schemas/PulseBucket"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "registry": {
             "$ref": "#/components/schemas/Registry"
           },
@@ -1708,6 +1717,32 @@
         },
         "required": [
           "published"
+        ],
+        "type": "object"
+      },
+      "PulseBucket": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "type": "integer"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "end",
+          "error",
+          "start",
+          "total"
         ],
         "type": "object"
       },
