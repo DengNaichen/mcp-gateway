@@ -68,6 +68,12 @@ python3 .agents/skills/desktop-dev/scripts/verify-desktop-theme.py
 
 脚本使用临时端口（`127.0.0.1:0`）、临时数据目录与 `GATEWAY_DESKTOP_CONTROL` socket 启动 `build/dev/*/MCP Gateway Dev.app`，依次切换 `light` / `dark` / `system` 主题并截取全部 9 个视图（`overview`、`services`、`market`、`catalog`、`repos`、`playground`、`logs`、`settings`、`clients`）截图到 `/tmp/gateway-theme-*`，结束时自动退出所启动的进程。
 
+矩阵视图可用隔离的仓库、默认授权及超长名称样例复验（不会修改用户配置）：
+
+```sh
+python3 .agents/skills/desktop-dev/scripts/verify-desktop-theme.py --repo-matrix
+```
+
 ### 2. Dev / Stable 双渠道并发隔离验收
 
 使用 [verify-build-channels.py](scripts/verify-build-channels.py)：

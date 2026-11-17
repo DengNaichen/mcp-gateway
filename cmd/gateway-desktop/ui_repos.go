@@ -68,6 +68,7 @@ type ruleDraft struct {
 }
 
 type reposPageState struct {
+	viewMode        int    // 0: matrix (default), 1: single repository detail
 	selectedRepoKey string // "*" or ScopeRepository.ID
 
 	modeBusy bool
@@ -424,6 +425,7 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 	// Consume cross-page selection handoff.
 	if repoKey := u.consumePendingRepoKey(); repoKey != "" {
 		st.selectedRepoKey = repoKey
+		st.viewMode = 1
 	}
 	if st.selectedRepoKey == "" {
 		st.selectedRepoKey = "*"
@@ -525,6 +527,12 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 			}
 		}
 	})
+
+	ui.Segmented(c.Key("repos-view-mode"), &st.viewMode, "矩阵视图", "单仓库详情").Width(260).Label("仓库视图")
+	if st.viewMode == 0 {
+		u.renderReposMatrix(c.Key("repos-matrix"), st, state)
+		return
+	}
 
 	// 2. Master-Detail Split Layout (Left ~280px Flush List + Right Detail Column).
 	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(22).Children(func() {
