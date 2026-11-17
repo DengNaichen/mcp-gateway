@@ -417,6 +417,10 @@ func (u *DesktopUI) pollLoop(ctx context.Context) {
 				continue
 			}
 			view := u.CurrentView()
+			if view == ViewClients {
+				u.updateUI(func() { u.refreshClientConfigs() })
+				continue
+			}
 			if view != ViewOverview && view != ViewLogs && view != ViewRepos {
 				continue
 			}

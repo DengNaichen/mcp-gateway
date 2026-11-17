@@ -15,14 +15,15 @@ import (
 )
 
 type pluginReceipt struct {
-	Client        string            `json:"client"`
-	Version       string            `json:"version"`
-	Digest        string            `json:"digest"`
-	Endpoint      string            `json:"endpoint"`
-	InstallRoot   string            `json:"install_root"`
-	Marketplace   string            `json:"marketplace,omitempty"`
-	PackageSource string            `json:"package_source,omitempty"`
-	Files         map[string]string `json:"files,omitempty"`
+	InstallationID string            `json:"installation_id,omitempty"`
+	Client         string            `json:"client"`
+	Version        string            `json:"version"`
+	Digest         string            `json:"digest"`
+	Endpoint       string            `json:"endpoint"`
+	InstallRoot    string            `json:"install_root"`
+	Marketplace    string            `json:"marketplace,omitempty"`
+	PackageSource  string            `json:"package_source,omitempty"`
+	Files          map[string]string `json:"files,omitempty"`
 }
 
 func (m *Manager) receiptPath(id string) string {

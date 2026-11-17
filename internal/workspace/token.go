@@ -70,17 +70,18 @@ func IsReservedContextField(key string) bool {
 }
 
 type Claims struct {
-	V         int    `json:"v"`
-	Channel   string `json:"channel"`
-	Agent     string `json:"agent"`
-	Cwd       string `json:"cwd,omitempty"`
-	Ambiguous bool   `json:"ambiguous,omitempty"`
-	Op        string `json:"op"`
-	ArgsHash  string `json:"args_hash"`
-	SID       string `json:"sid,omitempty"`
-	IAT       int64  `json:"iat"`
-	EXP       int64  `json:"exp"`
-	JTI       string `json:"jti"`
+	InstallationID string `json:"installation_id,omitempty"`
+	V              int    `json:"v"`
+	Channel        string `json:"channel"`
+	Agent          string `json:"agent"`
+	Cwd            string `json:"cwd,omitempty"`
+	Ambiguous      bool   `json:"ambiguous,omitempty"`
+	Op             string `json:"op"`
+	ArgsHash       string `json:"args_hash"`
+	SID            string `json:"sid,omitempty"`
+	IAT            int64  `json:"iat"`
+	EXP            int64  `json:"exp"`
+	JTI            string `json:"jti"`
 }
 
 type VerifyParams struct {

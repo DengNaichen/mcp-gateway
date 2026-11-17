@@ -12,6 +12,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"gatewaylab/internal/clientconfig"
+	"gatewaylab/internal/workspace"
 )
 
 func (m *Manager) claudeEnv() []string {
@@ -242,7 +243,15 @@ func (m *Manager) observeCodex(endpoint string, legacy bool) Status {
 		CanInstall:    cliOK,
 		Warnings:      []string{"若 Codex 首次提示审查插件 Hook，请在 Codex 中确认信任"},
 	}
-	expected, renderErr := m.renderCodexMarketplace(endpoint, hookBin, dataDir)
+	r, rErr := m.loadReceipt(ClientCodex)
+	installationID := ""
+	if r != nil {
+		installationID = r.InstallationID
+	}
+	if workspace.HookSucceeded(dataDir, ClientCodex, installationID) {
+		s.Warnings = nil
+	}
+	expected, renderErr := m.renderCodexMarketplace(endpoint, hookBin, dataDir, installationID)
 	if renderErr != nil {
 		s.State = "配置异常"
 		s.Detail = renderErr.Error()
@@ -257,7 +266,6 @@ func (m *Manager) observeCodex(endpoint string, legacy bool) Status {
 		s.Detail = "未检测到 codex CLI，请先安装 Codex CLI"
 	}
 
-	r, rErr := m.loadReceipt(ClientCodex)
 	if rErr != nil {
 		s.State = "记录异常"
 		s.Detail = rErr.Error()
@@ -301,7 +309,7 @@ func (m *Manager) observeCodex(endpoint string, legacy bool) Status {
 
 	s.CanInstall = false
 	s.CanRemove = cliOK
-	if r.Digest != expected.Digest || (cacheVer != "" && cacheVer != m.version) {
+	if r.InstallationID == "" || r.Digest != expected.Digest || (cacheVer != "" && cacheVer != m.version) {
 		s.State = "需要更新"
 		s.CanUpdate = cliOK
 		s.Detail = "Gateway 地址或插件版本已变更，可更新官方插件"
@@ -335,7 +343,11 @@ func (m *Manager) installCodex(endpoint string, update bool) error {
 		return fmt.Errorf("检测到 Codex 已存在同名 marketplace (%s)，未覆盖", mpSource)
 	}
 	hookBin, dataDir := m.resolveHookBinaryAndData()
-	bundle, err := m.renderCodexMarketplace(endpoint, hookBin, dataDir)
+	installationID, err := workspace.NewJTI()
+	if err != nil {
+		return err
+	}
+	bundle, err := m.renderCodexMarketplace(endpoint, hookBin, dataDir, installationID)
 	if err != nil {
 		return err
 	}
@@ -370,13 +382,14 @@ func (m *Manager) installCodex(endpoint string, update bool) error {
 	}
 
 	return m.saveReceipt(pluginReceipt{
-		Client:      ClientCodex,
-		Version:     m.version,
-		Digest:      bundle.Digest,
-		Endpoint:    bundle.Endpoint,
-		InstallRoot: mktDir,
-		Marketplace: m.slug,
-		Files:       filesMap,
+		InstallationID: installationID,
+		Client:         ClientCodex,
+		Version:        m.version,
+		Digest:         bundle.Digest,
+		Endpoint:       bundle.Endpoint,
+		InstallRoot:    mktDir,
+		Marketplace:    m.slug,
+		Files:          filesMap,
 	})
 }
 

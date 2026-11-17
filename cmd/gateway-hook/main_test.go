@@ -371,3 +371,31 @@ func mustStrJSON(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
 }
+
+func TestCodexHookSignsInstallationIdentity(t *testing.T) {
+	dir, cwd := t.TempDir(), t.TempDir()
+	key, err := workspace.EnsureScopeKey(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := map[string]any{"hook_event_name": "PreToolUse", "tool_name": "mcp__" + strings.ReplaceAll(buildinfo.Current().Slug, "-", "_") + "__discover_tools", "cwd": cwd, "tool_input": map[string]any{"intent": "test"}}
+	raw, _ := json.Marshal(event)
+	var out, stderr bytes.Buffer
+	runCLI([]string{"codex", "--data", dir, "--installation", "install-123"}, bytes.NewReader(raw), &out, &stderr)
+	var response struct {
+		Output struct {
+			Input map[string]any `json:"updatedInput"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := workspace.CanonicalArgsHash(response.Output.Input, workspace.CurrentContextField())
+	claims, err := workspace.VerifyToken(key, response.Output.Input[workspace.CurrentContextField()].(string), workspace.VerifyParams{Channel: buildinfo.Current().Channel, URLAgent: "codex", AllowedOps: []string{"discover_tools"}, ArgsHash: hash}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.InstallationID != "install-123" {
+		t.Fatal("installation not signed")
+	}
+}
