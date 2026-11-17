@@ -15,7 +15,7 @@ var clientIconFiles embed.FS
 
 var clientIcons = func() map[string]*ui.SVG {
 	icons := make(map[string]*ui.SVG)
-	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi"} {
+	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi", "antigravity"} {
 		raw, err := clientIconFiles.ReadFile("assets/clients/" + id + ".svg")
 		if err != nil {
 			panic(err)

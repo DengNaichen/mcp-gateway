@@ -23,7 +23,7 @@ func TestClientPageAndLocalActions(t *testing.T) {
 	u := &DesktopUI{ClientConfigs: m, Runtime: &gatewayRuntime{MCPURL: "http://localhost:8788/mcp"}}
 	u.ClientStatuses = m.Statuses(u.clientEndpoint())
 	tester := ui.NewTester(u.renderClients, 1200, 1500)
-	for _, name := range []string{"Codex CLI", "Claude Code", "Cursor", "OpenCode v2", "Pi"} {
+	for _, name := range []string{"Codex CLI", "Claude Code", "Cursor", "OpenCode v2", "Pi", "Antigravity"} {
 		if !tester.HasText(name) {
 			t.Fatal("missing client", name)
 		}
@@ -36,7 +36,7 @@ func TestClientPageAndLocalActions(t *testing.T) {
 			t.Fatal("missing accessible path action", row.ID)
 		}
 	}
-	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi"} {
+	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi", "antigravity"} {
 		if err := u.changeClientConfig(id, "write", u.clientEndpoint()); err != nil {
 			t.Fatal(err)
 		}
@@ -67,7 +67,7 @@ func TestClientPageAndLocalActions(t *testing.T) {
 	if !tester.HasText("更新配置") {
 		t.Fatal("missing update action")
 	}
-	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi"} {
+	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi", "antigravity"} {
 		if err := u.changeClientConfig(id, "update", u.clientEndpoint()); err != nil {
 			t.Fatal(err)
 		}
@@ -77,7 +77,7 @@ func TestClientPageAndLocalActions(t *testing.T) {
 	if tester.HasText("更新配置") {
 		t.Fatal("update action still visible after update")
 	}
-	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi"} {
+	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi", "antigravity"} {
 		if err := u.changeClientConfig(id, "revoke", u.clientEndpoint()); err != nil {
 			t.Fatal(err)
 		}
@@ -116,7 +116,7 @@ type desktopMockPluginRunner struct {
 
 func (r *desktopMockPluginRunner) LookPath(binary string) (string, error) {
 	switch binary {
-	case "claude", "codex", "pi":
+	case "claude", "codex", "pi", "agy":
 		return "/mock/bin/" + binary, nil
 	default:
 		return "", errors.New("not found")
@@ -136,6 +136,8 @@ func (r *desktopMockPluginRunner) Run(_ context.Context, _ []string, _ string, b
 		return r.runCodex(slug, ver, pluginID, args)
 	case "pi":
 		return r.runPi(args)
+	case "agy":
+		return r.runAgy(slug, args)
 	default:
 		return nil, nil, errors.New("unexpected binary")
 	}
@@ -206,6 +208,45 @@ func (r *desktopMockPluginRunner) runPi(args []string) ([]byte, []byte, error) {
 	}
 	if len(args) >= 2 && args[0] == "remove" {
 		return nil, nil, os.WriteFile(settingsPath, []byte(`{"packages":[]}`), 0o600)
+	}
+	return nil, nil, nil
+}
+
+func (r *desktopMockPluginRunner) runAgy(slug string, args []string) ([]byte, []byte, error) {
+	cfgDir := filepath.Join(r.home, ".gemini", "config")
+	if len(args) >= 3 && args[0] == "plugin" && args[1] == "install" {
+		src := args[2]
+		dst := filepath.Join(cfgDir, "plugins", slug)
+		_ = os.RemoveAll(dst)
+		err := filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			rel, err := filepath.Rel(src, path)
+			if err != nil || rel == "." {
+				return err
+			}
+			target := filepath.Join(dst, rel)
+			if d.IsDir() {
+				return os.MkdirAll(target, 0o755)
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(target, b, info.Mode().Perm())
+		})
+		return nil, nil, err
+	}
+	if len(args) >= 3 && args[0] == "plugin" && args[1] == "uninstall" {
+		return nil, nil, os.RemoveAll(filepath.Join(cfgDir, "plugins", args[2]))
 	}
 	return nil, nil, nil
 }
@@ -291,7 +332,7 @@ func TestClientPluginPageAndActions(t *testing.T) {
 		u.drainToasts(c)
 		u.renderClients(c)
 	}, 1280, 960)
-	for _, name := range []string{"Codex CLI", "Claude Code", "Cursor", "OpenCode v2", "Pi"} {
+	for _, name := range []string{"Codex CLI", "Claude Code", "Cursor", "OpenCode v2", "Pi", "Antigravity"} {
 		if !tester.HasText(name) {
 			t.Fatalf("missing client name %q", name)
 		}
@@ -327,13 +368,14 @@ func TestClientPluginPageAndActions(t *testing.T) {
 		t.Fatalf("expected refresh to clear resolved conflict error, got %q", u.PluginError)
 	}
 
-	// Install / Upgrade all 5 clients through UI buttons.
+	// Install / Upgrade all 6 clients through UI buttons.
 	for _, btnLabel := range []string{
 		"Codex CLI 升级为插件",
 		"Claude Code 安装插件",
 		"Cursor 安装插件",
 		"OpenCode v2 安装插件",
 		"Pi 安装插件",
+		"Antigravity 安装插件",
 	} {
 		if err := tester.Click(btnLabel); err != nil {
 			t.Fatalf("click %q: %v", btnLabel, err)

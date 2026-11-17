@@ -37,7 +37,7 @@ type playgroundState struct {
 	simRepoLabel      string
 	simRepoKey        string // "": 管理员全量, "*": 未绑定新仓库, or repo.ID
 	simAgentLabel     string
-	simAgentKey       string // "": 不限 ("*" when simulating repo), or codex/claude/cursor/opencode/pi
+	simAgentKey       string // "": 不限 ("*" when simulating repo), or codex/claude/cursor/opencode/pi/antigravity
 	includeDemo       bool
 	summaryOnly       bool
 

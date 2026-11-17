@@ -10,7 +10,7 @@ import (
 )
 
 func TestLifecycle(t *testing.T) {
-	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi"} {
+	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi", "antigravity"} {
 		t.Run(id, func(t *testing.T) {
 			home := t.TempDir()
 			m := New(home, filepath.Join(home, "receipts"), func(string) string { return "" })
@@ -76,7 +76,7 @@ func TestLifecycle(t *testing.T) {
 	}
 }
 func TestProtectModifiedAndConflictingEntries(t *testing.T) {
-	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi"} {
+	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi", "antigravity"} {
 		t.Run(id, func(t *testing.T) {
 			h := t.TempDir()
 			m := New(h, filepath.Join(h, "receipts"), func(string) string { return "" })
@@ -175,7 +175,7 @@ func TestPathOverridesAndJSONC(t *testing.T) {
 }
 
 func TestUpdateManagedClients(t *testing.T) {
-	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi"} {
+	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi", "antigravity"} {
 		t.Run(id, func(t *testing.T) {
 			h := t.TempDir()
 			m := New(h, filepath.Join(h, "receipts"), func(string) string { return "" })
@@ -284,7 +284,7 @@ func TestInterruptedUpdateKeepsOwnership(t *testing.T) {
 }
 
 func TestUpgradeLegacyURLWithoutAgentQuery(t *testing.T) {
-	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi"} {
+	for _, id := range []string{"codex", "claude", "cursor", "opencode", "pi", "antigravity"} {
 		t.Run(id, func(t *testing.T) {
 			h := t.TempDir()
 			m := New(h, filepath.Join(h, "receipts"), func(string) string { return "" })

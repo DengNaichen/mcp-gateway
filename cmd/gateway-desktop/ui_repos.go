@@ -26,7 +26,16 @@ var scopeAgents = []scopeAgentMeta{
 	{ID: "cursor", Name: "Cursor"},
 	{ID: "opencode", Name: "OpenCode v2"},
 	{ID: "pi", Name: "Pi"},
+	{ID: "antigravity", Name: "Antigravity"},
 }
+
+var scopeAgentNames = func() []string {
+	out := make([]string, len(scopeAgents))
+	for i, a := range scopeAgents {
+		out[i] = a.Name
+	}
+	return out
+}()
 
 func agentDisplayName(id string) string {
 	for _, a := range scopeAgents {
@@ -1463,7 +1472,7 @@ func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
 
 	ui.DialogBase(c.Key("hook-snippet-dialog"), &st.showHookModal, func(backdrop, panel ui.Element) {
 		backdrop.Background(ui.RGBA(10, 37, 64, 0.42))
-		panel.Width(660).
+		panel.Width(700).
 			MaxWidthPercent(92).
 			MaxHeightPercent(88).
 			Padding(22).
@@ -1486,11 +1495,7 @@ func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
 		if ui.Segmented(
 			c.Key("hook-agent-tabs"),
 			&st.hookAgentIdx,
-			"Codex CLI",
-			"Claude Code",
-			"Cursor",
-			"OpenCode v2",
-			"Pi",
+			scopeAgentNames...,
 		).FillEqually().Changed() {
 			u.ensureHookSnippetLoaded(st, scopeAgents[st.hookAgentIdx].ID, false)
 		}

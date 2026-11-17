@@ -413,7 +413,7 @@ func TestBuildSnippetAllAgents(t *testing.T) {
 			t.Fatalf("%s empty config_path or snippet: %+v", agent, spec)
 		}
 		switch agent {
-		case "claude", "codex", "cursor":
+		case "claude", "codex", "cursor", "antigravity":
 			var parsed map[string]any
 			if err := json.Unmarshal([]byte(spec.Snippet), &parsed); err != nil {
 				t.Fatalf("%s snippet is not valid JSON: %v\n%s", agent, err, spec.Snippet)
@@ -449,6 +449,32 @@ func TestNativePreToolMatcherPluginNamespaces(t *testing.T) {
 	} {
 		if re.MatchString(miss) {
 			t.Fatalf("expected matcher NOT to match %q", miss)
+		}
+	}
+}
+
+func TestAntigravityPreToolMatcher(t *testing.T) {
+	re := regexp.MustCompile(AntigravityPreToolMatcher("mcp-gateway-dev"))
+	for _, match := range []string{
+		"mcp_mcp-gateway-dev_discover_tools",
+		"mcp_mcp_gateway_dev_invoke_tool",
+		"mcp_mcp-gateway-dev_mcp-gateway-dev_discover_tools",
+		"mcp_mcp_gateway_dev_mcp_gateway_dev_get_tool_schema",
+		"mcp__mcp-gateway-dev__discover_tools",
+		"mcp__plugin_mcp-gateway-dev_mcp-gateway-dev__invoke_tool",
+	} {
+		if !re.MatchString(match) {
+			t.Fatalf("expected Antigravity matcher to match %q", match)
+		}
+	}
+	for _, miss := range []string{
+		"run_command",
+		"mcp_github_discover_tools",
+		"mcp_mcp-gateway_discover_tools",
+		"mcp__other__discover_tools",
+	} {
+		if re.MatchString(miss) {
+			t.Fatalf("expected Antigravity matcher NOT to match %q", miss)
 		}
 	}
 }

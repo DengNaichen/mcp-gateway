@@ -1,0 +1,16 @@
+{
+  "mcp-gateway": {
+    "PreToolUse": [
+      {
+        "matcher": "^(?:mcp__(?:(?:plugin_)?[A-Za-z0-9_-]+?_)?mcp[-_]gateway__|mcp_(?:mcp[-_]gateway_){1,2})(discover_tools|get_tool_schema|invoke_tool)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"./scripts/run-gateway-hook\" antigravity",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

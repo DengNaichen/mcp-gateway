@@ -35,7 +35,7 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	rest := args[1:]
 
 	switch sub {
-	case "claude", "codex", "cursor":
+	case "claude", "codex", "cursor", "antigravity":
 		fs := flag.NewFlagSet("gateway-hook "+sub, flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
 		dataDir := fs.String("data", "", "Gateway data directory")
@@ -69,7 +69,7 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	case "snippet":
 		if len(rest) == 0 || strings.HasPrefix(rest[0], "-") {
-			_, _ = fmt.Fprintln(stderr, "usage: gateway-hook snippet <claude|codex|cursor|opencode|pi> [--endpoint <url>] [--bin <path>] [--data <dir>]")
+			_, _ = fmt.Fprintln(stderr, "usage: gateway-hook snippet <claude|codex|cursor|opencode|pi|antigravity> [--endpoint <url>] [--bin <path>] [--data <dir>]")
 			return 2
 		}
 		targetAgent := strings.ToLower(strings.TrimSpace(rest[0]))
@@ -114,13 +114,13 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "usage:")
-	_, _ = fmt.Fprintln(w, "  gateway-hook <claude|codex|cursor> [--data <dir>]")
+	_, _ = fmt.Fprintln(w, "  gateway-hook <claude|codex|cursor|antigravity> [--data <dir>]")
 	_, _ = fmt.Fprintln(w, "  gateway-hook sign --agent <opencode|pi> --cwd <dir> --op <tool> [--sid <id>] [--data <dir>]")
-	_, _ = fmt.Fprintln(w, "  gateway-hook snippet <claude|codex|cursor|opencode|pi> [--endpoint <url>] [--bin <path>] [--data <dir>]")
+	_, _ = fmt.Fprintln(w, "  gateway-hook snippet <claude|codex|cursor|opencode|pi|antigravity> [--endpoint <url>] [--bin <path>] [--data <dir>]")
 }
 
 func emitHostNoop(platform string, stdout io.Writer) error {
-	if platform == "cursor" {
+	if platform == "cursor" || platform == "antigravity" {
 		_, err := io.WriteString(stdout, "{}\n")
 		return err
 	}
@@ -155,6 +155,21 @@ func readBoundedJSONObject(r io.Reader) (map[string]any, []byte, error) {
 	return obj, raw, nil
 }
 
+func extractHostToolCall(platform string, event map[string]any) (string, map[string]any, bool) {
+	if platform == "antigravity" {
+		tc, ok := firstObject(event, "toolCall", "tool_call")
+		if !ok {
+			return "", nil, false
+		}
+		name := firstString(tc, "name")
+		args, hasArgs := firstObject(tc, "args", "arguments")
+		return name, args, hasArgs
+	}
+	name := firstString(event, "tool_name", "toolName")
+	inputObj, hasInput := firstObject(event, "tool_input", "toolInput")
+	return name, inputObj, hasInput
+}
+
 func handleHostHook(ctx context.Context, platform, explicitDataDir string, stdin io.Reader, stdout io.Writer) error {
 	event, _, err := readBoundedJSONObject(stdin)
 	if err != nil {
@@ -162,8 +177,7 @@ func handleHostHook(ctx context.Context, platform, explicitDataDir string, stdin
 	}
 
 	eventName := firstString(event, "hook_event_name", "hookEventName")
-	toolName := firstString(event, "tool_name", "toolName")
-	inputObj, hasInput := firstObject(event, "tool_input", "toolInput")
+	toolName, inputObj, hasInput := extractHostToolCall(platform, event)
 	if !hasInput {
 		return emitHostNoop(platform, stdout)
 	}
@@ -203,8 +217,20 @@ func handleHostHook(ctx context.Context, platform, explicitDataDir string, stdin
 			return emitHostNoop(platform, stdout)
 		}
 		op = matchedOp
-		cwd, ambiguous = resolveCursorWorkspace(ctx, event)
+		cwd, ambiguous = resolveWorkspaceWithRoots(ctx, event, "workspace_roots")
 		sid = sanitizeSID(firstString(event, "conversation_id", "session_id"))
+
+	case "antigravity":
+		if eventName != "" && eventName != "PreToolUse" && eventName != "pre_tool_execution" {
+			return emitHostNoop(platform, stdout)
+		}
+		matchedOp, ok := matchAntigravityMetaTool(toolName)
+		if !ok {
+			return emitHostNoop(platform, stdout)
+		}
+		op = matchedOp
+		cwd, ambiguous = resolveWorkspaceWithRoots(ctx, event, "workspacePaths", "workspace_paths", "workspace_roots")
+		sid = sanitizeSID(firstString(event, "conversationId", "conversation_id", "sessionId", "session_id"))
 
 	default:
 		return emitHostNoop(platform, stdout)
@@ -221,19 +247,29 @@ func handleHostHook(ctx context.Context, platform, explicitDataDir string, stdin
 		return emitHostNoop(platform, stdout)
 	}
 
-	if platform == "cursor" {
+	switch platform {
+	case "cursor":
 		return writeCompactJSONLine(stdout, map[string]any{
 			"permission":    "allow",
 			"updated_input": updated,
 		})
+	case "antigravity":
+		ctxField := workspace.CurrentContextField()
+		return writeCompactJSONLine(stdout, map[string]any{
+			"decision": "allow",
+			"overwrite": map[string]any{
+				ctxField: updated[ctxField],
+			},
+		})
+	default:
+		return writeCompactJSONLine(stdout, map[string]any{
+			"hookSpecificOutput": map[string]any{
+				"hookEventName":      "PreToolUse",
+				"permissionDecision": "allow",
+				"updatedInput":       updated,
+			},
+		})
 	}
-	return writeCompactJSONLine(stdout, map[string]any{
-		"hookSpecificOutput": map[string]any{
-			"hookEventName":      "PreToolUse",
-			"permissionDecision": "allow",
-			"updatedInput":       updated,
-		},
-	})
 }
 
 func handleSign(agent, cwd, opFlag, sid, explicitDataDir string, stdin io.Reader, stdout io.Writer) error {
@@ -329,12 +365,27 @@ func matchCursorMetaTool(toolName string) (string, bool) {
 	return m[1], true
 }
 
+func matchAntigravityMetaTool(toolName string) (string, bool) {
+	re, err := regexp.Compile(workspace.AntigravityPreToolMatcher(buildinfo.Current().Slug))
+	if err != nil {
+		return "", false
+	}
+	m := re.FindStringSubmatch(strings.TrimSpace(toolName))
+	if len(m) != 2 {
+		return "", false
+	}
+	return m[1], true
+}
+
 func normalizeMetaToolOp(raw string) (string, bool) {
 	s := strings.TrimSpace(raw)
 	if workspace.IsMetaTool(s) {
 		return s, true
 	}
 	if op, ok := matchNativeMetaTool(s); ok {
+		return op, true
+	}
+	if op, ok := matchAntigravityMetaTool(s); ok {
 		return op, true
 	}
 	if op, ok := matchCursorMetaTool(s); ok {
@@ -409,13 +460,13 @@ func passesCursorInputShapeGate(op string, input map[string]any) bool {
 	return true
 }
 
-func resolveCursorWorkspace(ctx context.Context, event map[string]any) (cwd string, ambiguous bool) {
+func resolveWorkspaceWithRoots(ctx context.Context, event map[string]any, rootKeys ...string) (cwd string, ambiguous bool) {
 	rawCwd := strings.TrimSpace(firstString(event, "cwd"))
 	if rawCwd != "" && !filepath.IsAbs(rawCwd) {
 		return "", true
 	}
 
-	roots, rootsValid := extractWorkspaceRoots(event)
+	roots, rootsValid := extractWorkspaceRoots(event, rootKeys...)
 	if !rootsValid {
 		return "", true
 	}
@@ -489,8 +540,18 @@ func pathWithinOrSameRepo(ctx context.Context, cwd, root string) bool {
 	return false
 }
 
-func extractWorkspaceRoots(event map[string]any) ([]string, bool) {
-	rawVal, exists := event["workspace_roots"]
+func extractWorkspaceRoots(event map[string]any, keys ...string) ([]string, bool) {
+	if len(keys) == 0 {
+		keys = []string{"workspace_roots"}
+	}
+	var rawVal any
+	var exists bool
+	for _, k := range keys {
+		if val, ok := event[k]; ok {
+			rawVal, exists = val, true
+			break
+		}
+	}
 	if !exists || rawVal == nil {
 		return nil, true
 	}

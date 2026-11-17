@@ -75,6 +75,7 @@ func New(home, stateDir string, getenv func(string) string) *Manager {
 		{"cursor", "Cursor", filepath.Join(home, ".cursor", "mcp.json"), []string{"mcpServers"}, false},
 		{"opencode", "OpenCode v2", ocPath, []string{"mcp", "servers"}, false},
 		{"pi", "Pi", filepath.Join(dir("PI_CODING_AGENT_DIR", ".pi/agent"), "mcp.json"), []string{"mcpServers"}, false},
+		{"antigravity", "Antigravity", filepath.Join(home, ".gemini", "config", "mcp_config.json"), []string{"mcpServers"}, false},
 	}}
 }
 func (m *Manager) client(id string) (Client, error) {

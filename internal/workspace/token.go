@@ -34,7 +34,7 @@ var (
 	ErrTokenInvalid    = errors.New("scope token is invalid")
 )
 
-var KnownAgents = []string{"codex", "claude", "cursor", "opencode", "pi"}
+var KnownAgents = []string{"codex", "claude", "cursor", "opencode", "pi", "antigravity"}
 
 func IsKnownAgent(agent string) bool {
 	return slices.Contains(KnownAgents, agent)

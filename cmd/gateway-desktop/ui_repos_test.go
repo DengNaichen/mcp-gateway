@@ -550,8 +550,8 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 		t.Fatalf("open hook modal: %v", err)
 	}
 	waitAsyncIdle(t, tester, uiApp)
-	if !tester.HasText("PreToolUse") || !tester.HasText("复制配置片段") {
-		t.Fatal("expected hook snippet content in modal")
+	if !tester.HasText("PreToolUse") || !tester.HasText("复制配置片段") || !tester.HasText("Antigravity") {
+		t.Fatal("expected hook snippet content and Antigravity tab in modal")
 	}
 	if err := tester.Click("关闭"); err != nil {
 		t.Fatalf("close hook modal: %v", err)

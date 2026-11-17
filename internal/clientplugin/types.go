@@ -1,5 +1,5 @@
-// Package clientplugin manages official coding-agent plugins across Codex CLI,
-// Claude Code, Cursor, OpenCode v2, and Pi.
+// Official coding-agent plugin types and display names across Codex CLI,
+// Claude Code, Cursor, OpenCode v2, Pi, and Antigravity.
 package clientplugin
 
 import (
@@ -20,13 +20,14 @@ import (
 
 const cliCommandTimeout = 45 * time.Second
 
-// ClientID constants identify the five supported coding-agent hosts.
+// ClientID constants identify the six supported coding-agent hosts.
 const (
-	ClientCodex    = "codex"
-	ClientClaude   = "claude"
-	ClientCursor   = "cursor"
-	ClientOpenCode = "opencode"
-	ClientPi       = "pi"
+	ClientCodex       = "codex"
+	ClientClaude      = "claude"
+	ClientCursor      = "cursor"
+	ClientOpenCode    = "opencode"
+	ClientPi          = "pi"
+	ClientAntigravity = "antigravity"
 )
 
 var clientOrder = []string{
@@ -35,6 +36,7 @@ var clientOrder = []string{
 	ClientCursor,
 	ClientOpenCode,
 	ClientPi,
+	ClientAntigravity,
 }
 
 // CommandRunner abstracts external CLI invocations (claude, codex, pi) so unit
@@ -229,6 +231,8 @@ func clientDisplayName(id string) string {
 		return "OpenCode v2"
 	case ClientPi:
 		return "Pi"
+	case ClientAntigravity:
+		return "Antigravity"
 	default:
 		return id
 	}

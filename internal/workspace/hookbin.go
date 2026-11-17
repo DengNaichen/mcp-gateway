@@ -54,6 +54,14 @@ func CursorPreToolMatcher() string {
 	return "^MCP:(discover_tools|get_tool_schema|invoke_tool)$"
 }
 
+// AntigravityPreToolMatcher returns the PreToolUse regex for Google Antigravity,
+// matching both direct mcp_<slug>_<tool> / mcp__<slug>__<tool> forms and
+// plugin-namespaced mcp_<plugin>_<server>_<tool> registrations.
+func AntigravityPreToolMatcher(slug string) string {
+	sr := SlugRegex(slug)
+	return "^(?:mcp__(?:(?:plugin_)?[A-Za-z0-9_-]+?_)?" + sr + "__|mcp_(?:" + sr + "_){1,2})(discover_tools|get_tool_schema|invoke_tool)$"
+}
+
 // DefaultHookBinPath returns ~/.<slug>/bin/<slug>-hook.
 func DefaultHookBinPath(homeDir string) string {
 	slug := buildinfo.Current().Slug
@@ -273,11 +281,11 @@ func AgentMCPURL(baseEndpoint, agent string) string {
 }
 
 // BuildSnippet constructs the ready-to-paste manual Hook configuration or plugin
-// code for Claude Code, Codex CLI, Cursor, OpenCode v2, or Pi.
+// code for Claude Code, Codex CLI, Cursor, OpenCode v2, Pi, or Antigravity.
 func BuildSnippet(opts SnippetOptions) (SnippetSpec, error) {
 	agent := strings.ToLower(strings.TrimSpace(opts.Agent))
 	if !IsKnownAgent(agent) {
-		return SnippetSpec{}, fmt.Errorf("不支持的客户端类型 %q（支持 codex, claude, cursor, opencode, pi）", opts.Agent)
+		return SnippetSpec{}, fmt.Errorf("不支持的客户端类型 %q（支持 codex, claude, cursor, opencode, pi, antigravity）", opts.Agent)
 	}
 	getenv := opts.Getenv
 	if getenv == nil {
@@ -522,6 +530,33 @@ export default function (pi: any) {
 			HookBinPath:  binPath,
 			Instructions: fmt.Sprintf("确认 Pi 的 MCP 地址为 %s，并将以下扩展保存至 %s 后执行 /reload。", mcpURL, cfgPath),
 			Snippet:      ts,
+		}, nil
+
+	case "antigravity":
+		cfgPath := filepath.Join(home, ".gemini", "config", "hooks.json")
+		doc := map[string]any{
+			slug: map[string]any{
+				"PreToolUse": []any{
+					map[string]any{
+						"matcher": AntigravityPreToolMatcher(slug),
+						"hooks": []any{
+							map[string]any{
+								"type":    "command",
+								"command": buildCommand("antigravity"),
+								"timeout": 5,
+							},
+						},
+					},
+				},
+			},
+		}
+		return SnippetSpec{
+			Agent:        agent,
+			ConfigPath:   cfgPath,
+			MCPURL:       mcpURL,
+			HookBinPath:  binPath,
+			Instructions: fmt.Sprintf("确认 Antigravity（CLI 与桌面端共用 ~/.gemini/config/mcp_config.json）的 MCP 地址为 %s，并将以下 PreToolUse Hook 合并到 %s 后重启会话。", mcpURL, cfgPath),
+			Snippet:      marshalPrettyJSON(doc),
 		}, nil
 	}
 
