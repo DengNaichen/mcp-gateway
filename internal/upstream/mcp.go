@@ -17,6 +17,54 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+type callHeadersKey struct{}
+
+func withCallHeaders(ctx context.Context, headers map[string]string) context.Context {
+	if len(headers) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, callHeadersKey{}, headers)
+}
+
+func callHeadersFromContext(ctx context.Context) map[string]string {
+	headers, _ := ctx.Value(callHeadersKey{}).(map[string]string)
+	return headers
+}
+
+// mcpParamHeaders extracts per-call Mcp-Param-* HTTP headers for schema properties
+// annotated with "x-mcp-header" (for example GitHub Copilot MCP's owner/repo).
+func mcpParamHeaders(schema, args map[string]any) map[string]string {
+	props, ok := schema["properties"].(map[string]any)
+	if !ok || len(args) == 0 {
+		return nil
+	}
+	var headers map[string]string
+	for propName, rawProp := range props {
+		propMap, ok := rawProp.(map[string]any)
+		if !ok {
+			continue
+		}
+		headerName, ok := propMap["x-mcp-header"].(string)
+		headerName = strings.TrimSpace(headerName)
+		if !ok || headerName == "" || strings.ContainsAny(headerName, "\r\n:") {
+			continue
+		}
+		val, exists := args[propName]
+		if !exists || val == nil {
+			continue
+		}
+		strVal := fmt.Sprint(val)
+		if strVal == "" || strings.ContainsAny(strVal, "\r\n") {
+			continue
+		}
+		if headers == nil {
+			headers = make(map[string]string)
+		}
+		headers["Mcp-Param-"+headerName] = strVal
+	}
+	return headers
+}
+
 type headerTransport struct {
 	headers map[string]string
 	expand  func(string) string
@@ -31,6 +79,9 @@ func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	for k, v := range t.headers {
 		r.Header.Set(k, expand(v))
+	}
+	for k, v := range callHeadersFromContext(req.Context()) {
+		r.Header.Set(k, v)
 	}
 	return t.base.RoundTrip(r)
 }
@@ -163,7 +214,8 @@ func (u *Service) CallMCP(ctx context.Context, s Server, t Tool, args map[string
 		return nil, err
 	}
 	defer release()
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: t.Name, Arguments: args})
+	callCtx := withCallHeaders(ctx, mcpParamHeaders(t.InputSchema, args))
+	result, err := session.CallTool(callCtx, &mcp.CallToolParams{Name: t.Name, Arguments: args})
 	if err != nil {
 		u.ForgetClosedSession(s.ID, session, err)
 		return nil, fmt.Errorf("call native mcp tool: %w", err)

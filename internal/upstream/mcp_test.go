@@ -198,3 +198,69 @@ func TestMCPImportErrorsHaveDomainKinds(t *testing.T) {
 		t.Fatal("transport cause lost")
 	}
 }
+
+func TestCallMCPForwardsXMCPHeader(t *testing.T) {
+	type listPRArgs struct {
+		Owner string `json:"owner"`
+		Repo  string `json:"repo"`
+	}
+	mcpServer := mcp.NewServer(&mcp.Implementation{Name: "github-stub", Version: "1"}, nil)
+	mcp.AddTool(mcpServer, &mcp.Tool{Name: "list_pull_requests", Description: "List PRs"}, func(context.Context, *mcp.CallToolRequest, listPRArgs) (*mcp.CallToolResult, map[string]any, error) {
+		return nil, map[string]any{"ok": true}, nil
+	})
+
+	var mu sync.Mutex
+	var gotOwnerHeader, gotRepoHeader, gotAuth string
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer }, nil)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Mcp-Param-owner") != "" || r.Header.Get("Mcp-Param-repo") != "" {
+			mu.Lock()
+			gotOwnerHeader = r.Header.Get("Mcp-Param-owner")
+			gotRepoHeader = r.Header.Get("Mcp-Param-repo")
+			gotAuth = r.Header.Get("Authorization")
+			mu.Unlock()
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer ts.Close()
+
+	service := New(Config{})
+	defer func() { _ = service.Close() }()
+
+	srv := Server{
+		ID:        "github",
+		Kind:      "mcp",
+		Transport: "http",
+		Endpoint:  ts.URL,
+		Headers:   map[string]string{"Authorization": "Bearer test-token"},
+	}
+	tool := Tool{
+		ID:   "github.list_pull_requests",
+		Name: "list_pull_requests",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"owner": map[string]any{"type": "string", "x-mcp-header": "owner"},
+				"repo":  map[string]any{"type": "string", "x-mcp-header": "repo"},
+			},
+		},
+	}
+
+	res, err := service.CallMCP(context.Background(), srv, tool, map[string]any{
+		"owner": "DengNaichen",
+		"repo":  "mcp-gateway",
+	})
+	if err != nil {
+		t.Fatalf("CallMCP failed: %v", err)
+	}
+	b, _ := json.Marshal(res)
+	if string(b) != `{"ok":true}` {
+		t.Fatalf("unexpected result: %s", b)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if gotOwnerHeader != "DengNaichen" || gotRepoHeader != "mcp-gateway" || gotAuth != "Bearer test-token" {
+		t.Fatalf("unexpected headers: owner=%q repo=%q auth=%q", gotOwnerHeader, gotRepoHeader, gotAuth)
+	}
+}
