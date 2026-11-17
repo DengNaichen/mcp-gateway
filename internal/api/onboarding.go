@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"gatewaylab/internal/model"
 	"gatewaylab/internal/registry"
@@ -74,6 +75,23 @@ func (g *server) registerSetup(mux *http.ServeMux) {
 		if err := decode(w, r, &input); err != nil {
 			fail(w, err)
 			return
+		}
+		current, _ := g.Model().Config()
+		connectionChanged := strings.TrimSpace(input.BaseURL) != strings.TrimSpace(current.BaseURL) ||
+			strings.TrimSpace(input.Model) != strings.TrimSpace(current.Model) ||
+			input.TimeoutSeconds != current.TimeoutSeconds ||
+			strings.TrimSpace(input.APIKey) != "" ||
+			input.ClearKey
+		if connectionChanged {
+			prof := model.ModelProfile{
+				BaseURL:        input.BaseURL,
+				Model:          input.Model,
+				MaxTools:       input.MaxTools,
+				TimeoutSeconds: input.TimeoutSeconds,
+			}
+			if !g.verifyModelConnection(r.Context(), w, prof, input.APIKey, input.ClearKey) {
+				return
+			}
 		}
 		if err := g.SaveSettings(input.Settings, input.APIKey, input.ClearKey); err != nil {
 			fail(w, err)

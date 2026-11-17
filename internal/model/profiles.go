@@ -2,7 +2,9 @@ package model
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -46,12 +48,13 @@ type PingModelResult struct {
 }
 
 type Service struct {
-	mu          sync.RWMutex
-	db          *sql.DB
-	settings    Settings
-	apiKey      string
-	profiles    []ModelProfile
-	profileKeys secrets.Store
+	mu            sync.RWMutex
+	db            *sql.DB
+	settings      Settings
+	apiKey        string
+	profiles      []ModelProfile
+	profileKeys   secrets.Store
+	verifiedPings map[string]time.Time
 }
 
 func New(db *sql.DB) (*Service, error) {
@@ -188,21 +191,30 @@ func (g *Service) SaveSettings(s Settings, key string, clearKey bool) error {
 	return nil
 }
 
-func (g *Service) SaveModelProfile(p ModelProfile, key string, clearKey bool) (ModelProfile, error) {
-	p.BaseURL = strings.TrimSpace(p.BaseURL)
-	p.Model = strings.TrimSpace(p.Model)
-	if p.Model == "" {
-		return ModelProfile{}, invalid("请填写路由模型名称")
-	}
+// ValidateModelProfile normalizes and validates a model profile before saving or verifying.
+func ValidateModelProfile(p ModelProfile) (Settings, error) {
 	s := Settings{
-		BaseURL:        p.BaseURL,
-		Model:          p.Model,
+		BaseURL:        strings.TrimSpace(p.BaseURL),
+		Model:          strings.TrimSpace(p.Model),
 		MaxTools:       p.MaxTools,
 		TimeoutSeconds: p.TimeoutSeconds,
 	}
+	if s.Model == "" {
+		return Settings{}, invalid("请填写路由模型名称")
+	}
 	if err := validateSettings(s); err != nil {
+		return Settings{}, err
+	}
+	return s, nil
+}
+
+func (g *Service) SaveModelProfile(p ModelProfile, key string, clearKey bool) (ModelProfile, error) {
+	s, err := ValidateModelProfile(p)
+	if err != nil {
 		return ModelProfile{}, err
 	}
+	p.BaseURL = s.BaseURL
+	p.Model = s.Model
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -384,6 +396,82 @@ func (g *Service) persistModelProfiles(profiles []ModelProfile) error {
 	return tx.Commit()
 }
 
+const verifiedPingTTL = 15 * time.Minute
+
+func (g *Service) resolveEffectiveKey(profileID, apiKey string, clearKey bool) string {
+	effectiveKey := strings.TrimSpace(apiKey)
+	if clearKey {
+		return ""
+	}
+	if effectiveKey != "" {
+		return effectiveKey
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if profileID != "" {
+		effectiveKey = g.profileKeys.Get(profileID)
+	}
+	if effectiveKey == "" && profileID == "" {
+		effectiveKey = g.apiKey
+	}
+	if effectiveKey == "" {
+		// Fallback to active key if editing the currently active profile before it was re-keyed.
+		for _, p := range g.profiles {
+			if p.ID == profileID && p.Active {
+				effectiveKey = g.apiKey
+				break
+			}
+		}
+	}
+	return effectiveKey
+}
+
+func pingSignature(s Settings, effectiveKey string) string {
+	h := sha256.New()
+	_, _ = fmt.Fprintf(h, "%s\x00%s\x00%d\x00%s", strings.TrimSpace(s.BaseURL), strings.TrimSpace(s.Model), s.TimeoutSeconds, effectiveKey)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (g *Service) recordVerifiedPing(s Settings, effectiveKey string) {
+	sig := pingSignature(s, effectiveKey)
+	now := time.Now()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.verifiedPings == nil {
+		g.verifiedPings = make(map[string]time.Time)
+	}
+	for k, ts := range g.verifiedPings {
+		if now.Sub(ts) > verifiedPingTTL {
+			delete(g.verifiedPings, k)
+		}
+	}
+	g.verifiedPings[sig] = now
+}
+
+func (g *Service) isPingVerified(s Settings, effectiveKey string) bool {
+	sig := pingSignature(s, effectiveKey)
+	now := time.Now()
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	ts, ok := g.verifiedPings[sig]
+	return ok && now.Sub(ts) <= verifiedPingTTL
+}
+
+// VerifyModelConnection ensures the target profile passes a connectivity ping,
+// reusing a recent verified ping for the exact same endpoint, model, timeout, and key.
+func (g *Service) VerifyModelConnection(ctx context.Context, p ModelProfile, apiKey string, clearKey bool) error {
+	s, err := ValidateModelProfile(p)
+	if err != nil {
+		return err
+	}
+	effectiveKey := g.resolveEffectiveKey(p.ID, apiKey, clearKey)
+	if g.isPingVerified(s, effectiveKey) {
+		return nil
+	}
+	_, err = g.PingModel(ctx, s, p.ID, apiKey, clearKey)
+	return err
+}
+
 func (g *Service) PingModel(ctx context.Context, s Settings, profileID, apiKey string, clearKey bool) (PingModelResult, error) {
 	s.BaseURL = strings.TrimSpace(s.BaseURL)
 	s.Model = strings.TrimSpace(s.Model)
@@ -397,33 +485,13 @@ func (g *Service) PingModel(ctx context.Context, s Settings, profileID, apiKey s
 		s.TimeoutSeconds = 30
 	}
 
-	effectiveKey := strings.TrimSpace(apiKey)
-	if clearKey {
-		effectiveKey = ""
-	} else if effectiveKey == "" {
-		g.mu.RLock()
-		if profileID != "" {
-			effectiveKey = g.profileKeys.Get(profileID)
-		}
-		if effectiveKey == "" && profileID == "" {
-			effectiveKey = g.apiKey
-		}
-		if effectiveKey == "" {
-			// Fallback to active key if editing the currently active profile before it was re-keyed.
-			for _, p := range g.profiles {
-				if p.ID == profileID && p.Active {
-					effectiveKey = g.apiKey
-					break
-				}
-			}
-		}
-		g.mu.RUnlock()
-	}
+	effectiveKey := g.resolveEffectiveKey(profileID, apiKey, clearKey)
 
 	started := time.Now()
 	if _, err := AskDecisions(ctx, s, effectiveKey, "ping", []string{"Connectivity check."}); err != nil {
 		return PingModelResult{}, err
 	}
+	g.recordVerifiedPing(s, effectiveKey)
 	return PingModelResult{
 		OK:         true,
 		Model:      s.Model,

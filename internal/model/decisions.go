@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -108,7 +109,7 @@ func resolveDecisionProtocol(s Settings) (decisionProtocol, string, error) {
 	}
 	if strings.HasSuffix(endpoint, "/chat/completions") || strings.HasSuffix(endpoint, "/responses") {
 		if isSystemOneModel(s.Model) {
-			return 0, "", invalid("当前模型使用 SystemOne API，请将 Base URL 改为服务根地址（如 /v1）或完整 /systemone 地址")
+			return 0, "", invalid("当前模型使用 SystemOne API，请将 Base URL 改为 API 根地址（如 .../v1）或完整 .../v1/systemone 地址")
 		}
 		return 0, "", invalid("当前使用 Decisions API，请将 Base URL 改为 https://api.openai.com/v1 或完整 /decisions 地址")
 	}
@@ -249,7 +250,30 @@ func postDecisionsOnce(ctx context.Context, call decisionsCall, key string) ([]b
 	if len(b) > maxDecisionsResponse {
 		return nil, badResponse(fmt.Sprintf("Decisions 返回内容超过 %d 字节", maxDecisionsResponse), nil)
 	}
+	if isHTMLResponse(resp.Header.Get("Content-Type"), b) {
+		return nil, badResponse(fmt.Sprintf("请求 %s 返回了 HTML 页面而非 JSON，请检查 Base URL（例如是否缺少 /v1）", safeEndpointForError(call.endpoint)), nil)
+	}
 	return b, nil
+}
+
+func isHTMLResponse(contentType string, body []byte) bool {
+	ct := strings.ToLower(contentType)
+	if strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml+xml") {
+		return true
+	}
+	trimmed := bytes.TrimSpace(body)
+	return len(trimmed) > 0 && trimmed[0] == '<'
+}
+
+func safeEndpointForError(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
 }
 
 func openAICall(endpoint, model, input string, instructions []string) (decisionsCall, error) {

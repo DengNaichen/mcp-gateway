@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -701,5 +703,190 @@ func TestDescriptionCleaningAndStructuredRendering(t *testing.T) {
 	}
 	if !tester.HasText("收起原始描述") {
 		t.Fatal("expected raw description block to expand")
+	}
+}
+
+func waitSettingsIdle(t *testing.T, tester *ui.Tester, uiApp *DesktopUI) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		tester.Frame()
+		done := func() bool {
+			leave := uiApp.enterHeadlessFrame()
+			defer leave()
+			return uiApp.BusyCount == 0
+		}()
+		if done {
+			tester.Frame()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for settings async work")
+		}
+		time.Sleep(2 * time.Millisecond)
+		tester.Advance(10 * time.Millisecond)
+	}
+}
+
+func TestSettingsSaveRequiresSuccessfulPing(t *testing.T) {
+	var saveCalls, testCalls atomic.Int32
+	var pingShouldPass atomic.Bool
+
+	boot := Bootstrap{
+		Registry: registry.Registry{
+			Servers: []registry.Server{{ID: "github", Name: "GitHub", Enabled: true}},
+			Tools:   []registry.Tool{{ID: "github.list", ServerID: "github", Name: "list", Enabled: true, ReadOnly: true}},
+		},
+		Settings: model.Settings{
+			BaseURL:        "https://tokenhub.infplacex.com/systemone",
+			Model:          "jev",
+			MaxTools:       4,
+			TimeoutSeconds: 45,
+		},
+		KeyConfigured: true,
+		Profiles: []model.ModelProfile{{
+			ID:             "default",
+			BaseURL:        "https://tokenhub.infplacex.com/systemone",
+			Model:          "jev",
+			MaxTools:       4,
+			TimeoutSeconds: 45,
+			Active:         true,
+			KeyConfigured:  true,
+		}},
+		Setup: gateway.SetupStatus{
+			Sources:         1,
+			EnabledTools:    1,
+			ToolsReady:      true,
+			ModelConfigured: true,
+			ModelReady:      false,
+		},
+	}
+
+	var srvMu sync.Mutex
+	srvBoot := boot
+	srvBoot.Profiles = append([]model.ModelProfile(nil), boot.Profiles...)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/bootstrap":
+			srvMu.Lock()
+			_ = json.NewEncoder(w).Encode(srvBoot)
+			srvMu.Unlock()
+		case "/api/auth/me":
+			_ = json.NewEncoder(w).Encode(AuthMeResponse{Authenticated: true})
+		case "/api/model/ping":
+			if !pingShouldPass.Load() {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{
+					"error":  "模型连接测试失败",
+					"detail": "请求返回了 HTML 页面而非 JSON",
+				})
+				return
+			}
+			srvMu.Lock()
+			modelName := srvBoot.Settings.Model
+			srvMu.Unlock()
+			_ = json.NewEncoder(w).Encode(model.PingModelResult{OK: true, Model: modelName, DurationMS: 42})
+		case "/api/model-profiles":
+			saveCalls.Add(1)
+			var in model.ModelProfile
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			in.ID = "default"
+			in.Active = true
+			in.KeyConfigured = true
+			srvMu.Lock()
+			srvBoot.Settings = model.Settings{
+				BaseURL:        in.BaseURL,
+				Model:          in.Model,
+				MaxTools:       in.MaxTools,
+				TimeoutSeconds: in.TimeoutSeconds,
+			}
+			srvBoot.Profiles[0] = in
+			srvMu.Unlock()
+			_ = json.NewEncoder(w).Encode(in)
+		case "/api/setup/model":
+			testCalls.Add(1)
+			_ = json.NewEncoder(w).Encode(gateway.DiscoverResult{Status: "selected", DurationMS: 80})
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	defer srv.Close()
+
+	rt := &gatewayRuntime{UIURL: srv.URL, MCPURL: srv.URL + "/mcp", Mode: modeAttached}
+	uiApp := NewDesktopUI(rt)
+	uiApp.State = &boot
+	uiApp.Telemetry = ComputeGatewayTelemetry(boot)
+	uiApp.Loading = false
+
+	tester := ui.NewTester(uiApp.View, 1360, 1200)
+	if err := tester.Click("访问与路由"); err != nil {
+		t.Fatalf("nav settings: %v", err)
+	}
+
+	// 1. Before ping passes, save must be disabled and clicking it does nothing.
+	if !tester.HasText("通过「测试连接」后才可保存配置") {
+		t.Fatal("expected ping-required prompt before testing connection")
+	}
+	_ = tester.Click("保存配置")
+	waitSettingsIdle(t, tester, uiApp)
+	if saveCalls.Load() != 0 {
+		t.Fatalf("expected save button to be disabled before ping, got %d save calls", saveCalls.Load())
+	}
+
+	// 2. When ping fails, save must remain disabled and running routing test must not save.
+	if err := tester.Click("测试连接"); err != nil {
+		t.Fatalf("click test connection: %v", err)
+	}
+	waitSettingsIdle(t, tester, uiApp)
+	if !tester.HasText("模型连接测试失败") {
+		t.Fatal("expected ping failure message")
+	}
+	_ = tester.Click("保存配置")
+	waitSettingsIdle(t, tester, uiApp)
+	if saveCalls.Load() != 0 {
+		t.Fatalf("expected failed ping to block save, got %d save calls", saveCalls.Load())
+	}
+	if err := tester.Click("▸ 高级设置 · 路由策略与校验"); err != nil {
+		t.Fatalf("expand advanced settings: %v", err)
+	}
+	if err := tester.Click("运行路由校验"); err != nil {
+		t.Fatalf("click routing verify: %v", err)
+	}
+	waitSettingsIdle(t, tester, uiApp)
+	if saveCalls.Load() != 0 || testCalls.Load() != 0 {
+		t.Fatalf("expected failed ping inside routing verify to block save/test, got save=%d test=%d", saveCalls.Load(), testCalls.Load())
+	}
+
+	// 3. Once ping passes, save becomes enabled and persists the profile.
+	pingShouldPass.Store(true)
+	if err := tester.Click("测试连接"); err != nil {
+		t.Fatalf("click test connection (passing): %v", err)
+	}
+	waitSettingsIdle(t, tester, uiApp)
+	if !tester.HasText("模型测试通过") {
+		t.Fatal("expected ping success status")
+	}
+	if err := tester.Click("保存配置"); err != nil {
+		t.Fatalf("click save after ping: %v", err)
+	}
+	waitSettingsIdle(t, tester, uiApp)
+	if saveCalls.Load() != 1 {
+		t.Fatalf("expected 1 save call after passing ping, got %d", saveCalls.Load())
+	}
+
+	// 4. Editing a preset / connection field invalidates the passed ping and blocks save again.
+	if err := tester.Click("OpenAI 预设"); err != nil {
+		t.Fatalf("click OpenAI preset: %v", err)
+	}
+	tester.Frame()
+	if !tester.HasText("通过「测试连接」后才可保存配置") {
+		t.Fatal("expected preset edit to clear ping state and require re-test")
+	}
+	_ = tester.Click("保存配置")
+	waitSettingsIdle(t, tester, uiApp)
+	if saveCalls.Load() != 1 {
+		t.Fatalf("expected save to be blocked after modifying config, got %d", saveCalls.Load())
 	}
 }

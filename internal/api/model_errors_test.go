@@ -113,3 +113,97 @@ func TestModelErrorStatusMapping(t *testing.T) {
 		})
 	}
 }
+
+func TestModelProfileSaveRequiresReachableModel(t *testing.T) {
+	g, _ := testGateway(t)
+	var pingCalls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pingCalls.Add(1)
+		switch r.URL.Path {
+		case "/systemone":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte("<!doctype html><html><body>SPA</body></html>"))
+		case "/v1/systemone":
+			if r.Header.Get("Authorization") != "Bearer valid-key" {
+				respond(w, 401, map[string]any{"error": map[string]any{"message": "invalid key"}})
+				return
+			}
+			respond(w, 200, map[string]any{
+				"answers": map[string]any{
+					"route_status": map[string]any{"type": "choice", "choice": "no_match"},
+					"tool_0":       map[string]any{"type": "noul", "noul": 0.1},
+				},
+			})
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer upstream.Close()
+
+	handler := Handler(g)
+	doReq := func(method, path string, body any) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(body)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(method, "http://127.0.0.1"+path, bytes.NewReader(raw)))
+		return w
+	}
+
+	// 1. PUT /api/model-profiles refuses to save when endpoint returns HTML.
+	badRes := doReq("PUT", "/api/model-profiles", map[string]any{
+		"base_url":        upstream.URL + "/systemone",
+		"model":           "jev",
+		"max_tools":       4,
+		"timeout_seconds": 15,
+		"api_key":         "valid-key",
+	})
+	if badRes.Code != 400 || !strings.Contains(badRes.Body.String(), "HTML") {
+		t.Fatalf("expected 400 HTML error, got %d %s", badRes.Code, badRes.Body.String())
+	}
+	if cfg, _ := g.Model().Config(); cfg.Model == "jev" {
+		t.Fatalf("broken profile must not be saved: %+v", cfg)
+	}
+
+	// 2. POST /api/setup/model also refuses to overwrite saved config when ping fails.
+	setupBad := doReq("POST", "/api/setup/model", map[string]any{
+		"base_url":        upstream.URL + "/v1",
+		"model":           "jev",
+		"max_tools":       4,
+		"timeout_seconds": 15,
+		"api_key":         "wrong-key",
+	})
+	if setupBad.Code != 400 {
+		t.Fatalf("expected 400 when ping fails, got %d %s", setupBad.Code, setupBad.Body.String())
+	}
+	if cfg, _ := g.Model().Config(); cfg.Model == "jev" {
+		t.Fatalf("failed setup/model must not overwrite settings: %+v", cfg)
+	}
+
+	// 3. After POST /api/model/ping succeeds, PUT /api/model-profiles saves without re-pinging.
+	callsBeforePing := pingCalls.Load()
+	pingRes := doReq("POST", "/api/model/ping", map[string]any{
+		"base_url":        upstream.URL + "/v1",
+		"model":           "jev",
+		"max_tools":       4,
+		"timeout_seconds": 15,
+		"api_key":         "valid-key",
+	})
+	if pingRes.Code != 200 {
+		t.Fatalf("expected ping 200, got %d %s", pingRes.Code, pingRes.Body.String())
+	}
+	saveRes := doReq("PUT", "/api/model-profiles", map[string]any{
+		"base_url":        upstream.URL + "/v1",
+		"model":           "jev",
+		"max_tools":       6,
+		"timeout_seconds": 15,
+		"api_key":         "valid-key",
+	})
+	if saveRes.Code != 200 {
+		t.Fatalf("expected save 200 after passing ping, got %d %s", saveRes.Code, saveRes.Body.String())
+	}
+	if pingCalls.Load() != callsBeforePing+1 {
+		t.Fatalf("expected cached ping to avoid second upstream call: before=%d after=%d", callsBeforePing, pingCalls.Load())
+	}
+	if cfg, hasKey := g.Model().Config(); cfg.Model != "jev" || cfg.MaxTools != 6 || !hasKey {
+		t.Fatalf("expected saved jev config, got %+v hasKey=%v", cfg, hasKey)
+	}
+}
