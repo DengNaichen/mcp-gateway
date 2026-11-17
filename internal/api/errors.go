@@ -49,7 +49,23 @@ func httpError(err error) *appError {
 	}
 	var cross *fault.Error
 	if errors.As(err, &cross) {
-		return &appError{status: map[fault.Kind]int{fault.Invalid: 400, fault.NotFound: 404, fault.Forbidden: 403, fault.Conflict: 409, fault.Upstream: 502, fault.Internal: 500, fault.Unauthorized: 401, fault.RateLimited: 429, fault.TooLarge: 413}[cross.Kind], code: cross.Code, message: cross.Message, cause: cross.Cause}
+		status := map[fault.Kind]int{
+			fault.Invalid:      http.StatusBadRequest,
+			fault.NotFound:     http.StatusNotFound,
+			fault.Forbidden:    http.StatusForbidden,
+			fault.Conflict:     http.StatusConflict,
+			fault.Upstream:     http.StatusBadGateway,
+			fault.Internal:     http.StatusInternalServerError,
+			fault.Unauthorized: http.StatusUnauthorized,
+			fault.RateLimited:  http.StatusTooManyRequests,
+			fault.TooLarge:     http.StatusRequestEntityTooLarge,
+			fault.Timeout:      http.StatusGatewayTimeout,
+			fault.Unavailable:  http.StatusServiceUnavailable,
+		}[cross.Kind]
+		if status == 0 {
+			status = http.StatusInternalServerError
+		}
+		return &appError{status: status, code: cross.Code, message: cross.Message, cause: cross.Cause, retryAfter: cross.RetryAfter}
 	}
 	var modelErr *model.Error
 	if errors.As(err, &modelErr) {
@@ -145,25 +161,30 @@ func (e *appError) payload(message string) map[string]any {
 	return out
 }
 
-// errorBody builds a hand-made error body carrying err's machine-readable code,
-// so setup screens can tell an invalid key from a rate limit without parsing text.
-func errorBody(message, detail string, err error) apitypes.Error {
-	body := apitypes.Error{Error: message, Detail: detail}
-	if app := httpError(err); app != nil {
-		body.Code = app.code
-	}
-	return body
+// failWithDetail writes an error response preserving err's HTTP status,
+// machine-readable code, and Retry-After header while overriding the message
+// and attaching redacted diagnostic details.
+func failWithDetail(w http.ResponseWriter, message, detail string, err error) {
+	failWithMessage(w, message, detail, err)
 }
 
 func fail(w http.ResponseWriter, err error) {
+	failWithMessage(w, "", "", err)
+}
+
+func failWithMessage(w http.ResponseWriter, message, detail string, err error) {
 	if app := httpError(err); app != nil {
 		if app.cause != nil {
 			slog.Warn("gateway operation failed", "status", app.status, "error", err)
 		}
+		msg := app.message
+		if message != "" {
+			msg = message
+		}
 		if app.retryAfter > 0 {
 			w.Header().Set("Retry-After", strconv.Itoa(app.retryAfterSeconds()))
 		}
-		body := apitypes.Error{Error: app.message, Code: app.code}
+		body := apitypes.Error{Error: msg, Detail: detail, Code: app.code}
 		if app.retryAfter > 0 {
 			body.RetryAfterSeconds = app.retryAfterSeconds()
 		}
@@ -171,5 +192,9 @@ func fail(w http.ResponseWriter, err error) {
 		return
 	}
 	slog.Error("gateway operation failed", "error", err)
-	respond(w, 500, apitypes.Error{Error: "操作失败，请查看后端日志"})
+	msg := "操作失败，请查看后端日志"
+	if message != "" {
+		msg = message
+	}
+	respond(w, 500, apitypes.Error{Error: msg, Detail: detail})
 }

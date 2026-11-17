@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
 
 	"gatewaylab/internal/access"
 	"gatewaylab/internal/fault"
+	"gatewaylab/internal/maintenance/sandbox"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/scope"
 	"gatewaylab/internal/upstream"
@@ -115,6 +117,17 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 		data, err = upstream.CallHTTPWithLookup(ctx, s, t, req.Arguments, g.lookupEnv)
 	}
 	if err != nil {
+		if errors.Is(err, upstream.ErrInvalid) {
+			return result, err
+		}
+		var sandboxErr *sandbox.ValidationError
+		if errors.As(err, &sandboxErr) {
+			return result, err
+		}
+		var faultErr *fault.Error
+		if errors.As(err, &faultErr) {
+			return result, err
+		}
 		return result, fault.New(fault.Upstream, "下游工具调用失败", err)
 	}
 	data = upstream.RedactResponseWithLookup(data, s, g.lookupEnv)

@@ -10,7 +10,7 @@ import (
 func (g *server) registerSourceEvents(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/maintenance/sources/{id}/webhook/{provider}", func(w http.ResponseWriter, r *http.Request) {
 		// Preserve source validation before reading the bounded request body.
-		source, ok := g.Maintenance().Source(r.PathValue("id"))
+		source, ok := g.gw.Maintenance().Source(r.PathValue("id"))
 		if !ok || source.Repository == nil || !source.Repository.EventsEnabled {
 			fail(w, problem(404, "此来源未开启仓库事件", nil))
 			return
@@ -20,7 +20,7 @@ func (g *server) registerSourceEvents(mux *http.ServeMux) {
 			fail(w, problem(413, "事件内容过大", err))
 			return
 		}
-		result, err := g.Maintenance().ReceiveSourceEvent(source, r.PathValue("provider"), r.Header, body)
+		result, err := g.gw.Maintenance().ReceiveSourceEvent(source, r.PathValue("provider"), r.Header, body)
 		if err != nil {
 			fail(w, err)
 			return

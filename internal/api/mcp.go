@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"gatewaylab/internal/access"
+	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/gateway"
 	"gatewaylab/internal/mcputil"
 	"gatewaylab/internal/scope"
@@ -34,7 +35,7 @@ func (g *server) ensureMCPCallScope(ctx context.Context, req *mcp.CallToolReques
 	if _, ok := scope.RequestScopeFrom(ctx); ok {
 		return ctx, raw, nil
 	}
-	return g.Scope().ResolveMCPToolCallScope(ctx, mcpHeader(req, "X-Gateway-Agent"), toolName, raw)
+	return g.gw.Scope().ResolveMCPToolCallScope(ctx, mcpHeader(req, "X-Gateway-Agent"), toolName, raw)
 }
 
 // toolError reports a failed meta-tool call as a tool result with isError set,
@@ -52,7 +53,7 @@ func (g *server) toolError(err error) (*mcp.CallToolResult, error) {
 	case app.cause != nil:
 		slog.Warn("gateway tool call failed", "status", app.status, "error", err)
 	}
-	payload := app.payload(g.ErrorDetail(err))
+	payload := app.payload(g.gw.ErrorDetail(err))
 	payload["status"] = app.status
 	b, encodeErr := json.Marshal(payload)
 	if encodeErr != nil {
@@ -62,7 +63,7 @@ func (g *server) toolError(err error) (*mcp.CallToolResult, error) {
 }
 
 func (g *server) mcpServer() *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "gateway-lab", Version: "0.0.1"}, nil)
+	s := mcp.NewServer(&mcp.Implementation{Name: "gateway-lab", Version: buildinfo.Current().Version}, nil)
 	s.AddTool(&mcp.Tool{Name: "discover_tools", Description: "Describe your current task to discover a small set of authorized tools. Returns real tool IDs, schemas and usage reasons. Use invoke_tool to execute them. Rediscover as the task changes.", InputSchema: metaToolSchema(map[string]any{
 		"summary_only": map[string]any{"type": "boolean", "description": "Return capability summaries; use get_tool_schema for the selected tool"},
 		"intent":       map[string]any{"type": "string", "description": "The capability needed now, in natural language"}, "context": map[string]any{"type": "string", "description": "Relevant known facts and previous attempts"}, "actor": map[string]any{"type": "string", "enum": []string{"developer", "observer"}, "description": "Simulated identity only"},
@@ -71,7 +72,7 @@ func (g *server) mcpServer() *mcp.Server {
 		started := time.Now()
 		scopedCtx, cleanArgs, scopeErr := g.ensureMCPCallScope(ctx, req, "discover_tools")
 		if scopeErr != nil {
-			g.RecordAgentTool("discover_tools", access.RequestActor(ctx, mcpHeader(req, "X-Gateway-Actor")), started, scopeErr)
+			g.gw.RecordAgentTool("discover_tools", access.RequestActor(ctx, mcpHeader(req, "X-Gateway-Actor")), started, scopeErr)
 			return g.toolError(scopeErr)
 		}
 		var in gateway.DiscoverRequest
@@ -81,8 +82,8 @@ func (g *server) mcpServer() *mcp.Server {
 		if hdrActor := mcpHeader(req, "X-Gateway-Actor"); hdrActor != "" {
 			in.Actor = hdrActor
 		}
-		out, err := g.Discover(scopedCtx, in)
-		g.RecordAgentTool("discover_tools", access.RequestActor(scopedCtx, in.Actor), started, err)
+		out, err := g.gw.Discover(scopedCtx, in)
+		g.gw.RecordAgentTool("discover_tools", access.RequestActor(scopedCtx, in.Actor), started, err)
 		if err != nil {
 			return g.toolError(err)
 		}
@@ -103,7 +104,7 @@ func (g *server) mcpServer() *mcp.Server {
 		if hdrActor := mcpHeader(req, "X-Gateway-Actor"); hdrActor != "" {
 			in.Actor = hdrActor
 		}
-		tool, err := g.ToolSchema(scopedCtx, in.ToolID, in.Actor)
+		tool, err := g.gw.ToolSchema(scopedCtx, in.ToolID, in.Actor)
 		if err != nil {
 			return g.toolError(err)
 		}
@@ -115,7 +116,7 @@ func (g *server) mcpServer() *mcp.Server {
 		started := time.Now()
 		scopedCtx, cleanArgs, scopeErr := g.ensureMCPCallScope(ctx, req, "invoke_tool")
 		if scopeErr != nil {
-			g.RecordAgentTool("invoke_tool", access.RequestActor(ctx, mcpHeader(req, "X-Gateway-Actor")), started, scopeErr)
+			g.gw.RecordAgentTool("invoke_tool", access.RequestActor(ctx, mcpHeader(req, "X-Gateway-Actor")), started, scopeErr)
 			return g.toolError(scopeErr)
 		}
 		var in gateway.InvokeRequest
@@ -125,8 +126,8 @@ func (g *server) mcpServer() *mcp.Server {
 		if hdrActor := mcpHeader(req, "X-Gateway-Actor"); hdrActor != "" {
 			in.Actor = hdrActor
 		}
-		out, err := g.Invoke(scopedCtx, in)
-		g.RecordAgentTool("invoke_tool", access.RequestActor(scopedCtx, in.Actor), started, err)
+		out, err := g.gw.Invoke(scopedCtx, in)
+		g.gw.RecordAgentTool("invoke_tool", access.RequestActor(scopedCtx, in.Actor), started, err)
 		if err != nil {
 			return g.toolError(err)
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"gatewaylab/internal/access"
+	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/gateway"
 	"gatewaylab/internal/registry"
 )
@@ -197,5 +198,60 @@ func TestLocalModeRejectsNonLoopbackHost(t *testing.T) {
 		if out.Code != 200 {
 			t.Fatalf("host %q: %d %s", host, out.Code, out.Body)
 		}
+	}
+}
+
+func TestAccessMetadataDrivenRoutesAndMCPIdentity(t *testing.T) {
+	g := sharedGateway(t)
+	handler := Handler(g)
+	call := func(method, path, token string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(`{}`))
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		out := httptest.NewRecorder()
+		handler.ServeHTTP(out, req)
+		return out
+	}
+
+	if got := call("GET", "/api/health", ""); got.Code != 200 {
+		t.Fatalf("public health failed: %d", got.Code)
+	}
+	if got := call("GET", "/api/auth/me", ""); got.Code != 401 {
+		t.Fatalf("unauthenticated /api/auth/me should be 401, got %d", got.Code)
+	}
+	if got := call("POST", "/api/auth/logout", ""); got.Code != 401 {
+		t.Fatalf("unauthenticated /api/auth/logout should be 401, got %d", got.Code)
+	}
+	if got := call("GET", "/api/auth/me", readerTestToken); got.Code != 200 || !strings.Contains(got.Body.String(), `"id":"reader"`) {
+		t.Fatalf("non-admin /api/auth/me failed: %d %s", got.Code, got.Body)
+	}
+	if got := call("POST", "/api/auth/logout", readerTestToken); got.Code != 200 {
+		t.Fatalf("non-admin /api/auth/logout failed: %d %s", got.Code, got.Body)
+	}
+	if got := call("GET", "/api/bootstrap", readerTestToken); got.Code != 403 {
+		t.Fatalf("non-admin management route should be 403, got %d", got.Code)
+	}
+
+	host := httptest.NewServer(handler)
+	defer host.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "version-check", Version: "1"}, nil)
+	session, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
+		Endpoint:   host.URL + "/mcp",
+		HTTPClient: &http.Client{Transport: headerTransport{headers: map[string]string{"Authorization": "Bearer " + readerTestToken}, base: http.DefaultTransport}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeSession(session)
+	if got := session.InitializeResult().ServerInfo.Version; got != buildinfo.Current().Version {
+		t.Fatalf("MCP server version = %q, want %q", got, buildinfo.Current().Version)
+	}
+	if _, err := session.ListTools(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	events := g.Activity().Recent()
+	if len(events) == 0 || events[0].Kind != "agent" || events[0].Actor != "reader" {
+		t.Fatalf("expected agent tools/list event attributed to reader, got %+v", events)
 	}
 }

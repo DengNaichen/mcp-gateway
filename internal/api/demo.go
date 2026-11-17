@@ -14,7 +14,7 @@ import (
 
 func (g *server) demoServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "observability-demo", Version: "0.1.0"}, nil)
-	for _, tool := range demo.Registry(g.BaseURL()).Tools {
+	for _, tool := range demo.Registry(g.gw.BaseURL()).Tools {
 		if tool.ServerID != "observability" {
 			continue
 		}

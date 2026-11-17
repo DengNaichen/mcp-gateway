@@ -4,10 +4,14 @@ import (
 	"encoding/json"
 	"maps"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"gatewaylab/internal/fault"
+	"gatewaylab/internal/maintenance/sandbox"
 	"gatewaylab/internal/model"
+	"gatewaylab/internal/registry"
 	"gatewaylab/internal/routing"
 	"gatewaylab/internal/scope"
 	"gatewaylab/internal/upstream"
@@ -50,6 +54,63 @@ func TestDomainErrorHTTPCompatibility(t *testing.T) {
 		want := map[string]string{"code": "scope_required", "error": "需要范围"}
 		if w.Code != 403 || !maps.Equal(got, want) {
 			t.Fatalf("%d %s", w.Code, w.Body.String())
+		}
+	})
+	t.Run("fault-detailed", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			err        error
+			status     int
+			code       string
+			retryAfter string
+		}{
+			{"timeout", fault.NewDetailed(fault.Timeout, "gw_timeout", "上游超时", 0, nil), 504, "gw_timeout", ""},
+			{"unavailable", fault.NewDetailed(fault.Unavailable, "gw_unavailable", "服务不可用", 3*time.Second, nil), 503, "gw_unavailable", "3"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				fail(w, tc.err)
+				var got map[string]any
+				if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+					t.Fatal(err)
+				}
+				if w.Code != tc.status || got["code"] != tc.code || w.Header().Get("Retry-After") != tc.retryAfter {
+					t.Fatalf("got %d %v Retry-After=%q", w.Code, got, w.Header().Get("Retry-After"))
+				}
+			})
+		}
+		if app := httpError(&sandbox.ValidationError{Message: "沙箱路径无效"}); app == nil || app.status != 400 {
+			t.Fatalf("expected 400 for sandbox validation error, got %+v", app)
+		}
+	})
+	t.Run("invoke-upstream-validation-stays-400", func(t *testing.T) {
+		g, _ := testGateway(t)
+		if err := g.Registry().SaveServer(registry.Server{
+			ID: "svc", Name: "Svc", Kind: "http", Endpoint: "http://127.0.0.1:1", Enabled: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := g.Registry().SaveTool(registry.Tool{
+			ID:          "svc.get",
+			ServerID:    "svc",
+			Name:        "get",
+			Description: "get item",
+			Enabled:     true,
+			Actors:      []string{"developer"},
+			Method:      "GET",
+			Path:        "/items/{id}",
+			InputSchema: objectSchema(map[string]any{"path": objectSchema(map[string]any{"id": map[string]any{"type": "string"}}, "id")}, "path"),
+			HTTP: &registry.HTTPMapping{
+				Parameters: []registry.HTTPParameter{{Name: "id", In: "path", Style: "simple"}},
+				Responses:  map[string]registry.HTTPResponse{"200": {MediaType: "application/json"}},
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		Handler(g).ServeHTTP(w, httptest.NewRequest("POST", "http://127.0.0.1/api/invoke", strings.NewReader(`{"tool_id":"svc.get","arguments":{"path":{"id":".."}}}`)))
+		if w.Code != 400 {
+			t.Fatalf("expected 400 for upstream path validation error, got %d %s", w.Code, w.Body.String())
 		}
 	})
 }

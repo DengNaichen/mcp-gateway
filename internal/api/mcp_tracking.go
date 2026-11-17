@@ -2,13 +2,17 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
 
+	"gatewaylab/internal/access"
+	"gatewaylab/internal/scope"
 	"gatewaylab/internal/workspace"
 )
 
@@ -68,9 +72,9 @@ func (g *server) trackMCP(next http.Handler) http.Handler {
 		}
 		start := time.Now()
 		if input.Method == "tools/call" && workspace.IsMetaTool(input.Params.Name) {
-			scopedCtx, cleanArgs, scopeErr := g.Scope().ResolveMCPToolCallScope(r.Context(), agent, input.Params.Name, input.Params.Arguments)
+			scopedCtx, cleanArgs, scopeErr := g.gw.Scope().ResolveMCPToolCallScope(r.Context(), agent, input.Params.Name, input.Params.Arguments)
 			if scopeErr != nil {
-				g.RecordRejectedMCPScope(r.Context(), agent, input.Params.Name, input.Params.Arguments, start, scopeErr)
+				g.recordRejectedMCPScope(r.Context(), agent, input.Params.Name, input.Params.Arguments, start, scopeErr)
 				writeJSONRPCScopeError(w, input.ID, scopeErr)
 				return
 			}
@@ -103,9 +107,47 @@ func (g *server) trackMCP(next http.Handler) http.Handler {
 			if client == "" {
 				client = "MCP client"
 			}
-			g.Activity().Record("agent", "developer", "observed", input.Method, start, map[string]any{"client": client, "agent": agent, "method": input.Method})
+			g.gw.Activity().Record("agent", access.RequestActor(r.Context(), "developer"), "observed", input.Method, start, map[string]any{"client": client, "agent": agent, "method": input.Method})
 		}
 	})
+}
+
+func (g *server) recordRejectedMCPScope(ctx context.Context, agent, toolName string, rawArgs []byte, start time.Time, scopeErr error) {
+	actor := access.RequestActor(ctx, "")
+	status := "invalid"
+	var app *scope.Error
+	if errors.As(scopeErr, &app) {
+		switch app.Code {
+		case "scope_required":
+			status = "missing"
+		case "ambiguous_workspace":
+			status = "ambiguous"
+		}
+	}
+	evScope := scope.EventScope{Agent: agent, Status: status}
+	switch toolName {
+	case "discover_tools":
+		var in struct {
+			Intent string `json:"intent"`
+		}
+		_ = json.Unmarshal(rawArgs, &in)
+		title := in.Intent
+		if title == "" {
+			title = "discover_tools"
+		}
+		g.gw.Activity().Record("discover", actor, "error", title, start, map[string]any{"error": g.gw.ErrorDetail(scopeErr), "scope": evScope})
+	case "invoke_tool":
+		var in struct {
+			ToolID string `json:"tool_id"`
+		}
+		_ = json.Unmarshal(rawArgs, &in)
+		title := in.ToolID
+		if title == "" {
+			title = "invoke_tool"
+		}
+		g.gw.Activity().Record("invoke", actor, "error", title, start, map[string]any{"tool_id": in.ToolID, "error": g.gw.ErrorDetail(scopeErr), "scope": evScope})
+	}
+	g.gw.RecordAgentTool(toolName, actor, start, scopeErr)
 }
 
 func writeJSONRPCScopeError(w http.ResponseWriter, rawID json.RawMessage, err error) {

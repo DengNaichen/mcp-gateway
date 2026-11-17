@@ -14,6 +14,7 @@ import (
 	"gatewaylab/internal/activity"
 	"gatewaylab/internal/fault"
 	"gatewaylab/internal/jsonutil"
+	"gatewaylab/internal/model"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/scope"
 	"gatewaylab/internal/store"
@@ -219,6 +220,49 @@ func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult,
 	return result, routeErr
 }
 
+// SetupModelError preserves whether settings were persisted before model
+// connection verification or routing check failed.
+type SetupModelError struct {
+	Saved bool
+	Err   error
+}
+
+func (e *SetupModelError) Error() string { return e.Err.Error() }
+func (e *SetupModelError) Unwrap() error { return e.Err }
+
+// SetupModel verifies the model connection when connection parameters changed,
+// persists the settings, and runs an initial routing check.
+func (g *Gateway) SetupModel(ctx context.Context, settings model.Settings, apiKey string, clearKey bool, intent string) (DiscoverResult, error) {
+	current, _ := g.model.Config()
+	connectionChanged := strings.TrimSpace(settings.BaseURL) != strings.TrimSpace(current.BaseURL) ||
+		strings.TrimSpace(settings.Model) != strings.TrimSpace(current.Model) ||
+		settings.TimeoutSeconds != current.TimeoutSeconds ||
+		strings.TrimSpace(apiKey) != "" ||
+		clearKey
+	if connectionChanged {
+		prof := model.ModelProfile{
+			BaseURL:        settings.BaseURL,
+			Model:          settings.Model,
+			MaxTools:       settings.MaxTools,
+			TimeoutSeconds: settings.TimeoutSeconds,
+		}
+		if err := g.model.VerifyModelConnection(ctx, prof, apiKey, clearKey); err != nil {
+			if errors.Is(err, model.ErrInvalid) {
+				return DiscoverResult{}, err
+			}
+			return DiscoverResult{}, &SetupModelError{Saved: false, Err: err}
+		}
+	}
+	if err := g.SaveSettings(settings, apiKey, clearKey); err != nil {
+		return DiscoverResult{}, err
+	}
+	result, err := g.TestModel(ctx, intent)
+	if err != nil {
+		return DiscoverResult{}, &SetupModelError{Saved: true, Err: err}
+	}
+	return result, nil
+}
+
 // Keep error details useful for local developers without echoing live credentials.
 func (g *Gateway) ErrorDetail(err error) string {
 	message := err.Error()
@@ -242,44 +286,6 @@ func (g *Gateway) ErrorDetail(err error) string {
 		message = message[:4000]
 	}
 	return message
-}
-
-func (g *Gateway) RecordRejectedMCPScope(ctx context.Context, agent, toolName string, rawArgs []byte, start time.Time, scopeErr error) {
-	actor := access.RequestActor(ctx, "")
-	status := "invalid"
-	var app *scope.Error
-	if errors.As(scopeErr, &app) {
-		switch app.Code {
-		case "scope_required":
-			status = "missing"
-		case "ambiguous_workspace":
-			status = "ambiguous"
-		}
-	}
-	evScope := scope.EventScope{Agent: agent, Status: status}
-	switch toolName {
-	case "discover_tools":
-		var in struct {
-			Intent string `json:"intent"`
-		}
-		_ = json.Unmarshal(rawArgs, &in)
-		title := in.Intent
-		if title == "" {
-			title = "discover_tools"
-		}
-		g.record("discover", actor, "error", title, start, map[string]any{"error": g.ErrorDetail(scopeErr), "scope": evScope})
-	case "invoke_tool":
-		var in struct {
-			ToolID string `json:"tool_id"`
-		}
-		_ = json.Unmarshal(rawArgs, &in)
-		title := in.ToolID
-		if title == "" {
-			title = "invoke_tool"
-		}
-		g.record("invoke", actor, "error", title, start, map[string]any{"tool_id": in.ToolID, "error": g.ErrorDetail(scopeErr), "scope": evScope})
-	}
-	g.RecordAgentTool(toolName, actor, start, scopeErr)
 }
 
 func (g *Gateway) RecordAgentTool(name, actor string, start time.Time, err error) {

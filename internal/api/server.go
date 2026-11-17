@@ -7,9 +7,9 @@ import (
 	"gatewaylab/internal/gateway"
 )
 
-type server struct{ *gateway.Gateway }
+type server struct{ gw *gateway.Gateway }
 
-func Handler(g *gateway.Gateway) http.Handler { return (&server{g}).handler() }
+func Handler(g *gateway.Gateway) http.Handler { return (&server{gw: g}).handler() }
 
 // Instance is a Gateway backend opened for hosting behind a caller-owned
 // listener. Hosts (cmd/gateway, the desktop app) reach the backend only through

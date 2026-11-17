@@ -8,7 +8,7 @@ import (
 )
 
 func (g *server) registerMaintenance(mux *http.ServeMux) {
-	m := g.Maintenance()
+	m := g.gw.Maintenance()
 	mux.HandleFunc("GET /api/maintenance", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, wireMaintenanceStatus(m.Status()))
 	})
