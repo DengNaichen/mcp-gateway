@@ -190,13 +190,22 @@ func RunPi(ctx context.Context, policy Policy, command, dir string, s PiOptions,
 	return export()
 }
 func CallAdapterFile(ctx context.Context, policy Policy, s registry.Server, t registry.Tool, args map[string]any, p string) (any, error) {
+	return CallAdapterFileWithLookup(ctx, policy, s, t, args, p, os.Getenv)
+}
+
+// CallAdapterFileWithLookup invokes an adapter script, expanding header and env
+// credential placeholders via lookup (defaulting to os.Getenv).
+func CallAdapterFileWithLookup(ctx context.Context, policy Policy, s registry.Server, t registry.Tool, args map[string]any, p string, lookup func(string) string) (any, error) {
+	if lookup == nil {
+		lookup = os.Getenv
+	}
 	headers := map[string]string{}
 	env := map[string]string{}
 	for k, v := range s.Headers {
-		headers[k] = os.ExpandEnv(v)
+		headers[k] = os.Expand(v, lookup)
 	}
 	for k, v := range s.Env {
-		env[k] = os.ExpandEnv(v)
+		env[k] = os.Expand(v, lookup)
 	}
 	payload, err := json.Marshal(map[string]any{"tool": t.Name, "arguments": args, "endpoint": policy.AdapterEndpoint(s.Endpoint), "headers": headers, "env": env})
 	if err != nil {

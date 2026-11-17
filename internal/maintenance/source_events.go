@@ -4,12 +4,10 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"net/http"
 	"os"
@@ -44,8 +42,15 @@ func verifyHMAC(body []byte, signature, secret string) bool {
 	return hmac.Equal(got, mac.Sum(nil))
 }
 func parseSourceSignal(provider string, headers http.Header, body []byte, repo RepositorySource) (MaintenanceTrigger, bool, error) {
+	return parseSourceSignalWithLookup(provider, headers, body, repo, os.Getenv)
+}
+
+func parseSourceSignalWithLookup(provider string, headers http.Header, body []byte, repo RepositorySource, lookup func(string) string) (MaintenanceTrigger, bool, error) {
+	if lookup == nil {
+		lookup = os.Getenv
+	}
 	trigger := MaintenanceTrigger{Provider: provider}
-	secret := os.Getenv(repo.WebhookSecretEnv)
+	secret := lookup(repo.WebhookSecretEnv)
 	if secret == "" {
 		return trigger, false, domainError(ErrUnavailable, "仓库事件密钥尚未配置", nil)
 	}
@@ -195,29 +200,15 @@ func (m *Maintainer) assignSignals(run MaintenanceRun) error {
 	if err != nil {
 		return fmt.Errorf("encode signal job: %w", err)
 	}
-	tx, err := m.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin signal dispatch: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			if err := tx.Rollback(); err != nil {
-				slog.Error("rollback signal dispatch", "error", err)
-			}
+	return store.RunTx(m.db, func(tx store.DBTX) error {
+		if err := store.MaintenanceRuns[json.RawMessage](tx).Insert(run.ID, encoded); err != nil {
+			return fmt.Errorf("persist signal job: %w", err)
 		}
-	}()
-	if err := store.MaintenanceRuns[json.RawMessage](tx).Insert(run.ID, encoded); err != nil {
-		return fmt.Errorf("persist signal job: %w", err)
-	}
-	if err := store.MaintenanceDeliveries[sourceSignal](tx).Assign(run.ServerID, run.ID); err != nil {
-		return fmt.Errorf("assign pending signals: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit signal dispatch: %w", err)
-	}
-	committed = true
-	return nil
+		if err := store.MaintenanceDeliveries[sourceSignal](tx).Assign(run.ServerID, run.ID); err != nil {
+			return fmt.Errorf("assign pending signals: %w", err)
+		}
+		return nil
+	})
 }
 
 type DeliveryResult struct {
@@ -232,7 +223,7 @@ func (m *Maintainer) ReceiveSourceEvent(source MaintenanceSource, provider strin
 	if source.Repository == nil || !source.Repository.EventsEnabled {
 		return DeliveryResult{}, domainError(ErrNotFound, "此来源未开启仓库事件", nil)
 	}
-	trigger, relevant, err := parseSourceSignal(provider, headers, body, *source.Repository)
+	trigger, relevant, err := parseSourceSignalWithLookup(provider, headers, body, *source.Repository, m.lookupEnv)
 	if err != nil {
 		return DeliveryResult{}, err
 	}
@@ -251,7 +242,7 @@ func (m *Maintainer) ReceiveSourceEvent(source MaintenanceSource, provider strin
 	if err == nil {
 		return DeliveryResult{Duplicate: true, RunID: runID}, nil
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if !errors.Is(err, store.ErrNotFound) {
 		return DeliveryResult{}, fmt.Errorf("read source delivery: %w", err)
 	}
 	signal := sourceSignal{ServerID: source.ServerID, Trigger: trigger, ReceivedAt: time.Now()}

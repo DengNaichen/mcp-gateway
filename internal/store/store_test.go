@@ -266,3 +266,39 @@ func TestLegacyMigrationRetainsRegistryAndScopeData(t *testing.T) {
 	}
 	_ = reopened.Close()
 }
+
+func TestRunTxAndErrNotFound(t *testing.T) {
+	db := openTestStore(t)
+	if _, _, err := ConnectionChecks[map[string]any](db.DB).Get("missing"); !errors.Is(err, ErrNotFound) || !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("ConnectionChecks.Get missing: %v", err)
+	}
+	if _, err := Settings[map[string]any](db.DB).Load(); !errors.Is(err, ErrNotFound) || !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("Settings.Load missing: %v", err)
+	}
+	if _, err := MaintenanceDeliveries[map[string]any](db.DB).RunID("svc", "github", "deliv"); !errors.Is(err, ErrNotFound) || !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("MaintenanceDeliveries.RunID missing: %v", err)
+	}
+
+	sentinel := errors.New("abort tx")
+	if err := db.Tx(func(tx DBTX) error {
+		if err := Settings[map[string]string](tx).Save(map[string]string{"k": "v"}); err != nil {
+			return err
+		}
+		return sentinel
+	}); !errors.Is(err, sentinel) {
+		t.Fatalf("expected sentinel, got %v", err)
+	}
+	if _, err := Settings[map[string]string](db.DB).Load(); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("rolled back write visible: %v", err)
+	}
+
+	if err := RunTx(db.DB, func(tx DBTX) error {
+		return Settings[map[string]string](tx).Save(map[string]string{"k": "v"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Settings[map[string]string](db.DB).Load()
+	if err != nil || got["k"] != "v" {
+		t.Fatalf("committed write missing: %+v %v", got, err)
+	}
+}

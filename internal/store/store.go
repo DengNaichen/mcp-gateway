@@ -14,6 +14,7 @@ import (
 )
 
 var ErrLocked = errors.New("gateway data directory is already in use")
+var ErrNotFound = errors.New("not found")
 
 type Store struct {
 	*sql.DB
@@ -52,4 +53,38 @@ func Open(dir string) (*Store, error) {
 func (s *Store) Close() error {
 	s.once.Do(func() { s.closeErr = errors.Join(s.DB.Close(), s.lock.Unlock()) })
 	return s.closeErr
+}
+
+// Tx runs fn inside a database transaction on s.
+func (s *Store) Tx(fn func(DBTX) error) error {
+	return RunTx(s.DB, fn)
+}
+
+// RunTx runs fn inside a database transaction, rolling back on error or panic.
+func RunTx(db *sql.DB, fn func(DBTX) error) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
+}
+
+func wrapNotFound(err error) error {
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: %w", ErrNotFound, err)
+	}
+	return err
 }

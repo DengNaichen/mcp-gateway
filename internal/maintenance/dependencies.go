@@ -51,4 +51,5 @@ type Options struct {
 	Recorder      Recorder
 	Execution     sandbox.Policy
 	ImportOpenAPI OpenAPIImporter
+	LookupEnv     func(string) string
 }

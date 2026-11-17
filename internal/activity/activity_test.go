@@ -15,6 +15,9 @@ type blockedRepository struct {
 }
 
 func (r *blockedRepository) Recent(int) ([]store.ActivityRow, error) { return nil, nil }
+func (r *blockedRepository) LatestAgent() (*store.ActivityRow, error) {
+	return nil, nil
+}
 func (r *blockedRepository) Insert(store.ActivityRow) error {
 	close(r.entered)
 	<-r.release
@@ -94,5 +97,14 @@ func TestRecordRetentionAndReload(t *testing.T) {
 	}
 	if totalPulse != 105 {
 		t.Fatalf("pulse total = %d, want 105 (beyond recent 100 cap)", totalPulse)
+	}
+	if latest, err := reloaded.LatestAgent(); err != nil || latest != nil {
+		t.Fatalf("expected nil latest agent, got %+v %v", latest, err)
+	}
+	reloaded.Record("agent", "codex", "ok", "discover", time.Now(), map[string]string{"intent": "search"})
+	reloaded.Record("invoke", "codex", "ok", "call", time.Now(), nil)
+	latest, err := reloaded.LatestAgent()
+	if err != nil || latest == nil || latest.Kind != "agent" || latest.Title != "discover" {
+		t.Fatalf("latest agent mismatch: %+v %v", latest, err)
 	}
 }

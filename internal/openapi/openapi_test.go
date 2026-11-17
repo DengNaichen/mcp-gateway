@@ -91,6 +91,24 @@ func TestOpenAPIStableIDsAnd31(t *testing.T) {
 	}
 }
 
+func TestOpenAPIRejectsForbiddenHeadersAndMapsGroups(t *testing.T) {
+	tools, err := ImportOpenAPI("ci", []byte(openAPIFixture), []string{"create_build"})
+	if err != nil || len(tools) != 1 {
+		t.Fatalf("import failed: %v", err)
+	}
+	props := tools[0].InputSchema["properties"].(map[string]any)
+	if _, ok := props["headers"]; !ok {
+		t.Fatalf("expected header parameter under headers group: %+v", props)
+	}
+
+	for _, header := range []string{"Authorization", "Content-Type", "Cookie", "Host"} {
+		bad := strings.ReplaceAll(openAPIFixture, "name: verbose, in: header", "name: "+header+", in: header")
+		if _, err := ImportOpenAPI("ci", []byte(bad), nil); err == nil {
+			t.Fatalf("forbidden header %q was imported", header)
+		}
+	}
+}
+
 // FuzzImportOpenAPI feeds arbitrary JSON/YAML to the importer. Errors are
 // expected; panics are not. Accepted documents must import deterministically
 // and every path template variable must have a path parameter mapping.

@@ -77,6 +77,7 @@ type Maintainer struct {
 	recorder      Recorder
 	importOpenAPI OpenAPIImporter
 	execution     sandbox.Policy
+	lookupEnv     func(string) string
 	mu            sync.Mutex
 	sources       map[string]MaintenanceSource
 	suites        map[string]AcceptanceSuite
@@ -93,7 +94,11 @@ type Maintainer struct {
 
 func New(options Options) (*Maintainer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	m := &Maintainer{db: options.DB, dir: options.Dir, catalog: options.Catalog, router: options.Router, upstream: options.Upstream, recorder: options.Recorder, importOpenAPI: options.ImportOpenAPI, execution: options.Execution, sources: map[string]MaintenanceSource{}, suites: map[string]AcceptanceSuite{}, runs: map[string]MaintenanceRun{}, ctx: ctx, stop: cancel, active: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), done: make(chan struct{}), command: os.Getenv("GATEWAY_PI_COMMAND")}
+	lookupEnv := options.LookupEnv
+	if lookupEnv == nil {
+		lookupEnv = os.Getenv
+	}
+	m := &Maintainer{db: options.DB, dir: options.Dir, catalog: options.Catalog, router: options.Router, upstream: options.Upstream, recorder: options.Recorder, importOpenAPI: options.ImportOpenAPI, execution: options.Execution, lookupEnv: lookupEnv, sources: map[string]MaintenanceSource{}, suites: map[string]AcceptanceSuite{}, runs: map[string]MaintenanceRun{}, ctx: ctx, stop: cancel, active: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), done: make(chan struct{}), command: os.Getenv("GATEWAY_PI_COMMAND")}
 	if m.command == "" {
 		m.command = "pi"
 	}

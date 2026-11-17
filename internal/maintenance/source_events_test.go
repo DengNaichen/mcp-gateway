@@ -232,3 +232,28 @@ func FuzzParseSourceSignal(f *testing.F) {
 		}
 	})
 }
+
+func TestReceiveSourceEventUsesInjectedLookupEnv(t *testing.T) {
+	m := testMaintainer(t)
+	// Inject a secret that is NOT in os.Environ().
+	m.lookupEnv = func(name string) string {
+		if name == "INJECTED_WEBHOOK_SECRET" {
+			return "gateway-test-signing-secret"
+		}
+		return ""
+	}
+	source, _ := m.Source("service")
+	source.Repository = &RepositorySource{URL: t.TempDir(), Ref: "main", Files: []string{"api.json"}, Project: "team/service", EventsEnabled: true, WebhookSecretEnv: "INJECTED_WEBHOOK_SECRET"}
+	if err := m.SaveSource(source); err != nil {
+		t.Fatal(err)
+	}
+	body := mustJSON(t, map[string]any{"ref": "refs/heads/main", "after": strings.Repeat("a", 40), "repository": map[string]string{"full_name": "team/service"}})
+	headers := http.Header{}
+	headers.Set("X-GitHub-Delivery", "injected-delivery")
+	headers.Set("X-GitHub-Event", "push")
+	headers.Set("X-Hub-Signature-256", signedEvent(t, body))
+	res, err := m.ReceiveSourceEvent(source, "github", headers, body)
+	if err != nil || res.Ignored || res.Duplicate {
+		t.Fatalf("expected injected secret to verify webhook, got %+v %v", res, err)
+	}
+}

@@ -20,13 +20,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type Settings struct {
-	BaseURL        string `json:"base_url"`
-	Model          string `json:"model"`
-	MaxTools       int    `json:"max_tools"`
-	TimeoutSeconds int    `json:"timeout_seconds"`
-}
-
 // ModelProfile is a saved Decisions model configuration. API keys remain in
 // process memory and are never persisted to SQLite.
 type ModelProfile struct {
@@ -64,7 +57,7 @@ func New(db *sql.DB) (*Service, error) {
 		return nil, fmt.Errorf("read settings count: %w", err)
 	}
 	if count == 0 {
-		if err := g.persistSettings(g.settings); err != nil {
+		if err := persistSettingsTx(db, g.settings); err != nil {
 			return nil, err
 		}
 	}
@@ -126,7 +119,9 @@ func (g *Service) initModelProfiles() error {
 			Active:         true,
 			UpdatedAt:      time.Now().Format(time.RFC3339),
 		}}
-		if err := g.persistModelProfiles(profiles); err != nil {
+		if err := store.RunTx(g.db, func(tx store.DBTX) error {
+			return persistModelProfilesTx(tx, profiles)
+		}); err != nil {
 			return err
 		}
 	}
@@ -164,28 +159,43 @@ func (g *Service) SaveSettings(s Settings, key string, clearKey bool) error {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if err := g.persistSettings(s); err != nil {
+
+	idx := slices.IndexFunc(g.profiles, func(p ModelProfile) bool { return p.Active })
+	var nextProfiles []ModelProfile
+	if idx >= 0 {
+		nextProfiles = slices.Clone(g.profiles)
+		nextProfiles[idx].BaseURL = s.BaseURL
+		nextProfiles[idx].Model = s.Model
+		nextProfiles[idx].MaxTools = s.MaxTools
+		nextProfiles[idx].TimeoutSeconds = s.TimeoutSeconds
+		nextProfiles[idx].UpdatedAt = time.Now().Format(time.RFC3339)
+	}
+	if err := store.RunTx(g.db, func(tx store.DBTX) error {
+		if err := persistSettingsTx(tx, s); err != nil {
+			return err
+		}
+		if nextProfiles != nil {
+			if err := persistModelProfilesTx(tx, nextProfiles); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
+
 	g.settings = s
 	if clearKey {
 		g.apiKey = ""
 	} else if key != "" {
 		g.apiKey = key
 	}
-	if idx := slices.IndexFunc(g.profiles, func(p ModelProfile) bool { return p.Active }); idx >= 0 {
-		g.profiles[idx].BaseURL = s.BaseURL
-		g.profiles[idx].Model = s.Model
-		g.profiles[idx].MaxTools = s.MaxTools
-		g.profiles[idx].TimeoutSeconds = s.TimeoutSeconds
-		g.profiles[idx].UpdatedAt = time.Now().Format(time.RFC3339)
+	if idx >= 0 {
+		g.profiles = nextProfiles
 		if clearKey {
 			g.profileKeys.Set(g.profiles[idx].ID, "")
 		} else if key != "" {
 			g.profileKeys.Set(g.profiles[idx].ID, key)
-		}
-		if err := g.persistModelProfiles(g.profiles); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -255,10 +265,12 @@ func (g *Service) SaveModelProfile(p ModelProfile, key string, clearKey bool) (M
 		next = append([]ModelProfile{p}, next...)
 	}
 
-	if err := g.persistModelProfiles(next); err != nil {
-		return ModelProfile{}, err
-	}
-	if err := g.persistSettings(s); err != nil {
+	if err := store.RunTx(g.db, func(tx store.DBTX) error {
+		if err := persistModelProfilesTx(tx, next); err != nil {
+			return err
+		}
+		return persistSettingsTx(tx, s)
+	}); err != nil {
 		return ModelProfile{}, err
 	}
 
@@ -300,10 +312,12 @@ func (g *Service) ActivateModelProfile(id string) (ModelProfile, error) {
 		MaxTools:       chosen.MaxTools,
 		TimeoutSeconds: chosen.TimeoutSeconds,
 	}
-	if err := g.persistModelProfiles(next); err != nil {
-		return ModelProfile{}, err
-	}
-	if err := g.persistSettings(s); err != nil {
+	if err := store.RunTx(g.db, func(tx store.DBTX) error {
+		if err := persistModelProfilesTx(tx, next); err != nil {
+			return err
+		}
+		return persistSettingsTx(tx, s)
+	}); err != nil {
 		return ModelProfile{}, err
 	}
 	g.profiles = next
@@ -339,11 +353,15 @@ func (g *Service) DeleteModelProfile(id string) error {
 			TimeoutSeconds: next[0].TimeoutSeconds,
 		}
 		nextKey = g.profileKeys.Get(next[0].ID)
-		if err := g.persistSettings(nextSettings); err != nil {
-			return err
-		}
 	}
-	if err := g.persistModelProfiles(next); err != nil {
+	if err := store.RunTx(g.db, func(tx store.DBTX) error {
+		if wasActive {
+			if err := persistSettingsTx(tx, nextSettings); err != nil {
+				return err
+			}
+		}
+		return persistModelProfilesTx(tx, next)
+	}); err != nil {
 		return err
 	}
 	g.profileKeys.Set(id, "")
@@ -353,11 +371,11 @@ func (g *Service) DeleteModelProfile(id string) error {
 	return nil
 }
 
-func (g *Service) persistSettings(s Settings) error {
+func persistSettingsTx(db store.DBTX, s Settings) error {
 	if _, err := json.Marshal(s); err != nil {
 		return fmt.Errorf("encode model settings: %w", err)
 	}
-	if err := store.Settings[Settings](g.db).Save(s); err != nil {
+	if err := store.Settings[Settings](db).Save(s); err != nil {
 		return fmt.Errorf("persist model settings: %w", err)
 	}
 	return nil
@@ -374,12 +392,7 @@ func (g *Service) loadModelProfiles() ([]ModelProfile, error) {
 	return profiles, nil
 }
 
-func (g *Service) persistModelProfiles(profiles []ModelProfile) error {
-	tx, err := g.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin model profiles transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
+func persistModelProfilesTx(tx store.DBTX, profiles []ModelProfile) error {
 	repo := store.ModelProfiles[ModelProfile](tx)
 	if err := repo.Clear(); err != nil {
 		return fmt.Errorf("clear model profiles: %w", err)
@@ -393,7 +406,7 @@ func (g *Service) persistModelProfiles(profiles []ModelProfile) error {
 			return fmt.Errorf("persist model profile: %w", err)
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 const verifiedPingTTL = 15 * time.Minute

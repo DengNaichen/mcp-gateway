@@ -13,13 +13,10 @@ import (
 	"gatewaylab/internal/retry"
 )
 
-// fastRetry keeps retry tests quick: tiny backoff, and any server delay above
-// 100ms is surfaced instead of waited out.
-func fastRetry(t *testing.T) {
-	t.Helper()
-	saved := decisionsRetry
-	decisionsRetry = retry.Policy{MaxAttempts: 4, BaseDelay: time.Millisecond, MaxDelay: 100 * time.Millisecond}
-	t.Cleanup(func() { decisionsRetry = saved })
+// fastClient keeps retry tests quick without mutating package-global state:
+// tiny backoff, and any server delay above 100ms is surfaced instead of waited out.
+func fastClient() decisionsClient {
+	return decisionsClient{retry: retry.Policy{MaxAttempts: 4, BaseDelay: time.Millisecond, MaxDelay: 100 * time.Millisecond}}
 }
 
 func okDecisions(w http.ResponseWriter) {
@@ -47,7 +44,7 @@ func flakyServer(t *testing.T, failures int32, fail func(http.ResponseWriter)) (
 
 func ask(t *testing.T, server *httptest.Server) (Answers, *Error) {
 	t.Helper()
-	answers, err := AskDecisions(context.Background(), Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "secret-test-key", "input", []string{"question"})
+	answers, err := fastClient().askDecisions(context.Background(), Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "secret-test-key", "input", []string{"question"})
 	if err == nil {
 		return answers, nil
 	}
@@ -59,7 +56,6 @@ func ask(t *testing.T, server *httptest.Server) (Answers, *Error) {
 }
 
 func TestRateLimitIsRetriedThenSucceeds(t *testing.T) {
-	fastRetry(t)
 	server, calls := flakyServer(t, 2, func(w http.ResponseWriter) {
 		w.Header().Set("Retry-After-Ms", "5")
 		respond(w, 429, map[string]any{"error": map[string]any{"code": "rate_limit_exceeded", "message": "slow down"}})
@@ -71,7 +67,6 @@ func TestRateLimitIsRetriedThenSucceeds(t *testing.T) {
 }
 
 func TestRateLimitExhaustsRetriesAndKeepsRetryAfter(t *testing.T) {
-	fastRetry(t)
 	server, calls := flakyServer(t, 100, func(w http.ResponseWriter) {
 		respond(w, 429, map[string]any{"error": map[string]any{
 			"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "Rate limit exceeded. Please retry in 0.01s.",
@@ -82,13 +77,12 @@ func TestRateLimitExhaustsRetriesAndKeepsRetryAfter(t *testing.T) {
 	if e == nil || !errors.Is(e, ErrRateLimited) || e.Code != CodeRateLimited || e.RetryAfter != 10*time.Millisecond || e.Status != 429 {
 		t.Fatalf("err=%+v", e)
 	}
-	if calls.Load() != int32(decisionsRetry.MaxAttempts) {
+	if calls.Load() != int32(fastClient().retry.MaxAttempts) {
 		t.Fatalf("retries not bounded: %d calls", calls.Load())
 	}
 }
 
 func TestLongServerDelayIsSurfacedNotWaited(t *testing.T) {
-	fastRetry(t)
 	server, calls := flakyServer(t, 100, func(w http.ResponseWriter) {
 		w.Header().Set("Retry-After", "11")
 		respond(w, 429, map[string]any{"error": map[string]any{"message": "retry in 11s"}})
@@ -101,7 +95,6 @@ func TestLongServerDelayIsSurfacedNotWaited(t *testing.T) {
 }
 
 func TestPermanentFailuresAreNotRetried(t *testing.T) {
-	fastRetry(t)
 	for _, tc := range []struct {
 		name   string
 		status int
@@ -131,7 +124,6 @@ func TestPermanentFailuresAreNotRetried(t *testing.T) {
 }
 
 func TestServerErrorsAreRetried(t *testing.T) {
-	fastRetry(t)
 	server, calls := flakyServer(t, 1, func(w http.ResponseWriter) {
 		respond(w, 503, map[string]any{"error": map[string]any{"status": "UNAVAILABLE"}})
 	})
@@ -149,7 +141,6 @@ func TestServerErrorsAreRetried(t *testing.T) {
 }
 
 func TestConnectionFailureAndTimeoutAreClassified(t *testing.T) {
-	fastRetry(t)
 	dead := httptest.NewServer(http.NotFoundHandler())
 	dead.Close()
 	_, e := ask(t, dead)
@@ -168,14 +159,13 @@ func TestConnectionFailureAndTimeoutAreClassified(t *testing.T) {
 	defer close(release)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, err := AskDecisions(ctx, Settings{BaseURL: slow.URL, MaxTools: 1, TimeoutSeconds: 5}, "", "input", []string{"question"})
+	_, err := fastClient().askDecisions(ctx, Settings{BaseURL: slow.URL, MaxTools: 1, TimeoutSeconds: 5}, "", "input", []string{"question"})
 	if !errors.As(err, &e) || !errors.Is(e, ErrTimeout) || e.Code != CodeTimeout {
 		t.Fatalf("timeout: %v", err)
 	}
 }
 
 func TestBadResponseIsNotRetried(t *testing.T) {
-	fastRetry(t)
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -220,7 +210,6 @@ func TestRetryAfterParsing(t *testing.T) {
 }
 
 func TestContentBlockedOnlyForClientErrors(t *testing.T) {
-	fastRetry(t)
 	server, calls := flakyServer(t, 1, func(w http.ResponseWriter) {
 		respond(w, 503, map[string]any{"error": map[string]any{"status": "UNAVAILABLE", "details": []map[string]any{{"reason": "SAFETY"}}}})
 	})
@@ -242,7 +231,6 @@ func TestContentBlockedOnlyForClientErrors(t *testing.T) {
 }
 
 func TestOversizedErrorBodyKeepsStatus(t *testing.T) {
-	fastRetry(t)
 	server, _ := flakyServer(t, 100, func(w http.ResponseWriter) {
 		w.WriteHeader(400)
 		_, _ = w.Write(make([]byte, maxDecisionsResponse+10))
@@ -253,7 +241,6 @@ func TestOversizedErrorBodyKeepsStatus(t *testing.T) {
 }
 
 func TestRateLimitIsReportedWhenRetryRunsOutOfTime(t *testing.T) {
-	fastRetry(t)
 	var calls atomic.Int32
 	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -271,7 +258,7 @@ func TestRateLimitIsReportedWhenRetryRunsOutOfTime(t *testing.T) {
 	defer close(release)
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	_, err := AskDecisions(ctx, Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "", "input", []string{"question"})
+	_, err := fastClient().askDecisions(ctx, Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "", "input", []string{"question"})
 	var e *Error
 	if !errors.As(err, &e) || e.Code != CodeRateLimited || e.RetryAfter != 20*time.Millisecond || calls.Load() != 2 {
 		t.Fatalf("err=%v calls=%d", err, calls.Load())
@@ -279,7 +266,6 @@ func TestRateLimitIsReportedWhenRetryRunsOutOfTime(t *testing.T) {
 }
 
 func TestSystemOneRetriesOnlyTheFailedBatch(t *testing.T) {
-	fastRetry(t)
 	var calls, statusBatches atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -307,14 +293,13 @@ func TestSystemOneRetriesOnlyTheFailedBatch(t *testing.T) {
 	for i := range instructions {
 		instructions[i] = "question"
 	}
-	answers, err := AskDecisions(context.Background(), Settings{BaseURL: server.URL, Model: "jev-1", MaxTools: 20, TimeoutSeconds: 5}, "", "input", instructions)
+	answers, err := fastClient().askDecisions(context.Background(), Settings{BaseURL: server.URL, Model: "jev-1", MaxTools: 20, TimeoutSeconds: 5}, "", "input", instructions)
 	if err != nil || len(answers.Relevance) != 20 || calls.Load() != 3 || statusBatches.Load() != 1 {
 		t.Fatalf("err=%v relevance=%d calls=%d statusBatches=%d", err, len(answers.Relevance), calls.Load(), statusBatches.Load())
 	}
 }
 
 func TestChoiceIsRetried(t *testing.T) {
-	fastRetry(t)
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if calls.Add(1) == 1 {
@@ -324,7 +309,7 @@ func TestChoiceIsRetried(t *testing.T) {
 		respond(w, 200, map[string]any{"answers": []map[string]any{{"type": "choice", "name": ChoiceQuestionName, "choice": "a", "probabilities": map[string]float64{"a": 1}}}})
 	}))
 	defer server.Close()
-	answer, _, err := AskChoice(context.Background(), Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "", "input", "pick", []Choice{{Value: "a"}, {Value: "b"}})
+	answer, _, err := fastClient().askChoice(context.Background(), Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "", "input", "pick", []Choice{{Value: "a"}, {Value: "b"}})
 	if err != nil || answer.Choice != "a" || calls.Load() != 2 {
 		t.Fatalf("answer=%+v err=%v calls=%d", answer, err, calls.Load())
 	}

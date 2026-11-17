@@ -18,14 +18,29 @@ import (
 	"gatewaylab/internal/registry"
 )
 
+var forbiddenHeaders = []string{
+	"authorization",
+	"proxy-authorization",
+	"host",
+	"cookie",
+	"connection",
+	"content-length",
+	"content-type",
+}
+
+func isForbiddenHeader(name string) bool {
+	return slices.Contains(forbiddenHeaders, strings.ToLower(name))
+}
+
 func argumentGroup(in string) string {
-	if in == "header" {
+	switch in {
+	case "header":
 		return "headers"
-	}
-	if in == "cookie" {
+	case "cookie":
 		return "cookies"
+	default:
+		return in
 	}
-	return in
 }
 func scalar(v any) (string, error) {
 	switch x := v.(type) {
@@ -165,7 +180,7 @@ func BuildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args ma
 				return nil, err
 			}
 		case "header":
-			if slices.Contains([]string{"authorization", "proxy-authorization", "host", "cookie", "connection", "content-length", "content-type"}, strings.ToLower(p.Name)) {
+			if isForbiddenHeader(p.Name) {
 				return nil, invalid("参数不能覆盖认证或协议请求头")
 			}
 			value, err := simpleParameter(v, p.Explode, false)

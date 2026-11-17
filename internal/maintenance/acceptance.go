@@ -297,7 +297,7 @@ func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir
 		defer mock.Close()
 		server.Endpoint = mock.URL
 		if tool.Adapter != "" {
-			result, callErr = sandbox.CallAdapterFile(ctx, m.execution, server, tool, arguments, filepath.Join(dir, tool.Adapter))
+			result, callErr = sandbox.CallAdapterFileWithLookup(ctx, m.execution, server, tool, arguments, filepath.Join(dir, tool.Adapter), m.lookupEnv)
 		} else {
 			result, callErr = m.upstream.CallHTTP(ctx, server, tool, arguments)
 		}

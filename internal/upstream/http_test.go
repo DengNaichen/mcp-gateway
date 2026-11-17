@@ -11,6 +11,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"golang.org/x/oauth2"
 )
 
 func TestHTTPMappingWireContract(t *testing.T) {
@@ -111,6 +113,47 @@ func TestCredentialsAreRedactedBeforeProjection(t *testing.T) {
 	original, _ := json.Marshal(data)
 	if !strings.Contains(string(original), "another secret") {
 		t.Fatal("redaction mutated input")
+	}
+}
+
+func TestServiceRedactResponseRedactsOAuthTokensAndLookupSecrets(t *testing.T) {
+	svc := New(Config{LookupEnv: func(key string) string {
+		if key == "KEY" {
+			return "env-secret-999"
+		}
+		return ""
+	}})
+	svc.oauthTokens["api"] = oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "oauth-token-abc"})
+
+	source := Server{ID: "api", Headers: map[string]string{"X-API-Key": "${KEY}"}}
+	data := map[string]any{
+		"note":   "token oauth-token-abc and key env-secret-999",
+		"header": "Bearer oauth-token-abc",
+	}
+	redacted := svc.RedactResponse(data, source).(map[string]any)
+	if strings.Contains(redacted["note"].(string), "oauth-token-abc") || strings.Contains(redacted["note"].(string), "env-secret-999") {
+		t.Fatalf("secrets leaked: %+v", redacted)
+	}
+	if redacted["header"] != "Bearer [redacted]" {
+		t.Fatalf("oauth token in Bearer header not redacted: %+v", redacted)
+	}
+}
+
+func TestBuildMappedRequestRejectsForbiddenHeaders(t *testing.T) {
+	source := Server{Endpoint: "https://example.invalid"}
+	for _, header := range []string{"Authorization", "Content-Type", "Cookie", "Host"} {
+		tool := Tool{
+			Method: "GET",
+			Path:   "/items",
+			HTTP: &HTTPMapping{
+				Parameters: []HTTPParameter{{Name: header, In: "header", Style: "simple"}},
+				Responses:  map[string]HTTPResponse{"200": {MediaType: "empty"}},
+			},
+		}
+		_, err := BuildMappedRequest(context.Background(), source, tool, map[string]any{"headers": map[string]any{header: "x"}})
+		if !errors.Is(err, ErrInvalid) {
+			t.Fatalf("header %q: expected ErrInvalid, got %v", header, err)
+		}
 	}
 }
 
