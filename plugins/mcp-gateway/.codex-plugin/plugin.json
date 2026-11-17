@@ -1,0 +1,31 @@
+{
+  "name": "mcp-gateway",
+  "version": "0.0.4",
+  "description": "Connects Codex to MCP Gateway with semantic tool discovery, scoped invocation, and automatic workspace provenance signing.",
+  "author": {
+    "name": "Naicheng Deng",
+    "url": "https://github.com/DengNaichen"
+  },
+  "homepage": "https://github.com/DengNaichen/mcp-gateway",
+  "repository": "https://github.com/DengNaichen/mcp-gateway",
+  "license": "GPL-3.0",
+  "keywords": ["mcp", "gateway", "tool-discovery", "scope", "coding-agent"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks-codex.json",
+  "interface": {
+    "displayName": "MCP Gateway",
+    "shortDescription": "Semantic tool discovery & scoped MCP execution.",
+    "longDescription": "Connects Codex to MCP Gateway for on-demand tool discovery, schema inspection, field-projected invocation, and automatic repository-scoped provenance signing.",
+    "developerName": "Naicheng Deng",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write", "Lifecycle hooks"],
+    "websiteURL": "https://github.com/DengNaichen/mcp-gateway",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/icon.png",
+    "defaultPrompt": [
+      "Discover available tools in MCP Gateway for my current task.",
+      "Inspect the schema and invoke the authorized gateway tool."
+    ]
+  }
+}

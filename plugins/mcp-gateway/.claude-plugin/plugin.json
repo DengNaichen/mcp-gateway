@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "mcp-gateway",
+  "version": "0.0.4",
+  "description": "Connects Claude Code to MCP Gateway with semantic tool discovery, scoped invocation, and automatic workspace provenance signing.",
+  "author": {
+    "name": "Naicheng Deng",
+    "url": "https://github.com/DengNaichen"
+  },
+  "homepage": "https://github.com/DengNaichen/mcp-gateway",
+  "repository": "https://github.com/DengNaichen/mcp-gateway",
+  "privacyPolicyUrl": "https://github.com/DengNaichen/mcp-gateway#readme",
+  "license": "GPL-3.0",
+  "keywords": ["mcp", "gateway", "tool-discovery", "scope", "coding-agent"],
+  "skills": ["./skills/mcp-gateway"],
+  "hooks": "./hooks/hooks-claude.json",
+  "mcpServers": "./.mcp.json"
+}

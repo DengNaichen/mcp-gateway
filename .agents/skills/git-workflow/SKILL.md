@@ -34,9 +34,9 @@ git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
 - **主 checkout**（`git worktree list --porcelain` 第一项，即 `~/Developer/mcp-gateway`）停在干净的 `main`，只用于同步、清理与默认启动。
 - **手工、脚本及 Herdr 创建的所有 worktree 统一收拢在 `<主 checkout>/.worktrees/<branch-slug>`**（分支名中的 `/` 替换为 `-`），已在 `.gitignore` 中忽略（`/.worktrees/`）。
   - **严禁**将 worktree 平放在 `~/Developer/`（如 `../mcp-gateway-*`）或 `/tmp` 下。
-  - 若使用 `herdr worktree create` 直接创建，必须显式传入 `--path <主 checkout>/.worktrees/<branch-slug>`；推荐优先运行 `scripts/new-worktree` 后再挂入 Herdr：
+  - 若使用 `herdr worktree create` 直接创建，必须显式传入 `--path <主 checkout>/.worktrees/<branch-slug>`；推荐优先运行 `.agents/skills/git-workflow/scripts/new-worktree` 后再挂入 Herdr：
     ```sh
-    scripts/new-worktree <branch>
+    .agents/skills/git-workflow/scripts/new-worktree <branch>
     herdr worktree open --cwd <主 checkout> --path <输出路径> --label <name> --no-focus
     ```
 - **宿主自行管理的 worktree**（如 Antigravity swarm 的 `~/.gemini/antigravity-cli/worktrees/`、Claude Code `.claude/worktrees/`、Codex `~/.codex/worktrees/`）由宿主管理位置与生命周期，不受 `.worktrees/` 位置限制，但同样须运行 setup 与提交前验证。
@@ -44,21 +44,21 @@ git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
 ### 创建与初始化
 
 ```sh
-scripts/new-worktree <branch> [--base <ref>] [--no-setup]
+.agents/skills/git-workflow/scripts/new-worktree <branch> [--base <ref>] [--no-setup]
 ```
 
-实现见 [scripts/new-worktree](../../../scripts/new-worktree) 与 [scripts/setup-worktree](../../../scripts/setup-worktree)：
+实现见 [scripts/new-worktree](scripts/new-worktree) 与 [scripts/setup-worktree](scripts/setup-worktree)：
 
 - 默认基线为 `origin/main`；脚本只 fetch 所选基线分支，fetch 失败立即中止，**不使用过期本地缓存**。
 - 新分支以 `--no-track` 创建，不把 `origin/main` 继承为 upstream；首次推送使用 `git push -u origin <branch>`。
 - 已有本地分支直接检出，不要传 `--base`；若分支已在其他 worktree 检出则报错并打印现有路径。
-- 创建后自动运行 `scripts/setup-worktree --if-needed`（纯文档任务可传 `--no-setup`）：
+- 创建后自动运行 `.agents/skills/git-workflow/scripts/setup-worktree --if-needed`（纯文档任务可传 `--no-setup`）：
   - Go module/build cache 跨 worktree 原生共享，无需重复下载。
   - 为次级 worktree 生成独占端口槽位与数据目录（见下节）。
 
 ### 运行时隔离
 
-实现位于 [scripts/worktree-runtime.mjs](../../../scripts/worktree-runtime.mjs)：
+实现位于 [scripts/worktree-runtime.mjs](scripts/worktree-runtime.mjs)：
 
 - **主 checkout 保持默认端口与目录**：后端/桌面端 `127.0.0.1:8789`、数据目录 `data/dev`，不生成 `.env.worktree`。
 - **次级 worktree** 根据其 canonical 路径派生稳定 12 位 hex ID 与独占槽位 `1–99`，写入 Git 忽略的 `.env.worktree`（权限 `0600`）：
@@ -67,8 +67,8 @@ scripts/new-worktree <branch> [--base <ref>] [--no-setup]
 - 若 `.env.worktree` 已存在且不含托管 marker（手工创建文件），脚本拒绝覆盖或删除。
 - 需要多个 worktree 并行启动服务时使用：
   ```sh
-  node scripts/worktree-runtime.mjs run api
-  node scripts/worktree-runtime.mjs run desktop
+  node .agents/skills/git-workflow/scripts/worktree-runtime.mjs run api
+  node .agents/skills/git-workflow/scripts/worktree-runtime.mjs run desktop
   ```
 - Go 单元测试（`t.TempDir()`）与验证脚本（`127.0.0.1:0`）天然隔离，可直接运行，不占用固定槽位端口。
 
@@ -76,7 +76,7 @@ scripts/new-worktree <branch> [--base <ref>] [--no-setup]
 
 - 未合并或放弃的 worktree：确认工作区干净且无占用进程后，执行：
   ```sh
-  node scripts/worktree-runtime.mjs clean <worktree路径>
+  node .agents/skills/git-workflow/scripts/worktree-runtime.mjs clean <worktree路径>
   git -C <主 checkout> worktree remove <worktree路径>
   ```
 - **严禁使用 `git worktree remove --force`**，不静默丢弃未提交或未推送改动。
@@ -86,7 +86,7 @@ scripts/new-worktree <branch> [--base <ref>] [--no-setup]
 
 ### Git hooks（lefthook）
 
-配置见 [lefthook.yml](../../../lefthook.yml)，lefthook 固定在独立的 [tools/go.mod](../../../tools/go.mod)（不进入应用模块依赖图，Dependabot 单独跟踪 `/tools`）；`scripts/setup-worktree` 将其构建到公共 git 目录下的 `lefthook-bin/` 并执行 `install`（幂等；手动运行用 `go tool -modfile=tools/go.mod lefthook ...`；hook 位于所有 worktree 共享的公共 git 目录，在执行提交的 worktree 内运行该 worktree 的 `lefthook.yml`）。主 checkout 需自行运行一次 `scripts/setup-worktree`。
+配置见 [lefthook.yml](../../../lefthook.yml)，lefthook 固定在独立的 [tools/go.mod](../../../tools/go.mod)（不进入应用模块依赖图，Dependabot 单独跟踪 `/tools`）；[scripts/setup-worktree](scripts/setup-worktree) 将其构建到公共 git 目录下的 `lefthook-bin/` 并执行 `install`（幂等；手动运行用 `go tool -modfile=tools/go.mod lefthook ...`；hook 位于所有 worktree 共享的公共 git 目录，在执行提交的 worktree 内运行该 worktree 的 `lefthook.yml`）。主 checkout 需自行运行一次 `.agents/skills/git-workflow/scripts/setup-worktree`。
 
 - `pre-commit`（仅暂存的 `*.go`，无 Go 文件时跳过，通常 1–3 秒）：`golangci-lint fmt -d` 只检查格式、不改文件，失败时提示运行 `golangci-lint fmt` 并重新暂存；`golangci-lint run --new-from-rev=HEAD` 只对涉及的包报告新增问题。逻辑见 [scripts/precommit-go](../../../scripts/precommit-go)，从 `PATH` 或 `$(go env GOPATH)/bin` 查找 `golangci-lint`，缺失时提示安装 v2.15.0。
 - `pre-push`：运行 `python3 scripts/check-foundation.py`（约 1 秒）。
@@ -98,10 +98,10 @@ scripts/new-worktree <branch> [--base <ref>] [--no-setup]
 ```sh
 CGO_ENABLED=0 go test -count=1 ./...
 python3 scripts/check-doc-links.py
-node --test scripts/release-policy.test.mjs scripts/worktree-runtime.test.mjs
+node --test scripts/release-policy.test.mjs .agents/skills/git-workflow/scripts/worktree-runtime.test.mjs
 ```
 
-- 修改原生桌面端或发布脚本时按需运行 `make package`、`scripts/verify-desktop-theme.py`、`scripts/verify-build-channels.py`。
+- 修改原生桌面端或发布脚本时按需运行 `make package`、`.agents/skills/desktop-dev/scripts/verify-desktop-theme.py`、`.agents/skills/desktop-dev/scripts/verify-build-channels.py`。
 - 逐文件 `git add <path>`，不用 `git add -A` / `git add .`，避免混入无关改动或 `.DS_Store`。
 
 ## Pull Request
@@ -113,16 +113,16 @@ node --test scripts/release-policy.test.mjs scripts/worktree-runtime.test.mjs
 
 ## 合并后清理
 
-squash 合并后从干净的**主 checkout** 运行 [scripts/finish-branch](../../../scripts/finish-branch)：
+squash 合并后从干净的**主 checkout** 运行 [scripts/finish-branch](scripts/finish-branch)：
 
 ```sh
-scripts/finish-branch <branch> --dry-run
-scripts/finish-branch <branch>
+.agents/skills/git-workflow/scripts/finish-branch <branch> --dry-run
+.agents/skills/git-workflow/scripts/finish-branch <branch>
 ```
 
 脚本按顺序执行以下核对与清理（任一步不满足即停止）：
 1. 查询 `gh pr list --repo DengNaichen/mcp-gateway --head <branch> --state merged`，确认存在唯一已合入 PR。
 2. 校验本地分支与 `origin/<branch>` 的 SHA 都严格等于 PR 的 `headRefOid`。
 3. 确认目标 worktree 无未提交或未跟踪文件，且主 checkout 处于干净的 `main`，fast-forward 到 `origin/main` 并验证 `mergeCommit` 已进入 `origin/main`。
-4. 运行 `node scripts/worktree-runtime.mjs clean <worktree>` 并 `git worktree remove <worktree>`。
+4. 运行 `node .agents/skills/git-workflow/scripts/worktree-runtime.mjs clean <worktree>` 并 `git worktree remove <worktree>`。
 5. 删除本地分支（`git branch -D`）并以 `--force-with-lease=<branch>:<headRefOid>` 删除远端分支，最后 `git fetch --prune` 并输出最新 `git worktree list`。

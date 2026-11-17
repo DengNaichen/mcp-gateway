@@ -42,9 +42,11 @@ func SlugRegex(slug string) string {
 	return strings.Join(escaped, "[-_]")
 }
 
-// NativePreToolMatcher returns the PreToolUse regex for Claude Code and Codex CLI.
+// NativePreToolMatcher returns the PreToolUse regex for Claude Code and Codex CLI,
+// matching both direct MCP registrations (mcp__<slug>__<tool>) and Claude Code
+// plugin-namespaced registrations (mcp__plugin_<plugin>_<slug>__<tool>).
 func NativePreToolMatcher(slug string) string {
-	return "^mcp__" + SlugRegex(slug) + "__(discover_tools|get_tool_schema|invoke_tool)$"
+	return "^mcp__(?:plugin_[A-Za-z0-9_-]+?_)?" + SlugRegex(slug) + "__(discover_tools|get_tool_schema|invoke_tool)$"
 }
 
 // CursorPreToolMatcher returns the preToolUse regex for Cursor.
@@ -83,6 +85,8 @@ func FindBuiltHookBinary() string {
 		candidates = append(candidates,
 			filepath.Join(exeDir, slug+"-hook"),
 			filepath.Join(exeDir, "gateway-hook"),
+			filepath.Join(filepath.Dir(exeDir), "Resources", slug+"-hook"),
+			filepath.Join(filepath.Dir(exeDir), "Resources", "gateway-hook"),
 		)
 	}
 	if wd, err := os.Getwd(); err == nil && wd != "" {
@@ -447,9 +451,9 @@ export default {
       let cwd = "";
       try {
         const session = await ctx.session.get({ sessionID: event.sessionID }, { signal: AbortSignal.timeout(1500) });
-        cwd = session?.location?.directory ?? "";
+        cwd = session?.location?.directory || ctx.location?.directory || "";
       } catch {
-        return;
+        cwd = ctx.location?.directory || "";
       }
       if (!cwd) return;
       const updated = await signToolInput(cwd, match[1], event.sessionID ?? "", event.input);

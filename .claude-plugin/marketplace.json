@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "mcp-gateway",
+  "description": "Official MCP Gateway plugins for Claude Code.",
+  "owner": {
+    "name": "Naicheng Deng",
+    "url": "https://github.com/DengNaichen"
+  },
+  "plugins": [
+    {
+      "name": "mcp-gateway",
+      "description": "Connects Claude Code to MCP Gateway with semantic tool discovery, scoped invocation, and automatic workspace provenance signing.",
+      "source": "./plugins/mcp-gateway",
+      "category": "development"
+    }
+  ]
+}

@@ -340,7 +340,7 @@ func normalizeMetaToolOp(raw string) (string, bool) {
 	if op, ok := matchCursorMetaTool(s); ok {
 		return op, true
 	}
-	re, err := regexp.Compile("^(?:mcp__)?" + workspace.SlugRegex(buildinfo.Current().Slug) + "[-_]{1,2}(discover_tools|get_tool_schema|invoke_tool)$")
+	re, err := regexp.Compile("^(?:mcp__(?:plugin_[A-Za-z0-9_-]+?_)?)?" + workspace.SlugRegex(buildinfo.Current().Slug) + "[-_]{1,2}(discover_tools|get_tool_schema|invoke_tool)$")
 	if err == nil {
 		if m := re.FindStringSubmatch(s); len(m) == 2 {
 			return m[1], true

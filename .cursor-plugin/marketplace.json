@@ -1,0 +1,17 @@
+{
+  "name": "mcp-gateway",
+  "owner": {
+    "name": "Naicheng Deng",
+    "url": "https://github.com/DengNaichen"
+  },
+  "metadata": {
+    "description": "Official MCP Gateway plugin marketplace for Cursor."
+  },
+  "plugins": [
+    {
+      "name": "mcp-gateway",
+      "source": "plugins/mcp-gateway",
+      "description": "Connects Cursor to MCP Gateway with semantic tool discovery, rules, skills, and preToolUse workspace provenance signing."
+    }
+  ]
+}

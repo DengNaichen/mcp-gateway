@@ -1,0 +1,15 @@
+{
+  "name": "@dengnaichen/pi-mcp-gateway",
+  "version": "0.0.4",
+  "description": "Official Pi package for MCP Gateway: registers the gateway MCP server, signs workspace provenance tokens on tool_call, and bundles the gateway skill.",
+  "keywords": ["pi-package", "mcp", "mcp-gateway"],
+  "license": "GPL-3.0",
+  "repository": "https://github.com/DengNaichen/mcp-gateway",
+  "pi": {
+    "extensions": ["./extensions/mcp-gateway.ts"],
+    "skills": ["../mcp-gateway/skills"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

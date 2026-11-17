@@ -1,0 +1,16 @@
+{
+  "name": "@dengnaichen/opencode-mcp-gateway",
+  "version": "0.0.4",
+  "description": "Official OpenCode v2 plugin for MCP Gateway: registers the gateway remote MCP server and signs workspace provenance tokens on tool.execute.before.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "keywords": ["opencode", "opencode-plugin", "mcp", "mcp-gateway"],
+  "license": "GPL-3.0",
+  "repository": "https://github.com/DengNaichen/mcp-gateway",
+  "peerDependencies": {
+    "@opencode/plugin": "*"
+  }
+}

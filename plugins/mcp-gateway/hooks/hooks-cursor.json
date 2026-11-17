@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "^MCP:(discover_tools|get_tool_schema|invoke_tool)$",
+        "command": "sh \"${CURSOR_PLUGIN_ROOT}/scripts/run-gateway-hook\" cursor",
+        "timeout": 5
+      }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "mcp-gateway",
+  "interface": {
+    "displayName": "MCP Gateway"
+  },
+  "plugins": [
+    {
+      "name": "mcp-gateway",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mcp-gateway"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

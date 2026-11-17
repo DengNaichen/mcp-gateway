@@ -31,6 +31,7 @@ type settingsState struct {
 	busyMode         string // "", "save", "test"
 	pingBusy         bool
 	pingResult       *model.PingModelResult
+	pingPassedKey    string
 	pingErr          string
 	pingDetail       string
 	profileBusyID    string
@@ -65,6 +66,82 @@ func settingsIsDirty(st *settingsState, saved model.Settings) bool {
 		st.clearKey
 }
 
+func settingsConnectionKey(cfg model.Settings, profileID, apiKey string, clearKey bool) string {
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%s\x00%t",
+		profileID,
+		strings.TrimSpace(cfg.BaseURL),
+		strings.TrimSpace(cfg.Model),
+		cfg.TimeoutSeconds,
+		strings.TrimSpace(apiKey),
+		clearKey,
+	)
+}
+
+func settingsPingPassed(st *settingsState) bool {
+	return st.pingResult != nil &&
+		st.pingPassedKey != "" &&
+		st.pingPassedKey == settingsConnectionKey(st.config, st.editingProfileID, st.apiKey, st.clearKey)
+}
+
+func isVerifiedActiveConnectionUnchanged(st *settingsState, state *Bootstrap) bool {
+	if state == nil || !state.Setup.ModelReady || (state.Setup.ModelCheck != nil && state.Setup.ModelCheck.Stale) {
+		return false
+	}
+	if !state.KeyConfigured || st.clearKey || strings.TrimSpace(st.apiKey) != "" {
+		return false
+	}
+	activeID := ""
+	for _, p := range state.Profiles {
+		if p.Active {
+			activeID = p.ID
+			break
+		}
+	}
+	if st.editingProfileID != activeID {
+		return false
+	}
+	return strings.TrimSpace(st.config.BaseURL) == strings.TrimSpace(state.Settings.BaseURL) &&
+		strings.TrimSpace(st.config.Model) == strings.TrimSpace(state.Settings.Model) &&
+		st.config.TimeoutSeconds == state.Settings.TimeoutSeconds
+}
+
+func settingsCanSave(st *settingsState, state *Bootstrap) bool {
+	if st.busyMode != "" || st.pingBusy {
+		return false
+	}
+	if strings.TrimSpace(st.config.BaseURL) == "" || strings.TrimSpace(st.config.Model) == "" {
+		return false
+	}
+	if settingsPingPassed(st) {
+		return true
+	}
+	return isVerifiedActiveConnectionUnchanged(st, state) && st.config.MaxTools != state.Settings.MaxTools
+}
+
+func resetSettingsTestOutput(st *settingsState) {
+	st.testResult = nil
+	st.errTitle = ""
+	st.errDetail = ""
+}
+
+func clearSettingsFeedback(st *settingsState) {
+	st.pingResult = nil
+	st.pingPassedKey = ""
+	st.pingErr = ""
+	st.pingDetail = ""
+	resetSettingsTestOutput(st)
+}
+
+func loadProfileIntoSettings(st *settingsState, id string, s model.Settings) {
+	st.editingProfileID = id
+	st.config = s
+	st.maxToolsFloat = float64(clampInt(s.MaxTools, 1, 12))
+	st.timeoutFloat = float64(clampInt(s.TimeoutSeconds, 5, 180))
+	st.apiKey = ""
+	st.clearKey = false
+	clearSettingsFeedback(st)
+}
+
 func (u *DesktopUI) renderSettings(c *ui.Context) {
 	state := u.State
 	st := getSettingsState(u)
@@ -73,28 +150,26 @@ func (u *DesktopUI) renderSettings(c *ui.Context) {
 	if !st.initialized {
 		st.initialized = true
 		st.lastSyncedSettings = state.Settings
-		st.config = state.Settings
-		st.maxToolsFloat = float64(clampInt(state.Settings.MaxTools, 1, 12))
-		st.timeoutFloat = float64(clampInt(state.Settings.TimeoutSeconds, 5, 180))
+		activeID := ""
 		for _, p := range state.Profiles {
 			if p.Active {
-				st.editingProfileID = p.ID
+				activeID = p.ID
 				break
 			}
 		}
+		loadProfileIntoSettings(st, activeID, state.Settings)
 	} else if st.lastSyncedSettings != state.Settings {
 		wasDirty := settingsIsDirty(st, st.lastSyncedSettings)
 		st.lastSyncedSettings = state.Settings
-		if !wasDirty {
-			st.config = state.Settings
-			st.maxToolsFloat = float64(clampInt(state.Settings.MaxTools, 1, 12))
-			st.timeoutFloat = float64(clampInt(state.Settings.TimeoutSeconds, 5, 180))
+		if !wasDirty && st.config != state.Settings {
+			activeID := ""
 			for _, p := range state.Profiles {
 				if p.Active {
-					st.editingProfileID = p.ID
+					activeID = p.ID
 					break
 				}
 			}
+			loadProfileIntoSettings(st, activeID, state.Settings)
 		}
 	}
 
@@ -243,20 +318,14 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 				st.config.BaseURL = "https://api.openai.com/v1"
 				st.config.Model = "gpt-6-luna"
 				st.clearKey = false
-				st.pingResult = nil
-				st.pingErr = ""
-				st.pingDetail = ""
-				st.testResult = nil
+				clearSettingsFeedback(st)
 			}
 			if SailSmallButton(c.Key("set-preset-gemini"), "Gemini 预设").Clicked() {
 				st.editingProfileID = ""
 				st.config.BaseURL = "https://generativelanguage.googleapis.com/v1beta"
 				st.config.Model = "gemini-decision-1"
 				st.clearKey = false
-				st.pingResult = nil
-				st.pingErr = ""
-				st.pingDetail = ""
-				st.testResult = nil
+				clearSettingsFeedback(st)
 			}
 		})
 
@@ -268,10 +337,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 					Placeholder("https://api.openai.com/v1").
 					FillWidth().
 					Changed() {
-					st.pingResult = nil
-					st.pingErr = ""
-					st.pingDetail = ""
-					st.testResult = nil
+					clearSettingsFeedback(st)
 				}
 			})
 
@@ -282,10 +348,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 					Placeholder("gpt-6-luna / gemini-decision-1").
 					FillWidth().
 					Changed() {
-					st.pingResult = nil
-					st.pingErr = ""
-					st.pingDetail = ""
-					st.testResult = nil
+					clearSettingsFeedback(st)
 				}
 			})
 		})
@@ -300,10 +363,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 						if SailSmallButton(c.Key("set-clear-key-inline"), "清除").Clicked() {
 							st.clearKey = true
 							st.apiKey = ""
-							st.pingResult = nil
-							st.pingErr = ""
-							st.pingDetail = ""
-							st.testResult = nil
+							clearSettingsFeedback(st)
 						}
 					} else {
 						SailQuietStatus(c, "未配置", SailInkMuted, SailInkMuted)
@@ -322,10 +382,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 				FillWidth().
 				Changed() {
 				st.clearKey = false
-				st.pingResult = nil
-				st.pingErr = ""
-				st.pingDetail = ""
-				st.testResult = nil
+				clearSettingsFeedback(st)
 			}
 		})
 
@@ -352,7 +409,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 							Width(200).
 							Changed() {
 							st.config.MaxTools = clampInt(int(math.Round(st.maxToolsFloat)), 1, 12)
-							st.testResult = nil
+							resetSettingsTestOutput(st)
 						}
 					})
 
@@ -363,7 +420,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 							Width(200).
 							Changed() {
 							st.config.TimeoutSeconds = clampInt(int(math.Round(st.timeoutFloat)), 5, 180)
-							st.testResult = nil
+							clearSettingsFeedback(st)
 						}
 					})
 				})
@@ -449,12 +506,14 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 				switch {
 				case st.pingBusy:
 					SailQuietStatus(c, "正在测试模型连接…", SailWarningInk, SailInkMuted)
-				case st.pingResult != nil:
+				case settingsPingPassed(st):
 					SailQuietStatus(c, fmt.Sprintf("模型测试通过 · %s 已响应 · %d ms", st.pingResult.Model, st.pingResult.DurationMS), SailSuccessInk, SailSuccessInk)
 				case st.pingErr != "":
 					SailQuietStatus(c, st.pingErr, SailDangerInk, SailDangerInk)
+				case isVerifiedActiveConnectionUnchanged(st, state) && st.config.MaxTools != state.Settings.MaxTools:
+					SailQuietStatus(c, "连接已验证，可直接保存上限调整", SailSuccessInk, SailInkMuted)
 				default:
-					SailQuietStatus(c, "点击「测试连接」验证模型可用性", SailInkMuted, SailInkMuted)
+					SailQuietStatus(c, "通过「测试连接」后才可保存配置", SailInkMuted, SailInkMuted)
 				}
 			})
 
@@ -471,7 +530,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 				if st.busyMode == "save" {
 					saveLabel = "保存中…"
 				}
-				if ui.PrimaryButton(c.Key("set-save-only"), saveLabel).Disabled(st.busyMode != "" || st.pingBusy).Clicked() {
+				if ui.PrimaryButton(c.Key("set-save-only"), saveLabel).Disabled(!settingsCanSave(st, state)).Clicked() {
 					u.submitSettings(st, false)
 				}
 			})
@@ -529,22 +588,12 @@ func (u *DesktopUI) renderSettingsProfilesSection(c *ui.Context, st *settingsSta
 						editLabel = "编辑中"
 					}
 					if SailSmallButton(c.Key("set-prof-edit-"+prof.ID), editLabel).Disabled(busy).Clicked() {
-						st.editingProfileID = prof.ID
-						st.config = model.Settings{
+						loadProfileIntoSettings(st, prof.ID, model.Settings{
 							BaseURL:        prof.BaseURL,
 							Model:          prof.Model,
 							MaxTools:       prof.MaxTools,
 							TimeoutSeconds: prof.TimeoutSeconds,
-						}
-						st.maxToolsFloat = float64(clampInt(prof.MaxTools, 1, 12))
-						st.timeoutFloat = float64(clampInt(prof.TimeoutSeconds, 5, 180))
-						st.apiKey = ""
-						st.clearKey = false
-						st.pingResult = nil
-						st.pingErr = ""
-						st.pingDetail = ""
-						st.errTitle = ""
-						st.errDetail = ""
+						})
 					}
 					if len(profiles) > 1 {
 						if SailDangerButton(c.Key("set-prof-del-"+prof.ID), "删除").Disabled(busy).Clicked() {
@@ -565,20 +614,19 @@ func (u *DesktopUI) pingSettingsModel(st *settingsState) {
 	cfg.BaseURL = strings.TrimSpace(cfg.BaseURL)
 	cfg.Model = strings.TrimSpace(cfg.Model)
 	cfg.TimeoutSeconds = clampInt(int(math.Round(st.timeoutFloat)), 5, 180)
+	st.config.TimeoutSeconds = cfg.TimeoutSeconds
 	if cfg.BaseURL == "" || cfg.Model == "" {
-		st.pingResult = nil
+		clearSettingsFeedback(st)
 		st.pingErr = "请填写 Base URL 与 Model ID 后再测试连接"
-		st.pingDetail = ""
 		return
 	}
 	st.pingBusy = true
-	st.pingResult = nil
-	st.pingErr = ""
-	st.pingDetail = ""
+	clearSettingsFeedback(st)
 
 	profileID := st.editingProfileID
 	apiKey := st.apiKey
 	clearKey := st.clearKey
+	pingKey := settingsConnectionKey(cfg, profileID, apiKey, clearKey)
 
 	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.TimeoutSeconds+5)*time.Second)
@@ -592,14 +640,19 @@ func (u *DesktopUI) pingSettingsModel(st *settingsState) {
 			title, detail := splitAPIError(err)
 			u.updateUI(func() {
 				st.pingBusy = false
-				st.pingErr = title
-				st.pingDetail = detail
+				if settingsConnectionKey(st.config, st.editingProfileID, st.apiKey, st.clearKey) == pingKey {
+					st.pingErr = title
+					st.pingDetail = detail
+				}
 			})
 			return nil
 		}
 		u.updateUI(func() {
 			st.pingBusy = false
-			st.pingResult = &res
+			if settingsConnectionKey(st.config, st.editingProfileID, st.apiKey, st.clearKey) == pingKey {
+				st.pingResult = &res
+				st.pingPassedKey = pingKey
+			}
 		})
 		return nil
 	})
@@ -621,20 +674,12 @@ func (u *DesktopUI) activateProfile(st *settingsState, id string) {
 		_ = u.RefreshSync()
 		u.updateUI(func() {
 			st.profileBusyID = ""
-			st.editingProfileID = prof.ID
-			st.config = model.Settings{
+			loadProfileIntoSettings(st, prof.ID, model.Settings{
 				BaseURL:        prof.BaseURL,
 				Model:          prof.Model,
 				MaxTools:       prof.MaxTools,
 				TimeoutSeconds: prof.TimeoutSeconds,
-			}
-			st.maxToolsFloat = float64(clampInt(prof.MaxTools, 1, 12))
-			st.timeoutFloat = float64(clampInt(prof.TimeoutSeconds, 5, 180))
-			st.apiKey = ""
-			st.clearKey = false
-			st.pingResult = nil
-			st.pingErr = ""
-			st.pingDetail = ""
+			})
 		})
 		u.Notify("已切换当前模型：" + prof.Model)
 		return nil
@@ -661,15 +706,12 @@ func (u *DesktopUI) deleteProfile(st *settingsState, id string) {
 				if u.State != nil {
 					for _, p := range u.State.Profiles {
 						if p.Active {
-							st.editingProfileID = p.ID
-							st.config = model.Settings{
+							loadProfileIntoSettings(st, p.ID, model.Settings{
 								BaseURL:        p.BaseURL,
 								Model:          p.Model,
 								MaxTools:       p.MaxTools,
 								TimeoutSeconds: p.TimeoutSeconds,
-							}
-							st.maxToolsFloat = float64(clampInt(p.MaxTools, 1, 12))
-							st.timeoutFloat = float64(clampInt(p.TimeoutSeconds, 5, 180))
+							})
 							break
 						}
 					}
@@ -682,7 +724,7 @@ func (u *DesktopUI) deleteProfile(st *settingsState, id string) {
 }
 
 func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
-	if st.busyMode != "" || u.Client == nil {
+	if st.busyMode != "" || st.pingBusy || u.Client == nil {
 		return
 	}
 	cfg := st.config
@@ -697,15 +739,16 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 		st.errDetail = ""
 		return
 	}
+	if !runTest && !settingsCanSave(st, u.State) {
+		return
+	}
 
 	mode := "save"
 	if runTest {
 		mode = "test"
 	}
 	st.busyMode = mode
-	st.errTitle = ""
-	st.errDetail = ""
-	st.testResult = nil
+	resetSettingsTestOutput(st)
 
 	profile := model.ModelProfile{
 		ID:             st.editingProfileID,
@@ -717,10 +760,35 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 	apiKey := st.apiKey
 	clearKey := st.clearKey
 	testIntent := st.testIntent
+	pingKey := settingsConnectionKey(cfg, profile.ID, apiKey, clearKey)
+	pingPassed := settingsPingPassed(st)
+	needsPingBeforeSave := !pingPassed && !isVerifiedActiveConnectionUnchanged(st, u.State)
 
 	u.RunAsync(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.TimeoutSeconds+20)*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.TimeoutSeconds*2+20)*time.Second)
 		defer cancel()
+
+		var pingRes *model.PingModelResult
+		if needsPingBeforeSave {
+			res, err := u.Client.PingModel(ctx, cfg, profile.ID, apiKey, clearKey)
+			if err != nil {
+				if IsUnauthorized(err) {
+					u.updateUI(func() { st.busyMode = "" })
+					return err
+				}
+				title, detail := splitAPIError(err)
+				u.updateUI(func() {
+					st.busyMode = ""
+					st.pingResult = nil
+					st.pingPassedKey = ""
+					st.pingErr = title
+					st.pingDetail = detail
+				})
+				return nil
+			}
+			pingRes = &res
+			pingPassed = true
+		}
 
 		saved, err := u.Client.SaveModelProfile(ctx, profile, apiKey, clearKey)
 		if err != nil {
@@ -731,10 +799,30 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 			title, detail := splitAPIError(err)
 			u.updateUI(func() {
 				st.busyMode = ""
+				st.pingResult = nil
+				st.pingPassedKey = ""
 				st.errTitle = title
 				st.errDetail = detail
 			})
 			return nil
+		}
+
+		finishSaved := func(testRes *gateway.DiscoverResult, errTitle, errDetail string) {
+			st.busyMode = ""
+			if pingRes != nil {
+				st.pingResult = pingRes
+				st.pingErr = ""
+				st.pingDetail = ""
+			}
+			if pingPassed && settingsConnectionKey(st.config, st.editingProfileID, st.apiKey, st.clearKey) == pingKey {
+				st.pingPassedKey = settingsConnectionKey(cfg, saved.ID, "", false)
+			}
+			st.editingProfileID = saved.ID
+			st.apiKey = ""
+			st.clearKey = false
+			st.testResult = testRes
+			st.errTitle = errTitle
+			st.errDetail = errDetail
 		}
 
 		if runTest {
@@ -747,22 +835,13 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 				_ = u.RefreshSync()
 				title, detail := splitAPIError(err)
 				u.updateUI(func() {
-					st.busyMode = ""
-					st.editingProfileID = saved.ID
-					st.apiKey = ""
-					st.clearKey = false
-					st.errTitle = title
-					st.errDetail = detail
+					finishSaved(nil, title, detail)
 				})
 				return nil
 			}
 			_ = u.RefreshSync()
 			u.updateUI(func() {
-				st.busyMode = ""
-				st.editingProfileID = saved.ID
-				st.apiKey = ""
-				st.clearKey = false
-				st.testResult = &res
+				finishSaved(&res, "", "")
 			})
 			u.Notify("路由配置已保存并通过实时校验")
 			return nil
@@ -770,10 +849,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 
 		_ = u.RefreshSync()
 		u.updateUI(func() {
-			st.busyMode = ""
-			st.editingProfileID = saved.ID
-			st.apiKey = ""
-			st.clearKey = false
+			finishSaved(nil, "", "")
 		})
 		u.Notify("模型配置已保存并设为当前模型")
 		return nil

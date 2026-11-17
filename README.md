@@ -357,8 +357,6 @@ MyGo 桌面端侧栏「连接客户端」可将本 Gateway 的 MCP 入口写入 
 
 页面显示实际配置路径和文件状态。写入保留其他配置；同名冲突不会覆盖；撤回只移除本应用写入且未被外部修改的条目。配置后需重载客户端并保持 Gateway 运行，Pi 可使用 `/reload`。共享鉴权模式还需在客户端补充 Bearer Token。
 
-实现边界、客户端版本和验证方法见 [客户端配置验证](docs/client-setup/verification.md)。
-
 
 ## Dev 与 Stable 构建
 
@@ -381,6 +379,4 @@ make release  # 显式打包 Stable；不上传、不安装
 
 版本号统一维护在 `internal/buildinfo/profiles.json`；Dev 自动附加 Git 短 SHA 和 dirty 标记。身份编译进程序，Finder 启动不依赖渠道环境变量。Dev 使用 `GATEWAY_DEV_DATA_DIR` / `GATEWAY_DEV_PUBLIC_URL`，Stable 继续使用原来的 `GATEWAY_DATA_DIR` / `GATEWAY_PUBLIC_URL`；显式 `-data`、`-addr` 仍优先。
 
-正式上传通过 `scripts/release-macos-local.sh --upload` 或 tag 发布工作流执行，要求干净工作区、HEAD 对应版本 tag，且该版本尚未正式发布。已发布版本必须升版，不能覆盖上传。普通 CI 只保留 Dev 测试包。
-
-更多构建入口、隔离边界及验证记录见 [构建渠道说明](docs/build-channels/README.md)。
+正式上传通过 `.agents/skills/release/scripts/release-macos-local.sh --upload` 或 tag 发布工作流执行，要求干净工作区、HEAD 对应版本 tag，且该版本尚未正式发布。已发布版本必须升版，不能覆盖上传。普通 CI 只保留 Dev 测试包。

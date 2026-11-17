@@ -1,0 +1,58 @@
+#!/bin/sh
+set -eu
+
+# Hook wrapper for MCP Gateway plugins (Claude Code, Codex CLI, Cursor).
+# Fails open when the local hook binary is absent so host sessions never hang;
+# when Gateway enforce=true, missing _gw_ctx* is rejected server-side with 403 scope_required.
+
+if [ "$#" -lt 1 ]; then
+	exit 0
+fi
+
+host=$1
+shift
+
+default_bin=""
+default_slug="mcp-gateway"
+default_data_dir=""
+
+emit_noop() {
+	if [ "$host" = "cursor" ]; then
+		printf '{}\n'
+	fi
+	exit 0
+}
+
+case "$host" in
+	claude|codex|cursor) ;;
+	*) emit_noop ;;
+esac
+
+for dir in /opt/homebrew/bin /usr/local/bin "${HOME:-}/.local/bin"; do
+	if [ -n "$dir" ] && [ -d "$dir" ]; then
+		PATH="$PATH:$dir"
+	fi
+done
+export PATH
+
+hook_bin="${GATEWAY_HOOK_BIN:-}"
+if [ -z "$hook_bin" ] || [ ! -x "$hook_bin" ]; then
+	if [ -n "$default_bin" ] && [ -x "$default_bin" ]; then
+		hook_bin=$default_bin
+	elif [ -n "${HOME:-}" ] && [ -x "${HOME}/.${default_slug}/bin/${default_slug}-hook" ]; then
+		hook_bin="${HOME}/.${default_slug}/bin/${default_slug}-hook"
+	elif command -v "${default_slug}-hook" >/dev/null 2>&1; then
+		hook_bin=$(command -v "${default_slug}-hook")
+	elif command -v gateway-hook >/dev/null 2>&1; then
+		hook_bin=$(command -v gateway-hook)
+	fi
+fi
+
+if [ -z "$hook_bin" ] || [ ! -x "$hook_bin" ]; then
+	emit_noop
+fi
+
+if [ -n "$default_data_dir" ]; then
+	exec "$hook_bin" "$host" --data "$default_data_dir" "$@"
+fi
+exec "$hook_bin" "$host" "$@"

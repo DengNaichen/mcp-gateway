@@ -1187,7 +1187,7 @@
             <button class="nav-item" data-page="market"><span class="nav-item-left"><span class="nav-icon" data-icon="market"></span>MCP 市场</span></button>
             <button class="nav-item" data-page="catalog"><span class="nav-item-left"><span class="nav-icon" data-icon="layers"></span>工具目录</span><span class="nav-count" id="nav-catalog-count"></span></button>
             <button class="nav-item" data-page="repos"><span class="nav-item-left"><span class="nav-icon" data-icon="folderGit"></span>仓库绑定</span><span class="nav-count" id="nav-repos-count"></span></button>
-            <button class="nav-item" data-page="clients"><span class="nav-item-left"><span class="nav-icon" data-icon="server"></span>连接客户端</span></button>
+            <button class="nav-item" data-page="clients"><span class="nav-item-left"><span class="nav-icon" data-icon="server"></span>连接客户端</span><span class="nav-count" id="nav-clients-count"></span></button>
             <button class="nav-item" data-page="settings"><span class="nav-item-left"><span class="nav-icon" data-icon="shield"></span>访问与路由</span></button>
           </div>
           <div>
@@ -1792,6 +1792,9 @@
       const logEl = document.getElementById("nav-logs-count");
       if (logEl) logEl.textContent = LOGS.length > 0 ? String(LOGS.length) : "";
 
+      const cliEl = document.getElementById("nav-clients-count");
+      if (cliEl && typeof CLIENT_PLUGINS !== "undefined") cliEl.textContent = String(CLIENT_PLUGINS.length);
+
       const bcEl = document.getElementById("bc-root");
       if (bcEl) {
         const titles = { overview: "概览", services: "上游服务", market: "MCP 市场", catalog: "工具目录", repos: "仓库绑定", clients: "连接客户端", logs: "请求日志", playground: "路由沙盒", settings: "访问与路由" };
@@ -1846,6 +1849,7 @@
         let changed = false;
         if (overviewDrawer) { overviewDrawer = null; changed = true; }
         if (activeHookModalAgent) { activeHookModalAgent = null; changed = true; }
+        if (activeVerifyModalClient) { activeVerifyModalClient = null; changed = true; }
         if (showAddRepoModal) { showAddRepoModal = false; changed = true; }
         if (showAddServiceModal) { showAddServiceModal = false; changed = true; }
         if (editingToolModalId) { editingToolModalId = null; changed = true; }
@@ -1878,23 +1882,97 @@
       renderModals();
     }
 
-    const CLIENT_CONFIGS = [
-      { id: "claude", name: "Claude Code", path: "~/.claude.json", state: "configured", detail: "" },
-      { id: "codex", name: "Codex CLI", path: "~/.codex/config.toml", state: "configured", detail: "" },
-      { id: "cursor", name: "Cursor", path: "~/.cursor/mcp.json", state: "update", detail: "检测到旧版端点配置" },
-      { id: "opencode", name: "OpenCode v2", path: "~/.config/opencode/opencode.json", state: "write", detail: "" },
-      { id: "pi", name: "Pi", path: "~/.pi/agent/mcp.json", state: "write", detail: "" }
+    let activeVerifyModalClient = null;
+
+    const CLIENT_PLUGINS = [
+      {
+        id: "claude",
+        name: "Claude Code",
+        path: "~/.claude/plugins/installed_plugins.json",
+        state: "已安装",
+        detail: "v0.0.4 · 官方插件已启用（含 PreToolUse + mcp-gateway Skill）",
+        warning: "",
+        legacyMcp: false
+      },
+      {
+        id: "codex",
+        name: "Codex CLI",
+        path: "~/.codex/plugins",
+        state: "待升级",
+        detail: "检测到旧版全局 MCP 条目，升级为官方插件时将自动撤回并注入 PreToolUse Hook",
+        warning: "若 Codex 首次提示审查插件 Hook，请在 Codex 中确认信任",
+        legacyMcp: true
+      },
+      {
+        id: "cursor",
+        name: "Cursor",
+        path: "~/.cursor/plugins/local/mcp-gateway",
+        state: "需要更新",
+        detail: "已安装 v0.0.3 -> 可升级至 v0.0.4（更新 MCP 端口与 Hook 规则）",
+        warning: "",
+        legacyMcp: false
+      },
+      {
+        id: "opencode",
+        name: "OpenCode v2",
+        path: "~/.config/opencode/plugins/mcp-gateway",
+        state: "未安装",
+        detail: "将写入 OpenCode 插件（tool.execute.before）与全局 mcp 端点配置",
+        warning: "",
+        legacyMcp: false
+      },
+      {
+        id: "pi",
+        name: "Pi",
+        path: "~/.pi/agent/extensions/mcp-gateway",
+        state: "未安装",
+        detail: "将写入 Pi 官方扩展（tool_call Hook + mcp-gateway Skill）",
+        warning: "",
+        legacyMcp: false
+      }
     ];
 
-    function setClientState(id, nextState) {
-      const c = CLIENT_CONFIGS.find(x => x.id === id);
-      if (c) {
-        c.state = nextState;
-        openPopoverKey = "";
-        if (nextState === "configured") showToast(`已写入 ${c.name} 配置，请重载客户端`);
-        else showToast(`已撤回 ${c.name} 配置`);
+    function verificationPromptFor(clientId) {
+      const target = CLIENT_PLUGINS.find(c => c.id === clientId);
+      const label = target ? target.name : clientId;
+      return `在 ${label} 中验证 mcp-gateway 官方插件：\n1. 执行一次 discover_tools 查询 "列出当前仓库可用工具"。\n2. 确认 Hook 已自动注入单次签名 _gw_ctx（无需手动传入 cwd）。\n3. 回复匹配的仓库名称、规则命中结果与前 3 条可用工具摘要。`;
+    }
+
+    function setClientPluginAction(id, action) {
+      const c = CLIENT_PLUGINS.find(x => x.id === id);
+      if (!c) return;
+      openPopoverKey = "";
+      if (action === "install" || action === "upgrade" || action === "update") {
+        c.state = "已安装";
+        c.legacyMcp = false;
+        c.warning = "";
+        c.detail = action === "upgrade"
+          ? "已自动撤回旧版全局 MCP 并启用 v0.0.4 官方插件"
+          : "v0.0.4 · 官方插件已启用（MCP + Hook + mcp-gateway Skill）";
+        showToast(`${c.name} 官方插件已就绪`);
+      } else if (action === "remove") {
+        c.state = "未安装";
+        c.detail = "已卸载官方插件与对应 Hook";
+        showToast(`已卸载 ${c.name} 官方插件`);
+      } else if (action === "legacy-mcp") {
+        c.state = "待升级";
+        c.legacyMcp = true;
+        c.detail = "已写入全局 MCP 端点（尚未注入 Hook / Skill）";
+        showToast(`已为 ${c.name} 仅写入全局 MCP 配置`);
+      } else if (action === "check") {
+        c.state = "未安装";
+        c.warning = "";
+        c.detail = "冲突已清理，可直接安装官方插件";
+        showToast(`${c.name} 配置状态已校验`);
       }
       render();
+    }
+
+    function copyClientVerifyPrompt(id) {
+      openPopoverKey = "";
+      activeVerifyModalClient = id;
+      copyText(verificationPromptFor(id), "已复制端到端验证 Prompt");
+      renderModals();
     }
 
     function renderOverview() {
@@ -2110,47 +2188,57 @@
     }
 
     function renderClients() {
+      const installedCount = CLIENT_PLUGINS.filter(c => c.state === "已安装").length;
       return `
         <div class="section-header">
-          <h1 class="section-title">连接客户端</h1>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <h1 class="section-title">连接客户端</h1>
+            <span class="quiet-meta">官方插件已安装 ${installedCount} / ${CLIENT_PLUGINS.length}</span>
+          </div>
           <div style="display:flex;align-items:center;gap:10px;">
             <span class="mono" style="font-size:12px;color:var(--ink-muted);">mcp-gateway · http://127.0.0.1:8788/mcp</span>
             <button class="btn btn-sm" type="button" onclick="refreshPrototypeState()">${svgIcon("refresh", 13)}<span>刷新状态</span></button>
           </div>
         </div>
 
-        <div class="card-flush">
-          ${CLIENT_CONFIGS.map(c => {
+        <div class="card-flush" style="overflow:visible;">
+          ${CLIENT_PLUGINS.map(c => {
             const popOpen = openPopoverKey === `client-${c.id}`;
+            let primaryBtn = "";
+            if (c.state === "已安装") {
+              primaryBtn = `<button class="btn btn-sm" type="button" onclick="activeVerifyModalClient='${c.id}';renderModals();">✓ 已安装</button>`;
+            } else if (c.state === "待升级") {
+              primaryBtn = `<button class="btn btn-primary btn-sm" type="button" onclick="setClientPluginAction('${c.id}','upgrade')">升级为插件</button>`;
+            } else if (c.state === "需要更新") {
+              primaryBtn = `<button class="btn btn-primary btn-sm" type="button" onclick="setClientPluginAction('${c.id}','update')">更新插件</button>`;
+            } else if (c.state === "配置异常" || c.state === "已有插件") {
+              primaryBtn = `<button class="btn btn-sm btn-danger" type="button" onclick="setClientPluginAction('${c.id}','check')">检查配置</button>`;
+            } else {
+              primaryBtn = `<button class="btn btn-primary btn-sm" type="button" onclick="setClientPluginAction('${c.id}','install')">安装插件</button>`;
+            }
             return `
               <div class="hairline-row" style="cursor:default;">
                 <div class="row-main">
                   <div class="row-title-line" style="gap:10px;">
                     ${clientBrandIcon(c.id, 26)}
                     <span class="row-name" style="font-family:var(--sans);font-size:14px;">${esc(c.name)}</span>
-                    <button class="btn-icon" type="button" title="${esc(c.path)}（在 Finder 中打开配置位置）" onclick="showToast('已定位配置文件：${esc(c.path)}')">${svgIcon("arrowUpRight", 15)}</button>
+                    <button class="btn-icon" type="button" title="${esc(c.path)}（在 Finder 中打开配置位置）" onclick="showToast('配置目录：${esc(c.path)}')">${svgIcon("arrowUpRight", 15)}</button>
+                    ${c.warning ? `<span class="quiet-meta" style="color:var(--warning);">· ${esc(c.warning)}</span>` : `<span class="quiet-meta">· ${esc(c.detail)}</span>`}
                   </div>
                 </div>
                 <div class="row-right" style="gap:8px;">
-                  <button class="btn btn-sm" type="button" onclick="openHookModal('${c.id}')">Hook 配置</button>
-                  ${c.state === "configured" ? `
-                    <span class="quiet-meta" style="padding:0 4px;">✓ 已配置</span>
-                    <div class="menu-wrap">
-                      <button class="btn-icon" type="button" onclick="event.stopPropagation();openPopoverKey=(openPopoverKey==='client-${c.id}'?'':'client-${c.id}');render();" title="更多操作">${svgIcon("more", 15)}</button>
-                      ${popOpen ? `
-                        <div class="popover-menu" onclick="event.stopPropagation();">
-                          <button class="popover-item" type="button" onclick="openPopoverKey='';openHookModal('${c.id}')">查看 Hook 配置</button>
-                          <button class="popover-item danger" type="button" onclick="setClientState('${c.id}','write')">撤回配置</button>
-                        </div>
-                      ` : ""}
-                    </div>
-                  ` : c.state === "update" ? `
-                    <button class="btn btn-sm" type="button" onclick="setClientState('${c.id}','configured')">更新配置</button>
-                  ` : c.state === "error" ? `
-                    <button class="btn btn-sm" type="button" title="${esc(c.detail)}" onclick="showToast('${esc(c.name)}：${esc(c.detail)}')">检查配置</button>
-                  ` : `
-                    <button class="btn btn-sm" type="button" onclick="setClientState('${c.id}','configured')">写入配置</button>
-                  `}
+                  ${primaryBtn}
+                  <div class="menu-wrap">
+                    <button class="btn-icon" type="button" onclick="event.stopPropagation();openPopoverKey=(openPopoverKey==='client-${c.id}'?'':'client-${c.id}');render();" title="${esc(c.name)} 更多操作">${svgIcon("more", 15)}</button>
+                    ${popOpen ? `
+                      <div class="popover-menu" onclick="event.stopPropagation();">
+                        <button class="popover-item" type="button" onclick="copyClientVerifyPrompt('${c.id}')">复制验证 Prompt</button>
+                        <button class="popover-item" type="button" onclick="openPopoverKey='';openHookModal('${c.id}')">查看 Hook 配置</button>
+                        <button class="popover-item" type="button" onclick="setClientPluginAction('${c.id}','legacy-mcp')">仅写入 MCP</button>
+                        <button class="popover-item danger" type="button" onclick="setClientPluginAction('${c.id}','remove')">卸载插件</button>
+                      </div>
+                    ` : ""}
+                  </div>
                 </div>
               </div>
             `;
@@ -3772,6 +3860,12 @@
     }
 
     function saveAllSettings() {
+      if (modelTestState.status !== "passed") {
+        modelTestState = { status: "error", message: "保存前请先点击「测试连接」并通过连通性校验", latencyMs: null };
+        showToast("请先通过模型连通性测试后再保存");
+        render();
+        return;
+      }
       const saved = persistAllSettings();
       if (!saved) modelTestState = { status: "error", message: "请填写 Base URL 与 Model ID 后再保存", latencyMs: null };
       else showToast(`已保存模型配置：${saved.modelId}`);
@@ -3973,7 +4067,7 @@
             ${renderModelTestStatus()}
             <div style="display:flex;gap:8px;flex-shrink:0;">
               <button class="btn" type="button" onclick="runModelTest()" ${modelTestState.status === "testing" ? "disabled" : ""}>${modelTestState.status === "testing" ? "测试中…" : "测试连接"}</button>
-              <button id="btn-save-settings" class="btn btn-primary" type="button" onclick="saveAllSettings()">保存配置</button>
+              <button id="btn-save-settings" class="btn btn-primary" type="button" ${modelTestState.status !== "passed" ? 'disabled title="请先通过「测试连接」"' : ""} onclick="saveAllSettings()">保存配置</button>
             </div>
           </div>
         </div>
@@ -4276,6 +4370,31 @@
                 <div style="display:flex;justify-content:flex-end;gap:8px;">
                   <button class="btn" type="button" onclick="showToast('已重新获取最新 Hook 片段')">${svgIcon("refresh", 13)}<span>重新获取</span></button>
                   <button class="btn btn-primary" type="button" onclick="copyText(HOOK_SNIPPETS['${activeHookModalAgent}'].snippet,'已复制 Hook 配置片段')">复制配置片段</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+      if (activeVerifyModalClient) {
+        const cli = CLIENT_PLUGINS.find(c => c.id === activeVerifyModalClient);
+        const promptText = verificationPromptFor(activeVerifyModalClient);
+        modalRoot.innerHTML = `
+          <div class="modal-mask" onclick="activeVerifyModalClient=null;renderModals();">
+            <div class="modal-box" style="max-width:560px;" onclick="event.stopPropagation();">
+              <div style="padding:16px 20px;border-bottom:1px solid var(--divider);display:flex;justify-content:space-between;align-items:center;">
+                <strong style="font-size:15px;color:var(--ink-strong);">客户端验证 Prompt · ${esc(cli ? cli.name : activeVerifyModalClient)}</strong>
+                <button class="btn btn-sm" type="button" onclick="activeVerifyModalClient=null;renderModals();">关闭</button>
+              </div>
+              <div style="padding:18px 20px;display:flex;flex-direction:column;gap:12px;">
+                <div style="font-size:12.5px;color:var(--ink-muted);line-height:1.5;">粘贴到对应 Coding Agent 会话中，确认 MCP 工具发现与 PreToolUse Hook 仓库签名链路已连通：</div>
+                <div class="code-navy">
+                  <div class="code-navy-hdr">
+                    <span>VERIFICATION PROMPT</span>
+                    <button class="endpoint-copy" style="color:#fff;" type="button" onclick="copyText(verificationPromptFor('${activeVerifyModalClient}'),'已复制验证 Prompt');activeVerifyModalClient=null;renderModals();">复制并关闭</button>
+                  </div>
+                  <pre>${esc(promptText)}</pre>
                 </div>
               </div>
             </div>

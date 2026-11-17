@@ -15,6 +15,7 @@ import (
 
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
+	"gatewaylab/internal/clientplugin"
 )
 
 // ViewID identifies a top-level control plane page.
@@ -64,6 +65,10 @@ type DesktopUI struct {
 	ClientStatuses    []clientconfig.Status
 	ClientConfigError string
 	ClientsBusy       bool
+	ClientPlugins     *clientplugin.Manager
+	PluginStatuses    []clientplugin.Status
+	PluginError       string
+	PluginsBusy       bool
 	Runtime           *gatewayRuntime
 	Client            *APIClient
 
@@ -139,8 +144,20 @@ func NewDesktopUI(rt *gatewayRuntime) *DesktopUI {
 	}
 	if err == nil {
 		d.ClientConfigs = clientconfig.New(home, filepath.Join(home, "."+buildinfo.Current().Slug, "client-config"), configEnv)
+		dataDir := ""
+		if rt != nil {
+			dataDir = rt.DataDir
+		}
+		d.ClientPlugins = clientplugin.New(clientplugin.Options{
+			HomeDir:       home,
+			StateDir:      filepath.Join(home, "."+buildinfo.Current().Slug, "plugins"),
+			DataDir:       dataDir,
+			Getenv:        configEnv,
+			ClientConfigs: d.ClientConfigs,
+		})
 	} else {
 		d.ClientConfigError = err.Error()
+		d.PluginError = err.Error()
 	}
 	d.viewAtomic.Store(ViewOverview)
 	return d
