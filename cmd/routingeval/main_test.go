@@ -1,8 +1,15 @@
 package main
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"gatewaylab/internal/apiclient"
 )
 
 func TestScore(t *testing.T) {
@@ -36,5 +43,39 @@ func TestScore(t *testing.T) {
 				t.Fatalf("got %+v", o)
 			}
 		})
+	}
+}
+
+func TestDiscoverWithRetry(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer eval-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if calls.Add(1) == 1 {
+			w.Header().Set("Retry-After", "2")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"rate limited"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"selected","tools":[{"id":"github.list_prs"}],"duration_ms":15,"prompt_tokens":80}`))
+	}))
+	defer srv.Close()
+
+	var slept []time.Duration
+	client := apiclient.New(srv.URL, apiclient.WithToken("eval-token"))
+	res, err := discoverWithRetry(context.Background(), client, "list prs", func(d time.Duration) {
+		slept = append(slept, d)
+	})
+	if err != nil {
+		t.Fatalf("discoverWithRetry: %v", err)
+	}
+	if len(slept) != 1 || slept[0] != 2*time.Second {
+		t.Fatalf("expected one 2s retry sleep, got %v", slept)
+	}
+	if len(res.Tools) != 1 || res.Tools[0].ID != "github.list_prs" || res.PromptTokens != 80 {
+		t.Fatalf("unexpected discover result: %+v", res)
 	}
 }

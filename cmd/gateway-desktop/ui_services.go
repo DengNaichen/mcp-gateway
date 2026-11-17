@@ -3,15 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
 
 	"github.com/egoist/mygo/ui"
@@ -19,11 +19,7 @@ import (
 
 const servicesToolPageSize = 30
 
-var (
-	servicesStateMu  sync.Mutex
-	servicesStateMap = map[*DesktopUI]*servicesPageState{}
-	nonServiceIDRe   = regexp.MustCompile(`[^a-z0-9._-]+`)
-)
+var nonServiceIDRe = regexp.MustCompile(`[^a-z0-9._-]+`)
 
 type servicesPageState struct {
 	// List view state
@@ -123,12 +119,9 @@ type servicesPageState struct {
 	selectedRunID         string
 }
 
-func getServicesState(u *DesktopUI) *servicesPageState {
-	servicesStateMu.Lock()
-	defer servicesStateMu.Unlock()
-	st, ok := servicesStateMap[u]
-	if !ok {
-		st = &servicesPageState{
+func (u *DesktopUI) servicesState() *servicesPageState {
+	if u.services == nil {
+		u.services = &servicesPageState{
 			addArgsText:       "[]",
 			addEnvText:        "{}",
 			addHeadersText:    "{}",
@@ -141,9 +134,8 @@ func getServicesState(u *DesktopUI) *servicesPageState {
 			maintTimeoutStr:   "900",
 			maintAutoPublish:  true,
 		}
-		servicesStateMap[u] = st
 	}
-	return st
+	return u.services
 }
 
 func (st *servicesPageState) openAddModal(tab int) {
@@ -212,24 +204,23 @@ func slugServiceID(name, fallbackPrefix string) string {
 }
 
 func (u *DesktopUI) renderServices(c *ui.Context) {
-	st := getServicesState(u)
+	st := u.servicesState()
 
 	// Consume cross-page trigger to open Add Service modal.
-	if u.OpenAddService {
-		u.OpenAddService = false
+	if u.consumePendingAddService() {
 		st.openAddModal(0)
 	}
 
 	var selectedServer *apitypes.Server
-	if u.SelectedServerID != "" {
+	if activeID := u.activeServiceID(); activeID != "" {
 		for i := range u.State.Registry.Servers {
-			if u.State.Registry.Servers[i].ID == u.SelectedServerID {
+			if u.State.Registry.Servers[i].ID == activeID {
 				selectedServer = &u.State.Registry.Servers[i]
 				break
 			}
 		}
 		if selectedServer == nil {
-			u.SelectedServerID = ""
+			u.clearActiveService()
 		}
 	}
 
@@ -560,7 +551,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 			ui.Text(c, "← 返回上游服务列表").FontSize(12.5).FontWeight(500).TextColor(SailInkBody).SingleLine()
 		})
 		if backBtn.Clicked() {
-			u.SelectedServerID = ""
+			u.clearActiveService()
 			st.detailServerID = ""
 		}
 
@@ -2159,7 +2150,7 @@ func (u *DesktopUI) deactivateService(st *servicesPageState, server apitypes.Ser
 			return err
 		}
 		u.updateUI(func() {
-			u.SelectedServerID = ""
+			u.clearActiveService()
 			st.detailServerID = ""
 		})
 		u.Notify("已停用服务「" + server.Name + "」并关闭全部开放工具")
@@ -2228,18 +2219,27 @@ func (u *DesktopUI) submitAddMCPService(st *servicesPageState) {
 	}
 
 	st.addBusy = true
-	go func() {
+	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 		defer cancel()
 		check, err := u.Client.TestSource(ctx, payload)
 		if err != nil {
+			if apiclient.IsUnauthorized(err) {
+				u.updateUI(func() { st.addBusy = false })
+				return err
+			}
 			u.updateUI(func() {
 				st.addBusy = false
 				st.addError = formatAPIError(err)
 			})
-			return
+			return nil
 		}
-		_ = u.RefreshSync()
+		if err := u.RefreshSync(); err != nil {
+			u.updateUI(func() { st.addBusy = false })
+			if apiclient.IsUnauthorized(err) {
+				return err
+			}
+		}
 		u.updateUI(func() {
 			st.addBusy = false
 			st.showAddModal = false
@@ -2252,7 +2252,8 @@ func (u *DesktopUI) submitAddMCPService(st *servicesPageState) {
 			msg = "服务已连接并同步工具"
 		}
 		u.Notify(msg)
-	}()
+		return nil
+	})
 }
 
 func (u *DesktopUI) submitAddOpenAPIService(st *servicesPageState) {
@@ -2299,18 +2300,27 @@ func (u *DesktopUI) submitAddOpenAPIService(st *servicesPageState) {
 	opIDs := splitCommaList(st.addOpenAPIOpsText)
 
 	st.addBusy = true
-	go func() {
+	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 		count, err := u.Client.ImportOpenAPI(ctx, srv, specBytes, specURL, opIDs)
 		if err != nil {
+			if apiclient.IsUnauthorized(err) {
+				u.updateUI(func() { st.addBusy = false })
+				return err
+			}
 			u.updateUI(func() {
 				st.addBusy = false
 				st.addError = formatAPIError(err)
 			})
-			return
+			return nil
 		}
-		_ = u.RefreshSync()
+		if err := u.RefreshSync(); err != nil {
+			u.updateUI(func() { st.addBusy = false })
+			if apiclient.IsUnauthorized(err) {
+				return err
+			}
+		}
 		u.updateUI(func() {
 			st.addBusy = false
 			st.showAddModal = false
@@ -2319,7 +2329,8 @@ func (u *DesktopUI) submitAddOpenAPIService(st *servicesPageState) {
 			u.OpenServiceDetail(id)
 		})
 		u.Notify(fmt.Sprintf("已从 OpenAPI 导入 %d 个工具到 %s", count, name))
-	}()
+		return nil
+	})
 }
 
 func (u *DesktopUI) saveConnForm(st *servicesPageState, orig apitypes.Server, testSource bool) {
@@ -2333,18 +2344,22 @@ func (u *DesktopUI) saveConnForm(st *servicesPageState, orig apitypes.Server, te
 		return
 	}
 	st.connBusy = true
-	go func() {
+	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer cancel()
 		var msg string
 		if testSource {
 			check, callErr := u.Client.TestSource(ctx, payload)
 			if callErr != nil {
+				if apiclient.IsUnauthorized(callErr) {
+					u.updateUI(func() { st.connBusy = false })
+					return callErr
+				}
 				u.updateUI(func() {
 					st.connBusy = false
 					st.connError = formatAPIError(callErr)
 				})
-				return
+				return nil
 			}
 			msg = check.Message
 			if msg == "" {
@@ -2352,21 +2367,31 @@ func (u *DesktopUI) saveConnForm(st *servicesPageState, orig apitypes.Server, te
 			}
 		} else {
 			if _, callErr := u.Client.SaveServer(ctx, payload); callErr != nil {
+				if apiclient.IsUnauthorized(callErr) {
+					u.updateUI(func() { st.connBusy = false })
+					return callErr
+				}
 				u.updateUI(func() {
 					st.connBusy = false
 					st.connError = formatAPIError(callErr)
 				})
-				return
+				return nil
 			}
 			msg = "连接配置已保存"
 		}
-		_ = u.RefreshSync()
+		if err := u.RefreshSync(); err != nil {
+			u.updateUI(func() { st.connBusy = false })
+			if apiclient.IsUnauthorized(err) {
+				return err
+			}
+		}
 		u.updateUI(func() {
 			st.connBusy = false
 			st.connHydratedID = ""
 		})
 		u.Notify(msg)
-	}()
+		return nil
+	})
 }
 
 func (u *DesktopUI) saveConnJSON(st *servicesPageState, orig apitypes.Server) {
@@ -2383,23 +2408,33 @@ func (u *DesktopUI) saveConnJSON(st *servicesPageState, orig apitypes.Server) {
 		payload.ID = orig.ID
 	}
 	st.connBusy = true
-	go func() {
+	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if _, err := u.Client.SaveServer(ctx, payload); err != nil {
+			if apiclient.IsUnauthorized(err) {
+				u.updateUI(func() { st.connBusy = false })
+				return err
+			}
 			u.updateUI(func() {
 				st.connBusy = false
 				st.connError = formatAPIError(err)
 			})
-			return
+			return nil
 		}
-		_ = u.RefreshSync()
+		if err := u.RefreshSync(); err != nil {
+			u.updateUI(func() { st.connBusy = false })
+			if apiclient.IsUnauthorized(err) {
+				return err
+			}
+		}
 		u.updateUI(func() {
 			st.connBusy = false
 			st.connHydratedID = ""
 		})
 		u.Notify("服务 JSON 定义已保存")
-	}()
+		return nil
+	})
 }
 
 func (u *DesktopUI) probeServerConnection(st *servicesPageState, server apitypes.Server) {
@@ -2407,24 +2442,33 @@ func (u *DesktopUI) probeServerConnection(st *servicesPageState, server apitypes
 		return
 	}
 	st.connBusy = true
-	go func() {
+	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		check, err := u.Client.TestSource(ctx, server)
-		_ = u.RefreshSync()
+		if err != nil {
+			u.updateUI(func() { st.connBusy = false })
+			if apiclient.IsUnauthorized(err) {
+				return err
+			}
+			_ = u.RefreshSync()
+			u.Notify("探活失败: " + formatAPIError(err))
+			return nil
+		}
+		if syncErr := u.RefreshSync(); syncErr != nil && apiclient.IsUnauthorized(syncErr) {
+			u.updateUI(func() { st.connBusy = false })
+			return syncErr
+		}
 		u.updateUI(func() {
 			st.connBusy = false
 		})
-		if err != nil {
-			u.Notify("探活失败: " + formatAPIError(err))
-			return
-		}
 		msg := check.Message
 		if msg == "" {
 			msg = "连接探活通过"
 		}
 		u.Notify(msg)
-	}()
+		return nil
+	})
 }
 
 func (u *DesktopUI) saveEditedTool(st *servicesPageState, orig apitypes.Tool) {
@@ -2447,23 +2491,33 @@ func (u *DesktopUI) saveEditedTool(st *servicesPageState, orig apitypes.Tool) {
 	}
 
 	st.toolEditBusy = true
-	go func() {
+	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if _, err := u.Client.SaveTool(ctx, payload); err != nil {
+			if apiclient.IsUnauthorized(err) {
+				u.updateUI(func() { st.toolEditBusy = false })
+				return err
+			}
 			u.updateUI(func() {
 				st.toolEditBusy = false
 				st.toolEditError = formatAPIError(err)
 			})
-			return
+			return nil
 		}
-		_ = u.RefreshSync()
+		if err := u.RefreshSync(); err != nil {
+			u.updateUI(func() { st.toolEditBusy = false })
+			if apiclient.IsUnauthorized(err) {
+				return err
+			}
+		}
 		u.updateUI(func() {
 			st.toolEditBusy = false
 			st.showToolModal = false
 		})
 		u.Notify("工具定义已保存")
-	}()
+		return nil
+	})
 }
 
 func (u *DesktopUI) submitAddHTTPTool(st *servicesPageState, serverID string) {
@@ -2498,23 +2552,33 @@ func (u *DesktopUI) submitAddHTTPTool(st *servicesPageState, serverID string) {
 	}
 
 	st.httpToolBusy = true
-	go func() {
+	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if _, err := u.Client.SaveTool(ctx, payload); err != nil {
+			if apiclient.IsUnauthorized(err) {
+				u.updateUI(func() { st.httpToolBusy = false })
+				return err
+			}
 			u.updateUI(func() {
 				st.httpToolBusy = false
 				st.httpToolError = formatAPIError(err)
 			})
-			return
+			return nil
 		}
-		_ = u.RefreshSync()
+		if err := u.RefreshSync(); err != nil {
+			u.updateUI(func() { st.httpToolBusy = false })
+			if apiclient.IsUnauthorized(err) {
+				return err
+			}
+		}
 		u.updateUI(func() {
 			st.httpToolBusy = false
 			st.showAddHTTPTool = false
 		})
 		u.Notify("HTTP 工具已创建并启用")
-	}()
+		return nil
+	})
 }
 
 func (u *DesktopUI) loadMaintenanceOverview(st *servicesPageState, server apitypes.Server) {
@@ -2523,27 +2587,31 @@ func (u *DesktopUI) loadMaintenanceOverview(st *servicesPageState, server apityp
 	}
 	st.maintLoading = true
 	st.maintError = ""
-	go func() {
+	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		ov, err := u.Client.Maintenance(ctx)
+		if err != nil {
+			if apiclient.IsUnauthorized(err) {
+				u.updateUI(func() { st.maintLoading = false })
+				return err
+			}
+			u.updateUI(func() {
+				st.maintLoading = false
+				st.maintError = formatAPIError(err)
+			})
+			return nil
+		}
 		u.updateUI(func() {
 			st.maintLoading = false
-			if err != nil {
-				st.maintError = formatAPIError(err)
-				return
-			}
 			st.maintOverview = &ov
 			st.hydrateMaintSource(ov, server)
 		})
-	}()
+		return nil
+	})
 }
 
-func (u *DesktopUI) saveMaintenanceConfig(st *servicesPageState, server apitypes.Server, runNow, force bool) {
-	if u.Client == nil || st.maintBusy {
-		return
-	}
-	st.maintError = ""
+func (st *servicesPageState) buildMaintenanceSource(server apitypes.Server) apitypes.MaintenanceSource {
 	interval, err := strconv.Atoi(strings.TrimSpace(st.maintIntervalStr))
 	if err != nil || interval < 1 {
 		interval = 60
@@ -2560,41 +2628,80 @@ func (u *DesktopUI) saveMaintenanceConfig(st *servicesPageState, server apitypes
 		format = "pi"
 	}
 
-	src := apitypes.MaintenanceSource{
-		ServerID:        server.ID,
-		Format:          format,
-		Files:           splitLines(st.maintFilesText),
-		URLs:            splitLines(st.maintURLsText),
-		OperationIDs:    splitCommaOrLineList(st.maintOpsText),
-		Instructions:    strings.TrimSpace(st.maintInstructions),
-		Enabled:         st.maintEnabled,
-		AutoPublish:     st.maintAutoPublish,
-		IntervalMinutes: interval,
-		TimeoutSeconds:  timeout,
+	var src apitypes.MaintenanceSource
+	if st.maintOverview != nil {
+		for i := range st.maintOverview.Sources {
+			if st.maintOverview.Sources[i].ServerID == server.ID {
+				src = st.maintOverview.Sources[i]
+				if src.Repository != nil {
+					repoCopy := *src.Repository
+					if src.Repository.Files != nil {
+						repoCopy.Files = slices.Clone(src.Repository.Files)
+					}
+					src.Repository = &repoCopy
+				}
+				break
+			}
+		}
 	}
 
+	src.ServerID = server.ID
+	src.Format = format
+	src.Files = splitLines(st.maintFilesText)
+	src.URLs = splitLines(st.maintURLsText)
+	src.OperationIDs = splitCommaOrLineList(st.maintOpsText)
+	src.Instructions = strings.TrimSpace(st.maintInstructions)
+	src.Enabled = st.maintEnabled
+	src.AutoPublish = st.maintAutoPublish
+	src.IntervalMinutes = interval
+	src.TimeoutSeconds = timeout
+	return src
+}
+
+func (u *DesktopUI) saveMaintenanceConfig(st *servicesPageState, server apitypes.Server, runNow, force bool) {
+	if u.Client == nil || st.maintBusy {
+		return
+	}
+	st.maintError = ""
+	src := st.buildMaintenanceSource(server)
+
 	st.maintBusy = true
-	go func() {
+	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		if err := u.Client.SaveMaintenanceSource(ctx, src); err != nil {
+			if apiclient.IsUnauthorized(err) {
+				u.updateUI(func() { st.maintBusy = false })
+				return err
+			}
 			u.updateUI(func() {
 				st.maintBusy = false
 				st.maintError = formatAPIError(err)
 			})
-			return
+			return nil
 		}
 		if runNow {
 			if _, err := u.Client.RunMaintenance(ctx, server.ID, force); err != nil {
+				if apiclient.IsUnauthorized(err) {
+					u.updateUI(func() { st.maintBusy = false })
+					return err
+				}
 				u.updateUI(func() {
 					st.maintBusy = false
 					st.maintError = formatAPIError(err)
 				})
-				return
+				return nil
 			}
 		}
 		ov, ovErr := u.Client.Maintenance(ctx)
-		_ = u.RefreshSync()
+		if ovErr != nil && apiclient.IsUnauthorized(ovErr) {
+			u.updateUI(func() { st.maintBusy = false })
+			return ovErr
+		}
+		if syncErr := u.RefreshSync(); syncErr != nil && apiclient.IsUnauthorized(syncErr) {
+			u.updateUI(func() { st.maintBusy = false })
+			return syncErr
+		}
 		u.updateUI(func() {
 			st.maintBusy = false
 			if ovErr == nil {
@@ -2607,7 +2714,8 @@ func (u *DesktopUI) saveMaintenanceConfig(st *servicesPageState, server apitypes
 		} else {
 			u.Notify("维护策略已保存")
 		}
-	}()
+		return nil
+	})
 }
 
 func (u *DesktopUI) runMaintenanceAction(st *servicesPageState, server apitypes.Server, okMsg string, fn func(context.Context) error) {
@@ -2616,18 +2724,29 @@ func (u *DesktopUI) runMaintenanceAction(st *servicesPageState, server apitypes.
 	}
 	st.maintBusy = true
 	st.maintError = ""
-	go func() {
+	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		if err := fn(ctx); err != nil {
+			if apiclient.IsUnauthorized(err) {
+				u.updateUI(func() { st.maintBusy = false })
+				return err
+			}
 			u.updateUI(func() {
 				st.maintBusy = false
 				st.maintError = formatAPIError(err)
 			})
-			return
+			return nil
 		}
 		ov, ovErr := u.Client.Maintenance(ctx)
-		_ = u.RefreshSync()
+		if ovErr != nil && apiclient.IsUnauthorized(ovErr) {
+			u.updateUI(func() { st.maintBusy = false })
+			return ovErr
+		}
+		if syncErr := u.RefreshSync(); syncErr != nil && apiclient.IsUnauthorized(syncErr) {
+			u.updateUI(func() { st.maintBusy = false })
+			return syncErr
+		}
 		u.updateUI(func() {
 			st.maintBusy = false
 			if ovErr == nil {
@@ -2635,7 +2754,8 @@ func (u *DesktopUI) runMaintenanceAction(st *servicesPageState, server apitypes.
 			}
 		})
 		u.Notify(okMsg)
-	}()
+		return nil
+	})
 }
 
 // --- Parsing helpers ---
@@ -2735,15 +2855,4 @@ func subtlePanel(c *ui.Context, minWidth, grow float32, fn func()) ui.Element {
 		Radius(8).
 		Background(SailBgSubtle).
 		Children(fn)
-}
-
-func formatAPIError(err error) string {
-	if err == nil {
-		return ""
-	}
-	var apiErr *APIError
-	if errors.As(err, &apiErr) && apiErr.Detail != "" {
-		return apiErr.Message + "\n" + apiErr.Detail
-	}
-	return err.Error()
 }

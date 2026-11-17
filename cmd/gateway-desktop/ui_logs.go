@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"gatewaylab/internal/apitypes"
@@ -16,11 +15,6 @@ import (
 )
 
 const logsDefaultTimelineLimit = 150
-
-var (
-	logsStatesMu sync.Mutex
-	logsStates   = make(map[*DesktopUI]*logsPageState)
-)
 
 type logsPageState struct {
 	query         string
@@ -33,17 +27,13 @@ type logsPageState struct {
 	bindingRepo   bool
 }
 
-func logsStateFor(u *DesktopUI) *logsPageState {
-	logsStatesMu.Lock()
-	defer logsStatesMu.Unlock()
-	st, ok := logsStates[u]
-	if !ok {
-		st = &logsPageState{
+func (u *DesktopUI) logsState() *logsPageState {
+	if u.logs == nil {
+		u.logs = &logsPageState{
 			timelineLimit: logsDefaultTimelineLimit,
 		}
-		logsStates[u] = st
 	}
-	return st
+	return u.logs
 }
 
 func (st *logsPageState) hasActiveFilters() bool {
@@ -103,7 +93,7 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 	if u.State == nil {
 		return
 	}
-	st := logsStateFor(u)
+	st := u.logsState()
 	events := u.State.Events
 
 	toolByID := make(map[string]apitypes.Tool, len(u.State.Registry.Tools))
@@ -112,9 +102,7 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 	}
 
 	// Consume cross-page navigation handoff (e.g. from Overview blind-spot row).
-	if u.SelectedEventID != "" {
-		targetID := u.SelectedEventID
-		u.SelectedEventID = ""
+	if targetID := u.consumePendingEventID(); targetID != "" {
 		st.selectedID = targetID
 		for idx, ev := range events {
 			if ev.ID == targetID {
@@ -472,8 +460,7 @@ func (u *DesktopUI) renderLogsInspectorPane(
 						}
 						if regTool, ok := toolByID[targetToolID]; ok {
 							if SailSmallButton(c.Key("logs-jump-cat-"+ev.ID), "查看契约").Clicked() {
-								catalogSelectToolFromLogs(u, regTool.ID, regTool.ServerID)
-								u.Navigate(ViewCatalog)
+								u.OpenCatalogTool(regTool.ID, regTool.ServerID)
 							}
 						}
 					}
@@ -604,8 +591,7 @@ func (u *DesktopUI) renderLogsInspectorPane(
 									if item.ID != "" {
 										if _, exists := toolByID[item.ID]; exists {
 											if SailSmallButton(c.Key(fmt.Sprintf("logs-open-tool-%s-%d", ev.ID, idx)), "目录详情").Clicked() {
-												catalogSelectToolFromLogs(u, item.ID, item.ServerID)
-												u.Navigate(ViewCatalog)
+												u.OpenCatalogTool(item.ID, item.ServerID)
 											}
 										}
 									}

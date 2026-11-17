@@ -16,6 +16,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
 	"gatewaylab/internal/buildinfo"
 )
@@ -122,8 +123,8 @@ func TestStartAttachAndPortConflict(t *testing.T) {
 		t.Fatal("owned gateway should remain healthy after attached client shuts down")
 	}
 
-	// Verify APIClient against the live owned gateway.
-	client := NewAPIClient(owned.UIURL)
+	// Verify apiclient.Client against the live owned gateway.
+	client := apiclient.New(owned.UIURL)
 	boot, err := client.Bootstrap(ctx)
 	if err != nil {
 		t.Fatalf("client.Bootstrap failed: %v", err)
@@ -537,7 +538,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 	}
 
 	// 2b. MCP Market.
-	mktState := getMarketState(uiApp)
+	mktState := uiApp.marketState()
 	mktState.loaded = true
 	mktState.items = []apitypes.MarketServer{
 		{

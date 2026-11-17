@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
+	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
 
 	"github.com/egoist/mygo/ui"
@@ -41,8 +41,6 @@ type playgroundState struct {
 	includeDemo       bool
 	summaryOnly       bool
 
-	lastReplaySeq int
-
 	routing    bool
 	routeError string
 	result     *apitypes.DiscoverResult
@@ -57,61 +55,42 @@ type playgroundState struct {
 	invocation    *apitypes.InvokeResult
 }
 
-var (
-	playgroundMu     sync.Mutex
-	playgroundStates = map[*DesktopUI]*playgroundState{}
-)
-
-func getPlaygroundState(u *DesktopUI) *playgroundState {
-	playgroundMu.Lock()
-	defer playgroundMu.Unlock()
-	st, ok := playgroundStates[u]
-	if !ok {
-		st = &playgroundState{
+func (u *DesktopUI) playgroundState() *playgroundState {
+	if u.playground == nil {
+		u.playground = &playgroundState{
 			actor:             "developer",
 			serviceScopeLabel: "全部已启用服务",
 			simRepoLabel:      "管理员全量",
 			simAgentLabel:     "不限",
 			argsText:          "{}",
 		}
-		playgroundStates[u] = st
 	}
-	return st
+	return u.playground
 }
 
 func (u *DesktopUI) renderPlayground(c *ui.Context) {
 	state := u.State
-	st := getPlaygroundState(u)
+	st := u.playgroundState()
 
 	// Initialize default actor once State is available.
 	if !st.initialized {
 		st.initialized = true
 		if state.Access.Shared && state.Access.Actor != "" {
 			st.actor = state.Access.Actor
-		} else if u.ReplayActor != "" {
-			st.actor = u.ReplayActor
 		} else {
 			st.actor = "developer"
-		}
-		if u.ReplaySeq > 0 {
-			if u.ReplayIntent != "" {
-				st.intent = u.ReplayIntent
-			}
-			applyPlaygroundReplayScope(st, u)
-			st.lastReplaySeq = u.ReplaySeq
 		}
 	}
 
 	// Sync handoff when navigating from Overview, Logs, or Repos preview.
-	if u.ReplaySeq != st.lastReplaySeq && u.ReplaySeq > 0 {
-		st.lastReplaySeq = u.ReplaySeq
-		if u.ReplayIntent != "" {
-			st.intent = u.ReplayIntent
+	if replay, ok := u.consumePendingReplay(); ok {
+		if replay.intent != "" {
+			st.intent = replay.intent
 		}
-		if !state.Access.Shared && u.ReplayActor != "" {
-			st.actor = u.ReplayActor
+		if !state.Access.Shared && replay.actor != "" {
+			st.actor = replay.actor
 		}
-		applyPlaygroundReplayScope(st, u)
+		applyPlaygroundReplayScope(st, replay)
 		st.includeDemo = false
 		st.selectedServiceID = ""
 		st.serviceScopeLabel = "全部已启用服务"
@@ -264,13 +243,13 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 	})
 }
 
-func applyPlaygroundReplayScope(st *playgroundState, u *DesktopUI) {
-	if u.ReplayHasScope {
-		st.simRepoKey = u.ReplayRepoKey
-		if u.ReplayAgentKey == "*" {
+func applyPlaygroundReplayScope(st *playgroundState, replay playgroundReplayIntent) {
+	if replay.hasScope {
+		st.simRepoKey = replay.repoKey
+		if replay.agentKey == "*" {
 			st.simAgentKey = ""
 		} else {
-			st.simAgentKey = u.ReplayAgentKey
+			st.simAgentKey = replay.agentKey
 		}
 		if st.simRepoKey == "" && st.simAgentKey != "" {
 			st.simRepoKey = "*"
@@ -785,7 +764,7 @@ func (u *DesktopUI) runPlaygroundDiscover(st *playgroundState, intent, effective
 
 		res, err := u.Client.DiscoverScoped(ctx, req, simScope)
 		if err != nil {
-			if IsUnauthorized(err) {
+			if apiclient.IsUnauthorized(err) {
 				u.updateUI(func() { st.routing = false })
 				return err
 			}
@@ -887,7 +866,7 @@ func (u *DesktopUI) runPlaygroundInvoke(st *playgroundState, toolID, effectiveAc
 
 		res, err := u.Client.InvokeScoped(ctx, req, simScope)
 		if err != nil {
-			if IsUnauthorized(err) {
+			if apiclient.IsUnauthorized(err) {
 				u.updateUI(func() { st.invoking = false })
 				return err
 			}

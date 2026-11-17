@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"strings"
-	"sync"
 
 	"github.com/egoist/mygo/ui"
 
@@ -17,21 +16,13 @@ type clientsPageState struct {
 	verifyClientID  string
 }
 
-var (
-	openConfigLocation = revealClientConfig
-	clientsStatesMu    sync.Mutex
-	clientsStates      = make(map[*DesktopUI]*clientsPageState)
-)
+var openConfigLocation = revealClientConfig
 
-func clientsStateFor(u *DesktopUI) *clientsPageState {
-	clientsStatesMu.Lock()
-	defer clientsStatesMu.Unlock()
-	st, ok := clientsStates[u]
-	if !ok {
-		st = &clientsPageState{}
-		clientsStates[u] = st
+func (u *DesktopUI) clientsState() *clientsPageState {
+	if u.clients == nil {
+		u.clients = &clientsPageState{}
 	}
-	return st
+	return u.clients
 }
 
 func (u *DesktopUI) clientEndpoint() string {
@@ -189,7 +180,7 @@ func (u *DesktopUI) runClientPlugin(id, action string) {
 }
 
 func (u *DesktopUI) renderClients(c *ui.Context) {
-	st := clientsStateFor(u)
+	st := u.clientsState()
 	u.renderHookSnippetModal(c)
 	u.renderClientVerifyModal(c, st)
 

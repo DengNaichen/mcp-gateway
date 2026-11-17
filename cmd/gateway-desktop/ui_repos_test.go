@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
 
 	"github.com/egoist/mygo/ui"
@@ -127,7 +128,7 @@ func TestScopeAPIClientContract(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
-	c := NewAPIClient(srv.URL)
+	c := apiclient.New(srv.URL)
 
 	boot, err := c.Bootstrap(ctx)
 	if err != nil {
@@ -512,9 +513,9 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 	}
 	waitAsyncIdle(t, tester, uiApp)
 
-	// Verify Global Default initial state (`(*,*)` empty -> 默认无服务, 5-client preview -> 无权限).
-	if !tester.HasText("全局默认") || !tester.HasText("默认无服务") || !tester.HasText("五端生效预览") {
-		t.Fatal("expected global default and 5-client preview to render")
+	// Verify Global Default initial state (`(*,*)` empty -> 默认无服务, 6-client preview -> 无权限).
+	if !tester.HasText("全局默认") || !tester.HasText("默认无服务") || !tester.HasText("六端生效预览") {
+		t.Fatal("expected global default and 6-client preview to render")
 	}
 	if !tester.HasText("最近请求 · 未绑定") || !tester.HasText("new-service") {
 		t.Fatal("expected observed unbound repo section to render")
@@ -602,7 +603,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 	}
 
 	// Run discovery in Playground and verify sim_scope is transmitted.
-	pgSt := getPlaygroundState(uiApp)
+	pgSt := uiApp.playgroundState()
 	pgSt.intent = "查看待合并 PR"
 	tester.Frame()
 	if err := tester.Click("发起路由发现"); err != nil {
@@ -869,7 +870,7 @@ func waitAsyncIdle(t *testing.T, tester *ui.Tester, uiApp *DesktopUI) {
 		done := func() bool {
 			leave := uiApp.enterHeadlessFrame()
 			defer leave()
-			return uiApp.BusyCount == 0 && !getReposState(uiApp).previewLoading
+			return uiApp.BusyCount == 0 && !uiApp.reposState().previewLoading
 		}()
 		if done {
 			tester.Frame()

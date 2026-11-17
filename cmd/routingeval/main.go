@@ -2,17 +2,19 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
+	"gatewaylab/internal/apiclient"
+	"gatewaylab/internal/apitypes"
 	"gatewaylab/internal/buildinfo"
 )
 
@@ -75,65 +77,27 @@ func score(c caseSpec, status string, got []string) outcome {
 	return o
 }
 
-type discovery struct {
-	Status       string `json:"status"`
-	DurationMS   int64  `json:"duration_ms"`
-	PromptTokens int    `json:"prompt_tokens"`
-	Tools        []struct {
-		ID string `json:"id"`
-	} `json:"tools"`
-}
-
-// discover calls /api/discover once. On HTTP 429 it also returns the
-// Retry-After delay the gateway passed on from the model provider.
-func discover(client *http.Client, url, token, intent string) (discovery, time.Duration, error) {
-	var d discovery
-	body, err := json.Marshal(map[string]any{"intent": intent, "summary_only": true})
-	if err != nil {
-		return d, 0, fmt.Errorf("encode request: %w", err)
-	}
-	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(url, "/")+"/api/discover", bytes.NewReader(body))
-	if err != nil {
-		return d, 0, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return d, 0, fmt.Errorf("call gateway: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			fmt.Fprintln(os.Stderr, "close response:", err)
-		}
-	}()
-	if resp.StatusCode != http.StatusOK {
-		var wait time.Duration
-		if seconds, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && resp.StatusCode == http.StatusTooManyRequests {
-			wait = time.Duration(seconds) * time.Second
-		}
-		return d, wait, fmt.Errorf("gateway returned HTTP %d", resp.StatusCode)
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
-		return d, 0, fmt.Errorf("decode response: %w", err)
-	}
-	return d, 0, nil
-}
-
-// discoverWithRetry waits out rate limits the gateway could not absorb within
-// its own retry budget: on HTTP 429 it sleeps for the Retry-After delay the
-// gateway passes on from the provider. Other failures are returned at once.
-func discoverWithRetry(client *http.Client, url, token, intent string) (discovery, error) {
+// discoverWithRetry calls /api/discover and waits out rate limits the gateway
+// could not absorb within its own retry budget: on HTTP 429 it sleeps for the
+// Retry-After delay the gateway passes on from the provider. Other failures
+// are returned at once.
+func discoverWithRetry(ctx context.Context, client *apiclient.Client, intent string, sleep func(time.Duration)) (apitypes.DiscoverSummaryResult, error) {
 	const attempts = 4
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	req := apitypes.DiscoverRequest{Intent: intent, SummaryOnly: true}
 	for attempt := 1; ; attempt++ {
-		d, wait, err := discover(client, url, token, intent)
-		if err == nil || wait <= 0 || attempt == attempts {
+		d, err := client.DiscoverSummary(ctx, req)
+		if err == nil {
+			return d, nil
+		}
+		var apiErr *apiclient.APIError
+		if !errors.As(err, &apiErr) || apiErr.Status != http.StatusTooManyRequests || apiErr.RetryAfter <= 0 || attempt == attempts {
 			return d, err
 		}
-		fmt.Fprintf(os.Stderr, "  rate limited; retrying in %s\n", wait)
-		time.Sleep(wait)
+		fmt.Fprintf(os.Stderr, "  rate limited; retrying in %s\n", apiErr.RetryAfter)
+		sleep(apiErr.RetryAfter)
 	}
 }
 
@@ -157,14 +121,18 @@ func run() error {
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return fmt.Errorf("decode cases: %w", err)
 	}
-	client := &http.Client{Timeout: 90 * time.Second}
-	token := os.Getenv("GATEWAY_TOKEN")
+	client := apiclient.New(
+		*url,
+		apiclient.WithToken(os.Getenv("GATEWAY_TOKEN")),
+		apiclient.WithTimeout(90*time.Second),
+	)
 	var positives, positivePass, negatives, negativePass, clean, returned, relevant, tokens int
 	var latency int64
 	type tally struct{ pass, total int }
 	byTag := map[string]*tally{}
+	ctx := context.Background()
 	for i, c := range s.Cases {
-		d, err := discoverWithRetry(client, *url, token, c.Intent)
+		d, err := discoverWithRetry(ctx, client, c.Intent, time.Sleep)
 		if err != nil {
 			return fmt.Errorf("case %d %q: %w", i+1, c.Intent, err)
 		}

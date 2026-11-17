@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
@@ -59,6 +60,24 @@ func viewTitle(v ViewID) string {
 	}
 }
 
+type catalogFilterIntent struct {
+	serverID string
+	access   string // "", "all", "ro", "rw"
+}
+
+type catalogToolIntent struct {
+	toolID   string
+	serverID string
+}
+
+type playgroundReplayIntent struct {
+	intent   string
+	actor    string
+	repoKey  string
+	agentKey string
+	hasScope bool
+}
+
 // DesktopUI owns the native mygo/ui application state, API client, routing,
 // background polling, and thread-safe async updates for the desktop window.
 type DesktopUI struct {
@@ -71,7 +90,7 @@ type DesktopUI struct {
 	PluginError       string
 	PluginsBusy       bool
 	Runtime           *gatewayRuntime
-	Client            *APIClient
+	Client            *apiclient.Client
 
 	// Current window reference (guarded by mu for background goroutines).
 	mu        sync.Mutex
@@ -87,19 +106,26 @@ type DesktopUI struct {
 	Telemetry GatewayTelemetry
 	ViewMode  ViewID
 
-	// Cross-page navigation & handoff state.
-	SelectedServerID      string
-	SelectedEventID       string
-	SelectedRepoKey       string
-	OpenAddService        bool
-	CatalogFilterServerID string
-	CatalogFilterAccess   string // "", "all", "ro", "rw"
-	ReplayIntent          string
-	ReplayActor           string
-	ReplayRepoKey         string
-	ReplayAgentKey        string
-	ReplayHasScope        bool
-	ReplaySeq             int
+	// Encapsulated cross-page navigation & handoff intents.
+	pendingServiceID     string
+	pendingEventID       string
+	pendingRepoKey       string
+	pendingAddService    bool
+	pendingCatalogFilter *catalogFilterIntent
+	pendingCatalogTool   *catalogToolIntent
+	pendingReplay        *playgroundReplayIntent
+
+	// Per-page UI state owned directly by this DesktopUI instance.
+	overview   *overviewLocalState
+	services   *servicesPageState
+	market     *marketPageState
+	catalog    *catalogPageState
+	repos      *reposPageState
+	playground *playgroundState
+	logs       *logsPageState
+	settings   *settingsState
+	clients    *clientsPageState
+	hookModal  *hookSnippetModalState
 
 	// Auth & bootstrap lifecycle state.
 	NeedsLogin bool
@@ -132,7 +158,7 @@ func NewDesktopUI(rt *gatewayRuntime) *DesktopUI {
 	}
 	d := &DesktopUI{
 		Runtime:      rt,
-		Client:       NewAPIClient(uiURL),
+		Client:       apiclient.New(uiURL),
 		ViewMode:     ViewOverview,
 		Loading:      true,
 		scrollStates: make(map[ViewID]*ui.ScrollState),
@@ -300,7 +326,7 @@ func (u *DesktopUI) RunAsync(fn func() error) {
 				u.BusyCount--
 			}
 			if err != nil {
-				if IsUnauthorized(err) {
+				if apiclient.IsUnauthorized(err) {
 					u.NeedsLogin = true
 					u.State = nil
 				} else {
@@ -336,7 +362,7 @@ func (u *DesktopUI) Refresh() {
 			u.Refreshing = false
 			u.Loading = false
 			if err != nil {
-				if IsUnauthorized(err) {
+				if apiclient.IsUnauthorized(err) {
 					u.NeedsLogin = true
 					u.State = nil
 					u.BootError = ""
@@ -398,7 +424,7 @@ func (u *DesktopUI) pollLoop(ctx context.Context) {
 			data, err := u.Client.Bootstrap(reqCtx)
 			cancel()
 			if err != nil {
-				if IsUnauthorized(err) {
+				if apiclient.IsUnauthorized(err) {
 					u.updateUI(func() {
 						u.NeedsLogin = true
 						u.State = nil
@@ -425,77 +451,145 @@ func (u *DesktopUI) Navigate(view ViewID) {
 	}
 	u.ViewMode = view
 	if view != ViewServices {
-		u.SelectedServerID = ""
+		u.pendingServiceID = ""
 	}
 	if view != ViewLogs {
-		u.SelectedEventID = ""
+		u.pendingEventID = ""
 	}
 	u.viewAtomic.Store(view)
 }
 
 func (u *DesktopUI) OpenServiceDetail(serverID string) {
-	u.SelectedServerID = serverID
+	u.pendingServiceID = serverID
 	u.ViewMode = ViewServices
 	u.viewAtomic.Store(ViewServices)
+}
+
+func (u *DesktopUI) activeServiceID() string {
+	return u.pendingServiceID
+}
+
+func (u *DesktopUI) clearActiveService() {
+	u.pendingServiceID = ""
 }
 
 func (u *DesktopUI) OpenAddServiceModal() {
-	u.OpenAddService = true
-	u.SelectedServerID = ""
+	u.pendingAddService = true
+	u.pendingServiceID = ""
 	u.ViewMode = ViewServices
 	u.viewAtomic.Store(ViewServices)
 }
 
+func (u *DesktopUI) consumePendingAddService() bool {
+	if !u.pendingAddService {
+		return false
+	}
+	u.pendingAddService = false
+	return true
+}
+
 func (u *DesktopUI) OpenCatalogFilter(serverID, access string) {
-	u.CatalogFilterServerID = serverID
-	u.CatalogFilterAccess = access
+	u.pendingCatalogFilter = &catalogFilterIntent{
+		serverID: serverID,
+		access:   access,
+	}
+	u.pendingCatalogTool = nil
 	u.ViewMode = ViewCatalog
 	u.viewAtomic.Store(ViewCatalog)
+}
+
+func (u *DesktopUI) consumePendingCatalogFilter() (string, string, bool) {
+	if u.pendingCatalogFilter == nil {
+		return "", "", false
+	}
+	intent := *u.pendingCatalogFilter
+	u.pendingCatalogFilter = nil
+	return intent.serverID, intent.access, true
+}
+
+// OpenCatalogTool navigates to the Catalog page focused on a specific tool and service.
+func (u *DesktopUI) OpenCatalogTool(toolID, serverID string) {
+	u.pendingCatalogTool = &catalogToolIntent{
+		toolID:   toolID,
+		serverID: serverID,
+	}
+	u.pendingCatalogFilter = nil
+	u.ViewMode = ViewCatalog
+	u.viewAtomic.Store(ViewCatalog)
+}
+
+func (u *DesktopUI) consumePendingCatalogTool() (string, string, bool) {
+	if u.pendingCatalogTool == nil {
+		return "", "", false
+	}
+	intent := *u.pendingCatalogTool
+	u.pendingCatalogTool = nil
+	return intent.toolID, intent.serverID, true
 }
 
 func (u *DesktopUI) OpenPlaygroundReplay(intent, actor string, scope ...string) {
 	hasScope := len(scope) > 0
 	if intent != "" || hasScope {
-		u.ReplayIntent = intent
-		u.ReplayActor = actor
-		u.ReplayHasScope = hasScope
-		u.ReplayRepoKey = ""
-		u.ReplayAgentKey = ""
+		next := &playgroundReplayIntent{
+			intent:   intent,
+			actor:    actor,
+			hasScope: hasScope,
+		}
 		if len(scope) >= 1 {
-			u.ReplayRepoKey = scope[0]
+			next.repoKey = scope[0]
 		}
 		if len(scope) >= 2 {
-			u.ReplayAgentKey = scope[1]
+			next.agentKey = scope[1]
 		}
-		u.ReplaySeq++
+		u.pendingReplay = next
 	}
 	u.ViewMode = ViewPlayground
 	u.viewAtomic.Store(ViewPlayground)
 }
 
 func (u *DesktopUI) OpenPlaygroundScope(repoKey, agentKey string) {
-	u.ReplayIntent = ""
-	u.ReplayActor = ""
-	u.ReplayHasScope = true
-	u.ReplayRepoKey = repoKey
-	u.ReplayAgentKey = agentKey
-	u.ReplaySeq++
+	u.pendingReplay = &playgroundReplayIntent{
+		repoKey:  repoKey,
+		agentKey: agentKey,
+		hasScope: true,
+	}
 	u.ViewMode = ViewPlayground
 	u.viewAtomic.Store(ViewPlayground)
 }
 
+func (u *DesktopUI) consumePendingReplay() (playgroundReplayIntent, bool) {
+	if u.pendingReplay == nil {
+		return playgroundReplayIntent{}, false
+	}
+	intent := *u.pendingReplay
+	u.pendingReplay = nil
+	return intent, true
+}
+
 func (u *DesktopUI) OpenRepos(repoKey string) {
 	if repoKey != "" {
-		u.SelectedRepoKey = repoKey
+		u.pendingRepoKey = repoKey
 	}
 	u.ViewMode = ViewRepos
 	u.viewAtomic.Store(ViewRepos)
 }
 
+func (u *DesktopUI) consumePendingRepoKey() string {
+	key := u.pendingRepoKey
+	u.pendingRepoKey = ""
+	return key
+}
+
 func (u *DesktopUI) OpenLogsEvent(eventID string) {
-	u.SelectedEventID = eventID
+	u.pendingEventID = eventID
 	u.ViewMode = ViewLogs
 	u.viewAtomic.Store(ViewLogs)
+}
+
+func (u *DesktopUI) consumePendingEventID() string {
+	id := u.pendingEventID
+	u.pendingEventID = ""
+	return id
 }
 
 func (u *DesktopUI) OpenClients() {
@@ -503,6 +597,9 @@ func (u *DesktopUI) OpenClients() {
 }
 
 func (u *DesktopUI) scrollState(view ViewID) *ui.ScrollState {
+	if u.scrollStates == nil {
+		u.scrollStates = make(map[ViewID]*ui.ScrollState)
+	}
 	s, ok := u.scrollStates[view]
 	if !ok {
 		s = &ui.ScrollState{}
@@ -890,9 +987,9 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 	}
 
 	var activeServerName string
-	if u.ViewMode == ViewServices && u.SelectedServerID != "" {
+	if u.ViewMode == ViewServices && u.pendingServiceID != "" {
 		for _, s := range state.Registry.Servers {
-			if s.ID == u.SelectedServerID {
+			if s.ID == u.pendingServiceID {
 				activeServerName = s.Name
 				break
 			}

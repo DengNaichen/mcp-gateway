@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
+	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
 
 	"github.com/egoist/mygo"
@@ -83,33 +83,16 @@ type reposPageState struct {
 	previewKey     string
 	previewLoading bool
 	preview        *apitypes.ScopePreviewResponse
-
-	// Hook snippet modal state (shared with ViewClients)
-	showHookModal    bool
-	hookAgentIdx     int
-	hookLoadingAgent string
-	hookError        string
-	snippets         map[string]apitypes.ScopeSnippetResponse
 }
 
-var (
-	reposStatesMu sync.Mutex
-	reposStates   = map[*DesktopUI]*reposPageState{}
-)
-
-func getReposState(u *DesktopUI) *reposPageState {
-	reposStatesMu.Lock()
-	defer reposStatesMu.Unlock()
-	st, ok := reposStates[u]
-	if !ok {
-		st = &reposPageState{
+func (u *DesktopUI) reposState() *reposPageState {
+	if u.repos == nil {
+		u.repos = &reposPageState{
 			selectedRepoKey: "*",
 			drafts:          make(map[string]*ruleDraft),
-			snippets:        make(map[string]apitypes.ScopeSnippetResponse),
 		}
-		reposStates[u] = st
 	}
-	return st
+	return u.repos
 }
 
 func cloneGrants(in []apitypes.ServiceGrant) []apitypes.ServiceGrant {
@@ -174,53 +157,6 @@ func (st *reposPageState) ensureDraft(rules []apitypes.ScopeRule, repoKey, agent
 		}
 	}
 	return d
-}
-
-// OpenHookSnippetModal opens the manual Hook configuration modal pre-selected to agentID.
-func (u *DesktopUI) OpenHookSnippetModal(agentID string) {
-	st := getReposState(u)
-	if agentID == "" {
-		agentID = "claude"
-	}
-	st.hookAgentIdx = agentIndex(agentID)
-	st.hookError = ""
-	st.showHookModal = true
-	u.ensureHookSnippetLoaded(st, scopeAgents[st.hookAgentIdx].ID, false)
-}
-
-func (u *DesktopUI) ensureHookSnippetLoaded(st *reposPageState, agentID string, force bool) {
-	if u.Client == nil || agentID == "" {
-		return
-	}
-	if !force {
-		if _, cached := st.snippets[agentID]; cached {
-			return
-		}
-	}
-	if st.hookLoadingAgent == agentID {
-		return
-	}
-	st.hookLoadingAgent = agentID
-	st.hookError = ""
-	u.RunAsync(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		snip, err := u.Client.GetHookSnippet(ctx, agentID)
-		u.updateUI(func() {
-			if st.hookLoadingAgent == agentID {
-				st.hookLoadingAgent = ""
-			}
-			if err != nil {
-				st.hookError = err.Error()
-				return
-			}
-			if snip.Agent == "" {
-				snip.Agent = agentID
-			}
-			st.snippets[agentID] = snip
-		})
-		return nil
-	})
 }
 
 func shortRemoteHint(remote string) string {
@@ -483,12 +419,11 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 		return
 	}
 	state := u.State
-	st := getReposState(u)
+	st := u.reposState()
 
 	// Consume cross-page selection handoff.
-	if u.SelectedRepoKey != "" {
-		st.selectedRepoKey = u.SelectedRepoKey
-		u.SelectedRepoKey = ""
+	if repoKey := u.consumePendingRepoKey(); repoKey != "" {
+		st.selectedRepoKey = repoKey
 	}
 	if st.selectedRepoKey == "" {
 		st.selectedRepoKey = "*"
@@ -519,26 +454,34 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 		targetRepoKey := st.selectedRepoKey
 		st.previewKey = sig
 		st.previewLoading = true
-		go func() {
+		u.RunAsync(func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			resp, err := u.Client.PreviewScope(ctx, targetRepoKey, previewActor)
+			if err != nil {
+				u.updateUI(func() {
+					st.previewLoading = false
+				})
+				if apiclient.IsUnauthorized(err) {
+					return err
+				}
+				return nil
+			}
 			u.updateUI(func() {
 				st.previewLoading = false
-				if err == nil && len(resp.Agents) > 0 {
+				if len(resp.Agents) > 0 {
 					if resp.RepoKey == "" {
 						resp.RepoKey = targetRepoKey
 					}
 					st.preview = &resp
 				}
 			})
-		}()
+			return nil
+		})
 	}
 
 	// Render modals.
-	if st.showHookModal {
-		u.renderHookSnippetModal(c)
-	}
+	u.renderHookSnippetModal(c)
 	if st.showDeleteConfirm && st.confirmDeleteRepoID != "" {
 		targetID := st.confirmDeleteRepoID
 		targetName := st.confirmDeleteRepoName
@@ -835,8 +778,8 @@ func (u *DesktopUI) renderReposRightColumn(
 		// 3. Per-Agent Overrides Card: (repoKey, agent)
 		u.renderRepoAgentOverridesCard(c, st, state, repoKey)
 
-		// 4. Five-Client Effective Preview Card (read-only)
-		u.renderRepoFiveClientPreviewCard(c, st, state, repoKey, previewActor)
+		// 4. Six-Client Effective Preview Card (read-only)
+		u.renderRepoSixClientPreviewCard(c, st, state, repoKey, previewActor)
 	})
 }
 
@@ -1259,7 +1202,7 @@ func (u *DesktopUI) renderRepoAgentOverridesCard(
 
 		if len(activeAgents) == 0 {
 			ui.Row(c).FillWidth().Padding(16, 20).Children(func() {
-				ui.Text(c, "暂无客户端例外，5 个客户端均按默认服务规则生效").FontSize(12.5).TextColor(SailInkMuted)
+				ui.Textf(c, "暂无客户端例外，%d 个客户端均按默认服务规则生效", len(scopeAgents)).FontSize(12.5).TextColor(SailInkMuted)
 			})
 			return
 		}
@@ -1369,7 +1312,7 @@ func (u *DesktopUI) renderRepoAgentOverridesCard(
 	})
 }
 
-func (u *DesktopUI) renderRepoFiveClientPreviewCard(
+func (u *DesktopUI) renderRepoSixClientPreviewCard(
 	c *ui.Context,
 	st *reposPageState,
 	state *apitypes.Bootstrap,
@@ -1384,7 +1327,7 @@ func (u *DesktopUI) renderRepoFiveClientPreviewCard(
 	}
 
 	SailFlushCard(c, func() {
-		SailListCardHeader(c, "五端生效预览", "身份 · "+previewActor, nil)
+		SailListCardHeader(c, "六端生效预览", "身份 · "+previewActor, nil)
 
 		for idx, item := range rows {
 			p := item
@@ -1459,117 +1402,6 @@ func (u *DesktopUI) renderRepoFiveClientPreviewCard(
 				})
 			})
 		}
-	})
-}
-
-// --- Manual Hook Configuration Modal (shared between ViewRepos and ViewClients) ---
-
-func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
-	st := getReposState(u)
-	if !st.showHookModal {
-		return
-	}
-
-	ui.DialogBase(c.Key("hook-snippet-dialog"), &st.showHookModal, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(10, 37, 64, 0.42))
-		panel.Width(700).
-			MaxWidthPercent(92).
-			MaxHeightPercent(88).
-			Padding(22).
-			Gap(14).
-			Radius(10).
-			Background(SailBgCanvas).
-			Border(1, SailBorder).
-			Shadow(0, 12, 36, 0, ui.RGBA(10, 37, 64, 0.25))
-
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			ui.Text(c, "手动配置 Hook").FontSize(17).Bold().TextColor(SailInkStrong)
-			if SailSmallButton(c.Key("hook-modal-close"), "关闭").Clicked() {
-				st.showHookModal = false
-			}
-		})
-
-		if st.hookAgentIdx < 0 || st.hookAgentIdx >= len(scopeAgents) {
-			st.hookAgentIdx = 0
-		}
-		if ui.Segmented(
-			c.Key("hook-agent-tabs"),
-			&st.hookAgentIdx,
-			scopeAgentNames...,
-		).FillEqually().Changed() {
-			u.ensureHookSnippetLoaded(st, scopeAgents[st.hookAgentIdx].ID, false)
-		}
-
-		activeAgent := scopeAgents[st.hookAgentIdx]
-		snip, hasSnip := st.snippets[activeAgent.ID]
-		hookBin := snip.HookBinPath
-		if hookBin == "" && u.State != nil {
-			hookBin = u.State.Scopes.HookBinPath
-		}
-
-		if st.hookError != "" {
-			SailAlertBox(c, ToneDanger, "获取 Hook 配置失败", st.hookError)
-		}
-
-		ui.Scroll(c.Key("hook-modal-scroll")).Grow(1).FillWidth().MaxHeight(460).Gap(12).Children(func() {
-			if st.hookLoadingAgent == activeAgent.ID && !hasSnip {
-				ui.Row(c).FillWidth().Padding(24).Gap(8).Center().Children(func() {
-					ui.Spinner(c).Label("加载配置片段")
-					ui.Text(c, "正在生成 Hook 配置…").FontSize(13).TextColor(SailInkMuted)
-				})
-				return
-			}
-
-			SailSubtleCard(c, func() {
-				if snip.ConfigPath != "" {
-					ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
-						ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-							SailKeyValueRow(c, "配置文件", snip.ConfigPath, true)
-						})
-						if u.State == nil || !u.State.Access.Shared {
-							if SailSmallButton(c.Key("hook-reveal-cfg"), "定位 ↗").Clicked() {
-								cfgPath := snip.ConfigPath
-								u.RunAsync(func() error { return revealClientConfig(cfgPath) })
-							}
-						}
-					})
-				}
-				if hookBin != "" {
-					SailKeyValueRow(c, "Hook 程序", hookBin, true)
-				}
-				if snip.MCPURL != "" {
-					SailKeyValueRow(c, "MCP 端点", snip.MCPURL, true)
-				}
-			})
-
-			if strings.TrimSpace(snip.Instructions) != "" {
-				ui.Text(c, strings.TrimSpace(snip.Instructions)).
-					FontSize(12.5).
-					LineHeight(1.5).
-					TextColor(SailInkBody).
-					Selectable()
-			}
-
-			code := snip.Snippet
-			if code == "" && !hasSnip {
-				code = "// 暂无可展示的 Hook 配置片段"
-			}
-			SailCodeBlock(c, strings.ToUpper(activeAgent.ID)+" HOOK", code, func() {
-				u.Notify("已复制 " + activeAgent.Name + " Hook 配置")
-			})
-		})
-
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailSmallButton(c.Key("hook-refresh-btn"), "重新获取").Disabled(st.hookLoadingAgent != "").Clicked() {
-				u.ensureHookSnippetLoaded(st, activeAgent.ID, true)
-			}
-			if ui.PrimaryButton(c.Key("hook-copy-primary"), "复制配置片段").
-				Disabled(strings.TrimSpace(snip.Snippet) == "").
-				Clicked() {
-				c.WriteClipboard(snip.Snippet)
-				u.Notify("已复制 " + activeAgent.Name + " Hook 配置")
-			}
-		})
 	})
 }
 

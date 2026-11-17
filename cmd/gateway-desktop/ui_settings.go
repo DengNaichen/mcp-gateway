@@ -2,13 +2,12 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"strings"
-	"sync"
 	"time"
 
+	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
 
 	"github.com/egoist/mygo/ui"
@@ -39,20 +38,11 @@ type settingsState struct {
 	testResult       *apitypes.DiscoverResult
 }
 
-var (
-	settingsMu     sync.Mutex
-	settingsStates = map[*DesktopUI]*settingsState{}
-)
-
-func getSettingsState(u *DesktopUI) *settingsState {
-	settingsMu.Lock()
-	defer settingsMu.Unlock()
-	st, ok := settingsStates[u]
-	if !ok {
-		st = &settingsState{}
-		settingsStates[u] = st
+func (u *DesktopUI) settingsState() *settingsState {
+	if u.settings == nil {
+		u.settings = &settingsState{}
 	}
-	return st
+	return u.settings
 }
 
 func settingsIsDirty(st *settingsState, saved apitypes.Settings) bool {
@@ -142,7 +132,7 @@ func loadProfileIntoSettings(st *settingsState, id string, s apitypes.Settings) 
 
 func (u *DesktopUI) renderSettings(c *ui.Context) {
 	state := u.State
-	st := getSettingsState(u)
+	st := u.settingsState()
 
 	// Synchronize form state from Bootstrap when first initialized or when saved settings change while clean.
 	if !st.initialized {
@@ -631,7 +621,7 @@ func (u *DesktopUI) pingSettingsModel(st *settingsState) {
 		defer cancel()
 		res, err := u.Client.PingModel(ctx, cfg, profileID, apiKey, clearKey)
 		if err != nil {
-			if IsUnauthorized(err) {
+			if apiclient.IsUnauthorized(err) {
 				u.updateUI(func() { st.pingBusy = false })
 				return err
 			}
@@ -770,7 +760,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 		if needsPingBeforeSave {
 			res, err := u.Client.PingModel(ctx, cfg, profile.ID, apiKey, clearKey)
 			if err != nil {
-				if IsUnauthorized(err) {
+				if apiclient.IsUnauthorized(err) {
 					u.updateUI(func() { st.busyMode = "" })
 					return err
 				}
@@ -790,7 +780,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 
 		saved, err := u.Client.SaveModelProfile(ctx, profile, apiKey, clearKey)
 		if err != nil {
-			if IsUnauthorized(err) {
+			if apiclient.IsUnauthorized(err) {
 				u.updateUI(func() { st.busyMode = "" })
 				return err
 			}
@@ -826,7 +816,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 		if runTest {
 			res, err := u.Client.TestModel(ctx, cfg, "", false, testIntent)
 			if err != nil {
-				if IsUnauthorized(err) {
+				if apiclient.IsUnauthorized(err) {
 					u.updateUI(func() { st.busyMode = "" })
 					return err
 				}
@@ -899,14 +889,6 @@ func (u *DesktopUI) enforceSettingsReadOnlyGuardrail(st *settingsState, state *a
 		u.Notify(fmt.Sprintf("已关闭 %d 个写操作工具，全局候选池已收敛为只读", closedCount))
 		return nil
 	})
-}
-
-func splitAPIError(err error) (string, string) {
-	var apiErr *APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.Error(), apiErr.Detail
-	}
-	return err.Error(), ""
 }
 
 func clampInt(v, lo, hi int) int {

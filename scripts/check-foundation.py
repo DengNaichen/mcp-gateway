@@ -7,7 +7,7 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 output = subprocess.check_output(
-    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault", "./internal/retry", "./internal/apitypes"],
+    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault", "./internal/retry", "./internal/apitypes", "./internal/apiclient", "./internal/buildinfo", "./internal/workspace", "./internal/clientconfig", "./internal/clientplugin"],
     cwd=root, text=True,
 )
 allowed = {
@@ -22,7 +22,7 @@ allowed.update({
     "gatewaylab/internal/openapi": {"gatewaylab/internal/registry"},
 })
 allowed.update({
-    "gatewaylab/internal/model": {"gatewaylab/internal/registry", "gatewaylab/internal/store", "gatewaylab/internal/secrets", "gatewaylab/internal/input", "gatewaylab/internal/retry"},
+    "gatewaylab/internal/model": {"gatewaylab/internal/registry", "gatewaylab/internal/store", "gatewaylab/internal/secrets", "gatewaylab/internal/retry"},
     "gatewaylab/internal/scope": {"gatewaylab/internal/registry", "gatewaylab/internal/store", "gatewaylab/internal/workspace", "gatewaylab/internal/buildinfo"},
 })
 allowed.update({
@@ -44,6 +44,11 @@ allowed.update({
     "gatewaylab/internal/fault": set(),
     "gatewaylab/internal/retry": set(),
     "gatewaylab/internal/apitypes": set(),
+    "gatewaylab/internal/apiclient": {"gatewaylab/internal/apitypes"},
+    "gatewaylab/internal/buildinfo": set(),
+    "gatewaylab/internal/workspace": {"gatewaylab/internal/buildinfo"},
+    "gatewaylab/internal/clientconfig": {"gatewaylab/internal/buildinfo"},
+    "gatewaylab/internal/clientplugin": {"gatewaylab/internal/buildinfo", "gatewaylab/internal/clientconfig", "gatewaylab/internal/workspace", "gatewaylab/plugins"},
 })
 decoder = json.JSONDecoder()
 while output.strip():
@@ -58,7 +63,7 @@ while output.strip():
     print(f'{package["ImportPath"]} -> {", ".join(sorted(internal)) or "no internal dependencies"}')
 
 # SQLite ownership stays in store as the remaining domains are extracted.
-for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "model", "scope", "routing", "upstream", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault")
+for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "model", "scope", "routing", "upstream", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault", "apiclient", "buildinfo", "workspace", "clientconfig", "clientplugin")
                    for p in (root / "internal" / name).glob("*.go")):
     if path.name.endswith("_test.go"):
         continue
@@ -66,11 +71,15 @@ for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "
 print("PASS: foundation/policy/routing/upstream/maintenance dependency direction; SQL stays in store")
 
 # Domain errors carry classifications; only transport adapters choose HTTP status.
-for name in ("gateway", "openapi", "model", "scope", "routing", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault", "retry"):
+for name in ("gateway", "openapi", "model", "scope", "routing", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault", "retry", "buildinfo", "workspace", "clientconfig", "clientplugin"):
     for path in (root / "internal" / name).glob("*.go"):
         if path.name.endswith("_test.go"):
             continue
         assert not re.search(r'\b(?:appError|problem)\b|http\.Status[A-Z]', path.read_text()), f"transport error in {path.relative_to(root)}"
+for path in (root / "internal" / "apiclient").glob("*.go"):
+    if path.name.endswith("_test.go"):
+        continue
+    assert not re.search(r'\b(?:appError|problem)\b', path.read_text()), f"transport error in {path.relative_to(root)}"
 print("PASS: policy domain errors contain no HTTP status mapping")
 
 # Provider protocols have one implementation, in model. Keep composition and
@@ -119,7 +128,13 @@ while output.strip():
     if "gatewaylab/internal/gateway" in imports:
         assert name == "gatewaylab/internal/api" or name.startswith("gatewaylab/cmd/"), f"gateway imported outside composition boundary: {name}"
     if "gatewaylab/internal/apitypes" in imports:
-        assert name == "gatewaylab/internal/api" or name.startswith("gatewaylab/cmd/"), f"only api and commands may import the wire types: {name}"
+        assert name in {"gatewaylab/internal/api", "gatewaylab/internal/apiclient"} or name.startswith("gatewaylab/cmd/"), f"only api, apiclient, and commands may import the wire types: {name}"
+    if "gatewaylab/internal/apiclient" in imports:
+        assert name.startswith("gatewaylab/cmd/"), f"only commands may import apiclient: {name}"
+    if "gatewaylab/internal/clientconfig" in imports:
+        assert name in {"gatewaylab/internal/clientplugin", "gatewaylab/scripts"} or name.startswith("gatewaylab/cmd/"), f"clientconfig must stay local-only: {name}"
+    if "gatewaylab/internal/clientplugin" in imports:
+        assert name == "gatewaylab/scripts" or name.startswith("gatewaylab/cmd/"), f"clientplugin must stay local-only: {name}"
     if name == "gatewaylab/internal/maintenance/sandbox":
         assert "gatewaylab/internal/upstream" not in package.get("Deps", []), "sandbox must not depend on upstream"
     if name == "gatewaylab/cmd/gateway-desktop":
@@ -128,8 +143,8 @@ while output.strip():
         direct = imports | set(package.get("TestImports", [])) | set(package.get("XTestImports", []))
         internal = {p for p in direct if p.startswith("gatewaylab/internal/")}
         desktop_allowed = {
-            "gatewaylab/internal/api", "gatewaylab/internal/apitypes", "gatewaylab/internal/buildinfo",
-            "gatewaylab/internal/clientconfig", "gatewaylab/internal/clientplugin",
+            "gatewaylab/internal/api", "gatewaylab/internal/apiclient", "gatewaylab/internal/apitypes",
+            "gatewaylab/internal/buildinfo", "gatewaylab/internal/clientconfig", "gatewaylab/internal/clientplugin",
         }
         assert internal <= desktop_allowed, f"gateway-desktop imports backend packages {sorted(internal - desktop_allowed)}; use internal/apitypes over HTTP"
 print("PASS: cmd -> api -> gateway reverse edges; apitypes stays at the HTTP edge; desktop uses the HTTP contract; sandbox is independent of upstream")
