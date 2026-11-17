@@ -129,7 +129,7 @@ while output.strip():
         internal = {p for p in direct if p.startswith("gatewaylab/internal/")}
         desktop_allowed = {
             "gatewaylab/internal/api", "gatewaylab/internal/apitypes", "gatewaylab/internal/buildinfo",
-            "gatewaylab/internal/clientconfig", "gatewaylab/internal/clientplugin", "gatewaylab/internal/openapi",
+            "gatewaylab/internal/clientconfig", "gatewaylab/internal/clientplugin",
         }
         assert internal <= desktop_allowed, f"gateway-desktop imports backend packages {sorted(internal - desktop_allowed)}; use internal/apitypes over HTTP"
 print("PASS: cmd -> api -> gateway reverse edges; apitypes stays at the HTTP edge; desktop uses the HTTP contract; sandbox is independent of upstream")

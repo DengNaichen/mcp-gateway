@@ -191,7 +191,6 @@ linters:
             - gatewaylab/internal/buildinfo
             - gatewaylab/internal/clientconfig
             - gatewaylab/internal/clientplugin
-            - gatewaylab/internal/openapi
           deny:
             - pkg: gatewaylab/internal
               desc: "the desktop UI reaches the backend only over HTTP: use gatewaylab/internal/apitypes for request/response bodies and APIClient for calls; only server.go may import internal/api to host the backend"
