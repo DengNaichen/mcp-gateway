@@ -8,7 +8,7 @@
 ## 1. 核心审美与信息减法准则（Linear / Raycast / Stripe Sail）
 
 1. **砍掉 70% 说明书式废话文案**
-   - 标题本身已自明（如 `运行大盘`、`上游服务`、`工具目录`、`仓库绑定`、`请求日志`、`路由沙盒`、`访问与路由`），`SailSectionHeader` 与 `SailCardTitle` 默认传 `subtitle = ""`；优化后的 `SailSectionHeader` 在 `subtitle == ""` 时不留空隙，直接渲染利落的标题与右侧操作区。
+   - 标题本身已自明（如 `概览`、`上游服务`、`工具目录`、`仓库绑定`、`连接客户端`、`请求日志`、`路由沙盒`、`访问与路由`），`SailSectionHeader` 与 `SailCardTitle` 默认传 `subtitle = ""`；优化后的 `SailSectionHeader` 在 `subtitle == ""` 时不留空隙，直接渲染利落的标题与右侧操作区。
    - 删掉表单底部、弹窗顶部、Tab 顶部的常识性说明（如“点击保存后生效”、“语义路由模型将按相关性打分”等）。仅保留高价值护栏提醒或空状态引导。
 
 2. **去套娃与 Hairline Divider 列表**
@@ -55,7 +55,7 @@
 
 | 页面 | 文件 | 核心减法与重构重点 |
 | --- | --- | --- |
-| 运行大盘 Overview | `ui_overview.go` | 去掉多余引导说明；4 张 KPI 卡片保持 3 行以内的紧凑对齐；异常盲区与热点工具改用 细分割线行 无框分割行；状态降噪为圆点 + 灰字 |
+| 概览 Overview | `ui_overview.go` | 页面命名由「运行大盘」精简为「概览」；去掉右下角重复的深色 `MCP ENDPOINT` 卡片（端点与复制已常驻侧栏底部，客户端接入收拢至顶栏按钮与 `连接客户端` 页）；4 张 KPI 卡片保持 3 行以内的紧凑对齐；异常与热点工具/上游服务改用细分割线行；状态降噪为圆点 + 灰字 |
 | 上游服务 Services | `ui_services.go` | 砍掉列表页、Subtab 与弹窗顶部 70% 说明废话；服务行与工具白名单行改为 细分割线行；列表调用 `SailDescSummary`，工具编辑/详情调用 `SailDescriptionDetail`；仅保留 `RW` 与错误告警胶囊 |
 | MCP 市场 Market | `ui_market.go` | SaaS 优先精选与官方 Registry 搜索分栏；3 列简洁卡片展示图标、发布方、运行方式与 `需登录` / `需凭据` 标签，一键添加或打开凭据录入弹窗 |
 | 工具目录 Catalog | `ui_catalog.go` | 筛选栏合并紧凑；列表行精简为「工具名 + 弱化服务名 / `SailDescSummary` / 右侧 `RW` 或灰字 `RO` + 开关」；`Actors`/`Tags` 全部收进右侧详情面板；右侧描述区使用 `SailDescriptionDetail` 彻底告别纯文本墙 |

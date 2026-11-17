@@ -858,16 +858,17 @@
         </div>
         <div class="nav-groups">
           <div>
-            <div class="nav-heading">控制面</div>
-            <button class="nav-item" data-page="overview"><span class="nav-item-left"><span class="nav-dot"></span>运行大盘</span></button>
+            <div class="nav-heading">工作台</div>
+            <button class="nav-item active" data-page="overview"><span class="nav-item-left"><span class="nav-dot"></span>概览</span></button>
             <button class="nav-item" data-page="services"><span class="nav-item-left"><span class="nav-dot"></span>上游服务</span><span class="nav-count" id="nav-services-count">3</span></button>
             <button class="nav-item" data-page="market"><span class="nav-item-left"><span class="nav-dot"></span>MCP 市场</span></button>
-            <button class="nav-item active" data-page="catalog"><span class="nav-item-left"><span class="nav-dot"></span>工具目录</span><span class="nav-count">18/26</span></button>
+            <button class="nav-item" data-page="catalog"><span class="nav-item-left"><span class="nav-dot"></span>工具目录</span><span class="nav-count">18/26</span></button>
             <button class="nav-item" data-page="repos"><span class="nav-item-left"><span class="nav-dot"></span>仓库绑定</span><span class="nav-count" id="nav-repos-count">2</span></button>
+            <button class="nav-item" data-page="clients"><span class="nav-item-left"><span class="nav-dot"></span>连接客户端</span></button>
             <button class="nav-item" data-page="settings"><span class="nav-item-left"><span class="nav-dot"></span>访问与路由</span></button>
           </div>
           <div>
-            <div class="nav-heading">观测与诊断</div>
+            <div class="nav-heading">观测与调试</div>
             <button class="nav-item" data-page="logs"><span class="nav-item-left"><span class="nav-dot"></span>请求日志</span><span class="nav-count">42</span></button>
             <button class="nav-item" data-page="playground"><span class="nav-item-left"><span class="nav-dot"></span>路由沙盒</span></button>
           </div>
@@ -886,9 +887,9 @@
     <div class="main">
       <header class="topbar">
         <div class="breadcrumb">
-          <span class="bc-muted">控制面</span>
+          <span class="bc-muted">工作台</span>
           <span class="bc-sep">/</span>
-          <span class="bc-active" id="bc-title">工具目录</span>
+          <span class="bc-active" id="bc-title">概览</span>
         </div>
         <div class="topbar-actions">
           <button id="mode-toggle" class="btn btn-pill btn-toggle-active" onclick="toggleCompareMode()">
@@ -899,7 +900,7 @@
             <span class="mono" style="font-size:12px;">gpt-6-luna</span>
           </span>
           <button class="btn" onclick="render()">刷新</button>
-          <button class="btn" onclick="openHookModal('claude')">接入客户端</button>
+          <button class="btn" onclick="switchPage('clients')">接入客户端</button>
         </div>
       </header>
 
@@ -911,7 +912,7 @@
   <div id="modal-root"></div>
 
   <script>
-    let currentPage = "catalog";
+    let currentPage = "overview";
     let compareRawMode = false; // false = Polished (Cleaned), true = Before (Raw text wall)
     let selectedToolId = "github.create_or_update_file";
     let selectedLogId = "ev-101";
@@ -1249,7 +1250,7 @@ Args:
         document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         currentPage = btn.dataset.page;
-        const titles = { overview: "运行大盘", services: "上游服务", market: "MCP 市场", catalog: "工具目录", repos: "仓库绑定", logs: "请求日志", playground: "路由沙盒", settings: "访问与路由" };
+        const titles = { overview: "概览", services: "上游服务", market: "MCP 市场", catalog: "工具目录", repos: "仓库绑定", clients: "连接客户端", logs: "请求日志", playground: "路由沙盒", settings: "访问与路由" };
         document.getElementById("bc-title").textContent = titles[currentPage];
         render();
       });
@@ -1266,19 +1267,37 @@ Args:
       else if (currentPage === "services") root.innerHTML = renderServices();
       else if (currentPage === "market") root.innerHTML = renderMarket();
       else if (currentPage === "repos") root.innerHTML = renderRepos();
+      else if (currentPage === "clients") root.innerHTML = renderClients();
       else if (currentPage === "logs") root.innerHTML = renderLogs();
       else if (currentPage === "playground") root.innerHTML = renderPlayground();
       else root.innerHTML = renderSettings();
       renderModals();
     }
 
+    const CLIENT_CONFIGS = [
+      { id: "claude", name: "Claude Code", path: "~/.claude.json", state: "configured" },
+      { id: "codex", name: "Codex CLI", path: "~/.codex/config.toml", state: "configured" },
+      { id: "cursor", name: "Cursor", path: "~/.cursor/mcp.json", state: "update" },
+      { id: "opencode", name: "OpenCode v2", path: "~/.config/opencode/opencode.json", state: "write" },
+      { id: "pi", name: "Pi", path: "~/.pi/agent/mcp.json", state: "write" }
+    ];
+
+    function setClientState(id, nextState) {
+      const c = CLIENT_CONFIGS.find(x => x.id === id);
+      if (c) c.state = nextState;
+      render();
+    }
+
     function renderOverview() {
+      const topTools = [...TOOLS].filter(t => t.hits > 0).sort((a, b) => b.hits - a.hits).slice(0, 4);
+      const maxHits = topTools[0] ? topTools[0].hits : 1;
       return `
         <div class="section-header">
-          <h1 class="section-title">运行大盘</h1>
+          <h1 class="section-title">概览</h1>
           <div style="display:flex;gap:8px;">
             <button class="btn" onclick="switchPage('playground')">路由沙盒</button>
-            <button class="btn btn-primary" onclick="switchPage('services')">添加服务</button>
+            <button class="btn" onclick="switchPage('clients')">接入客户端</button>
+            <button class="btn btn-primary" onclick="switchPage('services')">添加上游服务</button>
           </div>
         </div>
 
@@ -1305,55 +1324,120 @@ Args:
           </div>
         </div>
 
-        <div class="two-col">
-          <div class="card-flush">
-            <div class="card-header" style="padding:16px 18px;border-bottom:1px solid var(--border);">
-              <h2 class="card-title">待关注异常</h2>
-              <span class="quiet-meta">最近 2 条</span>
-            </div>
-            <div class="hairline-row" onclick="switchPage('logs')">
-              <div class="row-main">
-                <div class="row-title-line">
-                  <span class="dot dot-err"></span>
-                  <span class="row-name">billing.refund_charge</span>
-                </div>
-                <div class="row-summary">upstream HTTP 502: bad gateway (TLS handshake timeout)</div>
+        <div class="two-col" style="grid-template-columns:1.35fr 1fr;align-items:start;">
+          <div style="display:flex;flex-direction:column;gap:20px;">
+            <div class="card-flush">
+              <div class="card-header" style="padding:16px 18px;border-bottom:1px solid var(--border);">
+                <h2 class="card-title">待关注异常</h2>
+                <button class="btn" style="padding:2px 8px;font-size:12px;" onclick="switchPage('logs')">全部日志</button>
               </div>
-              <div class="row-right"><span class="quiet-meta">184 ms</span></div>
-            </div>
-            <div class="hairline-row" onclick="switchPage('playground')">
-              <div class="row-main">
-                <div class="row-title-line">
-                  <span class="dot dot-warn"></span>
-                  <span class="row-name" style="font-family:var(--sans);">删除生产数据库表 orders_archive</span>
+              <div class="hairline-row" onclick="switchPage('logs')">
+                <div class="row-main">
+                  <div class="row-title-line">
+                    <span class="dot dot-err"></span>
+                    <span class="row-name">billing.refund_charge</span>
+                  </div>
+                  <div class="row-summary">upstream HTTP 502: bad gateway (TLS handshake timeout)</div>
                 </div>
-                <div class="row-summary">observer 身份未匹配任何写操作工具</div>
+                <div class="row-right"><span class="quiet-meta">184 ms</span></div>
               </div>
-              <div class="row-right"><span class="quiet-meta">未命中</span></div>
+              <div class="hairline-row" onclick="switchPage('playground')">
+                <div class="row-main">
+                  <div class="row-title-line">
+                    <span class="dot dot-warn"></span>
+                    <span class="row-name" style="font-family:var(--sans);">删除生产数据库表 orders_archive</span>
+                  </div>
+                  <div class="row-summary">observer 身份未匹配任何写操作工具</div>
+                </div>
+                <div class="row-right"><span class="quiet-meta">未命中</span></div>
+              </div>
+            </div>
+
+            <div class="card-flush">
+              <div class="card-header" style="padding:16px 18px;border-bottom:1px solid var(--border);">
+                <h2 class="card-title">热点工具</h2>
+                <button class="btn" style="padding:2px 8px;font-size:12px;" onclick="switchPage('catalog')">全部</button>
+              </div>
+              ${topTools.map(t => `
+                <div class="hairline-row" onclick="selectedToolId='${t.id}';switchPage('catalog')">
+                  <div class="row-main">
+                    <div class="row-title-line">
+                      <span class="row-name">${esc(t.name)}</span>
+                      <span class="row-sub">${esc(t.server)}</span>
+                      ${t.rw ? '<span class="badge-rw">写</span>' : ''}
+                    </div>
+                  </div>
+                  <div class="row-right" style="gap:10px;">
+                    <div style="width:60px;height:5px;border-radius:999px;background:var(--bg-muted);overflow:hidden;">
+                      <div style="width:${Math.round((t.hits / maxHits) * 100)}%;height:100%;background:var(--ink-body);border-radius:999px;"></div>
+                    </div>
+                    <span class="mono" style="width:42px;text-align:right;font-size:12px;font-weight:600;color:var(--ink-strong);">${t.hits} 次</span>
+                  </div>
+                </div>
+              `).join("")}
             </div>
           </div>
 
           <div class="card-flush">
             <div class="card-header" style="padding:16px 18px;border-bottom:1px solid var(--border);">
-              <h2 class="card-title">上游服务健康</h2>
-              <span class="quiet-meta">2 / 3 在线</span>
+              <h2 class="card-title">上游服务</h2>
+              <button class="btn" style="padding:2px 8px;font-size:12px;" onclick="switchPage('services')">管理</button>
             </div>
-            ${SERVICES.map(s => `
+            ${SERVICES.map(s => {
+              const rwCount = (SERVICE_TOOLS[s.id] || []).filter(t => t.rw).length;
+              return `
               <div class="hairline-row" onclick="switchPage('services')">
                 <div class="row-main">
                   <div class="row-title-line">
                     <span class="dot dot-${s.tone}"></span>
                     <span class="row-name" style="font-family:var(--sans);">${esc(s.name)}</span>
-                    <span class="row-sub">${esc(s.proto)}</span>
+                    ${rwCount > 0 ? `<span class="badge-rw">写 ×${rwCount}</span>` : ""}
                   </div>
+                  <div class="row-summary">${esc(s.proto)} · ${esc(s.tools)} 工具开放</div>
                 </div>
                 <div class="row-right">
-                  <span class="quiet-meta">${esc(s.tools)}</span>
                   <span class="quiet-meta">${esc(s.status)}</span>
                 </div>
               </div>
-            `).join("")}
+            `;
+            }).join("")}
           </div>
+        </div>
+      `;
+    }
+
+    function renderClients() {
+      return `
+        <div class="section-header">
+          <h1 class="section-title">连接客户端</h1>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="mono" style="font-size:12px;color:var(--ink-muted);">mcp-gateway · http://127.0.0.1:8788/mcp</span>
+            <button class="btn" onclick="render()">刷新状态</button>
+          </div>
+        </div>
+
+        <div class="card-flush">
+          ${CLIENT_CONFIGS.map(c => `
+            <div class="hairline-row" style="cursor:default;">
+              <div class="row-main">
+                <div class="row-title-line">
+                  <span class="row-name" style="font-family:var(--sans);font-size:14px;">${esc(c.name)}</span>
+                  <span class="quiet-meta mono" title="${esc(c.path)}">${esc(c.path)} ↗</span>
+                </div>
+              </div>
+              <div class="row-right" style="gap:8px;">
+                <button class="btn" style="padding:4px 10px;font-size:12px;" onclick="openHookModal('${c.id}')">Hook 配置</button>
+                ${c.state === "configured" ? `
+                  <span class="quiet-meta" style="padding:0 6px;">✓ 已配置</span>
+                  <button class="btn" style="padding:4px 8px;font-size:12px;" onclick="setClientState('${c.id}','write')">撤回</button>
+                ` : c.state === "update" ? `
+                  <button class="btn" style="padding:4px 10px;font-size:12px;" onclick="setClientState('${c.id}','configured')">更新配置</button>
+                ` : `
+                  <button class="btn" style="padding:4px 10px;font-size:12px;" onclick="setClientState('${c.id}','configured')">写入配置</button>
+                `}
+              </div>
+            </div>
+          `).join("")}
         </div>
       `;
     }
