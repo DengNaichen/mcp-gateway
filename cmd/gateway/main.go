@@ -39,7 +39,7 @@ func run() error {
 	if public := os.Getenv(buildinfo.EnvironmentKey("GATEWAY_PUBLIC_URL")); public != "" {
 		base = public
 	}
-	g, err := api.Open(*data, base)
+	g, err := api.Open(*data, base, api.Options{})
 	if err != nil {
 		return fmt.Errorf("initialize gateway: %w", err)
 	}

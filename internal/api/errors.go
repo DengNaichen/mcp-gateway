@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"gatewaylab/internal/secrets"
+
 	"gatewaylab/internal/apitypes"
 	"gatewaylab/internal/fault"
 	"gatewaylab/internal/maintenance"
@@ -128,6 +130,11 @@ func httpError(err error) *appError {
 		}
 		return &appError{status: status, message: domain.Message, cause: domain.Cause}
 	}
+	var credentialErr *secrets.Error
+	if errors.As(err, &credentialErr) {
+		return &appError{status: http.StatusServiceUnavailable, message: credentialErr.Message}
+	}
+
 	var validation *registry.ValidationError
 	if errors.As(err, &validation) {
 		return &appError{status: 400, message: validation.Message, cause: validation.Cause}

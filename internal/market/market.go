@@ -595,6 +595,7 @@ func (g *Service) InstallMarketServer(ctx context.Context, req InstallMarketRequ
 		server.Endpoint = spec.Endpoint
 	}
 
+	credentialValues := map[string]string{}
 	for _, inp := range spec.Inputs {
 		val := strings.TrimSpace(req.Inputs[inp.Key])
 		if inp.Required && val == "" {
@@ -614,7 +615,7 @@ func (g *Service) InstallMarketServer(ctx context.Context, req InstallMarketRequ
 			if strings.HasPrefix(val, "${") && strings.HasSuffix(val, "}") {
 				server.Headers[inp.Key] = val
 			} else {
-				g.SetRuntimeSecret(envName, val)
+				credentialValues[envName] = val
 				format := inp.Format
 				if format == "" {
 					format = "{}"
@@ -629,13 +630,13 @@ func (g *Service) InstallMarketServer(ctx context.Context, req InstallMarketRequ
 			if strings.HasPrefix(val, "${") && strings.HasSuffix(val, "}") {
 				server.Env[inp.Key] = val
 			} else {
-				g.SetRuntimeSecret(envName, val)
+				credentialValues[envName] = val
 				server.Env[inp.Key] = "${" + envName + "}"
 			}
 		}
 	}
 
-	if err := g.SaveServer(server); err != nil {
+	if err := g.SaveCredentials(server, credentialValues); err != nil {
 		return InstallMarketResult{}, err
 	}
 
@@ -719,12 +720,11 @@ func (g *Service) MarketIcon(ctx context.Context, id, rawURL string) ([]byte, st
 }
 
 type Options struct {
-	Dir              string
-	Snapshot         func() registry.Registry
-	SaveServer       func(registry.Server) error
-	ImportMCP        func(context.Context, string) (int, error)
-	SetRuntimeSecret func(string, string)
-	ErrorDetail      func(error) string
+	Dir             string
+	Snapshot        func() registry.Registry
+	ImportMCP       func(context.Context, string) (int, error)
+	SaveCredentials func(registry.Server, map[string]string) error
+	ErrorDetail     func(error) string
 }
 type Service struct {
 	Options

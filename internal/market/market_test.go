@@ -202,9 +202,14 @@ func testMarket(t *testing.T) (*testService, error) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	reg := registry.New(registry.Registry{}, store.Registry(db.DB).Save)
-	us := upstream.New(upstream.Config{LookupEnv: runtimeSecrets.Lookup})
+	us := upstream.New(upstream.Config{LookupEnv: func(_ string, key string) string { return runtimeSecrets.Lookup(key) }})
 	t.Cleanup(func() { _ = us.Close() })
-	svc := New(Options{Dir: t.TempDir(), Snapshot: reg.Snapshot, SaveServer: reg.SaveServer, SetRuntimeSecret: runtimeSecrets.Set, ErrorDetail: func(e error) string { return e.Error() }, ImportMCP: func(ctx context.Context, id string) (int, error) {
+	svc := New(Options{Dir: t.TempDir(), Snapshot: reg.Snapshot, SaveCredentials: func(s registry.Server, values map[string]string) error {
+		for key, value := range values {
+			runtimeSecrets.Set(key, value)
+		}
+		return reg.SaveServer(s)
+	}, ErrorDetail: func(e error) string { return e.Error() }, ImportMCP: func(ctx context.Context, id string) (int, error) {
 		var server registry.Server
 		for _, s := range reg.Snapshot().Servers {
 			if s.ID == id {

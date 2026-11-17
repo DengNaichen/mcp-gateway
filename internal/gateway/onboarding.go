@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -100,7 +101,7 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 			continue
 		}
 		out.Sources++
-		fingerprint, err := upstream.Fingerprint(s, g.lookupEnv)
+		fingerprint, err := upstream.Fingerprint(s, g.serverLookup(s))
 		if err != nil {
 			return out, err
 		}
@@ -135,10 +136,10 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 }
 
 func (g *Gateway) TestSource(ctx context.Context, s registry.Server) (check ConnectionCheck, retErr error) {
-	if err := g.Registry().SaveServer(s); err != nil {
+	if err := g.SaveServer(s); err != nil {
 		return check, err
 	}
-	fingerprint, err := upstream.Fingerprint(s, g.lookupEnv)
+	fingerprint, err := upstream.Fingerprint(s, g.serverLookup(s))
 	if err != nil {
 		return check, err
 	}
@@ -162,10 +163,10 @@ func (g *Gateway) TestSource(ctx context.Context, s registry.Server) (check Conn
 		check.Message = fmt.Sprintf("MCP 已连接，读取到 %d 个工具。请选择需要开放给 Agent 的工具。", count)
 		return check, nil
 	}
-	if err := upstream.CheckEnvironment(s, g.lookupEnv); err != nil {
+	if err := upstream.CheckEnvironment(s, g.serverLookup(s)); err != nil {
 		return check, fault.New(fault.Invalid, "请求头引用的环境变量尚未设置", err)
 	}
-	status, err := upstream.CheckHTTPConnectivity(ctx, s, g.lookupEnv)
+	status, err := upstream.CheckHTTPConnectivity(ctx, s, g.serverLookup(s))
 	if err != nil {
 		return check, err
 	}
@@ -270,11 +271,11 @@ func (g *Gateway) ErrorDetail(err error) string {
 	secrets := append([]string{key}, g.upstream.TokenSecrets()...)
 	for _, s := range g.Snapshot().Servers {
 		for _, v := range s.Headers {
-			expanded := g.expandEnv(v)
+			expanded := os.Expand(v, g.serverLookup(s))
 			secrets = append(secrets, expanded, strings.TrimPrefix(expanded, "Bearer "))
 		}
 		for _, v := range s.Env {
-			secrets = append(secrets, g.expandEnv(v))
+			secrets = append(secrets, os.Expand(v, g.serverLookup(s)))
 		}
 	}
 	for _, secret := range secrets {

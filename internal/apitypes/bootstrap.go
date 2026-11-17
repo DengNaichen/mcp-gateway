@@ -67,16 +67,17 @@ type PulseBucket struct {
 // Bootstrap is returned by GET /api/bootstrap: everything the control plane
 // needs to render its first screen.
 type Bootstrap struct {
-	Registry      Registry       `json:"registry"`
-	Settings      Settings       `json:"settings"`
-	KeyConfigured bool           `json:"key_configured"`
-	Profiles      []ModelProfile `json:"profiles"`
-	Events        []Event        `json:"events"`
-	Pulse         []PulseBucket  `json:"pulse,omitempty"`
-	MCPURL        string         `json:"mcp_url"`
-	Setup         SetupStatus    `json:"setup"`
-	Scopes        ScopeOverview  `json:"scopes"`
-	Access        AccessInfo     `json:"access"`
+	Registry              Registry       `json:"registry"`
+	Settings              Settings       `json:"settings"`
+	KeyConfigured         bool           `json:"key_configured"`
+	CredentialsPersistent bool           `json:"credentials_persistent"`
+	Profiles              []ModelProfile `json:"profiles"`
+	Events                []Event        `json:"events"`
+	Pulse                 []PulseBucket  `json:"pulse,omitempty"`
+	MCPURL                string         `json:"mcp_url"`
+	Setup                 SetupStatus    `json:"setup"`
+	Scopes                ScopeOverview  `json:"scopes"`
+	Access                AccessInfo     `json:"access"`
 }
 
 // Principal is an authenticated identity in shared mode.

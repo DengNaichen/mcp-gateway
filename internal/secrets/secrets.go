@@ -7,11 +7,12 @@ import (
 	"sync"
 )
 
-// Store contains ephemeral secrets. Values are never persisted.
+// Store caches secrets and optionally persists them to a secure backend.
 // The zero value is ready to use.
 type Store struct {
-	mu     sync.RWMutex
-	values map[string]string
+	mu      sync.RWMutex
+	values  map[string]string
+	backend Backend
 }
 
 func (s *Store) Lookup(key string) string {
@@ -37,7 +38,7 @@ func (s *Store) Set(key, value string) {
 	}
 }
 
-// Get returns only an in-memory value; profile IDs are not environment names.
+// Get reads the loaded credential cache without consulting process environment.
 func (s *Store) Get(key string) string {
 	if s == nil {
 		return ""

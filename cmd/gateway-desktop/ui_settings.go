@@ -374,6 +374,12 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 			}
 		})
 
+		if u.State != nil && u.State.CredentialsPersistent {
+			ui.Text(c, "保存时将密钥存入系统钥匙串，重启后自动恢复").FontSize(12).TextColor(SailInkMuted)
+		} else {
+			ui.Text(c, "此实例仅在内存中保留密钥，重启后需重新提供").FontSize(12).TextColor(SailInkMuted)
+		}
+
 		// Collapsible advanced routing policy & end-to-end verification.
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			arrow := "▸"

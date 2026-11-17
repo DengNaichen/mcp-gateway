@@ -19,10 +19,13 @@ type Instance struct {
 	handler http.Handler
 }
 
+// Options configures the backend host credential policy.
+type Options struct{ PersistCredentials bool }
+
 // Open opens the Gateway data in dataDir. baseURL is the externally visible
 // origin used to build MCP and OAuth callback URLs.
-func Open(dataDir, baseURL string) (*Instance, error) {
-	g, err := gateway.New(dataDir, baseURL)
+func Open(dataDir, baseURL string, opts Options) (*Instance, error) {
+	g, err := gateway.NewWithOptions(dataDir, baseURL, gateway.Options{PersistCredentials: opts.PersistCredentials})
 	if err != nil {
 		return nil, err
 	}

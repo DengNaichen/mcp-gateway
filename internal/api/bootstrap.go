@@ -22,16 +22,17 @@ func (g *server) registerBootstrap(mux *http.ServeMux) {
 			return
 		}
 		respond(w, 200, apitypes.Bootstrap{
-			Registry:      wireRegistry(g.gw.Snapshot()),
-			Settings:      wireSettings(settings),
-			KeyConfigured: key,
-			Profiles:      mapSlice(g.gw.Model().ModelProfiles(), wireProfile),
-			Events:        mapSlice(g.gw.Activity().Recent(), wireEvent),
-			Pulse:         mapSlice(g.gw.Activity().Pulse(time.Now()), wirePulseBucket),
-			MCPURL:        g.gw.BaseURL() + "/mcp",
-			Setup:         wireSetup(setup),
-			Scopes:        wireScopeOverview(g.gw.Scope().ScopeOverview()),
-			Access:        apitypes.AccessInfo{Shared: g.gw.Access() != nil, Actor: access.RequestActor(r.Context(), "")},
+			Registry:              wireRegistry(g.gw.Snapshot()),
+			Settings:              wireSettings(settings),
+			KeyConfigured:         key,
+			CredentialsPersistent: g.gw.CredentialsPersistent(),
+			Profiles:              mapSlice(g.gw.Model().ModelProfiles(), wireProfile),
+			Events:                mapSlice(g.gw.Activity().Recent(), wireEvent),
+			Pulse:                 mapSlice(g.gw.Activity().Pulse(time.Now()), wirePulseBucket),
+			MCPURL:                g.gw.BaseURL() + "/mcp",
+			Setup:                 wireSetup(setup),
+			Scopes:                wireScopeOverview(g.gw.Scope().ScopeOverview()),
+			Access:                apitypes.AccessInfo{Shared: g.gw.Access() != nil, Actor: access.RequestActor(r.Context(), "")},
 		})
 	})
 }
