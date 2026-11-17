@@ -154,3 +154,6 @@ func TestBackoffDoesNotOverflowLargeBase(t *testing.T) {
 		t.Fatal("backoff collapsed to zero")
 	}
 }
+
+// TestCICacheProbe exists only to measure CI test caching; do not merge.
+func TestCICacheProbe(t *testing.T) {}
