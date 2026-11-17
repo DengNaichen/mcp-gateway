@@ -2062,6 +2062,18 @@
       }
     ];
 
+    // Demo accepts the same verified-install event as the native status model.
+    const codexClient = CLIENT_PLUGINS.find(c => c.id === "codex");
+    codexClient.installationID = localStorage.getItem("codex-installation") || "prototype-install";
+    if (localStorage.getItem("codex-hook-success") === codexClient.installationID) codexClient.warning = "";
+    window.addEventListener("gateway-hook-verified", event => {
+      const evidence = event.detail || {};
+      if (evidence.agent !== "codex" || evidence.installationID !== codexClient.installationID) return;
+      localStorage.setItem("codex-hook-success", evidence.installationID);
+      codexClient.warning = "";
+      render();
+    });
+
     function verificationPromptFor(clientId) {
       const target = CLIENT_PLUGINS.find(c => c.id === clientId);
       const label = target ? target.name : clientId;
@@ -2075,7 +2087,11 @@
       if (action === "install" || action === "upgrade" || action === "update") {
         c.state = "已安装";
         c.legacyMcp = false;
-        c.warning = "";
+        if (id === "codex") {
+          c.installationID = crypto.randomUUID();
+          localStorage.setItem("codex-installation", c.installationID);
+          c.warning = "若 Codex 首次提示审查插件 Hook，请在 Codex 中确认信任";
+        } else c.warning = "";
         c.detail = action === "upgrade"
           ? "已自动撤回旧版全局 MCP 并启用 v0.0.4 官方插件"
           : "v0.0.4 · 官方插件已启用（MCP + Hook + mcp-gateway Skill）";

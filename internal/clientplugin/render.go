@@ -201,7 +201,7 @@ func (m *Manager) renderClaudeMarketplace(endpoint, hookBin, dataDir string) (re
 	}, nil
 }
 
-func (m *Manager) renderCodexMarketplace(endpoint, hookBin, dataDir string) (renderedBundle, error) {
+func (m *Manager) renderCodexMarketplace(endpoint, hookBin, dataDir, installationID string) (renderedBundle, error) {
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientCodex)
 	prefix := "plugins/" + m.slug + "/"
 	desc := fmt.Sprintf("Connects Codex to %s with semantic tool discovery, scoped invocation, and automatic workspace provenance signing.", m.appName)
@@ -209,6 +209,9 @@ func (m *Manager) renderCodexMarketplace(endpoint, hookBin, dataDir string) (ren
 	hookScript, err := m.renderHookWrapper(hookBin, dataDir)
 	if err != nil {
 		return renderedBundle{}, err
+	}
+	if installationID != "" {
+		hookScript = bytes.ReplaceAll(hookScript, []byte(`exec "$hook_bin" "$host"`), []byte(`exec "$hook_bin" "$host" --installation `+workspace.ShellQuote(installationID)))
 	}
 	skillMD, err := m.renderSkillMarkdown()
 	if err != nil {

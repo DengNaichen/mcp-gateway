@@ -430,6 +430,39 @@ func TestRenderedHookWrapperExecutesRealHookBinary(t *testing.T) {
 		t.Fatalf("VerifyToken failed: err=%v claims=%+v", err, claims)
 	}
 
+	// Verify the installed Codex wrapper passes its installation identity through
+	// the real hook binary and into signed provenance.
+	if err := mgr.Install(ClientCodex, "http://127.0.0.1:8788/mcp"); err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := mgr.loadReceipt(ClientCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codexWrapper := filepath.Join(mgr.stateDir, "marketplaces", ClientCodex, "plugins", slug, "scripts", "run-gateway-hook")
+	codexEvent := `{"hook_event_name":"PreToolUse","tool_name":"mcp__` + strings.ReplaceAll(slug, "-", "_") + `__discover_tools","cwd":` + mustJSON(repoDir) + `,"tool_input":{"intent":"check logs"}}`
+	codexCmd := exec.Command("sh", codexWrapper, "codex")
+	codexCmd.Stdin = strings.NewReader(codexEvent)
+	codexOut, err := codexCmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var codexResp struct {
+		Output struct {
+			Input map[string]any `json:"updatedInput"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal(codexOut, &codexResp); err != nil {
+		t.Fatal(err)
+	}
+	codexInput := codexResp.Output.Input
+	codexHash, _ := workspace.CanonicalArgsHash(codexInput, workspace.CurrentContextField())
+	codexToken, _ := codexInput[workspace.CurrentContextField()].(string)
+	codexClaims, err := workspace.VerifyToken(key, codexToken, workspace.VerifyParams{Channel: buildinfo.Current().Channel, URLAgent: "codex", AllowedOps: []string{"discover_tools"}, ArgsHash: codexHash}, time.Now())
+	if err != nil || codexClaims.InstallationID != receipt.InstallationID {
+		t.Fatalf("Codex installation identity missing: %v", err)
+	}
+
 	// Verify installed Antigravity wrapper executes real gateway-hook binary too.
 	if err := mgr.Install(ClientAntigravity, "http://127.0.0.1:8788/mcp"); err != nil {
 		t.Fatal(err)
@@ -606,7 +639,7 @@ func TestEmbeddedAssetsHaveNoDeadFilesAndTemplatesRender(t *testing.T) {
 				return mgr.renderClaudeMarketplace("http://127.0.0.1:8788/mcp", "/bin/hook", "/data/dir")
 			},
 			func() (renderedBundle, error) {
-				return mgr.renderCodexMarketplace("http://127.0.0.1:8788/mcp", "/bin/hook", "/data/dir")
+				return mgr.renderCodexMarketplace("http://127.0.0.1:8788/mcp", "/bin/hook", "/data/dir", "")
 			},
 			func() (renderedBundle, error) {
 				return mgr.renderCursorPlugin("http://127.0.0.1:8788/mcp", "/bin/hook", "/data/dir")
@@ -662,5 +695,61 @@ func TestWorkspaceAndClientConfigHostParity(t *testing.T) {
 		if !strings.HasPrefix(spec.ConfigPath, wantDir+string(filepath.Separator)) {
 			t.Fatalf("config dir mismatch for %s: snippet=%q hostConfigDir=%q", id, spec.ConfigPath, wantDir)
 		}
+	}
+}
+
+func TestCodexTrustHintTracksInstallation(t *testing.T) {
+	home, state, data := t.TempDir(), t.TempDir(), t.TempDir()
+	options := Options{HomeDir: home, StateDir: state, DataDir: data, BinPath: "/bin/hook", Runner: &fakeRunner{home: home}}
+	mgr := New(options)
+	endpoint := "http://127.0.0.1:8788/mcp"
+	warning := func() bool { t.Helper(); return len(mgr.observeCodex(endpoint, false).Warnings) > 0 }
+	if !warning() {
+		t.Fatal("new client must show trust hint")
+	}
+	if err := mgr.Install(ClientCodex, endpoint); err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := mgr.loadReceipt(ClientCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.InstallationID == "" {
+		t.Fatal("missing installation identity")
+	}
+	if !warning() {
+		t.Fatal("installation alone hid hint")
+	}
+	if err := workspace.RecordHookSuccess(data, ClientClaude, receipt.InstallationID); err != nil {
+		t.Fatal(err)
+	}
+	if !warning() {
+		t.Fatal("other client hid hint")
+	}
+	if err := workspace.RecordHookSuccess(data, ClientCodex, "old"); err != nil {
+		t.Fatal(err)
+	}
+	if !warning() {
+		t.Fatal("old install hid hint")
+	}
+	if err := workspace.RecordHookSuccess(data, ClientCodex, receipt.InstallationID); err != nil {
+		t.Fatal(err)
+	}
+	if warning() {
+		t.Fatal("successful hook did not hide hint")
+	}
+	mgr = New(options)
+	if warning() {
+		t.Fatal("success lost across manager restart")
+	}
+	if err := mgr.Update(ClientCodex, endpoint); err != nil {
+		t.Fatal(err)
+	}
+	if !warning() {
+		t.Fatal("updated hook reused old installation success")
+	}
+	next, _ := mgr.loadReceipt(ClientCodex)
+	if next.InstallationID == receipt.InstallationID {
+		t.Fatal("identity reused")
 	}
 }
