@@ -84,4 +84,15 @@ func TestRecordRetentionAndReload(t *testing.T) {
 	if got := reloaded.Recent(); len(got) != 100 || got[0].ID != events[0].ID {
 		t.Fatal("persisted activity differs")
 	}
+	pulse := reloaded.Pulse(time.Now())
+	if len(pulse) != PulseBucketCount {
+		t.Fatalf("pulse buckets = %d, want %d", len(pulse), PulseBucketCount)
+	}
+	totalPulse := 0
+	for _, b := range pulse {
+		totalPulse += b.Total
+	}
+	if totalPulse != 105 {
+		t.Fatalf("pulse total = %d, want 105 (beyond recent 100 cap)", totalPulse)
+	}
 }

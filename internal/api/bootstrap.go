@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"gatewaylab/internal/access"
 	"gatewaylab/internal/apitypes"
@@ -26,6 +27,7 @@ func (g *server) registerBootstrap(mux *http.ServeMux) {
 			KeyConfigured: key,
 			Profiles:      mapSlice(g.Model().ModelProfiles(), wireProfile),
 			Events:        mapSlice(g.Activity().Recent(), wireEvent),
+			Pulse:         mapSlice(g.Activity().Pulse(time.Now()), wirePulseBucket),
 			MCPURL:        g.BaseURL() + "/mcp",
 			Setup:         wireSetup(setup),
 			Scopes:        wireScopeOverview(g.Scope().ScopeOverview()),

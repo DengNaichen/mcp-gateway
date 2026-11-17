@@ -115,6 +115,7 @@ func TestWireTypesMirrorDomain(t *testing.T) {
 		{maintenance.AcceptanceSuite{}, apitypes.AcceptanceSuite{}, nil},
 		{access.Principal{}, apitypes.Principal{}, nil},
 		{activity.Event{}, apitypes.Event{}, nil},
+		{activity.PulseBucket{}, apitypes.PulseBucket{}, nil},
 	} {
 		dt, wt := reflect.TypeOf(tc.domain), reflect.TypeOf(tc.wire)
 		t.Run(dt.String(), func(t *testing.T) {

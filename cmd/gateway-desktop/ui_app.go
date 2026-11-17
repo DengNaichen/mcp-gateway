@@ -37,7 +37,7 @@ const (
 func viewTitle(v ViewID) string {
 	switch v {
 	case ViewOverview:
-		return "运行大盘"
+		return "概览"
 	case ViewServices:
 		return "上游服务"
 	case ViewMarket:
@@ -55,7 +55,7 @@ func viewTitle(v ViewID) string {
 	case ViewSettings:
 		return "访问与路由"
 	default:
-		return "运行大盘"
+		return "概览"
 	}
 }
 
@@ -178,6 +178,7 @@ func (u *DesktopUI) AttachWindow(win *mygo.Window) {
 	u.mu.Unlock()
 
 	u.Refresh()
+	u.refreshClientConfigs()
 
 	go u.pollLoop(pollCtx)
 }
@@ -739,12 +740,12 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 			// Scrollable navigation sections.
 			ui.Scroll(c).Grow(1).FillWidth().Padding(4, 10, 10, 10).Gap(18).Children(func() {
 				u.renderNavGroup(c, "工作台", []navItem{
-					{id: ViewOverview, label: "运行大盘", icon: IconHome},
+					{id: ViewOverview, label: "概览", icon: IconHome},
 					{id: ViewServices, label: "上游服务", icon: IconServer, badge: countBadge(activeRealServers)},
 					{id: ViewMarket, label: "MCP 市场", icon: IconMarket},
 					{id: ViewCatalog, label: "工具目录", icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
 					{id: ViewRepos, label: "仓库绑定", icon: IconFolderGit, badge: reposNavBadge(state.Scopes)},
-					{id: ViewClients, label: "连接客户端", icon: IconServer},
+					{id: ViewClients, label: "连接客户端", icon: IconServer, badge: clientsNavBadge(u)},
 					{id: ViewSettings, label: "访问与路由", icon: IconShield},
 				})
 				u.renderNavGroup(c, "观测与调试", []navItem{
@@ -799,6 +800,16 @@ func countBadge(n int) string {
 		return ""
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+func clientsNavBadge(u *DesktopUI) string {
+	if len(u.PluginStatuses) > 0 {
+		return countBadge(len(u.PluginStatuses))
+	}
+	if len(u.ClientStatuses) > 0 {
+		return countBadge(len(u.ClientStatuses))
+	}
+	return ""
 }
 
 func reposNavBadge(scopes apitypes.ScopeOverview) string {
@@ -990,9 +1001,9 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 			TrackScroll(u.scrollState(u.ViewMode)).
 			Grow(1).
 			FillWidth().
-			Padding(28, 36).
+			Padding(28, 32).
 			Children(func() {
-				ui.Column(c).FillWidth().MaxWidth(1200).Gap(26).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(1200).Gap(24).Children(func() {
 					switch u.ViewMode {
 					case ViewOverview:
 						u.renderOverview(c)

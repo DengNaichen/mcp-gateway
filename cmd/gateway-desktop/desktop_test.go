@@ -142,7 +142,7 @@ func TestStartAttachAndPortConflict(t *testing.T) {
 	if !tester.HasText(buildinfo.Current().Name) {
 		t.Fatal("expected native UI sidebar to render MCP Gateway")
 	}
-	for _, navLabel := range []string{"上游服务", "工具目录", "访问与路由", "请求日志", "路由沙盒", "运行大盘"} {
+	for _, navLabel := range []string{"上游服务", "工具目录", "访问与路由", "请求日志", "路由沙盒", "概览"} {
 		if err := tester.Click(navLabel); err != nil {
 			t.Fatalf("click nav %q: %v", navLabel, err)
 		}
@@ -472,15 +472,30 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 
 	tester := ui.NewTester(uiApp.View, 1360, 860)
 
-	// 1. Overview & Connect Modal.
-	if !tester.HasText("运行大盘") {
-		t.Fatal("expected overview heading")
+	// 1. Overview (KPIs, 12h Pulse, Recent Requests / Upstream Switcher, Slide Drawer).
+	if !tester.HasText("概览") || !tester.HasText("请求脉冲") {
+		t.Fatal("expected overview heading and 12h pulse card")
 	}
 	if !tester.HasText("GitHub MCP") || !tester.HasText("refund customer invoice") {
-		t.Fatal("expected overview to render realistic service and attention item")
+		t.Fatal("expected overview to render realistic service and recent request item")
 	}
-	if err := tester.Click("接入客户端"); err != nil {
-		t.Fatalf("open connect modal: %v", err)
+	if err := tester.Click("refund customer invoice"); err != nil {
+		t.Fatalf("open overview slide drawer: %v", err)
+	}
+	if !tester.HasText("请求详情") || !tester.HasText("按 Esc 关闭") {
+		t.Fatal("expected overview slide-over drawer to open")
+	}
+	if err := tester.Click("关闭"); err != nil {
+		t.Fatalf("close overview slide drawer: %v", err)
+	}
+	if err := tester.Click("高频工具"); err != nil {
+		t.Fatalf("switch overview right tab to top tools: %v", err)
+	}
+	if !tester.HasText("list_prs") {
+		t.Fatal("expected top tools tab to render list_prs")
+	}
+	if err := tester.Click("连接客户端"); err != nil {
+		t.Fatalf("open clients page: %v", err)
 	}
 	if uiApp.CurrentView() != ViewClients {
 		t.Fatal("expected client configuration page")

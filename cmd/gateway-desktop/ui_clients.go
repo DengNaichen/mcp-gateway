@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"strings"
+	"sync"
 
 	"github.com/egoist/mygo/ui"
 
@@ -11,7 +12,27 @@ import (
 	"gatewaylab/internal/clientplugin"
 )
 
-var openConfigLocation = revealClientConfig
+type clientsPageState struct {
+	showVerifyModal bool
+	verifyClientID  string
+}
+
+var (
+	openConfigLocation = revealClientConfig
+	clientsStatesMu    sync.Mutex
+	clientsStates      = make(map[*DesktopUI]*clientsPageState)
+)
+
+func clientsStateFor(u *DesktopUI) *clientsPageState {
+	clientsStatesMu.Lock()
+	defer clientsStatesMu.Unlock()
+	st, ok := clientsStates[u]
+	if !ok {
+		st = &clientsPageState{}
+		clientsStates[u] = st
+	}
+	return st
+}
 
 func (u *DesktopUI) clientEndpoint() string {
 	if u.State != nil {
@@ -168,18 +189,43 @@ func (u *DesktopUI) runClientPlugin(id, action string) {
 }
 
 func (u *DesktopUI) renderClients(c *ui.Context) {
+	st := clientsStateFor(u)
 	u.renderHookSnippetModal(c)
+	u.renderClientVerifyModal(c, st)
 
 	note := ""
 	if u.State != nil && u.State.Access.Shared {
 		note = "共享网关需在客户端补充 Bearer Token"
 	}
-	busy := u.ClientsBusy || u.PluginsBusy
-	SailSectionHeader(c, "连接客户端", note, func() {
-		ui.Text(c, buildinfo.Current().Slug+" · "+u.clientEndpoint()).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
-		if SailSmallButton(c.Key("clients-refresh"), "刷新状态").Disabled(busy).Clicked() {
-			u.refreshClientConfigs()
+	installedCount := 0
+	for _, row := range u.PluginStatuses {
+		if row.State == "已安装" {
+			installedCount++
 		}
+	}
+	busy := u.ClientsBusy || u.PluginsBusy
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(16).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+			ui.Row(c).Gap(12).AlignItems(ui.Baseline).Children(func() {
+				ui.Text(c, "连接客户端").FontSize(21).Bold().LetterSpacing(-0.2).TextColor(SailInkStrong)
+				if u.ClientPlugins != nil && len(u.PluginStatuses) > 0 {
+					ui.Textf(c, "官方插件已安装 %d / %d", installedCount, len(u.PluginStatuses)).
+						FontSize(12).
+						TextColor(SailInkMuted).
+						FontFeatures("tnum").
+						SingleLine()
+				}
+			})
+			if note != "" {
+				ui.Text(c, note).FontSize(12.5).TextColor(SailInkMuted)
+			}
+		})
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, buildinfo.Current().Slug+" · "+u.clientEndpoint()).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
+			if SailSmallButton(c.Key("clients-refresh"), "刷新状态").Disabled(busy).Clicked() {
+				u.refreshClientConfigs()
+			}
+		})
 	})
 	if u.PluginError != "" {
 		SailAlertBox(c, ToneDanger, "插件操作失败", u.PluginError)
@@ -188,7 +234,7 @@ func (u *DesktopUI) renderClients(c *ui.Context) {
 		SailAlertBox(c, ToneDanger, "配置操作失败", u.ClientConfigError)
 	}
 
-	ui.Column(c.Key("client-list")).FillWidth().Radius(8).Border(1, SailBorder).Background(SailBgCanvas).Clip().Children(func() {
+	SailFlushCard(c.Key("client-list"), func() {
 		if u.ClientPlugins != nil {
 			legacyMap := make(map[string]clientconfig.Status, len(u.ClientStatuses))
 			for _, st := range u.ClientStatuses {
@@ -196,7 +242,7 @@ func (u *DesktopUI) renderClients(c *ui.Context) {
 			}
 			for i, row := range u.PluginStatuses {
 				legacy, hasLegacy := legacyMap[row.ID]
-				u.renderPluginRow(c.Key("client-"+row.ID), row, legacy, hasLegacy, i > 0)
+				u.renderPluginRow(c.Key("client-"+row.ID), st, row, legacy, hasLegacy, i > 0)
 			}
 			return
 		}
@@ -206,10 +252,10 @@ func (u *DesktopUI) renderClients(c *ui.Context) {
 	})
 }
 
-func (u *DesktopUI) renderPluginRow(c *ui.Context, row clientplugin.Status, legacy clientconfig.Status, hasLegacy, divider bool) {
+func (u *DesktopUI) renderPluginRow(c *ui.Context, st *clientsPageState, row clientplugin.Status, legacy clientconfig.Status, hasLegacy, divider bool) {
 	line := ui.Row(c).FillWidth().Padding(14, 18).Gap(12).AlignItems(ui.Center).Justify(ui.SpaceBetween)
 	if divider {
-		line.BorderWidth(1, 0, 0, 0).BorderColor(SailBorder)
+		line.BorderWidth(1, 0, 0, 0).BorderColor(SailDivider)
 	}
 	busy := u.ClientsBusy || u.PluginsBusy
 	fullDetail := buildPluginTooltip(row)
@@ -240,7 +286,7 @@ func (u *DesktopUI) renderPluginRow(c *ui.Context, row clientplugin.Status, lega
 		})
 
 		ui.Row(c).AlignItems(ui.Center).Gap(8).Shrink(0).Children(func() {
-			u.renderPluginPrimaryAction(c, row, busy, fullDetail)
+			u.renderPluginPrimaryAction(c, st, row, busy, fullDetail)
 			more := ui.ButtonBase(c.Key("more")).Size(28, 28).Radius(6).Center().Label(row.Name + " 更多操作").Disabled(busy)
 			if more.Hovered() {
 				more.Background(SailBgMuted)
@@ -280,10 +326,14 @@ func (u *DesktopUI) renderPluginRow(c *ui.Context, row clientplugin.Status, lega
 	})
 }
 
-func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, row clientplugin.Status, busy bool, fullDetail string) {
+func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, st *clientsPageState, row clientplugin.Status, busy bool, fullDetail string) {
 	switch {
 	case row.CanUpdate:
-		btn := SailSmallButton(c.Key("update-plugin"), "更新插件").Label(row.Name + " 更新插件").Disabled(busy)
+		btn := ui.PrimaryButton(c.Key("update-plugin"), "更新插件").
+			Padding(5, 11).
+			FontSize(12.5).
+			Label(row.Name + " 更新插件").
+			Disabled(busy)
 		if fullDetail != "" {
 			btn.Tooltip(fullDetail)
 		}
@@ -291,7 +341,11 @@ func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, row clientplugin.St
 			u.runClientPlugin(row.ID, "update")
 		}
 	case row.CanInstall && row.HasLegacyMCP:
-		btn := SailSmallButton(c.Key("upgrade-plugin"), "升级为插件").Label(row.Name + " 升级为插件").Disabled(busy)
+		btn := ui.PrimaryButton(c.Key("upgrade-plugin"), "升级为插件").
+			Padding(5, 11).
+			FontSize(12.5).
+			Label(row.Name + " 升级为插件").
+			Disabled(busy)
 		if fullDetail != "" {
 			btn.Tooltip(fullDetail)
 		}
@@ -299,7 +353,11 @@ func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, row clientplugin.St
 			u.runClientPlugin(row.ID, "install")
 		}
 	case row.CanInstall:
-		btn := SailSmallButton(c.Key("install-plugin"), "安装插件").Label(row.Name + " 安装插件").Disabled(busy)
+		btn := ui.PrimaryButton(c.Key("install-plugin"), "安装插件").
+			Padding(5, 11).
+			FontSize(12.5).
+			Label(row.Name + " 安装插件").
+			Disabled(busy)
 		if fullDetail != "" {
 			btn.Tooltip(fullDetail)
 		}
@@ -307,11 +365,17 @@ func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, row clientplugin.St
 			u.runClientPlugin(row.ID, "install")
 		}
 	case row.State == "已安装":
-		tip := "官方插件已启用；客户端重启后生效，Pi 可执行 /reload"
+		tip := "点击查看端到端验证 Prompt；客户端重启后生效，Pi 可执行 /reload"
 		if fullDetail != "" {
 			tip = fullDetail + "\n" + tip
 		}
-		ui.Text(c, "✓ 已安装").FontSize(12).TextColor(SailInkMuted).Tooltip(tip)
+		btn := SailSmallButton(c.Key("verified-btn"), "✓ 已安装").
+			Label(row.Name + " ✓ 已安装").
+			Tooltip(tip)
+		if btn.Clicked() && u.ClientPlugins != nil {
+			st.verifyClientID = row.ID
+			st.showVerifyModal = true
+		}
 	case !row.CLIAvailable && (row.State == "未安装" || row.State == "待升级"):
 		label := "安装插件"
 		if row.HasLegacyMCP {
@@ -327,6 +391,61 @@ func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, row clientplugin.St
 			u.RunAsync(func() error { return openConfigLocation(row.Path) })
 		}
 	}
+}
+
+func (u *DesktopUI) renderClientVerifyModal(c *ui.Context, st *clientsPageState) {
+	if !st.showVerifyModal || u.ClientPlugins == nil || st.verifyClientID == "" {
+		return
+	}
+	clientName := agentDisplayName(st.verifyClientID)
+	promptText := u.ClientPlugins.VerificationPrompt(st.verifyClientID, u.clientEndpoint())
+
+	ui.DialogBase(c.Key("client-verify-dialog"), &st.showVerifyModal, func(backdrop, panel ui.Element) {
+		backdrop.Background(ui.RGBA(10, 37, 64, 0.42)).Padding(24)
+		panel.Width(560).
+			MaxWidthPercent(94).
+			Radius(10).
+			Background(SailBgCanvas).
+			Border(1, SailBorder).
+			Shadow(0, 12, 36, 0, ui.RGBA(10, 37, 64, 0.25)).
+			Clip()
+
+		ui.Row(c).
+			FillWidth().
+			Padding(16, 20).
+			BorderWidth(0, 0, 1, 0).
+			BorderColor(SailDivider).
+			AlignItems(ui.Center).
+			Justify(ui.SpaceBetween).
+			Children(func() {
+				ui.Textf(c, "客户端验证 Prompt · %s", clientName).FontSize(15).Bold().TextColor(SailInkStrong)
+				if SailSmallButton(c.Key("verify-modal-close"), "关闭").Clicked() {
+					st.showVerifyModal = false
+				}
+			})
+
+		ui.Column(c).FillWidth().Padding(18, 20).Gap(12).Children(func() {
+			ui.Text(c, "粘贴到对应 Coding Agent 会话中，确认 MCP 工具发现与 Hook 仓库签名链路已连通：").
+				FontSize(12.5).
+				LineHeight(1.5).
+				TextColor(SailInkMuted)
+
+			SailCodeBlock(c, "VERIFICATION PROMPT", promptText, func() {
+				u.Notify("已复制 " + clientName + " 验证 Prompt")
+			})
+
+			ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Children(func() {
+				if SailSmallButton(c.Key("verify-modal-cancel"), "关闭").Clicked() {
+					st.showVerifyModal = false
+				}
+				if ui.PrimaryButton(c.Key("verify-modal-copy-close"), "复制并关闭").Padding(5, 12).FontSize(12.5).Clicked() {
+					c.WriteClipboard(promptText)
+					u.Notify("已复制 " + clientName + " 验证 Prompt")
+					st.showVerifyModal = false
+				}
+			})
+		})
+	})
 }
 
 func pluginRowSubtitle(row clientplugin.Status) (string, bool) {

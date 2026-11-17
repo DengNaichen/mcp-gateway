@@ -388,6 +388,22 @@ func TestClientPluginPageAndActions(t *testing.T) {
 	if !tester.HasText("✓ 已安装") {
 		t.Fatal("expected ✓ 已安装 status after installing plugins")
 	}
+	if !tester.HasText("官方插件已安装 6 / 6") {
+		t.Fatalf("expected installed summary 6 / 6, texts=%v", tester.Texts())
+	}
+	// Clicking ✓ 已安装 opens Verification Prompt modal.
+	if err := tester.Click("Claude Code ✓ 已安装"); err != nil {
+		t.Fatalf("click Claude Code ✓ 已安装: %v", err)
+	}
+	if !tester.HasText("客户端验证 Prompt · Claude Code") {
+		t.Fatal("expected verification prompt modal to open")
+	}
+	if err := tester.Click("复制并关闭"); err != nil {
+		t.Fatalf("click 复制并关闭: %v", err)
+	}
+	if gotClip := tester.Clipboard(); !strings.Contains(gotClip, "discover_tools") || !strings.Contains(gotClip, "Claude Code") {
+		t.Fatalf("unexpected verification prompt in clipboard from modal: %q", gotClip)
+	}
 	// Codex legacy global MCP must have been auto-revoked upon plugin upgrade.
 	for _, st := range u.ClientStatuses {
 		if st.ID == clientplugin.ClientCodex && st.CanRevoke {
