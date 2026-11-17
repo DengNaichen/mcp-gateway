@@ -1,6 +1,6 @@
 # 工具路由策略
 
-状态：2026-11-14 实测定稿，默认启用。实现在 `internal/gateway/routing_strategy.go`（第一步和第三步）、`internal/gateway/decisions.go`（第二步和 Decisions 调用）、`internal/gateway/discovery.go`（串联）。实验记录在 `evals/routing/NOTES.md`，本文只写结论。
+状态：2026-11-14 实测定稿，默认启用。三步纯路由策略实现在 [`internal/routing/strategy.go`](../internal/routing/strategy.go) 与 [`internal/routing/discovery.go`](../internal/routing/discovery.go)（摘要与 `routing.Client` 接口见 `capabilities.go` / `types.go`），OpenAI / Gemini / SystemOne Decisions 与 Choice 协议调用在 [`internal/model/`](../internal/model)（`decisions.go`、`decisions_gemini.go`、`decisions_systemone.go`、`choice.go`），门面串联、双重授权过滤与适配器在 [`internal/gateway/discovery.go`](../internal/gateway/discovery.go) 与 [`internal/gateway/routing_strategy.go`](../internal/gateway/routing_strategy.go)。系统整体架构见 [系统架构总览](architecture.md)，实验记录在 [`evals/routing/NOTES.md`](../evals/routing/NOTES.md)，本文只写结论。
 
 ## 1. 问题
 
