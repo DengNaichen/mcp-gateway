@@ -18,7 +18,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"sync"
 	"time"
 
@@ -54,29 +53,18 @@ type receipt struct {
 
 // New uses explicit paths so integration tests never touch the user's real settings.
 func New(home, stateDir string, getenv func(string) string) *Manager {
-	dir := func(key, fallback string) string {
-		if v := getenv(key); v != "" {
-			return v
-		}
-		return filepath.Join(home, fallback)
+	specs := Specs()
+	clients := make([]Client, 0, len(specs))
+	for _, spec := range specs {
+		clients = append(clients, Client{
+			ID:   spec.ID,
+			Name: spec.Name,
+			Path: spec.MCPConfigPath(home, getenv),
+			Keys: spec.Keys,
+			TOML: spec.TOML,
+		})
 	}
-	oc := dir("XDG_CONFIG_HOME", ".config")
-	ocPath := filepath.Join(oc, "opencode", "opencode.json")
-	if _, err := os.Stat(strings.TrimSuffix(ocPath, ".json") + ".jsonc"); err == nil {
-		ocPath = strings.TrimSuffix(ocPath, ".json") + ".jsonc"
-	}
-	claude := filepath.Join(home, ".claude.json")
-	if v := getenv("CLAUDE_CONFIG_DIR"); v != "" {
-		claude = filepath.Join(v, ".claude.json")
-	}
-	return &Manager{StateDir: stateDir, Clients: []Client{
-		{"codex", "Codex CLI", filepath.Join(dir("CODEX_HOME", ".codex"), "config.toml"), []string{"mcp_servers"}, true},
-		{"claude", "Claude Code", claude, []string{"mcpServers"}, false},
-		{"cursor", "Cursor", filepath.Join(home, ".cursor", "mcp.json"), []string{"mcpServers"}, false},
-		{"opencode", "OpenCode v2", ocPath, []string{"mcp", "servers"}, false},
-		{"pi", "Pi", filepath.Join(dir("PI_CODING_AGENT_DIR", ".pi/agent"), "mcp.json"), []string{"mcpServers"}, false},
-		{"antigravity", "Antigravity", filepath.Join(home, ".gemini", "config", "mcp_config.json"), []string{"mcpServers"}, false},
-	}}
+	return &Manager{StateDir: stateDir, Clients: clients}
 }
 func (m *Manager) client(id string) (Client, error) {
 	for _, c := range m.Clients {
@@ -85,18 +73,6 @@ func (m *Manager) client(id string) (Client, error) {
 		}
 	}
 	return Client{}, errors.New("未知客户端")
-}
-func ClientEndpoint(endpoint, clientID string) string {
-	u, err := url.Parse(endpoint)
-	if err != nil || u.Host == "" {
-		return endpoint
-	}
-	if clientID != "" {
-		q := u.Query()
-		q.Set("agent", clientID)
-		u.RawQuery = q.Encode()
-	}
-	return u.String()
 }
 func desired(c Client, endpoint string) map[string]any {
 	e := map[string]any{"url": ClientEndpoint(endpoint, c.ID)}

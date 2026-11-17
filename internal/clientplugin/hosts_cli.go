@@ -10,50 +10,31 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
-)
 
-func (m *Manager) claudeConfigDir() string {
-	if v := strings.TrimSpace(m.getenv("CLAUDE_CONFIG_DIR")); v != "" {
-		return v
-	}
-	return filepath.Join(m.homeDir, ".claude")
-}
+	"gatewaylab/internal/clientconfig"
+)
 
 func (m *Manager) claudeEnv() []string {
 	return []string{
 		"HOME=" + m.homeDir,
 		"USERPROFILE=" + m.homeDir,
-		"CLAUDE_CONFIG_DIR=" + m.claudeConfigDir(),
+		"CLAUDE_CONFIG_DIR=" + m.hostConfigDir(ClientClaude),
 	}
-}
-
-func (m *Manager) codexConfigDir() string {
-	if v := strings.TrimSpace(m.getenv("CODEX_HOME")); v != "" {
-		return v
-	}
-	return filepath.Join(m.homeDir, ".codex")
 }
 
 func (m *Manager) codexEnv() []string {
 	return []string{
 		"HOME=" + m.homeDir,
 		"USERPROFILE=" + m.homeDir,
-		"CODEX_HOME=" + m.codexConfigDir(),
+		"CODEX_HOME=" + m.hostConfigDir(ClientCodex),
 	}
-}
-
-func (m *Manager) piConfigDir() string {
-	if v := strings.TrimSpace(m.getenv("PI_CODING_AGENT_DIR")); v != "" {
-		return v
-	}
-	return filepath.Join(m.homeDir, ".pi", "agent")
 }
 
 func (m *Manager) piEnv() []string {
 	return []string{
 		"HOME=" + m.homeDir,
 		"USERPROFILE=" + m.homeDir,
-		"PI_CODING_AGENT_DIR=" + m.piConfigDir(),
+		"PI_CODING_AGENT_DIR=" + m.hostConfigDir(ClientPi),
 	}
 }
 
@@ -62,21 +43,27 @@ func (m *Manager) pluginID() string {
 }
 
 func (m *Manager) observeClaude(endpoint string, legacy bool) Status {
-	cfgDir := m.claudeConfigDir()
+	cfgDir := m.hostConfigDir(ClientClaude)
 	hookBin, dataDir := m.resolveHookBinaryAndData()
-	expected := m.renderClaudeMarketplace(endpoint, hookBin, dataDir)
 	_, cliErr := m.runner.LookPath("claude")
 	cliOK := cliErr == nil
 
 	s := Status{
 		ID:            ClientClaude,
-		Name:          clientDisplayName(ClientClaude),
+		Name:          clientconfig.ClientDisplayName(ClientClaude),
 		Path:          filepath.Join(cfgDir, "plugins", "installed_plugins.json"),
 		State:         "未安装",
 		TargetVersion: m.version,
 		CLIAvailable:  cliOK,
 		HasLegacyMCP:  legacy,
 		CanInstall:    cliOK,
+	}
+	expected, renderErr := m.renderClaudeMarketplace(endpoint, hookBin, dataDir)
+	if renderErr != nil {
+		s.State = "配置异常"
+		s.Detail = renderErr.Error()
+		s.CanInstall = false
+		return s
 	}
 	if legacy {
 		s.State = "待升级"
@@ -145,7 +132,7 @@ func (m *Manager) installClaude(endpoint string, update bool) error {
 	if _, err := m.runner.LookPath("claude"); err != nil {
 		return fmt.Errorf("未找到 claude CLI，无法安装 Claude Code 官方插件: %w", err)
 	}
-	cfgDir := m.claudeConfigDir()
+	cfgDir := m.hostConfigDir(ClientClaude)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		return err
 	}
@@ -165,18 +152,17 @@ func (m *Manager) installClaude(endpoint string, update bool) error {
 	if mpKnown && !sameCleanedPath(mpSource, mktDir) && r == nil {
 		return fmt.Errorf("检测到 Claude Code 已存在同名 marketplace (%s)，未覆盖", mpSource)
 	}
+	hookBin, dataDir := m.resolveHookBinaryAndData()
+	bundle, err := m.renderClaudeMarketplace(endpoint, hookBin, dataDir)
+	if err != nil {
+		return err
+	}
 	if inst != nil && !update {
-		if r != nil {
-			hookBin, dataDir := m.resolveHookBinaryAndData()
-			if r.Digest == m.renderClaudeMarketplace(endpoint, hookBin, dataDir).Digest {
-				return nil
-			}
+		if r != nil && r.Digest == bundle.Digest {
+			return nil
 		}
 		return errors.New("插件已安装但需要更新，请执行更新插件")
 	}
-
-	hookBin, dataDir := m.resolveHookBinaryAndData()
-	bundle := m.renderClaudeMarketplace(endpoint, hookBin, dataDir)
 	filesMap, err := writeRenderedTree(mktDir, bundle.RootFiles)
 	if err != nil {
 		return err
@@ -220,7 +206,7 @@ func (m *Manager) removeClaude() error {
 	if _, err := m.runner.LookPath("claude"); err != nil {
 		return fmt.Errorf("未找到 claude CLI，无法卸载 Claude Code 插件: %w", err)
 	}
-	cfgDir := m.claudeConfigDir()
+	cfgDir := m.hostConfigDir(ClientClaude)
 	ctx := context.Background()
 	env := m.claudeEnv()
 	if inst, _ := readClaudeInstalledPlugin(cfgDir, m.pluginID()); inst != nil {
@@ -240,15 +226,14 @@ func (m *Manager) removeClaude() error {
 }
 
 func (m *Manager) observeCodex(endpoint string, legacy bool) Status {
-	cfgDir := m.codexConfigDir()
+	cfgDir := m.hostConfigDir(ClientCodex)
 	hookBin, dataDir := m.resolveHookBinaryAndData()
-	expected := m.renderCodexMarketplace(endpoint, hookBin, dataDir)
 	_, cliErr := m.runner.LookPath("codex")
 	cliOK := cliErr == nil
 
 	s := Status{
 		ID:            ClientCodex,
-		Name:          clientDisplayName(ClientCodex),
+		Name:          clientconfig.ClientDisplayName(ClientCodex),
 		Path:          filepath.Join(cfgDir, "config.toml"),
 		State:         "未安装",
 		TargetVersion: m.version,
@@ -256,6 +241,13 @@ func (m *Manager) observeCodex(endpoint string, legacy bool) Status {
 		HasLegacyMCP:  legacy,
 		CanInstall:    cliOK,
 		Warnings:      []string{"若 Codex 首次提示审查插件 Hook，请在 Codex 中确认信任"},
+	}
+	expected, renderErr := m.renderCodexMarketplace(endpoint, hookBin, dataDir)
+	if renderErr != nil {
+		s.State = "配置异常"
+		s.Detail = renderErr.Error()
+		s.CanInstall = false
+		return s
 	}
 	if legacy {
 		s.State = "待升级"
@@ -323,7 +315,7 @@ func (m *Manager) installCodex(endpoint string, update bool) error {
 	if _, err := m.runner.LookPath("codex"); err != nil {
 		return fmt.Errorf("未找到 codex CLI，无法安装 Codex 官方插件: %w", err)
 	}
-	cfgDir := m.codexConfigDir()
+	cfgDir := m.hostConfigDir(ClientCodex)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		return err
 	}
@@ -342,18 +334,17 @@ func (m *Manager) installCodex(endpoint string, update bool) error {
 	if hasMP && !sameCleanedPath(mpSource, mktDir) && r == nil {
 		return fmt.Errorf("检测到 Codex 已存在同名 marketplace (%s)，未覆盖", mpSource)
 	}
+	hookBin, dataDir := m.resolveHookBinaryAndData()
+	bundle, err := m.renderCodexMarketplace(endpoint, hookBin, dataDir)
+	if err != nil {
+		return err
+	}
 	if hasPlugin && !update {
-		if r != nil {
-			hookBin, dataDir := m.resolveHookBinaryAndData()
-			if r.Digest == m.renderCodexMarketplace(endpoint, hookBin, dataDir).Digest {
-				return nil
-			}
+		if r != nil && r.Digest == bundle.Digest {
+			return nil
 		}
 		return errors.New("插件已安装但需要更新，请执行更新插件")
 	}
-
-	hookBin, dataDir := m.resolveHookBinaryAndData()
-	bundle := m.renderCodexMarketplace(endpoint, hookBin, dataDir)
 	filesMap, err := writeRenderedTree(mktDir, bundle.RootFiles)
 	if err != nil {
 		return err
@@ -400,7 +391,7 @@ func (m *Manager) removeCodex() error {
 	if _, err := m.runner.LookPath("codex"); err != nil {
 		return fmt.Errorf("未找到 codex CLI，无法卸载 Codex 插件: %w", err)
 	}
-	cfgDir := m.codexConfigDir()
+	cfgDir := m.hostConfigDir(ClientCodex)
 	_, hasPlugin, _, hasMP, err := readCodexPluginState(cfgDir, m.slug, m.pluginID())
 	if err != nil {
 		return err
@@ -424,22 +415,28 @@ func (m *Manager) removeCodex() error {
 }
 
 func (m *Manager) observePi(endpoint string, legacy bool) Status {
-	cfgDir := m.piConfigDir()
+	cfgDir := m.hostConfigDir(ClientPi)
 	pkgDir := filepath.Join(m.stateDir, "pi", m.slug)
 	hookBin, dataDir := m.resolveHookBinaryAndData()
-	expected := m.renderPiPackage(endpoint, hookBin, dataDir)
 	_, cliErr := m.runner.LookPath("pi")
 	cliOK := cliErr == nil
 
 	s := Status{
 		ID:            ClientPi,
-		Name:          clientDisplayName(ClientPi),
+		Name:          clientconfig.ClientDisplayName(ClientPi),
 		Path:          filepath.Join(cfgDir, "settings.json"),
 		State:         "未安装",
 		TargetVersion: m.version,
 		CLIAvailable:  cliOK,
 		HasLegacyMCP:  legacy,
 		CanInstall:    cliOK,
+	}
+	expected, renderErr := m.renderPiPackage(endpoint, hookBin, dataDir)
+	if renderErr != nil {
+		s.State = "配置异常"
+		s.Detail = renderErr.Error()
+		s.CanInstall = false
+		return s
 	}
 	if legacy {
 		s.State = "待升级"
@@ -492,7 +489,7 @@ func (m *Manager) installPi(endpoint string, update bool) error {
 	if _, err := m.runner.LookPath("pi"); err != nil {
 		return fmt.Errorf("未找到 pi CLI，无法安装 Pi 官方包: %w", err)
 	}
-	cfgDir := m.piConfigDir()
+	cfgDir := m.hostConfigDir(ClientPi)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		return err
 	}
@@ -510,7 +507,10 @@ func (m *Manager) installPi(endpoint string, update bool) error {
 	}
 
 	hookBin, dataDir := m.resolveHookBinaryAndData()
-	bundle := m.renderPiPackage(endpoint, hookBin, dataDir)
+	bundle, err := m.renderPiPackage(endpoint, hookBin, dataDir)
+	if err != nil {
+		return err
+	}
 	if matchedEntry != "" && !update {
 		if r != nil && r.Digest == bundle.Digest && verifyTreeMatches(pkgDir, r.Files) {
 			return nil
@@ -551,7 +551,7 @@ func (m *Manager) removePi() error {
 	if _, err := m.runner.LookPath("pi"); err != nil {
 		return fmt.Errorf("未找到 pi CLI，无法卸载 Pi 包: %w", err)
 	}
-	cfgDir := m.piConfigDir()
+	cfgDir := m.hostConfigDir(ClientPi)
 	pkgDir := filepath.Join(m.stateDir, "pi", m.slug)
 	if r.InstallRoot != "" {
 		pkgDir = r.InstallRoot

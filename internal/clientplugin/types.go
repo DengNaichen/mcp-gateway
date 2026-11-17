@@ -22,22 +22,13 @@ const cliCommandTimeout = 45 * time.Second
 
 // ClientID constants identify the six supported coding-agent hosts.
 const (
-	ClientCodex       = "codex"
-	ClientClaude      = "claude"
-	ClientCursor      = "cursor"
-	ClientOpenCode    = "opencode"
-	ClientPi          = "pi"
-	ClientAntigravity = "antigravity"
+	ClientCodex       = clientconfig.ClientCodex
+	ClientClaude      = clientconfig.ClientClaude
+	ClientCursor      = clientconfig.ClientCursor
+	ClientOpenCode    = clientconfig.ClientOpenCode
+	ClientPi          = clientconfig.ClientPi
+	ClientAntigravity = clientconfig.ClientAntigravity
 )
-
-var clientOrder = []string{
-	ClientCodex,
-	ClientClaude,
-	ClientCursor,
-	ClientOpenCode,
-	ClientPi,
-	ClientAntigravity,
-}
 
 // CommandRunner abstracts external CLI invocations (claude, codex, pi) so unit
 // tests can verify installation state machines deterministically.
@@ -219,32 +210,8 @@ func mergeEnv(base, overrides []string) []string {
 	return out
 }
 
-func clientDisplayName(id string) string {
-	switch id {
-	case ClientCodex:
-		return "Codex CLI"
-	case ClientClaude:
-		return "Claude Code"
-	case ClientCursor:
-		return "Cursor"
-	case ClientOpenCode:
-		return "OpenCode v2"
-	case ClientPi:
-		return "Pi"
-	case ClientAntigravity:
-		return "Antigravity"
-	default:
-		return id
-	}
-}
-
-func isKnownClient(id string) bool {
-	for _, known := range clientOrder {
-		if known == id {
-			return true
-		}
-	}
-	return false
+func (m *Manager) hostConfigDir(id string) string {
+	return clientconfig.HostConfigDir(id, m.homeDir, m.getenv)
 }
 
 var errClientUnknown = errors.New("未知客户端")

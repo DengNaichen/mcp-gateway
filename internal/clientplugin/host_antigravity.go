@@ -8,14 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gatewaylab/internal/clientconfig"
 )
 
-func (m *Manager) agyConfigDir() string {
-	return filepath.Join(m.homeDir, ".gemini", "config")
-}
-
 func (m *Manager) agyPluginDir() string {
-	return filepath.Join(m.agyConfigDir(), "plugins", m.slug)
+	return filepath.Join(m.hostConfigDir(ClientAntigravity), "plugins", m.slug)
 }
 
 func (m *Manager) agyEnv() []string {
@@ -26,22 +24,28 @@ func (m *Manager) agyEnv() []string {
 }
 
 func (m *Manager) observeAntigravity(endpoint string, legacy bool) Status {
-	cfgDir := m.agyConfigDir()
+	cfgDir := m.hostConfigDir(ClientAntigravity)
 	pluginDir := m.agyPluginDir()
 	hookBin, dataDir := m.resolveHookBinaryAndData()
-	expected := m.renderAntigravityPlugin(endpoint, hookBin, dataDir)
 	_, cliErr := m.runner.LookPath("agy")
 	cliOK := cliErr == nil
 
 	s := Status{
 		ID:            ClientAntigravity,
-		Name:          clientDisplayName(ClientAntigravity),
+		Name:          clientconfig.ClientDisplayName(ClientAntigravity),
 		Path:          pluginDir,
 		State:         "未安装",
 		TargetVersion: m.version,
 		CLIAvailable:  cliOK,
 		HasLegacyMCP:  legacy,
 		CanInstall:    true,
+	}
+	expected, renderErr := m.renderAntigravityPlugin(endpoint, hookBin, dataDir)
+	if renderErr != nil {
+		s.State = "配置异常"
+		s.Detail = renderErr.Error()
+		s.CanInstall = false
+		return s
 	}
 	if legacy {
 		s.State = "待升级"
@@ -114,14 +118,17 @@ func (m *Manager) observeAntigravity(endpoint string, legacy bool) Status {
 }
 
 func (m *Manager) installAntigravity(endpoint string, update bool) error {
-	cfgDir := m.agyConfigDir()
+	cfgDir := m.hostConfigDir(ClientAntigravity)
 	pluginDir := m.agyPluginDir()
 	r, err := m.loadReceipt(ClientAntigravity)
 	if err != nil {
 		return err
 	}
 	hookBin, dataDir := m.resolveHookBinaryAndData()
-	bundle := m.renderAntigravityPlugin(endpoint, hookBin, dataDir)
+	bundle, err := m.renderAntigravityPlugin(endpoint, hookBin, dataDir)
+	if err != nil {
+		return err
+	}
 	if err := verifyOwnedFilesAbsentOrMatching(pluginDir, bundle.RootFiles, r); err != nil {
 		return err
 	}

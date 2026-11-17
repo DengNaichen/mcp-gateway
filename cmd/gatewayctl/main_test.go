@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -117,5 +118,86 @@ func TestPluginCLIValidationErrors(t *testing.T) {
 		if err := runWithArgs(args, &out); err == nil {
 			t.Fatalf("expected error for args %v, got nil", args)
 		}
+	}
+}
+
+func TestPluginCLIDataDirParityWithDesktopAndChannelEnv(t *testing.T) {
+	home := t.TempDir()
+	slug := buildinfo.Current().Slug
+
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("GATEWAY_CLIENT_CONFIG_HOME", "")
+	t.Setenv("GATEWAY_DATA_DIR", "")
+	t.Setenv(buildinfo.EnvironmentKey("GATEWAY_DATA_DIR"), "")
+
+	userCfgDir, err := os.UserConfigDir()
+	if err != nil || userCfgDir == "" {
+		t.Fatalf("resolve UserConfigDir: %v", err)
+	}
+	desktopDataDir := filepath.Join(userCfgDir, slug)
+	if err := os.MkdirAll(desktopDataDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	hookBin := filepath.Join(home, "."+slug, "bin", slug+"-hook")
+	if err := os.MkdirAll(filepath.Dir(hookBin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hookBin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate Desktop installing Cursor plugin with rt.DataDir == <UserConfigDir>/<slug>.
+	desktopMgr := clientplugin.New(clientplugin.Options{
+		HomeDir:       home,
+		StateDir:      filepath.Join(home, "."+slug, "plugins"),
+		DataDir:       desktopDataDir,
+		Getenv:        os.Getenv,
+		ClientConfigs: clientconfig.New(home, filepath.Join(home, "."+slug, "client-config"), os.Getenv),
+	})
+	if err := desktopMgr.Install(clientplugin.ClientCursor, "http://127.0.0.1:8864/mcp"); err != nil {
+		t.Fatalf("desktop install cursor: %v", err)
+	}
+
+	// Running gatewayctl plugin status without -data must resolve <UserConfigDir>/<slug>
+	// and match Desktop's digest instead of falsely reporting "需要更新".
+	var out bytes.Buffer
+	if err := runWithArgs([]string{"-url", "http://127.0.0.1:8864", "plugin", "status", "-client", "cursor"}, &out); err != nil {
+		t.Fatalf("gatewayctl plugin status: %v", err)
+	}
+	var st clientplugin.Status
+	if err := json.Unmarshal(out.Bytes(), &st); err != nil {
+		t.Fatalf("decode status: %v\n%s", err, out.String())
+	}
+	if st.State != "已安装" || st.CanUpdate {
+		t.Fatalf("expected desktop-installed plugin to stay 已安装 in gatewayctl, got %+v", st)
+	}
+
+	// Channel-specific env var (GATEWAY_DEV_DATA_DIR in dev) overrides fallback.
+	chEnvKey := buildinfo.EnvironmentKey("GATEWAY_DATA_DIR")
+	chDataDir := filepath.Join(t.TempDir(), "channel-data")
+	if chEnvKey != "GATEWAY_DATA_DIR" {
+		t.Setenv("GATEWAY_DATA_DIR", filepath.Join(t.TempDir(), "generic-data"))
+	}
+	t.Setenv(chEnvKey, chDataDir)
+
+	out.Reset()
+	if err := runWithArgs([]string{"-url", "http://127.0.0.1:8864", "plugin", "update", "-client", "cursor"}, &out); err != nil {
+		t.Fatalf("gatewayctl plugin update under channel env: %v", err)
+	}
+	st = clientplugin.Status{}
+	if err := json.Unmarshal(out.Bytes(), &st); err != nil {
+		t.Fatalf("decode status after update: %v\n%s", err, out.String())
+	}
+	if st.State != "已安装" {
+		t.Fatalf("expected 已安装 after channel env update, got %+v", st)
+	}
+	wrapperPath := filepath.Join(home, ".cursor", "plugins", "local", slug, "scripts", "run-gateway-hook")
+	wrapperBytes, err := os.ReadFile(wrapperPath)
+	if err != nil {
+		t.Fatalf("read wrapper: %v", err)
+	}
+	if !strings.Contains(string(wrapperBytes), chDataDir) {
+		t.Fatalf("expected wrapper to use channel env data dir %q, got:\n%s", chDataDir, string(wrapperBytes))
 	}
 }

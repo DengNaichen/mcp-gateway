@@ -5,35 +5,34 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"gatewaylab/internal/clientconfig"
 )
 
 func (m *Manager) cursorPluginDir() string {
-	return filepath.Join(m.homeDir, ".cursor", "plugins", "local", m.slug)
-}
-
-func (m *Manager) openCodeConfigDir() string {
-	xdg := strings.TrimSpace(m.getenv("XDG_CONFIG_HOME"))
-	if xdg == "" {
-		xdg = filepath.Join(m.homeDir, ".config")
-	}
-	return filepath.Join(xdg, "opencode")
+	return filepath.Join(m.hostConfigDir(ClientCursor), "plugins", "local", m.slug)
 }
 
 func (m *Manager) observeCursor(endpoint string, legacy bool) Status {
 	pluginDir := m.cursorPluginDir()
 	hookBin, dataDir := m.resolveHookBinaryAndData()
-	expected := m.renderCursorPlugin(endpoint, hookBin, dataDir)
 
 	s := Status{
 		ID:            ClientCursor,
-		Name:          clientDisplayName(ClientCursor),
+		Name:          clientconfig.ClientDisplayName(ClientCursor),
 		Path:          pluginDir,
 		State:         "未安装",
 		TargetVersion: m.version,
 		CLIAvailable:  true,
 		HasLegacyMCP:  legacy,
 		CanInstall:    true,
+	}
+	expected, renderErr := m.renderCursorPlugin(endpoint, hookBin, dataDir)
+	if renderErr != nil {
+		s.State = "配置异常"
+		s.Detail = renderErr.Error()
+		s.CanInstall = false
+		return s
 	}
 	if legacy {
 		s.State = "待升级"
@@ -96,7 +95,10 @@ func (m *Manager) installCursor(endpoint string, update bool) error {
 		return err
 	}
 	hookBin, dataDir := m.resolveHookBinaryAndData()
-	bundle := m.renderCursorPlugin(endpoint, hookBin, dataDir)
+	bundle, err := m.renderCursorPlugin(endpoint, hookBin, dataDir)
+	if err != nil {
+		return err
+	}
 	if err := verifyOwnedFilesAbsentOrMatching(pluginDir, bundle.RootFiles, r); err != nil {
 		return err
 	}
@@ -147,20 +149,26 @@ func (m *Manager) removeCursor() error {
 }
 
 func (m *Manager) observeOpenCode(endpoint string, legacy bool) Status {
-	cfgDir := m.openCodeConfigDir()
+	cfgDir := m.hostConfigDir(ClientOpenCode)
 	hookBin, dataDir := m.resolveHookBinaryAndData()
-	expected := m.renderOpenCodePlugin(endpoint, hookBin, dataDir)
 	pluginPath := filepath.Join(cfgDir, "plugins", m.slug+".js")
 
 	s := Status{
 		ID:            ClientOpenCode,
-		Name:          clientDisplayName(ClientOpenCode),
+		Name:          clientconfig.ClientDisplayName(ClientOpenCode),
 		Path:          pluginPath,
 		State:         "未安装",
 		TargetVersion: m.version,
 		CLIAvailable:  true,
 		HasLegacyMCP:  legacy,
 		CanInstall:    true,
+	}
+	expected, renderErr := m.renderOpenCodePlugin(endpoint, hookBin, dataDir)
+	if renderErr != nil {
+		s.State = "配置异常"
+		s.Detail = renderErr.Error()
+		s.CanInstall = false
+		return s
 	}
 	if legacy {
 		s.State = "待升级"
@@ -202,13 +210,16 @@ func (m *Manager) observeOpenCode(endpoint string, legacy bool) Status {
 }
 
 func (m *Manager) installOpenCode(endpoint string, update bool) error {
-	cfgDir := m.openCodeConfigDir()
+	cfgDir := m.hostConfigDir(ClientOpenCode)
 	r, err := m.loadReceipt(ClientOpenCode)
 	if err != nil {
 		return err
 	}
 	hookBin, dataDir := m.resolveHookBinaryAndData()
-	bundle := m.renderOpenCodePlugin(endpoint, hookBin, dataDir)
+	bundle, err := m.renderOpenCodePlugin(endpoint, hookBin, dataDir)
+	if err != nil {
+		return err
+	}
 	if err := verifyOpenCodeOwnership(cfgDir, bundle.RootFiles, r); err != nil {
 		return err
 	}
@@ -252,7 +263,7 @@ func (m *Manager) removeOpenCode() error {
 	if r == nil {
 		return errors.New("没有可卸载的 OpenCode v2 插件记录")
 	}
-	cfgDir := m.openCodeConfigDir()
+	cfgDir := m.hostConfigDir(ClientOpenCode)
 	if err := verifyOpenCodeOwnership(cfgDir, nil, r); err != nil {
 		return err
 	}

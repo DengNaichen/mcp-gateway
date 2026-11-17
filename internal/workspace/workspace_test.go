@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gatewaylab/internal/buildinfo"
 )
 
 func runGit(t *testing.T, dir string, args ...string) {
@@ -422,11 +424,87 @@ func TestBuildSnippetAllAgents(t *testing.T) {
 			if !strings.Contains(spec.Snippet, "ctx.session.get({ sessionID: event.sessionID }") || !strings.Contains(spec.Snippet, "session?.location?.directory") {
 				t.Fatalf("opencode snippet missing session.location.directory lookup:\n%s", spec.Snippet)
 			}
+			wantRegex := PluginToolRegexLiteral("mcp-gateway")
+			if buildinfo.Current().Slug != "mcp-gateway" {
+				wantRegex = PluginToolRegexLiteral(buildinfo.Current().Slug)
+			}
+			if !strings.Contains(spec.Snippet, wantRegex) {
+				t.Fatalf("opencode snippet missing plugin-namespaced TOOL_RE %s:\n%s", wantRegex, spec.Snippet)
+			}
 		case "pi":
 			if !strings.Contains(spec.Snippet, `pi.on("tool_call"`) {
 				t.Fatalf("pi snippet missing tool_call listener:\n%s", spec.Snippet)
 			}
+			wantRegex := PluginToolRegexLiteral(buildinfo.Current().Slug)
+			if !strings.Contains(spec.Snippet, wantRegex) {
+				t.Fatalf("pi snippet missing plugin-namespaced TOOL_RE %s:\n%s", wantRegex, spec.Snippet)
+			}
 		}
+	}
+}
+
+func TestMatchesMetaToolInputShape(t *testing.T) {
+	if !MatchesMetaToolInputShape("discover_tools", map[string]any{"intent": "search", "summary_only": true, "_gw_ctx": "tok"}) {
+		t.Fatal("expected valid discover_tools shape to match")
+	}
+	if MatchesMetaToolInputShape("discover_tools", map[string]any{"query": "search"}) {
+		t.Fatal("expected unknown field 'query' to be rejected")
+	}
+	if !MatchesMetaToolInputShape("get_tool_schema", map[string]any{"tool_id": "github.list_issues", "actor": "developer"}) {
+		t.Fatal("expected valid get_tool_schema shape to match")
+	}
+	if MatchesMetaToolInputShape("get_tool_schema", map[string]any{"tool_id": ""}) {
+		t.Fatal("expected empty tool_id to be rejected")
+	}
+	if !MatchesMetaToolInputShape("invoke_tool", map[string]any{"tool_id": "github.list_issues", "arguments": map[string]any{"limit": 5}, "_gw_ctx_mcp_gateway_dev": "tok"}) {
+		t.Fatal("expected valid invoke_tool shape to match")
+	}
+	if MatchesMetaToolInputShape("invoke_tool", map[string]any{"tool_id": "github.list_issues", "arguments": "not-an-object"}) {
+		t.Fatal("expected non-object arguments to be rejected")
+	}
+	if MatchesMetaToolInputShape("other_tool", map[string]any{"intent": "x"}) {
+		t.Fatal("expected unknown meta-tool to be rejected")
+	}
+}
+
+func TestResolveHookBinaryDoesNotMutateHome(t *testing.T) {
+	home := t.TempDir()
+	dataDir := filepath.Join(home, "data")
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Create a fake built binary in a temp working directory so FindBuiltHookBinary finds it.
+	workDir := t.TempDir()
+	binDir := filepath.Join(workDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	builtPath := filepath.Join(binDir, "gateway-hook")
+	if err := os.WriteFile(builtPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+
+	resolved := ResolveHookBinary(home, dataDir)
+	if resolved == "" {
+		t.Fatal("expected non-empty resolved hook binary")
+	}
+	if _, err := os.Stat(DefaultHookBinPath(home)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("ResolveHookBinary must not create %s; err=%v", DefaultHookBinPath(home), err)
+	}
+	synced, err := SyncHookBinary(home)
+	if err != nil {
+		t.Fatalf("SyncHookBinary: %v", err)
+	}
+	if _, err := os.Stat(synced); err != nil {
+		t.Fatalf("expected SyncHookBinary to install %s: %v", synced, err)
 	}
 }
 
