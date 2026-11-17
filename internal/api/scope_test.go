@@ -692,7 +692,7 @@ func TestSharedModeRESTNonAdminGuardSimScopeAndHTTPAPIs(t *testing.T) {
 	}
 	var preview scope.ScopePreviewResponse
 	_ = json.Unmarshal(recPreview.Body.Bytes(), &preview)
-	if len(preview.Agents) != 5 || preview.Agents[0].Agent != "codex" || preview.Agents[0].ServerCount != 1 || preview.Agents[0].ToolCount != 1 || preview.Agents[0].HasWrite {
+	if len(preview.Agents) != 6 || preview.Agents[0].Agent != "codex" || preview.Agents[0].ServerCount != 1 || preview.Agents[0].ToolCount != 1 || preview.Agents[0].HasWrite {
 		t.Fatalf("unexpected preview response (demo server should be excluded): %+v", preview)
 	}
 

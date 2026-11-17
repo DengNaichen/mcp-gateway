@@ -25,6 +25,7 @@ var allPluginClients = []string{
 	clientplugin.ClientCursor,
 	clientplugin.ClientOpenCode,
 	clientplugin.ClientPi,
+	clientplugin.ClientAntigravity,
 }
 
 func run() error {
@@ -128,7 +129,7 @@ func runPluginCommand(args []string, defaultURL string, stdout io.Writer) error 
 	action := args[0]
 	fs := flag.NewFlagSet("gatewayctl plugin "+action, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	clientFlag := fs.String("client", "", "Target client (codex|claude|cursor|opencode|pi|all)")
+	clientFlag := fs.String("client", "", "Target client (codex|claude|cursor|opencode|pi|antigravity|all)")
 	urlFlag := fs.String("url", defaultURL, "Gateway base or MCP endpoint URL")
 	homeFlag := fs.String("home", "", "Override user home directory")
 	stateFlag := fs.String("state", "", "Override plugin state directory")
@@ -148,7 +149,7 @@ func runPluginCommand(args []string, defaultURL string, stdout io.Writer) error 
 		target = "all"
 	}
 	if target == "" {
-		return fmt.Errorf("plugin %s requires -client <codex|claude|cursor|opencode|pi|all>", action)
+		return fmt.Errorf("plugin %s requires -client <codex|claude|cursor|opencode|pi|antigravity|all>", action)
 	}
 
 	targets, isAll, err := resolvePluginTargets(target)
@@ -201,7 +202,7 @@ func resolvePluginTargets(target string) ([]string, bool, error) {
 			return []string{id}, false, nil
 		}
 	}
-	return nil, false, fmt.Errorf("unknown client %q (expected codex, claude, cursor, opencode, pi, or all)", target)
+	return nil, false, fmt.Errorf("unknown client %q (expected codex, claude, cursor, opencode, pi, antigravity, or all)", target)
 }
 
 func resolvePluginHome(override string) (string, func(string) string, error) {

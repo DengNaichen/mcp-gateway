@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 ARTIFACTS = pathlib.Path(tempfile.mkdtemp(prefix="gateway-channels-"))
-CLIENTS = ["codex", "claude", "cursor", "opencode", "pi"]
+CLIENTS = ["codex", "claude", "cursor", "opencode", "pi", "antigravity"]
 processes, sockets, states = {}, {}, {}
 
 def control(channel, path, data=None):

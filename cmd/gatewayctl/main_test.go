@@ -33,8 +33,8 @@ func TestPluginCLIStatusInstallUpdateRemoveAndPrompt(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &all); err != nil {
 		t.Fatalf("decode all status: %v\n%s", err, out.String())
 	}
-	if len(all) != 5 {
-		t.Fatalf("expected 5 clients, got %d", len(all))
+	if len(all) != 6 {
+		t.Fatalf("expected 6 clients, got %d", len(all))
 	}
 	if all[2].ID != clientplugin.ClientCursor || !all[2].HasLegacyMCP || all[2].State != "待升级" {
 		t.Fatalf("unexpected initial cursor status: %+v", all[2])

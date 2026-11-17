@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# Hook wrapper for MCP Gateway plugins (Claude Code, Codex CLI, Cursor).
+# Hook wrapper for MCP Gateway plugins (Claude Code, Codex CLI, Cursor, Antigravity).
 # Fails open when the local hook binary is absent so host sessions never hang;
 # when Gateway enforce=true, missing _gw_ctx* is rejected server-side with 403 scope_required.
 
@@ -17,14 +17,14 @@ default_slug="mcp-gateway"
 default_data_dir=""
 
 emit_noop() {
-	if [ "$host" = "cursor" ]; then
+	if [ "$host" = "cursor" ] || [ "$host" = "antigravity" ]; then
 		printf '{}\n'
 	fi
 	exit 0
 }
 
 case "$host" in
-	claude|codex|cursor) ;;
+	claude|codex|cursor|antigravity) ;;
 	*) emit_noop ;;
 esac
 

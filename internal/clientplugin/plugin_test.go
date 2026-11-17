@@ -26,7 +26,7 @@ type fakeRunner struct {
 
 func (f *fakeRunner) LookPath(binary string) (string, error) {
 	switch binary {
-	case "claude", "codex", "pi":
+	case "claude", "codex", "pi", "agy":
 		return "/usr/local/bin/" + binary, nil
 	default:
 		return "", exec.ErrNotFound
@@ -184,6 +184,50 @@ func (f *fakeRunner) Run(_ context.Context, env []string, dir, binary string, ar
 			raw, _ := json.MarshalIndent(doc, "", "  ")
 			return nil, nil, atomicWriteFile(settingsPath, raw, 0o600)
 		}
+
+	case "agy":
+		cfgDir := filepath.Join(f.home, ".gemini", "config")
+		if h := envMap["HOME"]; h != "" {
+			cfgDir = filepath.Join(h, ".gemini", "config")
+		}
+		if len(args) >= 3 && args[0] == "plugin" && args[1] == "install" {
+			srcDir := args[2]
+			destDir := filepath.Join(cfgDir, "plugins", slug)
+			if err := os.RemoveAll(destDir); err != nil {
+				return nil, nil, err
+			}
+			err := filepath.WalkDir(srcDir, func(path string, d os.DirEntry, walkErr error) error {
+				if walkErr != nil {
+					return walkErr
+				}
+				rel, err := filepath.Rel(srcDir, path)
+				if err != nil || rel == "." {
+					return err
+				}
+				dst := filepath.Join(destDir, rel)
+				if d.IsDir() {
+					return os.MkdirAll(dst, 0o755)
+				}
+				info, err := d.Info()
+				if err != nil {
+					return err
+				}
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				return atomicWriteFile(dst, data, info.Mode().Perm())
+			})
+			return nil, nil, err
+		}
+		if len(args) >= 3 && args[0] == "plugin" && args[1] == "uninstall" {
+			return nil, nil, os.RemoveAll(filepath.Join(cfgDir, "plugins", args[2]))
+		}
+		if len(args) >= 3 && args[0] == "plugin" && args[1] == "enable" {
+			cfgPath := filepath.Join(cfgDir, "config.json")
+			raw, _ := json.MarshalIndent(map[string]any{"plugins": map[string]any{args[2]: map[string]any{"enabled": true}}}, "", "  ")
+			return nil, nil, atomicWriteFile(cfgPath, raw, 0o600)
+		}
 	}
 
 	return nil, nil, fmtErrorf("unexpected command: %s %v", binary, args)
@@ -218,8 +262,8 @@ func TestAllClientsInstallUpdateRemoveAndLegacyMigration(t *testing.T) {
 	}
 
 	statuses := mgr.Statuses(endpoint1)
-	if len(statuses) != 5 {
-		t.Fatalf("expected 5 statuses, got %d", len(statuses))
+	if len(statuses) != 6 {
+		t.Fatalf("expected 6 statuses, got %d", len(statuses))
 	}
 	for _, st := range statuses {
 		if !st.HasLegacyMCP || st.State != "待升级" || !st.CanInstall {
@@ -381,6 +425,89 @@ func TestRenderedHookWrapperExecutesRealHookBinary(t *testing.T) {
 	if err != nil || claims.Cwd != repoDir {
 		t.Fatalf("VerifyToken failed: err=%v claims=%+v", err, claims)
 	}
+
+	// Verify installed Antigravity wrapper executes real gateway-hook binary too.
+	if err := mgr.Install(ClientAntigravity, "http://127.0.0.1:8788/mcp"); err != nil {
+		t.Fatal(err)
+	}
+	agyWrapper := filepath.Join(home, ".gemini", "config", "plugins", slug, "scripts", "run-gateway-hook")
+	agyEv := `{"conversationId":"agy-sess-1","hookEventName":"PreToolUse","cwd":` + mustJSON(repoDir) + `,"workspacePaths":[` + mustJSON(repoDir) + `],"toolCall":{"name":` + mustJSON("mcp_"+slug+"_discover_tools") + `,"args":{"intent":"check logs"}}}`
+	agyCmd := exec.Command("sh", agyWrapper, "antigravity")
+	agyCmd.Stdin = strings.NewReader(agyEv)
+	var agyOut, agyErr bytes.Buffer
+	agyCmd.Stdout = &agyOut
+	agyCmd.Stderr = &agyErr
+	if err := agyCmd.Run(); err != nil {
+		t.Fatalf("antigravity wrapper failed: %v\n%s", err, agyErr.String())
+	}
+	var agyResp struct {
+		Decision  string         `json:"decision"`
+		Overwrite map[string]any `json:"overwrite"`
+	}
+	if err := json.Unmarshal(agyOut.Bytes(), &agyResp); err != nil {
+		t.Fatalf("invalid antigravity wrapper output: %v\n%s", err, agyOut.String())
+	}
+	agyTok, _ := agyResp.Overwrite[workspace.CurrentContextField()].(string)
+	mergedRaw, _ := json.Marshal(map[string]any{"intent": "check logs", workspace.CurrentContextField(): agyTok})
+	agyHash, _, _, _ := workspace.CanonicalArgsHashJSON(mergedRaw, workspace.CurrentContextField())
+	agyClaims, err := workspace.VerifyToken(key, agyTok, workspace.VerifyParams{
+		Channel:    buildinfo.Current().Channel,
+		URLAgent:   "antigravity",
+		AllowedOps: []string{"discover_tools"},
+		ArgsHash:   agyHash,
+	}, time.Now())
+	if err != nil || agyClaims.Cwd != repoDir || agyClaims.SID != "agy-sess-1" {
+		t.Fatalf("VerifyToken antigravity failed: err=%v claims=%+v", err, agyClaims)
+	}
+}
+
+func TestAntigravityDesktopFallbackAndLegacyIDEWarning(t *testing.T) {
+	home := t.TempDir()
+	slug := buildinfo.Current().Slug
+	legacyIDEPath := filepath.Join(home, ".gemini", "antigravity", "mcp_config.json")
+	if err := atomicWriteFile(legacyIDEPath, []byte(`{"mcpServers":{"`+slug+`":{"serverUrl":"http://127.0.0.1:8788/mcp"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	noCLIRunner := &struct{ fakeRunner }{fakeRunner{home: home}}
+	// Use a runner where agy is absent to verify Desktop-only direct installation/removal.
+	mgr := New(Options{
+		HomeDir:  home,
+		StateDir: filepath.Join(home, "."+slug, "plugins"),
+		BinPath:  "/opt/test/" + slug + "-hook",
+		Getenv:   func(string) string { return "" },
+		Runner:   missingAgyRunner{inner: noCLIRunner},
+	})
+	var agyStatus Status
+	for _, st := range mgr.Statuses("http://127.0.0.1:8788/mcp") {
+		if st.ID == ClientAntigravity {
+			agyStatus = st
+		}
+	}
+	if !agyStatus.CanInstall || agyStatus.CLIAvailable || len(agyStatus.Warnings) == 0 {
+		t.Fatalf("unexpected desktop-only Antigravity status: %+v", agyStatus)
+	}
+	if err := mgr.Install(ClientAntigravity, "http://127.0.0.1:8788/mcp"); err != nil {
+		t.Fatalf("desktop fallback install failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gemini", "config", "plugins", slug, "hooks.json")); err != nil {
+		t.Fatalf("expected installed hooks.json: %v", err)
+	}
+	if err := mgr.Remove(ClientAntigravity); err != nil {
+		t.Fatalf("desktop fallback remove failed: %v", err)
+	}
+}
+
+type missingAgyRunner struct{ inner CommandRunner }
+
+func (r missingAgyRunner) LookPath(binary string) (string, error) {
+	if binary == "agy" {
+		return "", exec.ErrNotFound
+	}
+	return r.inner.LookPath(binary)
+}
+
+func (r missingAgyRunner) Run(ctx context.Context, env []string, dir, binary string, args ...string) ([]byte, []byte, error) {
+	return r.inner.Run(ctx, env, dir, binary, args...)
 }
 
 func TestRealInstalledCLIsEndToEnd(t *testing.T) {
@@ -396,8 +523,12 @@ func TestRealInstalledCLIsEndToEnd(t *testing.T) {
 	})
 
 	runner := execRunner{homeDir: home}
-	for _, id := range []string{ClientClaude, ClientCodex, ClientPi} {
-		if _, err := runner.LookPath(id); err != nil {
+	for _, id := range []string{ClientClaude, ClientCodex, ClientPi, ClientAntigravity} {
+		look := id
+		if id == ClientAntigravity {
+			look = "agy"
+		}
+		if _, err := runner.LookPath(look); err != nil {
 			t.Logf("skipping real CLI %s: %v", id, err)
 			continue
 		}

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="14 14 152 152" fill="none">
+  <defs>
+    <clipPath id="ag_mark">
+      <path d="M144.248 149.062C151.748 154.688 162.998 150.938 152.685 140.625C121.748 110.625 128.31 28.125 89.8727 28.125C51.4352 28.125 57.9977 110.625 27.0602 140.625C15.8102 151.875 27.9977 154.688 35.4977 149.062C64.5602 129.375 62.6852 94.6875 89.8727 94.6875C117.06 94.6875 115.185 129.375 144.248 149.062Z"/>
+    </clipPath>
+    <radialGradient id="ag_green" gradientUnits="userSpaceOnUse" cx="32" cy="92" r="64">
+      <stop offset="0" stop-color="#00B95C"/>
+      <stop offset="0.55" stop-color="#00B95C" stop-opacity="0.72"/>
+      <stop offset="1" stop-color="#00B95C" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ag_amber" gradientUnits="userSpaceOnUse" cx="80" cy="40" r="46">
+      <stop offset="0" stop-color="#FBBC04"/>
+      <stop offset="0.55" stop-color="#FBBC04" stop-opacity="0.65"/>
+      <stop offset="1" stop-color="#FBBC04" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ag_yellow" gradientUnits="userSpaceOnUse" cx="50" cy="46" r="54">
+      <stop offset="0" stop-color="#FFE432"/>
+      <stop offset="0.55" stop-color="#FFE432" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#FFE432" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ag_red" gradientUnits="userSpaceOnUse" cx="136" cy="56" r="66">
+      <stop offset="0" stop-color="#FC413D"/>
+      <stop offset="0.52" stop-color="#FC413D" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#FC413D" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ag_sky" gradientUnits="userSpaceOnUse" cx="148" cy="118" r="36">
+      <stop offset="0" stop-color="#749BFF" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#749BFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#ag_mark)">
+    <rect x="14" y="14" width="152" height="152" fill="#3186FF"/>
+    <rect x="14" y="14" width="152" height="152" fill="url(#ag_green)"/>
+    <rect x="14" y="14" width="152" height="152" fill="url(#ag_amber)"/>
+    <rect x="14" y="14" width="152" height="152" fill="url(#ag_yellow)"/>
+    <rect x="14" y="14" width="152" height="152" fill="url(#ag_red)"/>
+    <rect x="14" y="14" width="152" height="152" fill="url(#ag_sky)"/>
+  </g>
+</svg>

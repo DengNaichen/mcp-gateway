@@ -1,7 +1,7 @@
 // Package clientplugin installs, updates and removes the official MCP Gateway
-// plugins of the MCP clients (Claude Code, Codex, Cursor, OpenCode, Pi) on the
-// user's own machine. Like clientconfig it is a local-machine capability used by
-// the desktop app and gatewayctl, never part of the server API.
+// plugins of the MCP clients (Claude Code, Codex, Cursor, OpenCode, Pi, Antigravity)
+// on the user's own machine. Like clientconfig it is a local-machine capability
+// used by the desktop app and gatewayctl, never part of the server API.
 package clientplugin
 
 import (
@@ -90,6 +90,8 @@ func (m *Manager) Statuses(endpoint string) []Status {
 			out = append(out, m.observeOpenCode(endpoint, hasLegacy(id)))
 		case ClientPi:
 			out = append(out, m.observePi(endpoint, hasLegacy(id)))
+		case ClientAntigravity:
+			out = append(out, m.observeAntigravity(endpoint, hasLegacy(id)))
 		}
 	}
 	return out
@@ -129,6 +131,8 @@ func (m *Manager) apply(id, endpoint string, update bool) error {
 		return m.installOpenCode(validURL, update)
 	case ClientPi:
 		return m.installPi(validURL, update)
+	case ClientAntigravity:
+		return m.installAntigravity(validURL, update)
 	default:
 		return errClientUnknown
 	}
@@ -150,6 +154,8 @@ func (m *Manager) Remove(id string) error {
 		return m.removeOpenCode()
 	case ClientPi:
 		return m.removePi()
+	case ClientAntigravity:
+		return m.removeAntigravity()
 	default:
 		return errClientUnknown
 	}

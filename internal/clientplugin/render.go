@@ -404,3 +404,62 @@ func (m *Manager) renderPiPackage(endpoint, hookBin, dataDir string) renderedBun
 		Endpoint:  agentURL,
 	}
 }
+
+func (m *Manager) renderAntigravityPlugin(endpoint, hookBin, dataDir string) renderedBundle {
+	agentURL := clientconfig.ClientEndpoint(endpoint, ClientAntigravity)
+	desc := fmt.Sprintf("Connects Google Antigravity (CLI and Desktop) to %s with semantic tool discovery, rules, skills, and PreToolUse workspace provenance signing.", m.appName)
+	manifest := map[string]any{
+		"name":        m.slug,
+		"displayName": m.appName,
+		"version":     m.version,
+		"description": desc,
+		"author":      map[string]any{"name": "Naicheng Deng", "url": "https://github.com/DengNaichen"},
+		"homepage":    "https://github.com/DengNaichen/mcp-gateway",
+		"repository":  "https://github.com/DengNaichen/mcp-gateway",
+		"license":     "GPL-3.0",
+		"logo":        "assets/icon.png",
+		"keywords":    []string{"mcp", "gateway", "tool-discovery", "scope", "antigravity"},
+	}
+
+	mcpDoc := map[string]any{
+		"mcpServers": map[string]any{
+			m.slug: map[string]any{
+				"url": agentURL,
+			},
+		},
+	}
+
+	hooksDoc := map[string]any{
+		m.slug: map[string]any{
+			"PreToolUse": []any{
+				map[string]any{
+					"matcher": workspace.AntigravityPreToolMatcher(m.slug),
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": `sh "./scripts/run-gateway-hook" antigravity`,
+							"timeout": 5,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	files := []renderedFile{
+		{RelPath: ".antigravity-plugin/plugin.json", Data: encodePrettyJSON(manifest), Perm: 0o644},
+		{RelPath: "mcp_config.json", Data: encodePrettyJSON(mcpDoc), Perm: 0o644},
+		{RelPath: "hooks.json", Data: encodePrettyJSON(hooksDoc), Perm: 0o644},
+		{RelPath: "rules/AGENTS.md", Data: mustReadAsset("antigravity/rules/AGENTS.md"), Perm: 0o644},
+		{RelPath: "skills/" + m.slug + "/SKILL.md", Data: m.renderSkillMarkdown(), Perm: 0o644},
+		{RelPath: "scripts/run-gateway-hook", Data: m.renderHookWrapper(hookBin, dataDir), Perm: 0o755},
+		{RelPath: "assets/icon.png", Data: mustReadAsset("antigravity/assets/icon.png"), Perm: 0o644},
+		{RelPath: "README.md", Data: mustReadAsset("antigravity/README.md"), Perm: 0o644},
+	}
+	return renderedBundle{
+		RootFiles: files,
+		Digest:    hashRenderedFiles(files, agentURL, hookBin, dataDir, m.version),
+		HookBin:   hookBin,
+		Endpoint:  agentURL,
+	}
+}

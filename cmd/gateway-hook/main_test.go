@@ -272,13 +272,98 @@ func TestSignAndSnippetSubcommands(t *testing.T) {
 		t.Fatalf("VerifyToken sign output: %v %+v", err, claims)
 	}
 
-	for _, agent := range []string{"claude", "codex", "cursor", "opencode", "pi"} {
+	for _, agent := range []string{"claude", "codex", "cursor", "opencode", "pi", "antigravity"} {
 		out.Reset()
 		errBuf.Reset()
 		code := runCLI([]string{"snippet", agent, "--endpoint", "http://127.0.0.1:8788/mcp", "--bin", "/usr/local/bin/gateway-hook", "--data", dataDir}, strings.NewReader(""), &out, &errBuf)
 		if code != 0 || out.Len() == 0 {
 			t.Fatalf("snippet %s failed: code=%d err=%s", agent, code, errBuf.String())
 		}
+	}
+}
+
+func TestAntigravityHookContract(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "gwdata")
+	key, err := workspace.EnsureScopeKey(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoDir := filepath.Join(t.TempDir(), "repo-a")
+	otherRepo := filepath.Join(t.TempDir(), "repo-b")
+	ctxField := workspace.CurrentContextField()
+	slug := buildinfo.Current().Slug
+
+	// 1. Direct or plugin-namespaced MCP tool call via Antigravity toolCall shape.
+	for _, toolName := range []string{
+		"mcp_" + slug + "_discover_tools",
+		"mcp_" + slug + "_" + slug + "_discover_tools",
+		"mcp__" + slug + "__discover_tools",
+	} {
+		args := map[string]any{"intent": "search billing"}
+		ev := `{"conversationId":"agy-conv-1","hookEventName":"PreToolUse","cwd":` + mustStrJSON(repoDir) + `,"workspacePaths":[` + mustStrJSON(repoDir) + `],"toolCall":{"id":"tc-1","name":` + mustStrJSON(toolName) + `,"args":{"intent":"search billing"}}}`
+		var out, errBuf bytes.Buffer
+		if code := runCLI([]string{"antigravity", "--data", dataDir}, strings.NewReader(ev), &out, &errBuf); code != 0 {
+			t.Fatalf("antigravity hook(%s) failed: code=%d stderr=%s", toolName, code, errBuf.String())
+		}
+		var resp struct {
+			Decision  string         `json:"decision"`
+			Overwrite map[string]any `json:"overwrite"`
+		}
+		if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+			t.Fatalf("decode antigravity output: %v\n%s", err, out.String())
+		}
+		if resp.Decision != "allow" {
+			t.Fatalf("expected decision=allow, got %+v", resp)
+		}
+		tok, _ := resp.Overwrite[ctxField].(string)
+		if tok == "" || len(resp.Overwrite) != 1 {
+			t.Fatalf("expected overwrite with single %s key, got %+v", ctxField, resp.Overwrite)
+		}
+		// Simulate Antigravity's shallow top-level overwrite merge.
+		args[ctxField] = tok
+		mergedRaw, _ := json.Marshal(args)
+		hash, _, _, _ := workspace.CanonicalArgsHashJSON(mergedRaw, ctxField)
+		claims, err := workspace.VerifyToken(key, tok, workspace.VerifyParams{
+			URLAgent:   "antigravity",
+			AllowedOps: []string{"discover_tools"},
+			ArgsHash:   hash,
+		}, time.Now())
+		if err != nil || claims.Cwd != repoDir || claims.SID != "agy-conv-1" {
+			t.Fatalf("VerifyToken antigravity(%s) failed: err=%v claims=%+v", toolName, err, claims)
+		}
+	}
+
+	// 2. Unrelated built-in or third-party MCP tools must emit noop `{}` without blocking.
+	for _, unrelated := range []string{"run_command", "mcp_github_discover_tools"} {
+		ev := `{"hookEventName":"PreToolUse","cwd":` + mustStrJSON(repoDir) + `,"toolCall":{"name":` + mustStrJSON(unrelated) + `,"args":{"intent":"hi"}}}`
+		var out, errBuf bytes.Buffer
+		if code := runCLI([]string{"antigravity", "--data", dataDir}, strings.NewReader(ev), &out, &errBuf); code != 0 || out.String() != "{}\n" {
+			t.Fatalf("expected noop {} for %q, got code=%d out=%q", unrelated, code, out.String())
+		}
+	}
+
+	// 3. Multi-root workspacePaths without cwd emits Ambiguous:true.
+	ambigEv := `{"hookEventName":"PreToolUse","workspacePaths":[` + mustStrJSON(repoDir) + `,` + mustStrJSON(otherRepo) + `],"toolCall":{"name":` + mustStrJSON("mcp_"+slug+"_discover_tools") + `,"args":{"intent":"hi"}}}`
+	var out, errBuf bytes.Buffer
+	if code := runCLI([]string{"antigravity", "--data", dataDir}, strings.NewReader(ambigEv), &out, &errBuf); code != 0 {
+		t.Fatalf("multi-root antigravity hook failed: code=%d stderr=%s", code, errBuf.String())
+	}
+	var ambigResp struct {
+		Overwrite map[string]any `json:"overwrite"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &ambigResp); err != nil {
+		t.Fatal(err)
+	}
+	tokAmbig, _ := ambigResp.Overwrite[ctxField].(string)
+	mergedRaw, _ := json.Marshal(map[string]any{"intent": "hi", ctxField: tokAmbig})
+	ambigHash, _, _, _ := workspace.CanonicalArgsHashJSON(mergedRaw, ctxField)
+	claimsAmbig, err := workspace.VerifyToken(key, tokAmbig, workspace.VerifyParams{
+		URLAgent:   "antigravity",
+		AllowedOps: []string{"discover_tools"},
+		ArgsHash:   ambigHash,
+	}, time.Now())
+	if err != nil || !claimsAmbig.Ambiguous || claimsAmbig.Cwd != "" {
+		t.Fatalf("expected Ambiguous:true for multi-root antigravity workspacePaths: err=%v claims=%+v", err, claimsAmbig)
 	}
 }
 
