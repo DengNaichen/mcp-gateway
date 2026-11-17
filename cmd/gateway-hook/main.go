@@ -39,13 +39,14 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fs := flag.NewFlagSet("gateway-hook "+sub, flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
 		dataDir := fs.String("data", "", "Gateway data directory")
+		installation := fs.String("installation", "", "Plugin installation identity")
 		if err := fs.Parse(rest); err != nil {
 			_ = emitHostNoop(sub, stdout)
 			return 0
 		}
 		// Host hooks fail open on internal/missing-key errors so the host never hangs;
 		// when Gateway enforce==true, missing _gw_ctx is deterministically rejected with 403 scope_required.
-		if err := handleHostHook(context.Background(), sub, *dataDir, stdin, stdout); err != nil {
+		if err := handleHostHook(context.Background(), sub, *dataDir, *installation, stdin, stdout); err != nil {
 			_ = emitHostNoop(sub, stdout)
 		}
 		return 0
@@ -170,7 +171,7 @@ func extractHostToolCall(platform string, event map[string]any) (string, map[str
 	return name, inputObj, hasInput
 }
 
-func handleHostHook(ctx context.Context, platform, explicitDataDir string, stdin io.Reader, stdout io.Writer) error {
+func handleHostHook(ctx context.Context, platform, explicitDataDir, installationID string, stdin io.Reader, stdout io.Writer) error {
 	event, _, err := readBoundedJSONObject(stdin)
 	if err != nil {
 		return emitHostNoop(platform, stdout)
@@ -242,7 +243,7 @@ func handleHostHook(ctx context.Context, platform, explicitDataDir string, stdin
 		return emitHostNoop(platform, stdout)
 	}
 
-	updated, err := injectSignedToken(key, platform, cwd, ambiguous, op, sid, inputObj)
+	updated, err := injectSignedToken(key, platform, cwd, ambiguous, op, sid, installationID, inputObj)
 	if err != nil {
 		return emitHostNoop(platform, stdout)
 	}
@@ -302,14 +303,14 @@ func handleSign(agent, cwd, opFlag, sid, explicitDataDir string, stdin io.Reader
 		return writeCompactJSONLine(stdout, inputObj)
 	}
 
-	updated, err := injectSignedToken(key, agent, cwd, false, op, sanitizeSID(sid), inputObj)
+	updated, err := injectSignedToken(key, agent, cwd, false, op, sanitizeSID(sid), "", inputObj)
 	if err != nil {
 		return err
 	}
 	return writeCompactJSONLine(stdout, updated)
 }
 
-func injectSignedToken(key []byte, agent, cwd string, ambiguous bool, op, sid string, input map[string]any) (map[string]any, error) {
+func injectSignedToken(key []byte, agent, cwd string, ambiguous bool, op, sid, installationID string, input map[string]any) (map[string]any, error) {
 	ctxField := workspace.CurrentContextField()
 	updated := make(map[string]any, len(input)+1)
 	for k, v := range input {
@@ -325,16 +326,17 @@ func injectSignedToken(key []byte, agent, cwd string, ambiguous bool, op, sid st
 	}
 	now := time.Now().Unix()
 	tok, err := workspace.SignToken(key, workspace.Claims{
-		V:         workspace.TokenVersion,
-		Channel:   buildinfo.Current().Channel,
-		Agent:     agent,
-		Cwd:       cwd,
-		Ambiguous: ambiguous,
-		Op:        op,
-		ArgsHash:  argsHash,
-		SID:       sid,
-		IAT:       now,
-		EXP:       now + int64(workspace.TokenTTL/time.Second),
+		InstallationID: installationID,
+		V:              workspace.TokenVersion,
+		Channel:        buildinfo.Current().Channel,
+		Agent:          agent,
+		Cwd:            cwd,
+		Ambiguous:      ambiguous,
+		Op:             op,
+		ArgsHash:       argsHash,
+		SID:            sid,
+		IAT:            now,
+		EXP:            now + int64(workspace.TokenTTL/time.Second),
 	})
 	if err != nil {
 		return nil, err

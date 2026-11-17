@@ -143,6 +143,7 @@ func (g *Service) ResolveMCPToolCallScope(ctx context.Context, urlAgent, toolNam
 	if evalErr != nil {
 		return ctx, cleanArgs, evalErr
 	}
+	g.recordHookSuccess(claims)
 	return WithRequestScope(ctx, resolved), cleanArgs, nil
 }
 
@@ -213,6 +214,7 @@ func (g *Service) ResolveRESTScope(ctx context.Context, r RESTRequest, op string
 		if err != nil {
 			return ctx, err
 		}
+		g.recordHookSuccess(claims)
 		return WithRequestScope(ctx, resolved), nil
 	}
 
