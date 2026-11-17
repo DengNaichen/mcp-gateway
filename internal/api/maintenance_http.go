@@ -4,46 +4,45 @@ import (
 	"net/http"
 
 	"gatewaylab/internal/access"
-	"gatewaylab/internal/maintenance"
+	"gatewaylab/internal/apitypes"
 )
 
 func (g *server) registerMaintenance(mux *http.ServeMux) {
 	m := g.Maintenance()
 	mux.HandleFunc("GET /api/maintenance", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 200, m.Status())
+		respond(w, 200, wireMaintenanceStatus(m.Status()))
 	})
 	mux.HandleFunc("PUT /api/maintenance/sources/{id}/acceptance", func(w http.ResponseWriter, r *http.Request) {
-		var suite maintenance.AcceptanceSuite
-		if err := decode(w, r, &suite); err != nil {
+		var in apitypes.AcceptanceSuite
+		if err := decode(w, r, &in); err != nil {
 			fail(w, err)
 			return
 		}
+		suite := domainSuite(in)
 		suite.ServerID = r.PathValue("id")
 		if err := m.SaveAcceptance(suite); err != nil {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, map[string]bool{"saved": true})
+		respond(w, 200, apitypes.Saved{Saved: true})
 	})
 	mux.HandleFunc("GET /api/maintenance/sources/{id}/acceptance", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 200, m.Acceptance(r.PathValue("id")))
+		respond(w, 200, wireSuite(m.Acceptance(r.PathValue("id"))))
 	})
 	mux.HandleFunc("PUT /api/maintenance/sources", func(w http.ResponseWriter, r *http.Request) {
-		var in maintenance.MaintenanceSource
+		var in apitypes.MaintenanceSource
 		if err := decode(w, r, &in); err != nil {
 			fail(w, err)
 			return
 		}
-		if err := m.SaveSource(in); err != nil {
+		if err := m.SaveSource(domainSource(in)); err != nil {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, map[string]bool{"saved": true})
+		respond(w, 200, apitypes.Saved{Saved: true})
 	})
 	mux.HandleFunc("POST /api/maintenance/sources/{id}/run", func(w http.ResponseWriter, r *http.Request) {
-		var in struct {
-			Force bool `json:"force"`
-		}
+		var in apitypes.RunMaintenanceRequest
 		if err := decode(w, r, &in); err != nil {
 			fail(w, err)
 			return
@@ -53,7 +52,7 @@ func (g *server) registerMaintenance(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		respond(w, 202, run)
+		respond(w, 202, wireRun(run))
 	})
 	mux.HandleFunc("GET /api/maintenance/runs/{id}", func(w http.ResponseWriter, r *http.Request) {
 		details, err := m.RunDetails(r.PathValue("id"))
@@ -61,7 +60,7 @@ func (g *server) registerMaintenance(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, details)
+		respond(w, 200, wireRunDetails(details))
 	})
 	mux.HandleFunc("GET /api/maintenance/runs/{id}/artifacts/{name}", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
@@ -70,27 +69,27 @@ func (g *server) registerMaintenance(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, map[string]string{"name": name, "content": string(b)})
+		respond(w, 200, apitypes.MaintenanceArtifact{Name: name, Content: string(b)})
 	})
 	mux.HandleFunc("POST /api/maintenance/runs/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
 		if err := m.Cancel(r.PathValue("id")); err != nil {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, map[string]bool{"cancelled": true})
+		respond(w, 200, apitypes.Cancelled{Cancelled: true})
 	})
 	mux.HandleFunc("POST /api/maintenance/runs/{id}/publish", func(w http.ResponseWriter, r *http.Request) {
 		if err := m.PublishAs(r.PathValue("id"), false, true, access.RequestActor(r.Context(), "")); err != nil {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, map[string]bool{"published": true})
+		respond(w, 200, apitypes.Published{Published: true})
 	})
 	mux.HandleFunc("POST /api/maintenance/runs/{id}/rollback", func(w http.ResponseWriter, r *http.Request) {
 		if err := m.PublishAs(r.PathValue("id"), true, true, access.RequestActor(r.Context(), "")); err != nil {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, map[string]bool{"rolled_back": true})
+		respond(w, 200, apitypes.RolledBack{RolledBack: true})
 	})
 }

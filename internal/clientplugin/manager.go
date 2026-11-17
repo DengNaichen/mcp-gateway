@@ -1,3 +1,7 @@
+// Package clientplugin installs, updates and removes the official MCP Gateway
+// plugins of the MCP clients (Claude Code, Codex, Cursor, OpenCode, Pi) on the
+// user's own machine. Like clientconfig it is a local-machine capability used by
+// the desktop app and gatewayctl, never part of the server API.
 package clientplugin
 
 import (

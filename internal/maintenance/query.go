@@ -67,16 +67,23 @@ func (m *Maintainer) GetRun(id string) (MaintenanceRun, error) {
 	}
 	return detached(run), nil
 }
-func (m *Maintainer) RunDetails(id string) (map[string]any, error) {
+
+// RunDetails is a run together with its tool differences from the baseline.
+type RunDetails struct {
+	Run     MaintenanceRun `json:"run"`
+	Changes []ToolChange   `json:"changes"`
+}
+
+func (m *Maintainer) RunDetails(id string) (RunDetails, error) {
 	run, err := m.GetRun(id)
 	if err != nil {
-		return nil, err
+		return RunDetails{}, err
 	}
 	diff := []ToolChange{}
 	if run.Tools != nil {
 		diff = changes(run)
 	}
-	return map[string]any{"run": run, "changes": diff}, nil
+	return RunDetails{Run: run, Changes: diff}, nil
 }
 func (m *Maintainer) Artifact(id, name string) ([]byte, error) {
 	run, err := m.GetRun(id)

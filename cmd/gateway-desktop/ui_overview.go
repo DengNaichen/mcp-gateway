@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"gatewaylab/internal/apitypes"
 
-	"gatewaylab/internal/registry"
+	"github.com/egoist/mygo/ui"
 )
 
 // overviewLocalState holds UI-thread state local to the Overview page.
@@ -98,8 +98,8 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 	state := u.State
 	ov := u.overviewState()
 
-	realServers := make([]registry.Server, 0, len(state.Registry.Servers))
-	activeRealServers := make([]registry.Server, 0, len(state.Registry.Servers))
+	realServers := make([]apitypes.Server, 0, len(state.Registry.Servers))
+	activeRealServers := make([]apitypes.Server, 0, len(state.Registry.Servers))
 	realServerMap := make(map[string]bool, len(state.Registry.Servers))
 	activeRealMap := make(map[string]bool, len(state.Registry.Servers))
 	for _, s := range state.Registry.Servers {
@@ -113,8 +113,8 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 		}
 	}
 
-	realTools := make([]registry.Tool, 0, len(state.Registry.Tools))
-	enabledRealTools := make([]registry.Tool, 0, len(state.Registry.Tools))
+	realTools := make([]apitypes.Tool, 0, len(state.Registry.Tools))
+	enabledRealTools := make([]apitypes.Tool, 0, len(state.Registry.Tools))
 	readOnlyEnabled := 0
 	for _, t := range state.Registry.Tools {
 		if realServerMap[t.ServerID] {
@@ -206,8 +206,8 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 func (u *DesktopUI) renderOverviewSetupBanner(
 	c *ui.Context,
 	ov *overviewLocalState,
-	state *Bootstrap,
-	realServers []registry.Server,
+	state *apitypes.Bootstrap,
+	realServers []apitypes.Server,
 ) {
 	setup := state.Setup
 	settings := state.Settings
@@ -336,7 +336,7 @@ func (u *DesktopUI) renderOverviewTestError(c *ui.Context, ov *overviewLocalStat
 
 func (u *DesktopUI) renderOverviewKPIGrid(
 	c *ui.Context,
-	state *Bootstrap,
+	state *apitypes.Bootstrap,
 	telemetry GatewayTelemetry,
 	activeServerCount int,
 	realServerCount int,
@@ -775,9 +775,9 @@ func (u *DesktopUI) renderOverviewTopToolsCard(c *ui.Context, topTools []TopTool
 
 func (u *DesktopUI) renderOverviewServersCard(
 	c *ui.Context,
-	state *Bootstrap,
-	realServers []registry.Server,
-	realTools []registry.Tool,
+	state *apitypes.Bootstrap,
+	realServers []apitypes.Server,
+	realTools []apitypes.Tool,
 ) {
 	SailFlushCard(c, func() {
 		SailListCardHeader(c, "上游服务", "", func() {
@@ -889,7 +889,7 @@ func (u *DesktopUI) renderOverviewServersCard(
 	})
 }
 
-func (u *DesktopUI) renderOverviewEndpointCard(c *ui.Context, state *Bootstrap) {
+func (u *DesktopUI) renderOverviewEndpointCard(c *ui.Context, state *apitypes.Bootstrap) {
 	ui.Column(c).
 		FillWidth().
 		Radius(10).

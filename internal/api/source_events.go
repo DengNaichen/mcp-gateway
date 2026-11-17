@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"gatewaylab/internal/apitypes"
 	"gatewaylab/internal/input"
 )
 
@@ -25,13 +26,13 @@ func (g *server) registerSourceEvents(mux *http.ServeMux) {
 			return
 		}
 		if result.Ignored {
-			respond(w, 200, map[string]bool{"ignored": true})
+			respond(w, 200, apitypes.WebhookResult{Ignored: true})
 			return
 		}
 		if result.Duplicate {
-			respond(w, 200, map[string]any{"accepted": true, "duplicate": true, "run_id": result.RunID})
+			respond(w, 200, apitypes.WebhookResult{Accepted: true, Duplicate: true, RunID: result.RunID})
 			return
 		}
-		respond(w, 202, map[string]any{"accepted": true, "pending": true})
+		respond(w, 202, apitypes.WebhookResult{Accepted: true, Pending: true})
 	})
 }

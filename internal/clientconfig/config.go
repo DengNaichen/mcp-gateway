@@ -1,4 +1,11 @@
 // Package clientconfig manages only the desktop user's Gateway MCP registrations.
+//
+// It is a local-machine capability, not part of the server API: it reads and
+// writes MCP client configuration files (Claude, Codex, Cursor and similar) in
+// the home directory of the user running the desktop app. It therefore runs
+// only on the user's own machine (cmd/gateway-desktop and local developer
+// scripts). A shared or self-hosted Gateway must never expose it over /api,
+// because the server's filesystem is not the user's.
 package clientconfig
 
 import (

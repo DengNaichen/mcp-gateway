@@ -12,7 +12,7 @@
 
 ## Roster
 
-- 本仓库使用 Roster 管理任务和 Spec；MCP Server 名称为 `roster`，连接方式为远程 HTTP + OAuth，地址为 `https://qietzaqhmforixtpicjd.supabase.co/functions/v1/mcp/w/mcp-gateway/mcp`。
+- 本仓库使用 Roster 管理任务和 Spec；MCP Server 名称为 `roster`，连接方式为远程 HTTP + OAuth，地址为 `https://jmmwgdyfcmonzqkurcly.supabase.co/functions/v1/mcp/w/mcp-gateway/mcp`。
 - 默认 Workspace 为 `mcp-gateway`，默认 Team 为 `MCP Gateway`（key：`MCP`）。按要求在此 Team 中管理任务和 Spec，不自动创建新的 Workspace 或 Team。
 - 修改已有任务前，先读取其最新内容；修改已有 Spec 前同样先读取最新内容及版本，遵守服务端的版本检查。
 - 任务中记录相关仓库（`https://github.com/DengNaichen/mcp-gateway`）、实际工作分支及 PR 链接；尚未创建 PR 时不编造链接，创建后补充。

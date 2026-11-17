@@ -16,12 +16,8 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"gatewaylab/internal/activity"
+	"gatewaylab/internal/apitypes"
 	"gatewaylab/internal/buildinfo"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/market"
-	"gatewaylab/internal/model"
-	"gatewaylab/internal/registry"
 )
 
 func TestParseDesktopFlagsAndPSNFiltering(t *testing.T) {
@@ -133,7 +129,7 @@ func TestStartAttachAndPortConflict(t *testing.T) {
 		t.Fatalf("client.Bootstrap failed: %v", err)
 	}
 	if boot.MCPURL == "" {
-		t.Fatal("expected non-empty mcp_url from Bootstrap")
+		t.Fatal("expected non-empty mcp_url from apitypes.Bootstrap")
 	}
 
 	// Verify headless mygo/ui rendering across all navigation tabs.
@@ -194,18 +190,18 @@ func TestComputeGatewayTelemetryAndActorMatrix(t *testing.T) {
 	detailErr, _ := json.Marshal(map[string]any{
 		"error": "upstream timeout\ndetail line 2",
 	})
-	boot := Bootstrap{
-		Registry: registry.Registry{
-			Servers: []registry.Server{
+	boot := apitypes.Bootstrap{
+		Registry: apitypes.Registry{
+			Servers: []apitypes.Server{
 				{ID: "srv", Name: "Demo Srv", Kind: "http", Endpoint: "http://127.0.0.1:9999", Enabled: true},
 				{ID: "demo", Name: "Built-in", Kind: "mcp", Endpoint: "http://127.0.0.1:8788/demo/mcp", Enabled: true, Demo: true},
 			},
-			Tools: []registry.Tool{
+			Tools: []apitypes.Tool{
 				{ID: "srv.list_items", ServerID: "srv", Name: "list_items", Enabled: true, ReadOnly: true, Actors: []string{"developer", "observer"}},
 				{ID: "srv.create_item", ServerID: "srv", Name: "create_item", Enabled: true, ReadOnly: false, Actors: []string{"developer"}},
 			},
 		},
-		Events: []activity.Event{
+		Events: []apitypes.Event{
 			{ID: "1", Time: now, Kind: "discover", Actor: "developer", Status: "selected", Title: "list items", DurationMS: 42, Detail: detailHit},
 			{ID: "2", Time: now.Add(-time.Second), Kind: "discover", Actor: "observer", Status: "no_match", Title: "drop db", DurationMS: 80},
 			{ID: "3", Time: now.Add(-2 * time.Second), Kind: "invoke", Actor: "developer", Status: "error", Title: "srv.create_item", DurationMS: 120, Detail: detailErr},
@@ -268,15 +264,15 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 		"error": "upstream HTTP 502: bad gateway",
 	})
 
-	boot := Bootstrap{
+	boot := apitypes.Bootstrap{
 		MCPURL:        "http://127.0.0.1:8788/mcp",
 		KeyConfigured: true,
-		Access: AccessInfo{
+		Access: apitypes.AccessInfo{
 			Shared: false,
 			Actor:  "developer",
 		},
-		Registry: registry.Registry{
-			Servers: []registry.Server{
+		Registry: apitypes.Registry{
+			Servers: []apitypes.Server{
 				{
 					ID:          "github",
 					Name:        "GitHub MCP",
@@ -306,7 +302,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 					Demo:        true,
 				},
 			},
-			Tools: []registry.Tool{
+			Tools: []apitypes.Tool{
 				{
 					ID:          "github.list_prs",
 					ServerID:    "github",
@@ -350,19 +346,19 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 				},
 			},
 		},
-		Settings: model.Settings{
+		Settings: apitypes.Settings{
 			BaseURL:        "https://api.openai.com/v1",
 			Model:          "gpt-6-luna",
 			MaxTools:       4,
 			TimeoutSeconds: 30,
 		},
-		Setup: gateway.SetupStatus{
+		Setup: apitypes.SetupStatus{
 			Sources:         2,
 			EnabledTools:    2,
 			ToolsReady:      true,
 			ModelConfigured: true,
 			ModelReady:      true,
-			SourceChecks: map[string]gateway.ConnectionCheck{
+			SourceChecks: map[string]apitypes.ConnectionCheck{
 				"github": {
 					Status:    "ok",
 					Message:   "Connected cleanly",
@@ -378,7 +374,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 				},
 			},
 		},
-		Events: []activity.Event{
+		Events: []apitypes.Event{
 			{
 				ID:         "ev-1",
 				Time:       now,
@@ -418,10 +414,10 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 		case r.URL.Path == "/api/bootstrap":
 			_ = json.NewEncoder(w).Encode(boot)
 		case r.URL.Path == "/api/auth/me":
-			_ = json.NewEncoder(w).Encode(AuthMeResponse{Authenticated: true, Shared: false})
+			_ = json.NewEncoder(w).Encode(apitypes.AuthMe{Authenticated: true, Shared: false})
 		case r.URL.Path == "/api/market":
-			_ = json.NewEncoder(w).Encode(market.MarketSearchResult{
-				Items: []market.MarketServer{
+			_ = json.NewEncoder(w).Encode(apitypes.MarketSearchResult{
+				Items: []apitypes.MarketServer{
 					{
 						ID:          "context7",
 						ServerID:    "context7",
@@ -432,7 +428,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 						Endpoint:    "https://mcp.context7.com/mcp",
 						Description: "任意库的最新文档与代码示例。",
 						Featured:    true,
-						Inputs:      []market.MarketInput{},
+						Inputs:      []apitypes.MarketInput{},
 					},
 					{
 						ID:          "brave-search",
@@ -445,7 +441,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 						Args:        []string{"-y", "@brave/brave-search-mcp-server"},
 						Description: "基于 Brave 独立索引的网页搜索。",
 						Featured:    true,
-						Inputs: []market.MarketInput{
+						Inputs: []apitypes.MarketInput{
 							{Key: "BRAVE_API_KEY", Where: "env", Label: "Brave Search API Key", Secret: true, Required: true},
 						},
 					},
@@ -455,7 +451,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 			w.Header().Set("Content-Type", "image/svg+xml")
 			_, _ = w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>`))
 		case r.URL.Path == "/api/maintenance" || strings.HasSuffix(r.URL.Path, "/maintenance"):
-			_ = json.NewEncoder(w).Encode(MaintenanceOverview{
+			_ = json.NewEncoder(w).Encode(apitypes.MaintenanceStatus{
 				Runtime: map[string]any{"status": "ok"},
 			})
 		default:
@@ -528,7 +524,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 	// 2b. MCP Market.
 	mktState := getMarketState(uiApp)
 	mktState.loaded = true
-	mktState.items = []market.MarketServer{
+	mktState.items = []apitypes.MarketServer{
 		{
 			ID:          "notion",
 			ServerID:    "notion",
@@ -540,7 +536,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 			Description: "检索并更新 Notion 工作区页面与数据库。",
 			SignIn:      true,
 			Featured:    true,
-			Inputs:      []market.MarketInput{},
+			Inputs:      []apitypes.MarketInput{},
 		},
 		{
 			ID:          "context7",
@@ -552,7 +548,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 			Endpoint:    "https://mcp.context7.com/mcp",
 			Description: "任意库的最新文档与代码示例。",
 			Featured:    true,
-			Inputs:      []market.MarketInput{},
+			Inputs:      []apitypes.MarketInput{},
 		},
 		{
 			ID:          "github",
@@ -565,7 +561,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 			Description: "GitHub 仓库、Issue 与 PR。",
 			Featured:    true,
 			Installed:   true,
-			Inputs: []market.MarketInput{
+			Inputs: []apitypes.MarketInput{
 				{Key: "Authorization", Where: "header", Label: "Personal Access Token", Secret: true, Required: true},
 			},
 		},
@@ -580,7 +576,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 			Args:        []string{"-y", "@brave/brave-search-mcp-server"},
 			Description: "基于 Brave 独立索引的网页搜索。",
 			Featured:    true,
-			Inputs: []market.MarketInput{
+			Inputs: []apitypes.MarketInput{
 				{Key: "BRAVE_API_KEY", Where: "env", Label: "Brave Search API Key", Secret: true, Required: true},
 			},
 		},
@@ -732,19 +728,19 @@ func TestSettingsSaveRequiresSuccessfulPing(t *testing.T) {
 	var saveCalls, testCalls atomic.Int32
 	var pingShouldPass atomic.Bool
 
-	boot := Bootstrap{
-		Registry: registry.Registry{
-			Servers: []registry.Server{{ID: "github", Name: "GitHub", Enabled: true}},
-			Tools:   []registry.Tool{{ID: "github.list", ServerID: "github", Name: "list", Enabled: true, ReadOnly: true}},
+	boot := apitypes.Bootstrap{
+		Registry: apitypes.Registry{
+			Servers: []apitypes.Server{{ID: "github", Name: "GitHub", Enabled: true}},
+			Tools:   []apitypes.Tool{{ID: "github.list", ServerID: "github", Name: "list", Enabled: true, ReadOnly: true}},
 		},
-		Settings: model.Settings{
+		Settings: apitypes.Settings{
 			BaseURL:        "https://tokenhub.infplacex.com/systemone",
 			Model:          "jev",
 			MaxTools:       4,
 			TimeoutSeconds: 45,
 		},
 		KeyConfigured: true,
-		Profiles: []model.ModelProfile{{
+		Profiles: []apitypes.ModelProfile{{
 			ID:             "default",
 			BaseURL:        "https://tokenhub.infplacex.com/systemone",
 			Model:          "jev",
@@ -753,7 +749,7 @@ func TestSettingsSaveRequiresSuccessfulPing(t *testing.T) {
 			Active:         true,
 			KeyConfigured:  true,
 		}},
-		Setup: gateway.SetupStatus{
+		Setup: apitypes.SetupStatus{
 			Sources:         1,
 			EnabledTools:    1,
 			ToolsReady:      true,
@@ -764,7 +760,7 @@ func TestSettingsSaveRequiresSuccessfulPing(t *testing.T) {
 
 	var srvMu sync.Mutex
 	srvBoot := boot
-	srvBoot.Profiles = append([]model.ModelProfile(nil), boot.Profiles...)
+	srvBoot.Profiles = append([]apitypes.ModelProfile(nil), boot.Profiles...)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -774,7 +770,7 @@ func TestSettingsSaveRequiresSuccessfulPing(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(srvBoot)
 			srvMu.Unlock()
 		case "/api/auth/me":
-			_ = json.NewEncoder(w).Encode(AuthMeResponse{Authenticated: true})
+			_ = json.NewEncoder(w).Encode(apitypes.AuthMe{Authenticated: true})
 		case "/api/model/ping":
 			if !pingShouldPass.Load() {
 				w.WriteHeader(http.StatusBadRequest)
@@ -787,16 +783,16 @@ func TestSettingsSaveRequiresSuccessfulPing(t *testing.T) {
 			srvMu.Lock()
 			modelName := srvBoot.Settings.Model
 			srvMu.Unlock()
-			_ = json.NewEncoder(w).Encode(model.PingModelResult{OK: true, Model: modelName, DurationMS: 42})
+			_ = json.NewEncoder(w).Encode(apitypes.PingModelResult{OK: true, Model: modelName, DurationMS: 42})
 		case "/api/model-profiles":
 			saveCalls.Add(1)
-			var in model.ModelProfile
+			var in apitypes.ModelProfile
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			in.ID = "default"
 			in.Active = true
 			in.KeyConfigured = true
 			srvMu.Lock()
-			srvBoot.Settings = model.Settings{
+			srvBoot.Settings = apitypes.Settings{
 				BaseURL:        in.BaseURL,
 				Model:          in.Model,
 				MaxTools:       in.MaxTools,
@@ -807,7 +803,7 @@ func TestSettingsSaveRequiresSuccessfulPing(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(in)
 		case "/api/setup/model":
 			testCalls.Add(1)
-			_ = json.NewEncoder(w).Encode(gateway.DiscoverResult{Status: "selected", DurationMS: 80})
+			_ = json.NewEncoder(w).Encode(apitypes.DiscoverResult{Status: "selected", DurationMS: 80})
 		default:
 			_, _ = w.Write([]byte(`{}`))
 		}

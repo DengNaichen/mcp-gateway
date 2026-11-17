@@ -10,11 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"gatewaylab/internal/apitypes"
 
-	"gatewaylab/internal/activity"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/scope"
+	"github.com/egoist/mygo/ui"
 )
 
 const logsDefaultTimelineLimit = 150
@@ -108,7 +106,7 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 	st := logsStateFor(u)
 	events := u.State.Events
 
-	toolByID := make(map[string]registry.Tool, len(u.State.Registry.Tools))
+	toolByID := make(map[string]apitypes.Tool, len(u.State.Registry.Tools))
 	for _, t := range u.State.Registry.Tools {
 		toolByID[t.ID] = t
 	}
@@ -148,14 +146,14 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 		}
 	}
 
-	filtered := make([]activity.Event, 0, len(events))
+	filtered := make([]apitypes.Event, 0, len(events))
 	for _, ev := range events {
 		if logsMatchesFilters(ev, st) {
 			filtered = append(filtered, ev)
 		}
 	}
 
-	var activeEvent *activity.Event
+	var activeEvent *apitypes.Event
 	if len(filtered) > 0 {
 		for i := range filtered {
 			if filtered[i].ID == st.selectedID {
@@ -274,8 +272,8 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 func (u *DesktopUI) renderLogsTimelinePane(
 	c *ui.Context,
 	st *logsPageState,
-	filtered []activity.Event,
-	activeEvent *activity.Event,
+	filtered []apitypes.Event,
+	activeEvent *apitypes.Event,
 ) {
 	visibleCount := len(filtered)
 	if st.timelineLimit <= 0 {
@@ -403,8 +401,8 @@ func (u *DesktopUI) renderLogsTimelinePane(
 func (u *DesktopUI) renderLogsInspectorPane(
 	c *ui.Context,
 	st *logsPageState,
-	ev activity.Event,
-	toolByID map[string]registry.Tool,
+	ev apitypes.Event,
+	toolByID map[string]apitypes.Tool,
 ) {
 	parsed := logsParseEventDetail(ev, toolByID)
 
@@ -677,7 +675,7 @@ func logsMetricTile(c *ui.Context, label, value, sub string, mono bool) {
 		})
 }
 
-func logsMatchesFilters(ev activity.Event, st *logsPageState) bool {
+func logsMatchesFilters(ev apitypes.Event, st *logsPageState) bool {
 	switch st.kindIdx {
 	case 1:
 		if ev.Kind != "discover" {
@@ -757,7 +755,7 @@ func logsKindBadgeLabel(kind string) string {
 	}
 }
 
-func logsParseEventDetail(ev activity.Event, toolByID map[string]registry.Tool) logsParsedDetail {
+func logsParseEventDetail(ev apitypes.Event, toolByID map[string]apitypes.Tool) logsParsedDetail {
 	var out logsParsedDetail
 
 	var detailAny any
@@ -972,7 +970,7 @@ func hasSegmentPathPrefix(target, anchor string) bool {
 	return strings.HasPrefix(t, a+sep)
 }
 
-func logsMatchedBoundRepo(state *Bootstrap, sc logsParsedScope) *scope.Repository {
+func logsMatchedBoundRepo(state *apitypes.Bootstrap, sc logsParsedScope) *apitypes.Repository {
 	if state == nil {
 		return nil
 	}
@@ -1016,7 +1014,7 @@ func logsMatchedBoundRepo(state *Bootstrap, sc logsParsedScope) *scope.Repositor
 		return nil
 	}
 	if sc.Root != "" {
-		var best *scope.Repository
+		var best *apitypes.Repository
 		bestLen := -1
 		for i := range state.Scopes.Repositories {
 			repo := &state.Scopes.Repositories[i]
@@ -1034,7 +1032,7 @@ func logsMatchedBoundRepo(state *Bootstrap, sc logsParsedScope) *scope.Repositor
 	return nil
 }
 
-func logsResolveReplayRepoKey(state *Bootstrap, sc logsParsedScope) string {
+func logsResolveReplayRepoKey(state *apitypes.Bootstrap, sc logsParsedScope) string {
 	if repo := logsMatchedBoundRepo(state, sc); repo != nil {
 		return repo.ID
 	}
@@ -1125,7 +1123,7 @@ func (u *DesktopUI) bindRepoFromLogScope(st *logsPageState, sc logsParsedScope) 
 	if name == "" && sc.Root != "" {
 		name = filepath.Base(sc.Root)
 	}
-	in := SaveRepositoryInput{
+	in := apitypes.SaveRepositoryRequest{
 		Name: name,
 	}
 	// Check if this repo is in state.Scopes.Observed to reuse verified GitCommonDir & RemoteHint.

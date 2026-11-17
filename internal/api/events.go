@@ -6,7 +6,6 @@ import (
 
 func (g *server) registerEvents(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
-		events := g.Activity().Recent()
-		respond(w, 200, events)
+		respond(w, 200, mapSlice(g.Activity().Recent(), wireEvent))
 	})
 }

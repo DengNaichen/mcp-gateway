@@ -4,23 +4,15 @@ import (
 	"net/http"
 
 	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/routing"
 )
 
+// discoveryPresentation is the discovery body shared by POST /api/discover and
+// the discover_tools MCP tool.
 func discoveryPresentation(result gateway.DiscoverResult, summary bool) any {
-	if !summary {
-		return result
+	if summary {
+		return wireDiscoverSummary(result)
 	}
-	out := struct {
-		gateway.DiscoverResult
-		Tools []routing.Capability `json:"tools"`
-	}{DiscoverResult: result, Tools: []routing.Capability{}}
-	for _, t := range result.Tools {
-		c := routing.Summarize(t.Tool)
-		c.Reason = t.Reason
-		out.Tools = append(out.Tools, c)
-	}
-	return out
+	return wireDiscoverResult(result)
 }
 
 func (g *server) registerCapabilities(mux *http.ServeMux) {
@@ -30,7 +22,7 @@ func (g *server) registerCapabilities(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, g.Catalog(ctx, r.URL.Query().Get("actor"), r.URL.Query().Get("include_demo") == "true"))
+		respond(w, 200, wireCatalog(g.Catalog(ctx, r.URL.Query().Get("actor"), r.URL.Query().Get("include_demo") == "true")))
 	})
 	mux.HandleFunc("GET /api/tools/{id}/schema", func(w http.ResponseWriter, r *http.Request) {
 		ctx, err := g.resolveRESTScope(r.Context(), r, "get_tool_schema", nil, nil)
@@ -43,6 +35,6 @@ func (g *server) registerCapabilities(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, tool)
+		respond(w, 200, wireTool(tool))
 	})
 }

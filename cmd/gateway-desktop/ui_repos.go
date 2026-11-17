@@ -9,11 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"gatewaylab/internal/apitypes"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/scope"
 )
 
 type scopeAgentMeta struct {
@@ -51,7 +50,7 @@ func agentIndex(id string) int {
 }
 
 type ruleDraft struct {
-	grants           []ScopeServiceGrant
+	grants           []apitypes.ServiceGrant
 	dirty            bool
 	localOnly        bool
 	expanded         bool
@@ -74,14 +73,14 @@ type reposPageState struct {
 	// Preview cache from POST /api/scopes/preview
 	previewKey     string
 	previewLoading bool
-	preview        *scope.ScopePreviewResponse
+	preview        *apitypes.ScopePreviewResponse
 
 	// Hook snippet modal state (shared with ViewClients)
 	showHookModal    bool
 	hookAgentIdx     int
 	hookLoadingAgent string
 	hookError        string
-	snippets         map[string]scope.ScopeSnippetResponse
+	snippets         map[string]apitypes.ScopeSnippetResponse
 }
 
 var (
@@ -97,18 +96,18 @@ func getReposState(u *DesktopUI) *reposPageState {
 		st = &reposPageState{
 			selectedRepoKey: "*",
 			drafts:          make(map[string]*ruleDraft),
-			snippets:        make(map[string]scope.ScopeSnippetResponse),
+			snippets:        make(map[string]apitypes.ScopeSnippetResponse),
 		}
 		reposStates[u] = st
 	}
 	return st
 }
 
-func cloneGrants(in []ScopeServiceGrant) []ScopeServiceGrant {
+func cloneGrants(in []apitypes.ServiceGrant) []apitypes.ServiceGrant {
 	if len(in) == 0 {
-		return []ScopeServiceGrant{}
+		return []apitypes.ServiceGrant{}
 	}
-	out := make([]ScopeServiceGrant, len(in))
+	out := make([]apitypes.ServiceGrant, len(in))
 	for i, g := range in {
 		access := strings.ToLower(strings.TrimSpace(g.Access))
 		if access != "rw" {
@@ -118,7 +117,7 @@ func cloneGrants(in []ScopeServiceGrant) []ScopeServiceGrant {
 		if len(g.ToolIDs) > 0 {
 			toolIDs = slices.Clone(g.ToolIDs)
 		}
-		out[i] = ScopeServiceGrant{
+		out[i] = apitypes.ServiceGrant{
 			ServerID: g.ServerID,
 			Access:   access,
 			ToolIDs:  toolIDs,
@@ -127,7 +126,7 @@ func cloneGrants(in []ScopeServiceGrant) []ScopeServiceGrant {
 	return out
 }
 
-func findScopeRule(rules []ScopeRule, repoKey, agentKey string) (*ScopeRule, bool) {
+func findScopeRule(rules []apitypes.ScopeRule, repoKey, agentKey string) (*apitypes.ScopeRule, bool) {
 	for i := range rules {
 		if rules[i].RepoKey == repoKey && rules[i].AgentKey == agentKey {
 			return &rules[i], true
@@ -140,16 +139,16 @@ func draftMapKey(repoKey, agentKey string) string {
 	return repoKey + "::" + agentKey
 }
 
-func (st *reposPageState) ensureDraft(rules []ScopeRule, repoKey, agentKey string) *ruleDraft {
+func (st *reposPageState) ensureDraft(rules []apitypes.ScopeRule, repoKey, agentKey string) *ruleDraft {
 	key := draftMapKey(repoKey, agentKey)
 	d, ok := st.drafts[key]
 	saved, hasSaved := findScopeRule(rules, repoKey, agentKey)
 	if !ok {
-		var initial []ScopeServiceGrant
+		var initial []apitypes.ServiceGrant
 		if hasSaved {
 			initial = cloneGrants(saved.Grants)
 		} else {
-			initial = []ScopeServiceGrant{}
+			initial = []apitypes.ServiceGrant{}
 		}
 		d = &ruleDraft{
 			grants:   initial,
@@ -162,7 +161,7 @@ func (st *reposPageState) ensureDraft(rules []ScopeRule, repoKey, agentKey strin
 		if hasSaved {
 			d.grants = cloneGrants(saved.Grants)
 		} else {
-			d.grants = []ScopeServiceGrant{}
+			d.grants = []apitypes.ServiceGrant{}
 		}
 	}
 	return d
@@ -242,7 +241,7 @@ func shortRemoteHint(remote string) string {
 	return r
 }
 
-func primaryRepoPath(repo scope.Repository) string {
+func primaryRepoPath(repo apitypes.Repository) string {
 	for _, p := range repo.RootPaths {
 		if strings.TrimSpace(p) != "" {
 			return strings.TrimSpace(p)
@@ -259,7 +258,7 @@ func primaryRepoPath(repo scope.Repository) string {
 	return ""
 }
 
-func repoBoundServiceSummary(repoID string, rules []ScopeRule) string {
+func repoBoundServiceSummary(repoID string, rules []apitypes.ScopeRule) string {
 	if r, ok := findScopeRule(rules, repoID, "*"); ok {
 		if len(r.Grants) == 0 {
 			return "无服务"
@@ -272,7 +271,7 @@ func repoBoundServiceSummary(repoID string, rules []ScopeRule) string {
 	return "无服务"
 }
 
-func globalDefaultServiceSummary(rules []ScopeRule) string {
+func globalDefaultServiceSummary(rules []apitypes.ScopeRule) string {
 	if r, ok := findScopeRule(rules, "*", "*"); ok && len(r.Grants) > 0 {
 		return fmt.Sprintf("%d 个服务", len(r.Grants))
 	}
@@ -281,7 +280,7 @@ func globalDefaultServiceSummary(rules []ScopeRule) string {
 
 // --- Deterministic Local Scope Policy Evaluator (mirrors backend precedence) ---
 
-func resolveEffectiveScopeRule(scopes ScopeOverview, repoKey, agentKey string) (grants []ScopeServiceGrant, matchedRepo, matchedAgent, sourceLabel string) {
+func resolveEffectiveScopeRule(scopes apitypes.ScopeOverview, repoKey, agentKey string) (grants []apitypes.ServiceGrant, matchedRepo, matchedAgent, sourceLabel string) {
 	if repoKey != "" && repoKey != "*" {
 		if agentKey != "" && agentKey != "*" {
 			if r, ok := findScopeRule(scopes.Rules, repoKey, agentKey); ok {
@@ -306,7 +305,7 @@ func resolveEffectiveScopeRule(scopes ScopeOverview, repoKey, agentKey string) (
 	return nil, "*", "*", "无权限"
 }
 
-func scopeGrantAllowsTool(grants []ScopeServiceGrant, t registry.Tool) bool {
+func scopeGrantAllowsTool(grants []apitypes.ServiceGrant, t apitypes.Tool) bool {
 	for _, g := range grants {
 		if g.ServerID != t.ServerID {
 			continue
@@ -322,7 +321,7 @@ func scopeGrantAllowsTool(grants []ScopeServiceGrant, t registry.Tool) bool {
 	return false
 }
 
-func computeLocalScopePreview(state *Bootstrap, repoKey, actor string) []scope.ScopeAgentPreview {
+func computeLocalScopePreview(state *apitypes.Bootstrap, repoKey, actor string) []apitypes.ScopeAgentPreview {
 	if state == nil {
 		return nil
 	}
@@ -334,20 +333,20 @@ func computeLocalScopePreview(state *Bootstrap, repoKey, actor string) []scope.S
 		}
 	}
 
-	activeServers := make(map[string]registry.Server)
+	activeServers := make(map[string]apitypes.Server)
 	for _, s := range state.Registry.Servers {
 		if s.Enabled && !s.Demo {
 			activeServers[s.ID] = s
 		}
 	}
 
-	out := make([]scope.ScopeAgentPreview, 0, len(scopeAgents))
+	out := make([]apitypes.ScopeAgentPreview, 0, len(scopeAgents))
 	for _, ag := range scopeAgents {
 		grants, matchedRepo, matchedAgent, srcLabel := resolveEffectiveScopeRule(state.Scopes, repoKey, ag.ID)
 		var (
 			toolCount    int
 			hasWrite     bool
-			srvSummaries []scope.ScopeServerSummary
+			srvSummaries []apitypes.ScopeServerSummary
 		)
 		for _, g := range grants {
 			if _, ok := activeServers[g.ServerID]; !ok {
@@ -377,7 +376,7 @@ func computeLocalScopePreview(state *Bootstrap, repoKey, actor string) []scope.S
 					hasWrite = true
 				}
 				toolCount += cnt
-				srvSummaries = append(srvSummaries, scope.ScopeServerSummary{
+				srvSummaries = append(srvSummaries, apitypes.ScopeServerSummary{
 					ServerID:  g.ServerID,
 					Access:    acc,
 					ToolCount: cnt,
@@ -387,7 +386,7 @@ func computeLocalScopePreview(state *Bootstrap, repoKey, actor string) []scope.S
 		if len(srvSummaries) == 0 && toolCount == 0 && srcLabel == "全局默认" {
 			srcLabel = "无权限"
 		}
-		out = append(out, scope.ScopeAgentPreview{
+		out = append(out, apitypes.ScopeAgentPreview{
 			Agent:           ag.ID,
 			MatchedRepoKey:  matchedRepo,
 			MatchedAgentKey: matchedAgent,
@@ -401,7 +400,7 @@ func computeLocalScopePreview(state *Bootstrap, repoKey, actor string) []scope.S
 	return out
 }
 
-func formatPreviewSourceLabel(p scope.ScopeAgentPreview) string {
+func formatPreviewSourceLabel(p apitypes.ScopeAgentPreview) string {
 	s := strings.TrimSpace(p.SourceLabel)
 	switch s {
 	case "客户端例外", "仓库默认", "无权限":
@@ -444,7 +443,7 @@ func formatPreviewSourceLabel(p scope.ScopeAgentPreview) string {
 	return "全局默认"
 }
 
-func previewRefreshSignature(state *Bootstrap, repoKey, actor string) string {
+func previewRefreshSignature(state *apitypes.Bootstrap, repoKey, actor string) string {
 	var b strings.Builder
 	b.WriteString(repoKey)
 	b.WriteByte('|')
@@ -487,7 +486,7 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 	}
 
 	// Ensure selected repository still exists if not "*".
-	var selectedRepo *scope.Repository
+	var selectedRepo *apitypes.Repository
 	if st.selectedRepoKey != "*" {
 		for i := range state.Scopes.Repositories {
 			if state.Scopes.Repositories[i].ID == st.selectedRepoKey {
@@ -582,7 +581,7 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 	})
 }
 
-func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, state *Bootstrap) {
+func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, state *apitypes.Bootstrap) {
 	ui.Column(c.Key("repos-left-col")).
 		Width(284).
 		Shrink(0).
@@ -811,8 +810,8 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 func (u *DesktopUI) renderReposRightColumn(
 	c *ui.Context,
 	st *reposPageState,
-	state *Bootstrap,
-	selectedRepo *scope.Repository,
+	state *apitypes.Bootstrap,
+	selectedRepo *apitypes.Repository,
 	previewActor string,
 ) {
 	repoKey := st.selectedRepoKey
@@ -835,8 +834,8 @@ func (u *DesktopUI) renderReposRightColumn(
 func (u *DesktopUI) renderRepoDetailHeaderCard(
 	c *ui.Context,
 	st *reposPageState,
-	state *Bootstrap,
-	selectedRepo *scope.Repository,
+	state *apitypes.Bootstrap,
+	selectedRepo *apitypes.Repository,
 ) {
 	SailCard(c, func() {
 		if selectedRepo == nil {
@@ -879,8 +878,8 @@ func (u *DesktopUI) renderRepoDetailHeaderCard(
 	})
 }
 
-func enabledRealServers(state *Bootstrap) []registry.Server {
-	var out []registry.Server
+func enabledRealServers(state *apitypes.Bootstrap) []apitypes.Server {
+	var out []apitypes.Server
 	for _, s := range state.Registry.Servers {
 		if s.Enabled && !s.Demo {
 			out = append(out, s)
@@ -889,8 +888,8 @@ func enabledRealServers(state *Bootstrap) []registry.Server {
 	return out
 }
 
-func enabledToolsByServer(state *Bootstrap) map[string][]registry.Tool {
-	m := make(map[string][]registry.Tool)
+func enabledToolsByServer(state *apitypes.Bootstrap) map[string][]apitypes.Tool {
+	m := make(map[string][]apitypes.Tool)
 	for _, t := range state.Registry.Tools {
 		if t.Enabled {
 			m[t.ServerID] = append(m[t.ServerID], t)
@@ -902,7 +901,7 @@ func enabledToolsByServer(state *Bootstrap) map[string][]registry.Tool {
 func (u *DesktopUI) renderRepoDefaultServicesCard(
 	c *ui.Context,
 	st *reposPageState,
-	state *Bootstrap,
+	state *apitypes.Bootstrap,
 	repoKey string,
 ) {
 	draft := st.ensureDraft(state.Scopes.Rules, repoKey, "*")
@@ -952,13 +951,13 @@ func (u *DesktopUI) renderRepoDefaultServicesCard(
 func (u *DesktopUI) renderAddServiceToDraftMenu(
 	c *ui.Context,
 	draft *ruleDraft,
-	servers []registry.Server,
+	servers []apitypes.Server,
 ) {
 	added := make(map[string]bool, len(draft.grants))
 	for _, g := range draft.grants {
 		added[g.ServerID] = true
 	}
-	var available []registry.Server
+	var available []apitypes.Server
 	for _, s := range servers {
 		if !added[s.ID] {
 			available = append(available, s)
@@ -971,7 +970,7 @@ func (u *DesktopUI) renderAddServiceToDraftMenu(
 			for _, srvItem := range available {
 				srv := srvItem
 				if menu.Item(fmt.Sprintf("%s (%s)", srv.Name, srv.ID)).Chosen() {
-					draft.grants = append(draft.grants, ScopeServiceGrant{
+					draft.grants = append(draft.grants, apitypes.ServiceGrant{
 						ServerID: srv.ID,
 						Access:   "ro",
 					})
@@ -985,8 +984,8 @@ func (u *DesktopUI) renderAddServiceToDraftMenu(
 func (u *DesktopUI) renderServiceGrantList(
 	c *ui.Context,
 	draft *ruleDraft,
-	state *Bootstrap,
-	toolsBySrv map[string][]registry.Tool,
+	state *apitypes.Bootstrap,
+	toolsBySrv map[string][]apitypes.Tool,
 ) {
 	if len(draft.grants) == 0 {
 		ui.Row(c).FillWidth().Padding(18, 20).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
@@ -995,7 +994,7 @@ func (u *DesktopUI) renderServiceGrantList(
 		return
 	}
 
-	serverByID := make(map[string]registry.Server, len(state.Registry.Servers))
+	serverByID := make(map[string]apitypes.Server, len(state.Registry.Servers))
 	for _, s := range state.Registry.Servers {
 		serverByID[s.ID] = s
 	}
@@ -1095,7 +1094,7 @@ func (u *DesktopUI) renderGrantToolSubsetDrawer(
 	c *ui.Context,
 	draft *ruleDraft,
 	grantIdx int,
-	srvTools []registry.Tool,
+	srvTools []apitypes.Tool,
 	isLastGrant bool,
 ) {
 	g := &draft.grants[grantIdx]
@@ -1196,7 +1195,7 @@ func (u *DesktopUI) renderGrantToolSubsetDrawer(
 func (u *DesktopUI) renderRepoAgentOverridesCard(
 	c *ui.Context,
 	st *reposPageState,
-	state *Bootstrap,
+	state *apitypes.Bootstrap,
 	repoKey string,
 ) {
 	servers := enabledRealServers(state)
@@ -1229,13 +1228,13 @@ func (u *DesktopUI) renderRepoAgentOverridesCard(
 						ag := agItem
 						if menu.Item(ag.Name).Chosen() {
 							baseRule, hasBase := findScopeRule(state.Scopes.Rules, repoKey, "*")
-							var seed []ScopeServiceGrant
+							var seed []apitypes.ServiceGrant
 							if hasBase {
 								seed = cloneGrants(baseRule.Grants)
 							} else if globalRule, ok := findScopeRule(state.Scopes.Rules, "*", "*"); ok {
 								seed = cloneGrants(globalRule.Grants)
 							} else {
-								seed = []ScopeServiceGrant{}
+								seed = []apitypes.ServiceGrant{}
 							}
 							st.drafts[draftMapKey(repoKey, ag.ID)] = &ruleDraft{
 								grants:    seed,
@@ -1364,11 +1363,11 @@ func (u *DesktopUI) renderRepoAgentOverridesCard(
 func (u *DesktopUI) renderRepoFiveClientPreviewCard(
 	c *ui.Context,
 	st *reposPageState,
-	state *Bootstrap,
+	state *apitypes.Bootstrap,
 	repoKey string,
 	previewActor string,
 ) {
-	var rows []scope.ScopeAgentPreview
+	var rows []apitypes.ScopeAgentPreview
 	if st.preview != nil && st.preview.RepoKey == repoKey && len(st.preview.Agents) > 0 {
 		rows = st.preview.Agents
 	} else {
@@ -1617,14 +1616,14 @@ func (u *DesktopUI) pickAndBindLocalRepo(st *reposPageState) {
 			return nil
 		}
 		chosen := strings.TrimSpace(paths[0])
-		return u.saveRepoInputAsync(st, SaveRepositoryInput{
+		return u.saveRepoInputAsync(st, apitypes.SaveRepositoryRequest{
 			Name: filepath.Base(chosen),
 			Path: chosen,
 		})
 	})
 }
 
-func (u *DesktopUI) bindObservedRepo(st *reposPageState, obs scope.ObservedRepo) {
+func (u *DesktopUI) bindObservedRepo(st *reposPageState, obs apitypes.ObservedRepo) {
 	if st.repoBusy || u.Client == nil {
 		return
 	}
@@ -1633,7 +1632,7 @@ func (u *DesktopUI) bindObservedRepo(st *reposPageState, obs scope.ObservedRepo)
 	if name == "" && obs.Root != "" {
 		name = filepath.Base(obs.Root)
 	}
-	in := SaveRepositoryInput{
+	in := apitypes.SaveRepositoryRequest{
 		Name:       name,
 		RemoteHint: obs.RemoteHint,
 	}
@@ -1653,7 +1652,7 @@ func (u *DesktopUI) bindObservedRepo(st *reposPageState, obs scope.ObservedRepo)
 	})
 }
 
-func (u *DesktopUI) saveRepoInputAsync(st *reposPageState, in SaveRepositoryInput) error {
+func (u *DesktopUI) saveRepoInputAsync(st *reposPageState, in apitypes.SaveRepositoryRequest) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	saved, err := u.Client.SaveRepository(ctx, in)
@@ -1703,11 +1702,11 @@ func (u *DesktopUI) deleteBoundRepository(st *reposPageState, repoID, repoName s
 	})
 }
 
-func (u *DesktopUI) resetDraft(rules []ScopeRule, draft *ruleDraft, repoKey, agentKey string) {
+func (u *DesktopUI) resetDraft(rules []apitypes.ScopeRule, draft *ruleDraft, repoKey, agentKey string) {
 	if saved, ok := findScopeRule(rules, repoKey, agentKey); ok {
 		draft.grants = cloneGrants(saved.Grants)
 	} else {
-		draft.grants = []ScopeServiceGrant{}
+		draft.grants = []apitypes.ServiceGrant{}
 	}
 	draft.dirty = false
 	draft.expandedServerID = ""
@@ -1718,7 +1717,7 @@ func (u *DesktopUI) saveDraftRuleAsync(st *reposPageState, draft *ruleDraft, rep
 		return
 	}
 	draft.saving = true
-	rule := ScopeRule{
+	rule := apitypes.ScopeRule{
 		RepoKey:  repoKey,
 		AgentKey: agentKey,
 		Grants:   cloneGrants(draft.grants),

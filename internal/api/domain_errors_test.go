@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"maps"
 	"net/http/httptest"
 	"testing"
 
@@ -41,8 +43,12 @@ func TestDomainErrorHTTPCompatibility(t *testing.T) {
 	t.Run("scope-code", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		fail(w, &scope.Error{Kind: scope.ErrForbidden, Code: "scope_required", Message: "需要范围"})
-		want := string(mustJSON(t, map[string]string{"code": "scope_required", "error": "需要范围"})) + "\n"
-		if w.Code != 403 || w.Body.String() != want {
+		var got map[string]string
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]string{"code": "scope_required", "error": "需要范围"}
+		if w.Code != 403 || !maps.Equal(got, want) {
 			t.Fatalf("%d %s", w.Code, w.Body.String())
 		}
 	})

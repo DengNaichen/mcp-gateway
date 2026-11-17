@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"gatewaylab/internal/access"
+	"gatewaylab/internal/apitypes"
 )
 
 func invocationEndpoint(r *http.Request) bool {
@@ -71,16 +72,14 @@ func (g *server) protectAccess(next http.Handler) http.Handler {
 func (g *server) registerAccess(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := access.PrincipalFrom(r.Context())
-		respond(w, 200, map[string]any{"authenticated": ok, "shared": g.Access() != nil, "principal": principal})
+		respond(w, 200, apitypes.AuthMe{Authenticated: ok, Shared: g.Access() != nil, Principal: wirePrincipal(principal)})
 	})
 	mux.HandleFunc("POST /api/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		if g.Access() == nil {
 			fail(w, problem(409, "本机模式没有启用身份认证", nil))
 			return
 		}
-		var input struct {
-			Token string `json:"token"`
-		}
+		var input apitypes.LoginRequest
 		if err := decode(w, r, &input); err != nil {
 			fail(w, err)
 			return
@@ -93,7 +92,7 @@ func (g *server) registerAccess(mux *http.ServeMux) {
 
 		http.SetCookie(w, &http.Cookie{Name: "gateway_session", Value: id, Path: "/", HttpOnly: true, Secure: r.TLS != nil || strings.HasPrefix(g.BaseURL(), "https://"), SameSite: http.SameSiteStrictMode, Expires: expires}) //nolint:gosec // G124: Secure is set conditionally on TLS/https base URL so loopback http still works; logout cookie only clears the session
 		w.Header().Set("Cache-Control", "no-store")
-		respond(w, 200, map[string]any{"principal": principal})
+		respond(w, 200, apitypes.LoginResult{Principal: wirePrincipal(principal)})
 	})
 	mux.HandleFunc("POST /api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
 		if g.Access() != nil {
@@ -102,6 +101,6 @@ func (g *server) registerAccess(mux *http.ServeMux) {
 			}
 		}
 		http.SetCookie(w, &http.Cookie{Name: "gateway_session", Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1}) //nolint:gosec // G124: Secure is set conditionally on TLS/https base URL so loopback http still works; logout cookie only clears the session
-		respond(w, 200, map[string]bool{"signed_out": true})
+		respond(w, 200, apitypes.SignedOut{SignedOut: true})
 	})
 }
