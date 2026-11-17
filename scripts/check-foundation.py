@@ -7,7 +7,7 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 output = subprocess.check_output(
-    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault", "./internal/retry"],
+    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault", "./internal/retry", "./internal/apitypes"],
     cwd=root, text=True,
 )
 allowed = {
@@ -43,6 +43,7 @@ allowed.update({
     "gatewaylab/internal/contracttest": {"gatewaylab/internal/input", "gatewaylab/internal/mcputil"},
     "gatewaylab/internal/fault": set(),
     "gatewaylab/internal/retry": set(),
+    "gatewaylab/internal/apitypes": set(),
 })
 decoder = json.JSONDecoder()
 while output.strip():
@@ -117,7 +118,19 @@ while output.strip():
         assert name.startswith("gatewaylab/cmd/"), f"only commands may import api: {name}"
     if "gatewaylab/internal/gateway" in imports:
         assert name == "gatewaylab/internal/api" or name.startswith("gatewaylab/cmd/"), f"gateway imported outside composition boundary: {name}"
+    if "gatewaylab/internal/apitypes" in imports:
+        assert name == "gatewaylab/internal/api" or name.startswith("gatewaylab/cmd/"), f"only api and commands may import the wire types: {name}"
     if name == "gatewaylab/internal/maintenance/sandbox":
         assert "gatewaylab/internal/upstream" not in package.get("Deps", []), "sandbox must not depend on upstream"
-print("PASS: cmd -> api -> gateway reverse edges; sandbox is independent of upstream")
+    if name == "gatewaylab/cmd/gateway-desktop":
+        # The desktop UI reaches the backend over the /api HTTP contract only.
+        # depguard additionally limits internal/api to server.go (hosting).
+        direct = imports | set(package.get("TestImports", [])) | set(package.get("XTestImports", []))
+        internal = {p for p in direct if p.startswith("gatewaylab/internal/")}
+        desktop_allowed = {
+            "gatewaylab/internal/api", "gatewaylab/internal/apitypes", "gatewaylab/internal/buildinfo",
+            "gatewaylab/internal/clientconfig", "gatewaylab/internal/clientplugin", "gatewaylab/internal/openapi",
+        }
+        assert internal <= desktop_allowed, f"gateway-desktop imports backend packages {sorted(internal - desktop_allowed)}; use internal/apitypes over HTTP"
+print("PASS: cmd -> api -> gateway reverse edges; apitypes stays at the HTTP edge; desktop uses the HTTP contract; sandbox is independent of upstream")
 subprocess.run(["go", "run", "scripts/check-api-boundaries.go"], cwd=root, check=True)

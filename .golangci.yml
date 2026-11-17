@@ -73,6 +73,12 @@ linters:
           deny:
             - pkg: gatewaylab/internal
               desc: "retry is a leaf package and imports no other internal package"
+        leaf-apitypes:
+          files: ["**/internal/apitypes/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "apitypes is the HTTP wire contract and imports no other internal package; convert domain values in internal/api"
         store-layer:
           files: ["**/internal/store/**"]
           list-mode: lax
@@ -161,6 +167,45 @@ linters:
           deny:
             - pkg: gatewaylab/internal/gateway
               desc: "only api and cmd/* may import gateway; define an interface in your own package and let gateway implement it"
+        clientconfig-local-only:
+          files:
+            - "**/internal/**"
+            - "!**/internal/clientconfig/**"
+            - "!**/internal/clientplugin/**"
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal/clientconfig
+              desc: "clientconfig edits MCP client files on the user's own machine; backend packages and /api must not reach it"
+            - pkg: gatewaylab/internal/clientplugin
+              desc: "clientplugin installs plugins into MCP clients on the user's own machine; backend packages and /api must not reach it"
+        # The desktop UI talks to the backend only through the /api HTTP
+        # contract. It may import the wire types and the few local-only
+        # packages listed; every other internal package is backend code.
+        desktop-http-contract:
+          files:
+            - "**/cmd/gateway-desktop/**"
+            - "!**/cmd/gateway-desktop/server.go"
+          list-mode: lax
+          allow:
+            - gatewaylab/internal/apitypes
+            - gatewaylab/internal/buildinfo
+            - gatewaylab/internal/clientconfig
+            - gatewaylab/internal/clientplugin
+            - gatewaylab/internal/openapi
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "the desktop UI reaches the backend only over HTTP: use gatewaylab/internal/apitypes for request/response bodies and APIClient for calls; only server.go may import internal/api to host the backend"
+        # server.go hosts the embedded backend; it opens it through api.Open
+        # and never touches domain packages directly.
+        desktop-host:
+          files: ["**/cmd/gateway-desktop/server.go"]
+          list-mode: lax
+          allow:
+            - gatewaylab/internal/api
+            - gatewaylab/internal/buildinfo
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "server.go hosts the backend through api.Open and api.Instance; it must not import domain packages"
   exclusions:
     rules:
       # Tests create fixtures in t.TempDir(), shell out to git with literal

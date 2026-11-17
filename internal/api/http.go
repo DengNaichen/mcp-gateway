@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"gatewaylab/internal/apitypes"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -31,7 +33,7 @@ func (g *server) handler() http.Handler {
 	mux.HandleFunc("GET /demo/api/{name}", g.demoHTTP)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 404, map[string]string{"error": "API endpoint not found"})
+		respond(w, 404, apitypes.Error{Error: "API endpoint not found"})
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 404, map[string]string{"error": "not found", "mcp": "/mcp", "health": "/api/health"})

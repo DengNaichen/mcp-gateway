@@ -13,13 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"gatewaylab/internal/apitypes"
 
-	"gatewaylab/internal/activity"
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/model"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/scope"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestScopeAPIClientContract(t *testing.T) {
@@ -135,10 +131,10 @@ func TestScopeAPIClientContract(t *testing.T) {
 
 	boot, err := c.Bootstrap(ctx)
 	if err != nil {
-		t.Fatalf("Bootstrap: %v", err)
+		t.Fatalf("apitypes.Bootstrap: %v", err)
 	}
 	if !boot.Scopes.Enforce || len(boot.Scopes.Repositories) != 1 || len(boot.Scopes.Observed) != 1 {
-		t.Fatalf("unexpected Bootstrap.Scopes: %+v", boot.Scopes)
+		t.Fatalf("unexpected apitypes.Bootstrap.Scopes: %+v", boot.Scopes)
 	}
 	if boot.Scopes.Repositories[0].ID != "repo-1" || boot.Scopes.Observed[0].Fingerprint != "fp-1" {
 		t.Fatalf("unexpected repo/observed IDs: %+v", boot.Scopes)
@@ -150,7 +146,7 @@ func TestScopeAPIClientContract(t *testing.T) {
 	if err := c.SetScopeMode(ctx, true); err != nil {
 		t.Fatalf("SetScopeMode: %v", err)
 	}
-	savedRepo, err := c.SaveRepository(ctx, SaveRepositoryInput{Name: "new-repo", Path: "/tmp/new"})
+	savedRepo, err := c.SaveRepository(ctx, apitypes.SaveRepositoryRequest{Name: "new-repo", Path: "/tmp/new"})
 	if err != nil || savedRepo.ID != "repo-2" {
 		t.Fatalf("SaveRepository: repo=%+v err=%v", savedRepo, err)
 	}
@@ -159,7 +155,7 @@ func TestScopeAPIClientContract(t *testing.T) {
 	}
 
 	// Nil Grants must marshal as `"grants":[]` rather than null.
-	emptyRule, err := c.SaveScopeRule(ctx, ScopeRule{RepoKey: "*", AgentKey: "*"})
+	emptyRule, err := c.SaveScopeRule(ctx, apitypes.ScopeRule{RepoKey: "*", AgentKey: "*"})
 	if err != nil || emptyRule.Grants == nil {
 		t.Fatalf("SaveScopeRule empty: rule=%+v err=%v", emptyRule, err)
 	}
@@ -178,13 +174,13 @@ func TestScopeAPIClientContract(t *testing.T) {
 	}
 
 	// Discover without sim_scope omits sim_scope; DiscoverScoped includes sim_scope.
-	if _, err := c.Discover(ctx, gateway.DiscoverRequest{Intent: "check prs"}); err != nil {
+	if _, err := c.Discover(ctx, apitypes.DiscoverRequest{Intent: "check prs"}); err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	if _, err := c.DiscoverScoped(ctx, gateway.DiscoverRequest{Intent: "check prs"}, &scope.SimScope{RepoKey: "repo-1", AgentKey: "codex"}); err != nil {
+	if _, err := c.DiscoverScoped(ctx, apitypes.DiscoverRequest{Intent: "check prs"}, &apitypes.SimScope{RepoKey: "repo-1", AgentKey: "codex"}); err != nil {
 		t.Fatalf("DiscoverScoped: %v", err)
 	}
-	if _, err := c.InvokeScoped(ctx, gateway.InvokeRequest{ToolID: "github.list_prs", Arguments: map[string]any{}}, &scope.SimScope{RepoKey: "*", AgentKey: "claude"}); err != nil {
+	if _, err := c.InvokeScoped(ctx, apitypes.InvokeRequest{ToolID: "github.list_prs", Arguments: map[string]any{}}, &apitypes.SimScope{RepoKey: "*", AgentKey: "claude"}); err != nil {
 		t.Fatalf("InvokeScoped: %v", err)
 	}
 
@@ -241,12 +237,12 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 	})
 
 	var stateMu sync.Mutex
-	boot := Bootstrap{
+	boot := apitypes.Bootstrap{
 		MCPURL:        "http://127.0.0.1:8788/mcp",
 		KeyConfigured: true,
-		Access:        AccessInfo{Shared: false, Actor: "developer"},
-		Registry: registry.Registry{
-			Servers: []registry.Server{
+		Access:        apitypes.AccessInfo{Shared: false, Actor: "developer"},
+		Registry: apitypes.Registry{
+			Servers: []apitypes.Server{
 				{
 					ID:          "github",
 					Name:        "GitHub MCP",
@@ -266,7 +262,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 					Enabled:     true,
 				},
 			},
-			Tools: []registry.Tool{
+			Tools: []apitypes.Tool{
 				{
 					ID:          "github.list_prs",
 					ServerID:    "github",
@@ -296,23 +292,23 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 				},
 			},
 		},
-		Settings: model.Settings{
+		Settings: apitypes.Settings{
 			BaseURL:        "https://api.openai.com/v1",
 			Model:          "gpt-6-luna",
 			MaxTools:       4,
 			TimeoutSeconds: 30,
 		},
-		Setup: gateway.SetupStatus{
+		Setup: apitypes.SetupStatus{
 			Sources:         2,
 			EnabledTools:    3,
 			ToolsReady:      true,
 			ModelConfigured: true,
 			ModelReady:      true,
 		},
-		Scopes: ScopeOverview{
+		Scopes: apitypes.ScopeOverview{
 			Enforce:     false,
 			HookBinPath: "/Users/test/.mcp-gateway/bin/mcp-gateway-hook",
-			Repositories: []scope.Repository{
+			Repositories: []apitypes.Repository{
 				{
 					ID:            "repo-gw",
 					Name:          "mcp-gateway",
@@ -322,29 +318,29 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 					CreatedAt:     "2026-11-16T10:00:00Z",
 				},
 			},
-			Rules: []ScopeRule{
+			Rules: []apitypes.ScopeRule{
 				{
 					RepoKey:  "*",
 					AgentKey: "*",
-					Grants:   []ScopeServiceGrant{},
+					Grants:   []apitypes.ServiceGrant{},
 				},
 				{
 					RepoKey:  "repo-gw",
 					AgentKey: "*",
-					Grants: []ScopeServiceGrant{
+					Grants: []apitypes.ServiceGrant{
 						{ServerID: "github", Access: "ro"},
 					},
 				},
 				{
 					RepoKey:  "repo-gw",
 					AgentKey: "codex",
-					Grants: []ScopeServiceGrant{
+					Grants: []apitypes.ServiceGrant{
 						{ServerID: "github", Access: "rw"},
 						{ServerID: "roster", Access: "ro"},
 					},
 				},
 			},
-			Observed: []scope.ObservedRepo{
+			Observed: []apitypes.ObservedRepo{
 				{
 					Fingerprint:  "fp-obs-1",
 					Name:         "new-service",
@@ -357,7 +353,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 				},
 			},
 		},
-		Events: []activity.Event{
+		Events: []apitypes.Event{
 			{
 				ID:         "ev-scope-1",
 				Time:       now,
@@ -396,10 +392,10 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 
 		case r.Method == http.MethodPut && r.URL.Path == "/api/scopes/repositories":
 			savedRepoBodies = append(savedRepoBodies, strings.TrimSpace(string(raw)))
-			var in SaveRepositoryInput
+			var in apitypes.SaveRepositoryRequest
 			_ = json.Unmarshal(raw, &in)
 			newID := "repo-" + in.Name
-			repo := scope.Repository{
+			repo := apitypes.Repository{
 				ID:            newID,
 				Name:          in.Name,
 				GitCommonDirs: in.GitCommonDirs,
@@ -414,7 +410,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(repo)
 
 		case r.Method == http.MethodPut && r.URL.Path == "/api/scopes/rules":
-			var rule ScopeRule
+			var rule apitypes.ScopeRule
 			_ = json.Unmarshal(raw, &rule)
 			replaced := false
 			for i := range boot.Scopes.Rules {
@@ -432,7 +428,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/scopes/rules":
 			rk := r.URL.Query().Get("repo_key")
 			ak := r.URL.Query().Get("agent_key")
-			var kept []ScopeRule
+			var kept []apitypes.ScopeRule
 			for _, item := range boot.Scopes.Rules {
 				if item.RepoKey == rk && item.AgentKey == ak {
 					continue
@@ -449,14 +445,14 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 			}
 			_ = json.Unmarshal(raw, &in)
 			agents := computeLocalScopePreview(&boot, in.RepoKey, in.Actor)
-			_ = json.NewEncoder(w).Encode(scope.ScopePreviewResponse{
+			_ = json.NewEncoder(w).Encode(apitypes.ScopePreviewResponse{
 				RepoKey: in.RepoKey,
 				Agents:  agents,
 			})
 
 		case r.Method == http.MethodGet && r.URL.Path == "/api/scopes/snippets":
 			ag := r.URL.Query().Get("agent")
-			_ = json.NewEncoder(w).Encode(scope.ScopeSnippetResponse{
+			_ = json.NewEncoder(w).Encode(apitypes.ScopeSnippetResponse{
 				Agent:        ag,
 				ConfigPath:   "/Users/test/." + ag + "/hooks.json",
 				MCPURL:       "http://127.0.0.1:8788/mcp?agent=" + ag,
@@ -467,12 +463,12 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 
 		case r.Method == http.MethodPost && r.URL.Path == "/api/discover":
 			lastDiscoverBody = string(raw)
-			_ = json.NewEncoder(w).Encode(gateway.DiscoverResult{
+			_ = json.NewEncoder(w).Encode(apitypes.DiscoverResult{
 				ID:       "disc-1",
 				Status:   "selected",
 				Summary:  "Matched scoped tools",
 				Eligible: 3,
-				Tools: []gateway.Selection{
+				Tools: []apitypes.Selection{
 					{
 						Tool:   boot.Registry.Tools[0],
 						Reason: "Scoped match",
@@ -568,7 +564,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 	waitAsyncIdle(t, tester, uiApp)
 	stateMu.Lock()
 	repoCountAfterBind := len(boot.Scopes.Repositories)
-	var boundNewSvc scope.Repository
+	var boundNewSvc apitypes.Repository
 	if repoCountAfterBind >= 2 {
 		boundNewSvc = boot.Scopes.Repositories[1]
 	}
@@ -685,27 +681,27 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 	var (
 		mu          sync.Mutex
-		savedRules  []ScopeRule
+		savedRules  []apitypes.ScopeRule
 		deletedRule string
 		deletedRepo string
 		enforceSet  []bool
 	)
 
-	boot := Bootstrap{
+	boot := apitypes.Bootstrap{
 		MCPURL: "http://127.0.0.1:8788/mcp",
-		Access: AccessInfo{Shared: false, Actor: "developer"},
-		Registry: registry.Registry{
-			Servers: []registry.Server{
+		Access: apitypes.AccessInfo{Shared: false, Actor: "developer"},
+		Registry: apitypes.Registry{
+			Servers: []apitypes.Server{
 				{ID: "github", Name: "GitHub MCP", Enabled: true},
 			},
-			Tools: []registry.Tool{
+			Tools: []apitypes.Tool{
 				{ID: "github.list_prs", ServerID: "github", Name: "list_prs", Enabled: true, ReadOnly: true, Actors: []string{"developer"}},
 				{ID: "github.merge_pr", ServerID: "github", Name: "merge_pr", Enabled: true, ReadOnly: false, Actors: []string{"developer"}},
 			},
 		},
-		Scopes: ScopeOverview{
+		Scopes: apitypes.ScopeOverview{
 			Enforce: false,
-			Repositories: []scope.Repository{
+			Repositories: []apitypes.Repository{
 				{
 					ID:            "repo-1",
 					Name:          "alpha-repo",
@@ -713,10 +709,10 @@ func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 					RootPaths:     []string{"/work/alpha"},
 				},
 			},
-			Rules: []ScopeRule{
-				{RepoKey: "*", AgentKey: "*", Grants: []ScopeServiceGrant{}},
-				{RepoKey: "repo-1", AgentKey: "*", Grants: []ScopeServiceGrant{{ServerID: "github", Access: "ro"}}},
-				{RepoKey: "repo-1", AgentKey: "cursor", Grants: []ScopeServiceGrant{{ServerID: "github", Access: "rw"}}},
+			Rules: []apitypes.ScopeRule{
+				{RepoKey: "*", AgentKey: "*", Grants: []apitypes.ServiceGrant{}},
+				{RepoKey: "repo-1", AgentKey: "*", Grants: []apitypes.ServiceGrant{{ServerID: "github", Access: "ro"}}},
+				{RepoKey: "repo-1", AgentKey: "cursor", Grants: []apitypes.ServiceGrant{{ServerID: "github", Access: "rw"}}},
 			},
 		},
 	}
@@ -738,7 +734,7 @@ func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 			enforceSet = append(enforceSet, in.Enforce)
 			_ = json.NewEncoder(w).Encode(in)
 		case r.Method == http.MethodPut && r.URL.Path == "/api/scopes/rules":
-			var rule ScopeRule
+			var rule apitypes.ScopeRule
 			_ = json.Unmarshal(raw, &rule)
 			savedRules = append(savedRules, rule)
 			replaced := false
@@ -755,7 +751,7 @@ func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(rule)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/scopes/rules":
 			deletedRule = r.URL.Query().Get("repo_key") + ":" + r.URL.Query().Get("agent_key")
-			var kept []ScopeRule
+			var kept []apitypes.ScopeRule
 			for _, item := range boot.Scopes.Rules {
 				if item.RepoKey == r.URL.Query().Get("repo_key") && item.AgentKey == r.URL.Query().Get("agent_key") {
 					continue
@@ -774,7 +770,7 @@ func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 				Actor   string `json:"actor"`
 			}
 			_ = json.Unmarshal(raw, &in)
-			_ = json.NewEncoder(w).Encode(scope.ScopePreviewResponse{
+			_ = json.NewEncoder(w).Encode(apitypes.ScopePreviewResponse{
 				RepoKey: in.RepoKey,
 				Agents:  computeLocalScopePreview(&boot, in.RepoKey, in.Actor),
 			})
@@ -887,8 +883,8 @@ func waitAsyncIdle(t *testing.T, tester *ui.Tester, uiApp *DesktopUI) {
 	}
 }
 
-func slicesDeleteObserved(in []scope.ObservedRepo, name string) []scope.ObservedRepo {
-	var out []scope.ObservedRepo
+func slicesDeleteObserved(in []apitypes.ObservedRepo, name string) []apitypes.ObservedRepo {
+	var out []apitypes.ObservedRepo
 	for _, o := range in {
 		if o.Name != name {
 			out = append(out, o)

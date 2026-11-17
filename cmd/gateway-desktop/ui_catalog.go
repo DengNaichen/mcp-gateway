@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"gatewaylab/internal/apitypes"
 
-	"gatewaylab/internal/registry"
+	"github.com/egoist/mygo/ui"
 )
 
 const catalogPageSize = 40
@@ -115,7 +115,7 @@ func (st *catalogPageState) resetFilters() {
 	st.page = 1
 }
 
-func (st *catalogPageState) syncEditForm(t registry.Tool) {
+func (st *catalogPageState) syncEditForm(t apitypes.Tool) {
 	sig := fmt.Sprintf("%s|%s|%t|%s|%s", t.Revision, t.Description, t.ReadOnly, strings.Join(t.Actors, ","), strings.Join(t.Tags, ","))
 	if st.editLoadedID == t.ID && st.editLoadedRev == sig {
 		return
@@ -137,10 +137,10 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 	tools := u.State.Registry.Tools
 	hitCounts := u.Telemetry.ToolHitCounts
 
-	serverByID := make(map[string]registry.Server, len(servers))
+	serverByID := make(map[string]apitypes.Server, len(servers))
 	realServerIDs := make(map[string]bool, len(servers))
-	var realServers []registry.Server
-	var demoServers []registry.Server
+	var realServers []apitypes.Server
+	var demoServers []apitypes.Server
 	for _, s := range servers {
 		serverByID[s.ID] = s
 		if s.Demo {
@@ -260,7 +260,7 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 
 	// Filter & sort tools.
 	qLower := strings.ToLower(strings.TrimSpace(st.query))
-	filtered := make([]registry.Tool, 0, len(tools))
+	filtered := make([]apitypes.Tool, 0, len(tools))
 	for _, t := range tools {
 		srv := serverByID[t.ServerID]
 		if !st.showDemo && srv.Demo {
@@ -321,7 +321,7 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 	})
 
 	// Resolve selected tool for right-side inspector panel.
-	var selectedTool *registry.Tool
+	var selectedTool *apitypes.Tool
 	if !st.panelCollapsed && len(filtered) > 0 {
 		for i := range filtered {
 			if filtered[i].ID == st.selectedToolID {
@@ -684,8 +684,8 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 func (u *DesktopUI) renderCatalogDetailPanel(
 	c *ui.Context,
 	st *catalogPageState,
-	tool registry.Tool,
-	srv registry.Server,
+	tool apitypes.Tool,
+	srv apitypes.Server,
 	hits int,
 ) {
 	st.syncEditForm(tool)
@@ -792,7 +792,7 @@ func (u *DesktopUI) renderCatalogDetailPanel(
 		})
 }
 
-func (u *DesktopUI) renderCatalogOverviewTab(c *ui.Context, tool registry.Tool, srv registry.Server, hits int) {
+func (u *DesktopUI) renderCatalogOverviewTab(c *ui.Context, tool apitypes.Tool, srv apitypes.Server, hits int) {
 	srvDisplay := srv.Name
 	if srvDisplay == "" {
 		srvDisplay = tool.ServerID
@@ -863,7 +863,7 @@ func (u *DesktopUI) renderCatalogOverviewTab(c *ui.Context, tool registry.Tool, 
 	}
 }
 
-func (u *DesktopUI) renderCatalogEditTab(c *ui.Context, st *catalogPageState, tool registry.Tool) {
+func (u *DesktopUI) renderCatalogEditTab(c *ui.Context, st *catalogPageState, tool apitypes.Tool) {
 	ui.Column(c).FillWidth().Gap(12).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Text(c, "只读模式").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
@@ -909,7 +909,7 @@ func (u *DesktopUI) renderCatalogEditTab(c *ui.Context, st *catalogPageState, to
 }
 
 // catalogToggleToolWhitelist toggles a single tool's enablement via POST /api/servers/{server_id}/tools.
-func (u *DesktopUI) catalogToggleToolWhitelist(st *catalogPageState, target registry.Tool) {
+func (u *DesktopUI) catalogToggleToolWhitelist(st *catalogPageState, target apitypes.Tool) {
 	if u.Client == nil || u.State == nil || st.togglingIDs[target.ID] {
 		return
 	}
@@ -954,7 +954,7 @@ func (u *DesktopUI) catalogToggleToolWhitelist(st *catalogPageState, target regi
 	})
 }
 
-func (u *DesktopUI) catalogSaveToolMetadata(st *catalogPageState, baseTool registry.Tool) {
+func (u *DesktopUI) catalogSaveToolMetadata(st *catalogPageState, baseTool apitypes.Tool) {
 	if u.Client == nil || st.savingContract {
 		return
 	}
@@ -1004,7 +1004,7 @@ func catalogSplitCSV(raw string) []string {
 	return out
 }
 
-func catalogBuildTestIntent(tool registry.Tool) string {
+func catalogBuildTestIntent(tool apitypes.Tool) string {
 	desc := CleanDescriptionSummary(tool.Description)
 	if desc != "" {
 		return fmt.Sprintf("使用 %s：%s", tool.Name, desc)
@@ -1012,7 +1012,7 @@ func catalogBuildTestIntent(tool registry.Tool) string {
 	return fmt.Sprintf("调用 %s (%s)", tool.Name, tool.ID)
 }
 
-func catalogPickTestActor(tool registry.Tool) string {
+func catalogPickTestActor(tool apitypes.Tool) string {
 	if len(tool.Actors) == 0 || slices.Contains(tool.Actors, "*") || slices.Contains(tool.Actors, "developer") {
 		return "developer"
 	}

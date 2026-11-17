@@ -15,7 +15,6 @@ import (
 
 	"gatewaylab/internal/api"
 	"gatewaylab/internal/buildinfo"
-	"gatewaylab/internal/gateway"
 )
 
 type instanceMode string
@@ -212,7 +211,7 @@ func startOrAttachGateway(ctx context.Context, addr, dataDir string) (*gatewayRu
 		baseURL = strings.TrimRight(public, "/")
 	}
 
-	g, err := gateway.New(dataDir, baseURL)
+	g, err := api.Open(dataDir, baseURL)
 	if err != nil {
 		_ = ln.Close()
 		return nil, nil, fmt.Errorf("initialize gateway: %w", err)
@@ -222,7 +221,7 @@ func startOrAttachGateway(ctx context.Context, addr, dataDir string) (*gatewayRu
 	g.StartMaintenance(maintCtx)
 
 	server := &http.Server{
-		Handler:           api.Handler(g),
+		Handler:           g.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       90 * time.Second,
 	}

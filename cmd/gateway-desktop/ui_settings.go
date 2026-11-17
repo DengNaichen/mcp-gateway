@@ -9,19 +9,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"gatewaylab/internal/apitypes"
 
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/model"
-	"gatewaylab/internal/registry"
+	"github.com/egoist/mygo/ui"
 )
 
 type settingsState struct {
 	initialized        bool
-	lastSyncedSettings model.Settings
+	lastSyncedSettings apitypes.Settings
 
 	editingProfileID string
-	config           model.Settings
+	config           apitypes.Settings
 	maxToolsFloat    float64
 	timeoutFloat     float64
 	apiKey           string
@@ -30,7 +28,7 @@ type settingsState struct {
 	advancedExpanded bool
 	busyMode         string // "", "save", "test"
 	pingBusy         bool
-	pingResult       *model.PingModelResult
+	pingResult       *apitypes.PingModelResult
 	pingPassedKey    string
 	pingErr          string
 	pingDetail       string
@@ -38,7 +36,7 @@ type settingsState struct {
 	guardrailBusy    bool
 	errTitle         string
 	errDetail        string
-	testResult       *gateway.DiscoverResult
+	testResult       *apitypes.DiscoverResult
 }
 
 var (
@@ -57,7 +55,7 @@ func getSettingsState(u *DesktopUI) *settingsState {
 	return st
 }
 
-func settingsIsDirty(st *settingsState, saved model.Settings) bool {
+func settingsIsDirty(st *settingsState, saved apitypes.Settings) bool {
 	return st.config.BaseURL != saved.BaseURL ||
 		st.config.Model != saved.Model ||
 		st.config.MaxTools != saved.MaxTools ||
@@ -66,7 +64,7 @@ func settingsIsDirty(st *settingsState, saved model.Settings) bool {
 		st.clearKey
 }
 
-func settingsConnectionKey(cfg model.Settings, profileID, apiKey string, clearKey bool) string {
+func settingsConnectionKey(cfg apitypes.Settings, profileID, apiKey string, clearKey bool) string {
 	return fmt.Sprintf("%s\x00%s\x00%s\x00%d\x00%s\x00%t",
 		profileID,
 		strings.TrimSpace(cfg.BaseURL),
@@ -83,7 +81,7 @@ func settingsPingPassed(st *settingsState) bool {
 		st.pingPassedKey == settingsConnectionKey(st.config, st.editingProfileID, st.apiKey, st.clearKey)
 }
 
-func isVerifiedActiveConnectionUnchanged(st *settingsState, state *Bootstrap) bool {
+func isVerifiedActiveConnectionUnchanged(st *settingsState, state *apitypes.Bootstrap) bool {
 	if state == nil || !state.Setup.ModelReady || (state.Setup.ModelCheck != nil && state.Setup.ModelCheck.Stale) {
 		return false
 	}
@@ -105,7 +103,7 @@ func isVerifiedActiveConnectionUnchanged(st *settingsState, state *Bootstrap) bo
 		st.config.TimeoutSeconds == state.Settings.TimeoutSeconds
 }
 
-func settingsCanSave(st *settingsState, state *Bootstrap) bool {
+func settingsCanSave(st *settingsState, state *apitypes.Bootstrap) bool {
 	if st.busyMode != "" || st.pingBusy {
 		return false
 	}
@@ -132,7 +130,7 @@ func clearSettingsFeedback(st *settingsState) {
 	resetSettingsTestOutput(st)
 }
 
-func loadProfileIntoSettings(st *settingsState, id string, s model.Settings) {
+func loadProfileIntoSettings(st *settingsState, id string, s apitypes.Settings) {
 	st.editingProfileID = id
 	st.config = s
 	st.maxToolsFloat = float64(clampInt(s.MaxTools, 1, 12))
@@ -187,7 +185,7 @@ func (u *DesktopUI) renderSettings(c *ui.Context) {
 	u.renderSettingsProfilesSection(c, st, state)
 }
 
-func (u *DesktopUI) renderSettingsGuardrailSection(c *ui.Context, st *settingsState, state *Bootstrap) {
+func (u *DesktopUI) renderSettingsGuardrailSection(c *ui.Context, st *settingsState, state *apitypes.Bootstrap) {
 	sharedActor := ""
 	if state.Access.Shared {
 		sharedActor = state.Access.Actor
@@ -200,7 +198,7 @@ func (u *DesktopUI) renderSettingsGuardrailSection(c *ui.Context, st *settingsSt
 			realActiveServers[s.ID] = true
 		}
 	}
-	var enabledWriteTools []registry.Tool
+	var enabledWriteTools []apitypes.Tool
 	for _, t := range state.Registry.Tools {
 		if t.Enabled && !t.ReadOnly && realActiveServers[t.ServerID] {
 			enabledWriteTools = append(enabledWriteTools, t)
@@ -296,7 +294,7 @@ func (u *DesktopUI) renderSettingsGuardrailSection(c *ui.Context, st *settingsSt
 	})
 }
 
-func editingProfileKeyConfigured(st *settingsState, state *Bootstrap) bool {
+func editingProfileKeyConfigured(st *settingsState, state *apitypes.Bootstrap) bool {
 	if st.clearKey {
 		return false
 	}
@@ -310,7 +308,7 @@ func editingProfileKeyConfigured(st *settingsState, state *Bootstrap) bool {
 	return state.KeyConfigured
 }
 
-func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState, state *Bootstrap, dirty bool) {
+func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState, state *apitypes.Bootstrap, dirty bool) {
 	SailCard(c, func() {
 		SailCardTitle(c, "Decisions 语义路由模型", "", func() {
 			if SailSmallButton(c.Key("set-preset-openai"), "OpenAI 预设").Clicked() {
@@ -538,7 +536,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 	})
 }
 
-func (u *DesktopUI) renderSettingsProfilesSection(c *ui.Context, st *settingsState, state *Bootstrap) {
+func (u *DesktopUI) renderSettingsProfilesSection(c *ui.Context, st *settingsState, state *apitypes.Bootstrap) {
 	profiles := state.Profiles
 	SailFlushCard(c, func() {
 		SailListCardHeader(c, "已保存的模型", fmt.Sprintf("%d 个配置", len(profiles)), nil)
@@ -588,7 +586,7 @@ func (u *DesktopUI) renderSettingsProfilesSection(c *ui.Context, st *settingsSta
 						editLabel = "编辑中"
 					}
 					if SailSmallButton(c.Key("set-prof-edit-"+prof.ID), editLabel).Disabled(busy).Clicked() {
-						loadProfileIntoSettings(st, prof.ID, model.Settings{
+						loadProfileIntoSettings(st, prof.ID, apitypes.Settings{
 							BaseURL:        prof.BaseURL,
 							Model:          prof.Model,
 							MaxTools:       prof.MaxTools,
@@ -674,7 +672,7 @@ func (u *DesktopUI) activateProfile(st *settingsState, id string) {
 		_ = u.RefreshSync()
 		u.updateUI(func() {
 			st.profileBusyID = ""
-			loadProfileIntoSettings(st, prof.ID, model.Settings{
+			loadProfileIntoSettings(st, prof.ID, apitypes.Settings{
 				BaseURL:        prof.BaseURL,
 				Model:          prof.Model,
 				MaxTools:       prof.MaxTools,
@@ -706,7 +704,7 @@ func (u *DesktopUI) deleteProfile(st *settingsState, id string) {
 				if u.State != nil {
 					for _, p := range u.State.Profiles {
 						if p.Active {
-							loadProfileIntoSettings(st, p.ID, model.Settings{
+							loadProfileIntoSettings(st, p.ID, apitypes.Settings{
 								BaseURL:        p.BaseURL,
 								Model:          p.Model,
 								MaxTools:       p.MaxTools,
@@ -750,7 +748,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 	st.busyMode = mode
 	resetSettingsTestOutput(st)
 
-	profile := model.ModelProfile{
+	profile := apitypes.ModelProfile{
 		ID:             st.editingProfileID,
 		BaseURL:        cfg.BaseURL,
 		Model:          cfg.Model,
@@ -768,7 +766,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.TimeoutSeconds*2+20)*time.Second)
 		defer cancel()
 
-		var pingRes *model.PingModelResult
+		var pingRes *apitypes.PingModelResult
 		if needsPingBeforeSave {
 			res, err := u.Client.PingModel(ctx, cfg, profile.ID, apiKey, clearKey)
 			if err != nil {
@@ -807,7 +805,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 			return nil
 		}
 
-		finishSaved := func(testRes *gateway.DiscoverResult, errTitle, errDetail string) {
+		finishSaved := func(testRes *apitypes.DiscoverResult, errTitle, errDetail string) {
 			st.busyMode = ""
 			if pingRes != nil {
 				st.pingResult = pingRes
@@ -856,7 +854,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 	})
 }
 
-func (u *DesktopUI) enforceSettingsReadOnlyGuardrail(st *settingsState, state *Bootstrap, enabledWriteTools []registry.Tool) {
+func (u *DesktopUI) enforceSettingsReadOnlyGuardrail(st *settingsState, state *apitypes.Bootstrap, enabledWriteTools []apitypes.Tool) {
 	if len(enabledWriteTools) == 0 || st.guardrailBusy || u.Client == nil {
 		return
 	}

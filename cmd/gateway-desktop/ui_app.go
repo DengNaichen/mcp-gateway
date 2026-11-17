@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"gatewaylab/internal/apitypes"
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
 	"gatewaylab/internal/clientplugin"
@@ -82,7 +83,7 @@ type DesktopUI struct {
 	viewAtomic atomic.Value // stores ViewID
 
 	// Core application data (read/written on the UI thread via win.Update).
-	State     *Bootstrap
+	State     *apitypes.Bootstrap
 	Telemetry GatewayTelemetry
 	ViewMode  ViewID
 
@@ -311,7 +312,7 @@ func (u *DesktopUI) RunAsync(fn func() error) {
 	}()
 }
 
-// Refresh fetches the latest Bootstrap state asynchronously and updates the UI.
+// Refresh fetches the latest bootstrap state asynchronously and updates the UI.
 func (u *DesktopUI) Refresh() {
 	if u.Client == nil {
 		return
@@ -355,7 +356,7 @@ func (u *DesktopUI) Refresh() {
 	}()
 }
 
-// RefreshSync fetches Bootstrap synchronously (suitable inside RunAsync) and updates UI state.
+// RefreshSync fetches bootstrap synchronously (suitable inside RunAsync) and updates UI state.
 func (u *DesktopUI) RefreshSync() error {
 	if u.Client == nil {
 		return nil
@@ -800,7 +801,7 @@ func countBadge(n int) string {
 	return fmt.Sprintf("%d", n)
 }
 
-func reposNavBadge(scopes ScopeOverview) string {
+func reposNavBadge(scopes apitypes.ScopeOverview) string {
 	if len(scopes.Repositories) > 0 {
 		return countBadge(len(scopes.Repositories))
 	}

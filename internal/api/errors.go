@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"gatewaylab/internal/apitypes"
 	"gatewaylab/internal/fault"
 	"gatewaylab/internal/maintenance"
 	"gatewaylab/internal/maintenance/sandbox"
@@ -144,13 +145,14 @@ func (e *appError) payload(message string) map[string]any {
 	return out
 }
 
-// withErrorCode adds err's machine-readable code to a hand-built error body, so
-// setup screens can tell an invalid key from a rate limit without parsing text.
-func withErrorCode(payload map[string]any, err error) map[string]any {
-	if app := httpError(err); app != nil && app.code != "" {
-		payload["code"] = app.code
+// errorBody builds a hand-made error body carrying err's machine-readable code,
+// so setup screens can tell an invalid key from a rate limit without parsing text.
+func errorBody(message, detail string, err error) apitypes.Error {
+	body := apitypes.Error{Error: message, Detail: detail}
+	if app := httpError(err); app != nil {
+		body.Code = app.code
 	}
-	return payload
+	return body
 }
 
 func fail(w http.ResponseWriter, err error) {
@@ -161,9 +163,13 @@ func fail(w http.ResponseWriter, err error) {
 		if app.retryAfter > 0 {
 			w.Header().Set("Retry-After", strconv.Itoa(app.retryAfterSeconds()))
 		}
-		respond(w, app.status, app.payload(app.message))
+		body := apitypes.Error{Error: app.message, Code: app.code}
+		if app.retryAfter > 0 {
+			body.RetryAfterSeconds = app.retryAfterSeconds()
+		}
+		respond(w, app.status, body)
 		return
 	}
 	slog.Error("gateway operation failed", "error", err)
-	respond(w, 500, map[string]string{"error": "操作失败，请查看后端日志"})
+	respond(w, 500, apitypes.Error{Error: "操作失败，请查看后端日志"})
 }

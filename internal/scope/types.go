@@ -107,12 +107,12 @@ type EventScope struct {
 }
 
 type SaveRepositoryRequest struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	Path          string   `json:"path"`
-	GitCommonDirs []string `json:"git_common_dirs"`
-	RootPaths     []string `json:"root_paths"`
-	RemoteHint    string   `json:"remote_hint"`
+	ID            string   `json:"id,omitempty"`
+	Name          string   `json:"name,omitempty"`
+	Path          string   `json:"path,omitempty"`
+	GitCommonDirs []string `json:"git_common_dirs,omitempty"`
+	RootPaths     []string `json:"root_paths,omitempty"`
+	RemoteHint    string   `json:"remote_hint,omitempty"`
 }
 
 type scopePolicyState struct {

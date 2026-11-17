@@ -9,11 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"gatewaylab/internal/apitypes"
 
-	"gatewaylab/internal/gateway"
-	"gatewaylab/internal/registry"
-	"gatewaylab/internal/scope"
+	"github.com/egoist/mygo/ui"
 )
 
 type playgroundDemoExample struct {
@@ -47,16 +45,16 @@ type playgroundState struct {
 
 	routing    bool
 	routeError string
-	result     *gateway.DiscoverResult
+	result     *apitypes.DiscoverResult
 
-	selectedTool  *gateway.Selection
+	selectedTool  *apitypes.Selection
 	loadingSchema bool
 	inspectorTab  int // 0: Input Schema, 1: 发起试调用
 	argsText      string
 	fieldsText    string
 	invoking      bool
 	invokeError   string
-	invocation    *gateway.InvokeResult
+	invocation    *apitypes.InvokeResult
 }
 
 var (
@@ -133,7 +131,7 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 	}
 
 	// Build active server lookup & scope selector options.
-	serversByID := make(map[string]registry.Server, len(state.Registry.Servers))
+	serversByID := make(map[string]apitypes.Server, len(state.Registry.Servers))
 	scopeOptions := []string{"全部已启用服务"}
 	scopeLabelToID := map[string]string{"全部已启用服务": ""}
 	for _, srv := range state.Registry.Servers {
@@ -199,14 +197,14 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 	}
 
 	simScope := activePlaygroundSimScope(st)
-	var simGrants []ScopeServiceGrant
+	var simGrants []apitypes.ServiceGrant
 	if simScope != nil {
 		simGrants, _, _, _ = resolveEffectiveScopeRule(state.Scopes, simScope.RepoKey, simScope.AgentKey)
 	}
 
 	// Count eligible tools under current actor, demo toggle, service scope, and simulated repo/agent scope.
 	eligibleCount := 0
-	toolsByID := make(map[string]registry.Tool, len(state.Registry.Tools))
+	toolsByID := make(map[string]apitypes.Tool, len(state.Registry.Tools))
 	for _, t := range state.Registry.Tools {
 		toolsByID[t.ID] = t
 		if !t.Enabled {
@@ -283,7 +281,7 @@ func applyPlaygroundReplayScope(st *playgroundState, u *DesktopUI) {
 	}
 }
 
-func activePlaygroundSimScope(st *playgroundState) *scope.SimScope {
+func activePlaygroundSimScope(st *playgroundState) *apitypes.SimScope {
 	if st.simRepoKey == "" && st.simAgentKey == "" {
 		return nil
 	}
@@ -295,7 +293,7 @@ func activePlaygroundSimScope(st *playgroundState) *scope.SimScope {
 	if agentKey == "" {
 		agentKey = "*"
 	}
-	return &scope.SimScope{
+	return &apitypes.SimScope{
 		RepoKey:  repoKey,
 		AgentKey: agentKey,
 	}
@@ -304,7 +302,7 @@ func activePlaygroundSimScope(st *playgroundState) *scope.SimScope {
 func (u *DesktopUI) renderPlaygroundComposer(
 	c *ui.Context,
 	st *playgroundState,
-	state *Bootstrap,
+	state *apitypes.Bootstrap,
 	effectiveActor string,
 	scopeOptions []string,
 	scopeLabelToID map[string]string,
@@ -460,8 +458,8 @@ func (u *DesktopUI) renderPlaygroundComposer(
 func (u *DesktopUI) renderPlaygroundResults(
 	c *ui.Context,
 	st *playgroundState,
-	serversByID map[string]registry.Server,
-	toolsByID map[string]registry.Tool,
+	serversByID map[string]apitypes.Server,
+	toolsByID map[string]apitypes.Tool,
 	effectiveActor string,
 ) {
 	SailFlushCard(c, func() {
@@ -598,7 +596,7 @@ func (u *DesktopUI) renderPlaygroundResults(
 func (u *DesktopUI) renderPlaygroundInspector(
 	c *ui.Context,
 	st *playgroundState,
-	toolsByID map[string]registry.Tool,
+	toolsByID map[string]apitypes.Tool,
 	effectiveActor string,
 ) {
 	SailCard(c, func() {
@@ -717,8 +715,8 @@ func (u *DesktopUI) renderPlaygroundInspector(
 
 func (u *DesktopUI) selectPlaygroundTool(
 	st *playgroundState,
-	sel gateway.Selection,
-	toolsByID map[string]registry.Tool,
+	sel apitypes.Selection,
+	toolsByID map[string]apitypes.Tool,
 	effectiveActor string,
 ) {
 	chosen := sel
@@ -741,7 +739,7 @@ func (u *DesktopUI) selectPlaygroundTool(
 	_ = effectiveActor
 }
 
-func initialArgsForTool(t registry.Tool) string {
+func initialArgsForTool(t apitypes.Tool) string {
 	if len(t.Example) > 0 {
 		return PrettyJSON(t.Example)
 	}
@@ -757,7 +755,7 @@ func (u *DesktopUI) runPlaygroundDiscover(st *playgroundState, intent, effective
 		return
 	}
 
-	req := gateway.DiscoverRequest{
+	req := apitypes.DiscoverRequest{
 		Intent:      intent,
 		Context:     st.context,
 		Actor:       effectiveActor,
@@ -803,9 +801,9 @@ func (u *DesktopUI) runPlaygroundDiscover(st *playgroundState, intent, effective
 			st.routing = false
 			st.result = &res
 			if len(res.Tools) > 0 {
-				var toolsByID map[string]registry.Tool
+				var toolsByID map[string]apitypes.Tool
 				if u.State != nil {
-					toolsByID = make(map[string]registry.Tool, len(u.State.Registry.Tools))
+					toolsByID = make(map[string]apitypes.Tool, len(u.State.Registry.Tools))
 					for _, t := range u.State.Registry.Tools {
 						toolsByID[t.ID] = t
 					}
@@ -871,7 +869,7 @@ func (u *DesktopUI) runPlaygroundInvoke(st *playgroundState, toolID, effectiveAc
 		}
 	}
 
-	req := gateway.InvokeRequest{
+	req := apitypes.InvokeRequest{
 		ToolID:    toolID,
 		Arguments: parsedArgs,
 		Fields:    fields,

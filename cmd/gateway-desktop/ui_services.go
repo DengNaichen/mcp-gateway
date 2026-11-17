@@ -12,10 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"gatewaylab/internal/apitypes"
 
-	"gatewaylab/internal/maintenance"
-	"gatewaylab/internal/registry"
+	"github.com/egoist/mygo/ui"
 )
 
 const servicesToolPageSize = 30
@@ -69,7 +68,7 @@ type servicesPageState struct {
 	// Tool edit modal
 	showToolModal    bool
 	toolEditTab      int // 0=属性与 Schema, 1=完整 JSON
-	editingTool      *registry.Tool
+	editingTool      *apitypes.Tool
 	toolEditDesc     string
 	toolEditActors   string
 	toolEditEnabled  bool
@@ -110,7 +109,7 @@ type servicesPageState struct {
 	maintLoading          bool
 	maintError            string
 	maintBusy             bool
-	maintOverview         *MaintenanceOverview
+	maintOverview         *apitypes.MaintenanceStatus
 	maintHydratedServerID string
 	maintFormatIdx        int // 0=原生/OpenAPI, 1=Pi 编程适配
 	maintFilesText        string
@@ -188,7 +187,7 @@ func (st *servicesPageState) resetAddFields() {
 	st.addError = ""
 }
 
-func serviceProtocolTag(s registry.Server) string {
+func serviceProtocolTag(s apitypes.Server) string {
 	if s.Kind == "http" {
 		return "HTTP REST"
 	}
@@ -221,7 +220,7 @@ func (u *DesktopUI) renderServices(c *ui.Context) {
 		st.openAddModal(0)
 	}
 
-	var selectedServer *registry.Server
+	var selectedServer *apitypes.Server
 	if u.SelectedServerID != "" {
 		for i := range u.State.Registry.Servers {
 			if u.State.Registry.Servers[i].ID == u.SelectedServerID {
@@ -257,8 +256,8 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 	servers := u.State.Registry.Servers
 	tools := u.State.Registry.Tools
 
-	var realServers []registry.Server
-	var demoServers []registry.Server
+	var realServers []apitypes.Server
+	var demoServers []apitypes.Server
 	onlineCount := 0
 	for _, s := range servers {
 		if s.Demo {
@@ -271,7 +270,7 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 		}
 	}
 
-	toolsByServer := map[string][]registry.Tool{}
+	toolsByServer := map[string][]apitypes.Tool{}
 	for _, t := range tools {
 		toolsByServer[t.ServerID] = append(toolsByServer[t.ServerID], t)
 	}
@@ -337,7 +336,7 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 		}
 
 		q := strings.ToLower(strings.TrimSpace(st.listQuery))
-		var filtered []registry.Server
+		var filtered []apitypes.Server
 		for _, s := range realServers {
 			switch st.listProtoFilter {
 			case 1:
@@ -528,10 +527,10 @@ func (st *servicesPageState) enterDetail(serverID string) {
 
 // --- Service Detail View ---
 
-func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, server registry.Server) {
+func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, server apitypes.Server) {
 	st.enterDetail(server.ID)
 
-	var srvTools []registry.Tool
+	var srvTools []apitypes.Tool
 	enabledCount := 0
 	roCount := 0
 	for _, t := range u.State.Registry.Tools {
@@ -733,7 +732,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 
 // --- Detail Subtab 0: Tool Whitelist ---
 
-func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, server registry.Server, srvTools []registry.Tool, enabledCount int) {
+func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, server apitypes.Server, srvTools []apitypes.Tool, enabledCount int) {
 	SailFlushCard(c, func() {
 		// Search & filter toolbar
 		ui.Row(c).
@@ -798,7 +797,7 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 			})
 
 		q := strings.ToLower(strings.TrimSpace(st.toolQuery))
-		var visible []registry.Tool
+		var visible []apitypes.Tool
 		for _, t := range srvTools {
 			switch st.toolFilter {
 			case 1:
@@ -956,7 +955,7 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 
 // --- Detail Subtab 1: Connection & Auth Config ---
 
-func (st *servicesPageState) hydrateConnForm(server registry.Server) {
+func (st *servicesPageState) hydrateConnForm(server apitypes.Server) {
 	st.connHydratedID = server.ID
 	st.connName = server.Name
 	st.connDesc = server.Description
@@ -984,7 +983,7 @@ func (st *servicesPageState) hydrateConnForm(server registry.Server) {
 	st.connError = ""
 }
 
-func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageState, server registry.Server) {
+func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageState, server apitypes.Server) {
 	if st.connHydratedID != server.ID {
 		st.hydrateConnForm(server)
 	}
@@ -1138,7 +1137,7 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 	})
 }
 
-func (st *servicesPageState) buildServerFromConnForm(orig registry.Server) (registry.Server, error) {
+func (st *servicesPageState) buildServerFromConnForm(orig apitypes.Server) (apitypes.Server, error) {
 	out := orig
 	out.Name = strings.TrimSpace(st.connName)
 	out.Description = strings.TrimSpace(st.connDesc)
@@ -1180,7 +1179,7 @@ func (st *servicesPageState) buildServerFromConnForm(orig registry.Server) (regi
 
 // --- Detail Subtab 2: Health & Maintenance Overview ---
 
-func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageState, server registry.Server) {
+func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageState, server apitypes.Server) {
 	if st.maintOverview == nil && !st.maintLoading && st.maintError == "" {
 		u.loadMaintenanceOverview(st, server)
 	}
@@ -1358,7 +1357,7 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 
 	// Maintenance runs list (hairline-divided FlushCard)
 	SailFlushCard(c, func() {
-		var runs []maintenance.MaintenanceRun
+		var runs []apitypes.MaintenanceRun
 		if st.maintOverview != nil {
 			for _, r := range st.maintOverview.Runs {
 				if r.ServerID == server.ID {
@@ -1475,9 +1474,9 @@ func maintenanceStatusLabel(status string) string {
 	}
 }
 
-func (st *servicesPageState) hydrateMaintSource(ov MaintenanceOverview, server registry.Server) {
+func (st *servicesPageState) hydrateMaintSource(ov apitypes.MaintenanceStatus, server apitypes.Server) {
 	st.maintHydratedServerID = server.ID
-	var found *maintenance.MaintenanceSource
+	var found *apitypes.MaintenanceSource
 	for i := range ov.Sources {
 		if ov.Sources[i].ServerID == server.ID {
 			found = &ov.Sources[i]
@@ -1828,7 +1827,7 @@ func (st *servicesPageState) parsePasteJSON() {
 
 // --- Tool Edit Modal & Add HTTP Tool Modal ---
 
-func (st *servicesPageState) openToolEditModal(t registry.Tool) {
+func (st *servicesPageState) openToolEditModal(t apitypes.Tool) {
 	copyTool := t
 	st.editingTool = &copyTool
 	st.showToolModal = true
@@ -1965,7 +1964,7 @@ func (st *servicesPageState) openAddHTTPToolModal() {
 	st.httpToolError = ""
 }
 
-func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState, server registry.Server) {
+func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState, server apitypes.Server) {
 	ui.DialogBase(c.Key("add-http-tool-dialog-"+server.ID), &st.showAddHTTPTool, func(backdrop, panel ui.Element) {
 		backdrop.Background(ui.RGBA(10, 37, 64, 0.42))
 		panel.Width(600).
@@ -2051,7 +2050,7 @@ func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState,
 
 // --- Async API Operations ---
 
-func (u *DesktopUI) toggleServerEnabled(st *servicesPageState, server registry.Server, enabled bool) {
+func (u *DesktopUI) toggleServerEnabled(st *servicesPageState, server apitypes.Server, enabled bool) {
 	if u.Client == nil {
 		return
 	}
@@ -2077,7 +2076,7 @@ func (u *DesktopUI) toggleServerEnabled(st *servicesPageState, server registry.S
 	})
 }
 
-func (u *DesktopUI) syncServerTools(st *servicesPageState, server registry.Server) {
+func (u *DesktopUI) syncServerTools(st *servicesPageState, server apitypes.Server) {
 	if u.Client == nil || st.syncingServerID != "" {
 		return
 	}
@@ -2121,7 +2120,7 @@ func (u *DesktopUI) applyServerToolWhitelist(st *servicesPageState, serverID str
 	})
 }
 
-func (u *DesktopUI) toggleSingleToolWhitelist(st *servicesPageState, serverID string, srvTools []registry.Tool, targetID string, enable bool) {
+func (u *DesktopUI) toggleSingleToolWhitelist(st *servicesPageState, serverID string, srvTools []apitypes.Tool, targetID string, enable bool) {
 	ids := make([]string, 0, len(srvTools))
 	for _, t := range srvTools {
 		on := t.Enabled
@@ -2139,7 +2138,7 @@ func (u *DesktopUI) toggleSingleToolWhitelist(st *servicesPageState, serverID st
 	u.applyServerToolWhitelist(st, serverID, ids, label)
 }
 
-func (u *DesktopUI) deactivateService(st *servicesPageState, server registry.Server) {
+func (u *DesktopUI) deactivateService(st *servicesPageState, server apitypes.Server) {
 	if u.Client == nil || st.deactivateBusy {
 		return
 	}
@@ -2183,7 +2182,7 @@ func (u *DesktopUI) submitAddMCPService(st *servicesPageState) {
 		name = id
 	}
 
-	payload := registry.Server{
+	payload := apitypes.Server{
 		ID:          id,
 		Name:        name,
 		Description: strings.TrimSpace(st.addDescription),
@@ -2287,7 +2286,7 @@ func (u *DesktopUI) submitAddOpenAPIService(st *servicesPageState) {
 		return
 	}
 
-	srv := registry.Server{
+	srv := apitypes.Server{
 		ID:          id,
 		Name:        name,
 		Description: strings.TrimSpace(st.addDescription),
@@ -2323,7 +2322,7 @@ func (u *DesktopUI) submitAddOpenAPIService(st *servicesPageState) {
 	}()
 }
 
-func (u *DesktopUI) saveConnForm(st *servicesPageState, orig registry.Server, testSource bool) {
+func (u *DesktopUI) saveConnForm(st *servicesPageState, orig apitypes.Server, testSource bool) {
 	if u.Client == nil || st.connBusy {
 		return
 	}
@@ -2370,12 +2369,12 @@ func (u *DesktopUI) saveConnForm(st *servicesPageState, orig registry.Server, te
 	}()
 }
 
-func (u *DesktopUI) saveConnJSON(st *servicesPageState, orig registry.Server) {
+func (u *DesktopUI) saveConnJSON(st *servicesPageState, orig apitypes.Server) {
 	if u.Client == nil || st.connBusy {
 		return
 	}
 	st.connError = ""
-	var payload registry.Server
+	var payload apitypes.Server
 	if err := json.Unmarshal([]byte(st.connRawJSON), &payload); err != nil {
 		st.connError = "JSON 格式无效: " + err.Error()
 		return
@@ -2403,7 +2402,7 @@ func (u *DesktopUI) saveConnJSON(st *servicesPageState, orig registry.Server) {
 	}()
 }
 
-func (u *DesktopUI) probeServerConnection(st *servicesPageState, server registry.Server) {
+func (u *DesktopUI) probeServerConnection(st *servicesPageState, server apitypes.Server) {
 	if u.Client == nil || st.connBusy {
 		return
 	}
@@ -2428,12 +2427,12 @@ func (u *DesktopUI) probeServerConnection(st *servicesPageState, server registry
 	}()
 }
 
-func (u *DesktopUI) saveEditedTool(st *servicesPageState, orig registry.Tool) {
+func (u *DesktopUI) saveEditedTool(st *servicesPageState, orig apitypes.Tool) {
 	if u.Client == nil || st.toolEditBusy {
 		return
 	}
 	st.toolEditError = ""
-	var payload registry.Tool
+	var payload apitypes.Tool
 	if st.toolEditTab == 1 {
 		if err := json.Unmarshal([]byte(st.toolEditRawJSON), &payload); err != nil {
 			st.toolEditError = "JSON 格式无效: " + err.Error()
@@ -2484,7 +2483,7 @@ func (u *DesktopUI) submitAddHTTPTool(st *servicesPageState, serverID string) {
 		st.httpToolError = "JSON Schema 格式无效: " + err.Error()
 		return
 	}
-	payload := registry.Tool{
+	payload := apitypes.Tool{
 		ID:          serverID + "." + name,
 		ServerID:    serverID,
 		Name:        name,
@@ -2518,7 +2517,7 @@ func (u *DesktopUI) submitAddHTTPTool(st *servicesPageState, serverID string) {
 	}()
 }
 
-func (u *DesktopUI) loadMaintenanceOverview(st *servicesPageState, server registry.Server) {
+func (u *DesktopUI) loadMaintenanceOverview(st *servicesPageState, server apitypes.Server) {
 	if u.Client == nil || st.maintLoading {
 		return
 	}
@@ -2540,7 +2539,7 @@ func (u *DesktopUI) loadMaintenanceOverview(st *servicesPageState, server regist
 	}()
 }
 
-func (u *DesktopUI) saveMaintenanceConfig(st *servicesPageState, server registry.Server, runNow, force bool) {
+func (u *DesktopUI) saveMaintenanceConfig(st *servicesPageState, server apitypes.Server, runNow, force bool) {
 	if u.Client == nil || st.maintBusy {
 		return
 	}
@@ -2561,7 +2560,7 @@ func (u *DesktopUI) saveMaintenanceConfig(st *servicesPageState, server registry
 		format = "pi"
 	}
 
-	src := maintenance.MaintenanceSource{
+	src := apitypes.MaintenanceSource{
 		ServerID:        server.ID,
 		Format:          format,
 		Files:           splitLines(st.maintFilesText),
@@ -2611,7 +2610,7 @@ func (u *DesktopUI) saveMaintenanceConfig(st *servicesPageState, server registry
 	}()
 }
 
-func (u *DesktopUI) runMaintenanceAction(st *servicesPageState, server registry.Server, okMsg string, fn func(context.Context) error) {
+func (u *DesktopUI) runMaintenanceAction(st *servicesPageState, server apitypes.Server, okMsg string, fn func(context.Context) error) {
 	if u.Client == nil || st.maintBusy {
 		return
 	}

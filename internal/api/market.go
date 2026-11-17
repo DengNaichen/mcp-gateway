@@ -3,13 +3,12 @@ package api
 import (
 	"net/http"
 
-	"gatewaylab/internal/market"
+	"gatewaylab/internal/apitypes"
 )
 
 func (g *server) registerMarket(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/market", func(w http.ResponseWriter, r *http.Request) {
-		res := g.Market().MarketServers(r.Context(), r.URL.Query().Get("q"))
-		respond(w, 200, res)
+		respond(w, 200, wireMarketSearch(g.Market().MarketServers(r.Context(), r.URL.Query().Get("q"))))
 	})
 	mux.HandleFunc("GET /api/market/icon", func(w http.ResponseWriter, r *http.Request) {
 		data, ct, err := g.Market().MarketIcon(r.Context(), r.URL.Query().Get("id"), r.URL.Query().Get("url"))
@@ -27,16 +26,16 @@ func (g *server) registerMarket(mux *http.ServeMux) {
 		_, _ = w.Write(data) //nolint:gosec // G705: image/* only, nosniff, and a sandbox CSP block script execution
 	})
 	mux.HandleFunc("POST /api/market/install", func(w http.ResponseWriter, r *http.Request) {
-		var in market.InstallMarketRequest
+		var in apitypes.InstallMarketRequest
 		if err := decode(w, r, &in); err != nil {
 			fail(w, err)
 			return
 		}
-		out, err := g.Market().InstallMarketServer(r.Context(), in)
+		out, err := g.Market().InstallMarketServer(r.Context(), domainInstallRequest(in))
 		if err != nil {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, out)
+		respond(w, 200, wireInstallResult(out))
 	})
 }

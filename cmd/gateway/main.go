@@ -15,7 +15,6 @@ import (
 
 	"gatewaylab/internal/api"
 	"gatewaylab/internal/buildinfo"
-	"gatewaylab/internal/gateway"
 )
 
 func run() error {
@@ -40,7 +39,7 @@ func run() error {
 	if public := os.Getenv(buildinfo.EnvironmentKey("GATEWAY_PUBLIC_URL")); public != "" {
 		base = public
 	}
-	g, err := gateway.New(*data, base)
+	g, err := api.Open(*data, base)
 	if err != nil {
 		return fmt.Errorf("initialize gateway: %w", err)
 	}
@@ -49,7 +48,7 @@ func run() error {
 			slog.Error("close gateway database", "error", err)
 		}
 	}()
-	server := &http.Server{Addr: *addr, Handler: api.Handler(g), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
+	server := &http.Server{Addr: *addr, Handler: g.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	g.StartMaintenance(ctx)
