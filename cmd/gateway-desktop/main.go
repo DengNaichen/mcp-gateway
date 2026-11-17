@@ -357,6 +357,9 @@ func run() error {
 	}
 	defer d.cleanup()
 
+	removeWindowChrome := configureWindowChrome()
+	defer removeWindowChrome()
+
 	mygo.Theme.SetSource(mygo.ThemeSystem)
 	if buildinfo.Current().Channel == "stable" {
 		mygo.Use(native.Plugin)
