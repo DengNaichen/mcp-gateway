@@ -152,6 +152,38 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 		app.updateUI(func() { app.refreshClientConfigs() })
 		writeJSON(w, 200, app.ClientConfigs.Statuses(rt.MCPURL))
 	})
+	mux.HandleFunc("GET /plugins", func(w http.ResponseWriter, r *http.Request) {
+		d.mu.Lock()
+		app := d.ui
+		rt := d.runtime
+		d.mu.Unlock()
+		if app == nil || app.ClientPlugins == nil || rt == nil {
+			writeJSON(w, 409, map[string]string{"error": "not ready"})
+			return
+		}
+		writeJSON(w, 200, app.ClientPlugins.Statuses(rt.MCPURL))
+	})
+	mux.HandleFunc("POST /plugins", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ ID, Action string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		d.mu.Lock()
+		app := d.ui
+		rt := d.runtime
+		d.mu.Unlock()
+		if app == nil || app.ClientPlugins == nil || rt == nil {
+			writeJSON(w, 409, map[string]string{"error": "not ready"})
+			return
+		}
+		if err := app.changeClientPlugin(in.ID, in.Action, rt.MCPURL); err != nil {
+			writeJSON(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		app.updateUI(func() { app.refreshClientConfigs() })
+		writeJSON(w, 200, app.ClientPlugins.Statuses(rt.MCPURL))
+	})
 
 	mux.HandleFunc("GET /clipboard", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"text": mygo.Clipboard.ReadText()})

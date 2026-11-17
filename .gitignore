@@ -2,6 +2,7 @@
 /build/
 /.mygo/
 /data/
+/resources/
 .DS_Store
 *.log
 

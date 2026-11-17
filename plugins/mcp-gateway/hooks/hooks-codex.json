@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^mcp__(?:plugin_[A-Za-z0-9_-]+?_)?mcp[-_]gateway__(discover_tools|get_tool_schema|invoke_tool)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${PLUGIN_ROOT}/scripts/run-gateway-hook\" codex",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
