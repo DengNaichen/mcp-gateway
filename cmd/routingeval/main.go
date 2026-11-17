@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,15 +84,17 @@ type discovery struct {
 	} `json:"tools"`
 }
 
-func discover(client *http.Client, url, token, intent string) (discovery, error) {
+// discover calls /api/discover once. On HTTP 429 it also returns the
+// Retry-After delay the gateway passed on from the model provider.
+func discover(client *http.Client, url, token, intent string) (discovery, time.Duration, error) {
 	var d discovery
 	body, err := json.Marshal(map[string]any{"intent": intent, "summary_only": true})
 	if err != nil {
-		return d, fmt.Errorf("encode request: %w", err)
+		return d, 0, fmt.Errorf("encode request: %w", err)
 	}
 	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(url, "/")+"/api/discover", bytes.NewReader(body))
 	if err != nil {
-		return d, fmt.Errorf("create request: %w", err)
+		return d, 0, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
@@ -99,7 +102,7 @@ func discover(client *http.Client, url, token, intent string) (discovery, error)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return d, fmt.Errorf("call gateway: %w", err)
+		return d, 0, fmt.Errorf("call gateway: %w", err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -107,30 +110,31 @@ func discover(client *http.Client, url, token, intent string) (discovery, error)
 		}
 	}()
 	if resp.StatusCode != http.StatusOK {
-		return d, fmt.Errorf("gateway returned HTTP %d", resp.StatusCode)
+		var wait time.Duration
+		if seconds, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && resp.StatusCode == http.StatusTooManyRequests {
+			wait = time.Duration(seconds) * time.Second
+		}
+		return d, wait, fmt.Errorf("gateway returned HTTP %d", resp.StatusCode)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
-		return d, fmt.Errorf("decode response: %w", err)
+		return d, 0, fmt.Errorf("decode response: %w", err)
 	}
-	return d, nil
+	return d, 0, nil
 }
 
-// discoverWithRetry waits and retries on failure: model providers rate-limit by
-// input tokens per minute, and the gateway reports their 429 as a 502.
+// discoverWithRetry waits out rate limits the gateway could not absorb within
+// its own retry budget: on HTTP 429 it sleeps for the Retry-After delay the
+// gateway passes on from the provider. Other failures are returned at once.
 func discoverWithRetry(client *http.Client, url, token, intent string) (discovery, error) {
-	const attempts, wait = 4, 20 * time.Second
-	var d discovery
-	var err error
-	for attempt := 1; attempt <= attempts; attempt++ {
-		if d, err = discover(client, url, token, intent); err == nil {
-			return d, nil
+	const attempts = 4
+	for attempt := 1; ; attempt++ {
+		d, wait, err := discover(client, url, token, intent)
+		if err == nil || wait <= 0 || attempt == attempts {
+			return d, err
 		}
-		if attempt < attempts {
-			fmt.Fprintf(os.Stderr, "  retrying in %s after: %v\n", wait, err)
-			time.Sleep(wait)
-		}
+		fmt.Fprintf(os.Stderr, "  rate limited; retrying in %s\n", wait)
+		time.Sleep(wait)
 	}
-	return d, err
 }
 
 func short(ids []string) string {

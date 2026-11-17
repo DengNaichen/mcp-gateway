@@ -7,7 +7,7 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 output = subprocess.check_output(
-    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault"],
+    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault", "./internal/retry"],
     cwd=root, text=True,
 )
 allowed = {
@@ -22,7 +22,7 @@ allowed.update({
     "gatewaylab/internal/openapi": {"gatewaylab/internal/registry"},
 })
 allowed.update({
-    "gatewaylab/internal/model": {"gatewaylab/internal/registry", "gatewaylab/internal/store", "gatewaylab/internal/secrets", "gatewaylab/internal/input"},
+    "gatewaylab/internal/model": {"gatewaylab/internal/registry", "gatewaylab/internal/store", "gatewaylab/internal/secrets", "gatewaylab/internal/input", "gatewaylab/internal/retry"},
     "gatewaylab/internal/scope": {"gatewaylab/internal/registry", "gatewaylab/internal/store", "gatewaylab/internal/workspace", "gatewaylab/internal/buildinfo"},
 })
 allowed.update({
@@ -42,6 +42,7 @@ allowed.update({
     "gatewaylab/internal/mcputil": set(),
     "gatewaylab/internal/contracttest": {"gatewaylab/internal/input", "gatewaylab/internal/mcputil"},
     "gatewaylab/internal/fault": set(),
+    "gatewaylab/internal/retry": set(),
 })
 decoder = json.JSONDecoder()
 while output.strip():
@@ -64,7 +65,7 @@ for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "
 print("PASS: foundation/policy/routing/upstream/maintenance dependency direction; SQL stays in store")
 
 # Domain errors carry classifications; only transport adapters choose HTTP status.
-for name in ("gateway", "openapi", "model", "scope", "routing", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault"):
+for name in ("gateway", "openapi", "model", "scope", "routing", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault", "retry"):
     for path in (root / "internal" / name).glob("*.go"):
         if path.name.endswith("_test.go"):
             continue

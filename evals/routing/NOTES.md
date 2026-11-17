@@ -41,7 +41,9 @@ are what degrade first.
 
 - Price: $0.10 per 1M input tokens, 0 output. Shared input is billed once; each question adds its own tokens.
 - Tier 1 rate limit: 1,000,000 input tokens per minute, so about 26-30 discoveries per minute at 179 tools.
-  The gateway reports the upstream 429 as a 502 (issue #1).
+  The gateway retries 429s within the model timeout, honouring the provider's retry delay; when the
+  delay does not fit it returns 429 with `Retry-After` (code `model_rate_limited`), which `routingeval` waits out.
+  Other failures (e.g. 502/504 after the gateway's own retries) now abort the run instead of being retried blindly.
 - Tokens per discovery grow linearly with tool count (about 0.2k per tool).
 
 ## Caveats and open questions

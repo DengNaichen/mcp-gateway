@@ -47,7 +47,7 @@ func AskChoice(ctx context.Context, s Settings, key, input, instructions string,
 		return answer, usage, err
 	}
 	if !slices.ContainsFunc(choices, func(c Choice) bool { return c.Value == answer.Choice }) {
-		return answer, usage, domainError(ErrUpstream, "Decisions 精选返回了候选之外的选项", nil)
+		return answer, usage, badResponse("Decisions 精选返回了候选之外的选项", nil)
 	}
 	return answer, usage, nil
 }
@@ -98,12 +98,15 @@ func parseMapChoice(b []byte, geminiUsage bool) (ChoiceAnswer, Usage, error) {
 		Usage mapUsage `json:"usage"`
 	}
 	if err := json.Unmarshal(b, &response); err != nil {
-		return ChoiceAnswer{}, Usage{}, domainError(ErrUpstream, "Decisions 响应格式无效", err)
+		return ChoiceAnswer{}, Usage{}, badResponse("Decisions 响应格式无效", err)
 	}
 	usage := response.Usage.toModelUsage(geminiUsage)
 	answer, ok := response.Answers[ChoiceQuestionName]
+	if answer.Type == "refusal" {
+		return ChoiceAnswer{}, usage, refused()
+	}
 	if !ok || answer.Type != "choice" {
-		return ChoiceAnswer{}, usage, domainError(ErrUpstream, "Decisions 回答名称、顺序或类型不匹配", nil)
+		return ChoiceAnswer{}, usage, badResponse("Decisions 回答名称、顺序或类型不匹配", nil)
 	}
 	return ChoiceAnswer{Choice: answer.Choice, Probabilities: answer.Probabilities}, usage, nil
 }
@@ -130,11 +133,14 @@ func parseOpenAIChoice(b []byte) (ChoiceAnswer, Usage, error) {
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(b, &response); err != nil {
-		return ChoiceAnswer{}, Usage{}, domainError(ErrUpstream, "Decisions 响应格式无效", err)
+		return ChoiceAnswer{}, Usage{}, badResponse("Decisions 响应格式无效", err)
 	}
 	usage := Usage{PromptTokens: response.Usage.InputTokens, CompletionTokens: response.Usage.OutputTokens}
+	if len(response.Answers) == 1 && response.Answers[0].Type == "refusal" {
+		return ChoiceAnswer{}, usage, refused()
+	}
 	if len(response.Answers) != 1 || response.Answers[0].Name != ChoiceQuestionName || response.Answers[0].Type != "choice" {
-		return ChoiceAnswer{}, usage, domainError(ErrUpstream, "Decisions 回答名称、顺序或类型不匹配", nil)
+		return ChoiceAnswer{}, usage, badResponse("Decisions 回答名称、顺序或类型不匹配", nil)
 	}
 	return ChoiceAnswer{Choice: response.Answers[0].Choice, Probabilities: response.Answers[0].Probabilities}, usage, nil
 }

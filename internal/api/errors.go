@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
+	"time"
 
 	"gatewaylab/internal/fault"
 	"gatewaylab/internal/maintenance"
@@ -22,6 +25,8 @@ type appError struct {
 	code    string
 	message string
 	cause   error
+	// retryAfter is surfaced as the Retry-After header and retry_after_seconds.
+	retryAfter time.Duration
 }
 
 func (e *appError) Error() string {
@@ -48,13 +53,17 @@ func httpError(err error) *appError {
 	var modelErr *model.Error
 	if errors.As(err, &modelErr) {
 		status := 400
-		if errors.Is(modelErr, model.ErrNotFound) {
+		switch {
+		case errors.Is(modelErr, model.ErrNotFound):
 			status = 404
-		}
-		if errors.Is(modelErr, model.ErrUpstream) {
+		case errors.Is(modelErr, model.ErrRateLimited):
+			status = 429
+		case errors.Is(modelErr, model.ErrTimeout):
+			status = 504
+		case errors.Is(modelErr, model.ErrUpstream):
 			status = 502
 		}
-		return &appError{status: status, message: modelErr.Message, cause: modelErr.Cause}
+		return &appError{status: status, code: modelErr.Code, message: modelErr.Message, cause: modelErr.Cause, retryAfter: modelErr.RetryAfter}
 	}
 	var scopeErr *scope.Error
 	if errors.As(err, &scopeErr) {
@@ -116,16 +125,43 @@ func httpError(err error) *appError {
 	}
 	return nil
 }
+
+// retryAfterSeconds rounds up: waiting less than the provider asked is useless.
+func (e *appError) retryAfterSeconds() int {
+	return int(math.Ceil(e.retryAfter.Seconds()))
+}
+
+// payload is the machine-readable error body shared by HTTP responses and MCP
+// tool results: callers branch on code and retry_after_seconds, not on text.
+func (e *appError) payload(message string) map[string]any {
+	out := map[string]any{"error": message}
+	if e.code != "" {
+		out["code"] = e.code
+	}
+	if e.retryAfter > 0 {
+		out["retry_after_seconds"] = e.retryAfterSeconds()
+	}
+	return out
+}
+
+// withErrorCode adds err's machine-readable code to a hand-built error body, so
+// setup screens can tell an invalid key from a rate limit without parsing text.
+func withErrorCode(payload map[string]any, err error) map[string]any {
+	if app := httpError(err); app != nil && app.code != "" {
+		payload["code"] = app.code
+	}
+	return payload
+}
+
 func fail(w http.ResponseWriter, err error) {
 	if app := httpError(err); app != nil {
 		if app.cause != nil {
 			slog.Warn("gateway operation failed", "status", app.status, "error", err)
 		}
-		payload := map[string]any{"error": app.message}
-		if app.code != "" {
-			payload["code"] = app.code
+		if app.retryAfter > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(app.retryAfterSeconds()))
 		}
-		respond(w, app.status, payload)
+		respond(w, app.status, app.payload(app.message))
 		return
 	}
 	slog.Error("gateway operation failed", "error", err)

@@ -34,7 +34,7 @@ func selectTools(ctx context.Context, s model.Settings, key string, req Discover
 // the boundary that restores the existing public HTTP status and safe message.
 func TestRoutingModelErrorMapping(t *testing.T) {
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
+		w.WriteHeader(http.StatusUnauthorized) // not retried, keeps the test fast
 		_, _ = w.Write([]byte("provider echoed live-key"))
 	}))
 	defer host.Close()
@@ -43,7 +43,7 @@ func TestRoutingModelErrorMapping(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/invalid=%v", method, invalidConfig), func(t *testing.T) {
 				settings := model.Settings{BaseURL: host.URL, Model: "fixture", TimeoutSeconds: 5}
 				wantKind := model.ErrUpstream
-				wantMessage := "Decisions 服务返回 HTTP 503: provider echoed [redacted]"
+				wantMessage := "Decisions 服务返回 HTTP 401: provider echoed [redacted]"
 				if invalidConfig {
 					settings.BaseURL += "/chat/completions"
 					wantKind = model.ErrInvalid
