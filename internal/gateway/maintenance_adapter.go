@@ -86,22 +86,22 @@ func (a maintenanceAdapter) CallMCP(ctx context.Context, s registry.Server, t re
 	return a.g.upstream.CallMCP(ctx, s, t, args)
 }
 func (a maintenanceAdapter) CallHTTP(ctx context.Context, s registry.Server, t registry.Tool, args map[string]any) (any, error) {
-	return upstream.CallHTTPWithLookup(ctx, s, t, args, a.g.lookupEnv)
+	return upstream.CallHTTPWithLookup(ctx, s, t, args, a.g.serverLookup(s))
 }
 func (a maintenanceAdapter) RedactResponse(result any, s registry.Server) any {
-	return upstream.RedactResponseWithLookup(result, s, a.g.lookupEnv)
+	return upstream.RedactResponseWithLookup(result, s, a.g.serverLookup(s))
 }
 func (a maintenanceAdapter) ErrorDetail(err error) string { return a.g.ErrorDetail(err) }
 func (a maintenanceAdapter) Record(kind, actor, status, title string, start time.Time, detail any) {
 	a.g.activity.Record(kind, actor, status, title, start, detail)
 }
 func (g *Gateway) callAdapter(ctx context.Context, s registry.Server, t registry.Tool, args map[string]any) (any, error) {
-	if err := upstream.CheckEnvironment(s, g.lookupEnv); err != nil {
+	if err := upstream.CheckEnvironment(s, g.serverLookup(s)); err != nil {
 		return nil, err
 	}
 	p, err := g.maintenance.AdapterPath(t)
 	if err != nil {
 		return nil, err
 	}
-	return sandbox.CallAdapterFile(ctx, g.execution, s, t, args, p)
+	return sandbox.CallAdapterFileWithLookup(ctx, g.execution, s, t, args, p, g.serverLookup(s))
 }

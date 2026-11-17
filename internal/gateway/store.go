@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 	"gatewaylab/internal/access"
 	"gatewaylab/internal/activity"
+	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/demo"
 	"gatewaylab/internal/fault"
 	"gatewaylab/internal/maintenance"
@@ -37,7 +39,7 @@ type Gateway struct {
 	publicationConfigMu sync.RWMutex
 	registry            *registry.Service
 	model               *model.Service
-	runtimeSecrets      secrets.Store
+	credentials         *secrets.Store
 	activity            *activity.Service
 	dir                 string
 	baseURL             string
@@ -51,7 +53,11 @@ type Gateway struct {
 	scope               *scope.Service
 }
 
-type Options struct{ OpenBrowser func(string) error }
+type Options struct {
+	OpenBrowser        func(string) error
+	PersistCredentials bool
+	CredentialBackend  secrets.Backend
+}
 
 func New(dir, baseURL string) (*Gateway, error) { return NewWithOptions(dir, baseURL, Options{}) }
 func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
@@ -92,7 +98,22 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
 		db:         db,
 		storage:    storage,
 	}
-	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupEnv, OpenBrowser: opts.OpenBrowser})
+	backend := opts.CredentialBackend
+	mode := os.Getenv("GATEWAY_CREDENTIAL_STORE")
+	if mode != "" && mode != "memory" && mode != "keychain" {
+		return nil, invalid("GATEWAY_CREDENTIAL_STORE 必须为 memory 或 keychain")
+	}
+	if backend == nil && mode != "memory" && (mode == "keychain" || (opts.PersistCredentials && runtime.GOOS == "darwin")) {
+		backend, err = secrets.Keychain(buildinfo.Current().Channel, dir)
+		if err != nil {
+			return nil, err
+		}
+	}
+	g.credentials, err = secrets.Open(backend)
+	if err != nil {
+		return nil, err
+	}
+	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupServerEnv, OpenBrowser: opts.OpenBrowser})
 	if err := g.loadRegistry(); err != nil {
 		return nil, err
 	}
@@ -128,7 +149,7 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
 		}
 	}
 	g.registry = registry.New(relocated, store.Registry(db).Save)
-	g.model, err = model.New(db)
+	g.model, err = model.New(db, g.credentials)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +161,7 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	g.market = market.New(market.Options{Dir: dir, Snapshot: g.Snapshot, SaveServer: g.Registry().SaveServer, ImportMCP: g.ImportMCP, SetRuntimeSecret: g.setRuntimeSecret, ErrorDetail: g.ErrorDetail})
+	g.market = market.New(market.Options{Dir: dir, Snapshot: g.Snapshot, ImportMCP: g.ImportMCP, SaveCredentials: g.saveServerCredentials, ErrorDetail: g.ErrorDetail})
 	ready = true
 	return g, nil
 }
@@ -188,21 +209,6 @@ func (g *Gateway) identityAllowsTool(ctx context.Context, t registry.Tool, actor
 
 func (g *Gateway) authorizedTool(ctx context.Context, t registry.Tool, actor string) bool {
 	return g.identityAllowsTool(ctx, t, actor) && g.scope.AllowsTool(ctx, t)
-}
-
-func (g *Gateway) lookupEnv(key string) string {
-	if g == nil {
-		return os.Getenv(key)
-	}
-	return g.runtimeSecrets.Lookup(key)
-}
-
-func (g *Gateway) expandEnv(value string) string { return os.Expand(value, g.lookupEnv) }
-
-func (g *Gateway) setRuntimeSecret(key, value string) {
-	if g != nil {
-		g.runtimeSecrets.Set(key, value)
-	}
 }
 
 func (g *Gateway) record(kind, actor, status, title string, started time.Time, detail any) {

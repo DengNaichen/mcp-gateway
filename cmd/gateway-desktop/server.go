@@ -211,7 +211,7 @@ func startOrAttachGateway(ctx context.Context, addr, dataDir string) (*gatewayRu
 		baseURL = strings.TrimRight(public, "/")
 	}
 
-	g, err := api.Open(dataDir, baseURL)
+	g, err := api.Open(dataDir, baseURL, api.Options{PersistCredentials: true})
 	if err != nil {
 		_ = ln.Close()
 		return nil, nil, fmt.Errorf("initialize gateway: %w", err)

@@ -129,8 +129,8 @@ $$\text{Authorized}(t) = \text{Access.IdentityAllowsTool}(ctx, t, actor) \;\cap\
 ### 3.3 凭据隔离与脱敏边界（Credential & Redaction Boundary）
 
 - **配置不落明文密钥**：上游 `servers.headers` 与 `servers.env` 仅保存 `${ENV_VAR}` 占位符，SQLite 中绝不持久化 API Key 或 OAuth 令牌。
-- **进程内存隔离**：模型 Key（`GATEWAY_MODEL_API_KEY`、桌面端提交的 `api_key` 及 `model.profileKeys`）、市场安装交互输入的密钥（`Gateway.runtimeSecrets`）以及远程 MCP OAuth `TokenSource`（`upstream.oauthTokens`）均仅驻留进程内存。
-- **出站展开与入站脱敏**：仅在构造上游 HTTP 请求或启动 stdio 子进程（`procutil.ProcessEnvironment` 最小环境 + 显式 `env`）时按 `runtimeSecrets -> os.Getenv` 解析 `${ENV_VAR}`。上游工具返回后，`Invoke` 必须先执行 `upstream.RedactResponseWithLookup`（遮盖敏感键名、当前服务展开后的 `headers`/`env` 密钥、自定义 `redact_fields` 路径与可选 `redact_emails`），**脱敏严格早于 `fields` 响应裁剪投影**。所有错误文本经 `Gateway.ErrorDetail` 替换模型密钥、OAuth token 与服务凭据为 `[redacted]` 并截断至 4000 字符后，方才写入 `activity` 或返回调用方。
+- **凭据存储隔离**：macOS 桌面端通过 `secrets.Store` 将模型 Key 与服务 Header/Env 凭据保存到系统 Keychain，按渠道与规范化数据目录区分实例，按模型档案与服务区分条目。SQLite 仅保存配置/引用；钥匙串写入失败会使保存操作失败，配置提交失败会回滚凭据。无界面/非 macOS 默认仍为内存和环境变量，macOS 可通过 `GATEWAY_CREDENTIAL_STORE=keychain` 显式启用。远程 MCP OAuth `TokenSource` 仍驻留进程内存。
+- **出站展开与入站脱敏**：仅在构造上游 HTTP 请求或启动 stdio 子进程（`procutil.ProcessEnvironment` 最小环境 + 显式 `env`）时按 `os.Getenv -> 当前服务保存凭据` 解析 `${ENV_VAR}`。上游工具返回后，`Invoke` 必须先执行 `upstream.RedactResponseWithLookup`（遮盖敏感键名、当前服务展开后的 `headers`/`env` 密钥、自定义 `redact_fields` 路径与可选 `redact_emails`），**脱敏严格早于 `fields` 响应裁剪投影**。所有错误文本经 `Gateway.ErrorDetail` 替换模型密钥、OAuth token 与服务凭据为 `[redacted]` 并截断至 4000 字符后，方才写入 `activity` 或返回调用方。
 
 ---
 

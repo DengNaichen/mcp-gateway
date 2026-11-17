@@ -498,3 +498,12 @@ func (c *Client) PublishMaintenanceRun(ctx context.Context, runID string) error 
 func (c *Client) RollbackMaintenanceRun(ctx context.Context, runID string) error {
 	return c.doJSON(ctx, http.MethodPost, "/maintenance/runs/"+url.PathEscape(runID)+"/rollback", struct{}{}, nil)
 }
+
+func (c *Client) ServerCredentials(ctx context.Context, id string) (apitypes.ServerCredentials, error) {
+	var out apitypes.ServerCredentials
+	err := c.doJSON(ctx, http.MethodGet, "/servers/"+url.PathEscape(id)+"/credentials", nil, &out)
+	return out, err
+}
+func (c *Client) SaveServerCredentials(ctx context.Context, id string, values map[string]string) error {
+	return c.doJSON(ctx, http.MethodPut, "/servers/"+url.PathEscape(id)+"/credentials", apitypes.SaveCredentialsRequest{Values: values}, nil)
+}

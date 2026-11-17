@@ -40,7 +40,7 @@ func (u *Service) connectMCP(ctx, processContext context.Context, s Server) (*mc
 		return nil, err
 	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "gateway-lab", Version: "0.0.1"}, nil)
-	if err := CheckEnvironment(s, u.lookupEnv); err != nil {
+	if err := CheckEnvironment(s, u.serverLookup(s)); err != nil {
 		return nil, err
 	}
 	if s.Transport == "stdio" {
@@ -48,7 +48,7 @@ func (u *Service) connectMCP(ctx, processContext context.Context, s Server) (*mc
 		command.Dir = s.WorkDir
 		command.Env = procutil.ProcessEnvironment(nil)
 		for key, value := range s.Env {
-			command.Env = append(command.Env, key+"="+u.expandEnv(value))
+			command.Env = append(command.Env, key+"="+os.Expand(value, u.serverLookup(s)))
 		}
 		command.Stderr = os.Stderr
 		procutil.ConfigureProcess(command)
@@ -58,7 +58,7 @@ func (u *Service) connectMCP(ctx, processContext context.Context, s Server) (*mc
 		}
 		return session, nil
 	}
-	httpClient := &http.Client{Transport: headerTransport{headers: s.Headers, expand: u.expandEnv, base: http.DefaultTransport}, CheckRedirect: noRedirect}
+	httpClient := &http.Client{Transport: headerTransport{headers: s.Headers, expand: func(value string) string { return os.Expand(value, u.serverLookup(s)) }, base: http.DefaultTransport}, CheckRedirect: noRedirect}
 	var oauthHandler auth.OAuthHandler
 	if s.OAuth && s.Headers["Authorization"] == "" {
 		h, cleanup, err := u.oauthHandlerForServer(s.ID)
@@ -103,7 +103,7 @@ func (u *Service) Session(ctx context.Context, s Server) (*mcp.ClientSession, fu
 		}
 		return session, func() { closeSession(session) }, nil
 	}
-	fingerprint, err := Fingerprint(s, u.lookupEnv)
+	fingerprint, err := Fingerprint(s, u.serverLookup(s))
 	if err != nil {
 		return nil, nil, err
 	}

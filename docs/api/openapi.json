@@ -144,6 +144,9 @@
           "access": {
             "$ref": "#/components/schemas/AccessInfo"
           },
+          "credentials_persistent": {
+            "type": "boolean"
+          },
           "events": {
             "items": {
               "$ref": "#/components/schemas/Event"
@@ -192,6 +195,7 @@
         },
         "required": [
           "access",
+          "credentials_persistent",
           "events",
           "key_configured",
           "mcp_url",
@@ -376,6 +380,30 @@
           "arguments",
           "name",
           "tool_id"
+        ],
+        "type": "object"
+      },
+      "CredentialStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "environment": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "saved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured",
+          "environment",
+          "name",
+          "saved"
         ],
         "type": "object"
       },
@@ -1942,6 +1970,24 @@
         ],
         "type": "object"
       },
+      "SaveCredentialsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "type": "object"
+      },
       "SaveModelProfileRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2470,6 +2516,28 @@
           "id",
           "kind",
           "name"
+        ],
+        "type": "object"
+      },
+      "ServerCredentials": {
+        "additionalProperties": false,
+        "properties": {
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialStatus"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "persistent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "credentials",
+          "persistent"
         ],
         "type": "object"
       },
@@ -4473,6 +4541,140 @@
           }
         },
         "summary": "Register an HTTP source and the tools generated from its OpenAPI document",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/servers/{id}": {
+      "delete": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "delete_servers_by_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete a service, its tools and saved credentials",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/servers/{id}/credentials": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_servers_by_id_credentials",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCredentials"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Read credential availability without secret values",
+        "tags": [
+          "servers"
+        ]
+      },
+      "put": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "put_servers_by_id_credentials",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveCredentialsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Saved"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Save or clear service credentials",
         "tags": [
           "servers"
         ]

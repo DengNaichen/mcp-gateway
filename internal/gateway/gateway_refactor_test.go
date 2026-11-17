@@ -105,7 +105,6 @@ func TestMaintenanceAdapterHonorsRuntimeSecrets(t *testing.T) {
 	defer func() { _ = g.Close() }()
 
 	const secretKey = "GATEWAY_TEST_RUNTIME_SECRET_XYZ"
-	g.setRuntimeSecret(secretKey, "runtime-token-value")
 
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -122,6 +121,10 @@ func TestMaintenanceAdapterHonorsRuntimeSecrets(t *testing.T) {
 		Endpoint: srv.URL,
 		Headers:  map[string]string{"Authorization": "Bearer ${" + secretKey + "}"},
 	}
+	if err := g.saveServerCredentials(server, map[string]string{secretKey: "runtime-token-value"}); err != nil {
+		t.Fatal(err)
+	}
+
 	tool := registry.Tool{
 		ID:     "rt.ping",
 		Method: "GET",

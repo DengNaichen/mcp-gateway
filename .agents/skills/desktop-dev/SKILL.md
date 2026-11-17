@@ -83,6 +83,17 @@ python3 .agents/skills/desktop-dev/scripts/verify-build-channels.py
 - 两版端口、数据目录、设置与更新开关完全独立；
 - 五客户端并发写入同时保留 `mcp-gateway` 与 `mcp-gateway-dev` 且分别独立撤回。
 
+### 3. 系统钥匙串与重启恢复
+
+macOS 桌面端默认将模型 Key 和服务 Header/Env 凭据保存到系统 Keychain；作用域由构建渠道和规范化数据目录确定。`GATEWAY_CREDENTIAL_STORE=memory` 显式改用内存，`keychain` 可为 macOS 无界面后端启用持久化。远程浏览器 OAuth TokenSource 仍遵循现有会话生命周期。
+
+```sh
+make package
+python3 .agents/skills/desktop-dev/scripts/verify-credential-persistence.py
+```
+
+[验证脚本](scripts/verify-credential-persistence.py) 使用临时数据目录、控制 socket、假模型/上游与一次性凭据启动真实 Dev 应用，保存后退出重启，确认真实 HTTP 调用使用恢复的密钥；清除后再次重启，确认凭据不再出现，并检查数据库/日志无明文泄露。结束后删除该测试的 Keychain 条目。测试不会改动用户的模型/服务配置；浅/深色截图保存在输出的临时目录。
+
 ## 相关资源
 
 - UI 原型与主题规范：[prototypes/README.md](../../../prototypes/README.md)、[ui_theme.go](../../../cmd/gateway-desktop/ui_theme.go)

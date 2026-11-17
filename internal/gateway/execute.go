@@ -114,7 +114,7 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	} else if s.Kind == "mcp" {
 		data, err = g.upstream.CallMCP(ctx, s, t, req.Arguments)
 	} else {
-		data, err = upstream.CallHTTPWithLookup(ctx, s, t, req.Arguments, g.lookupEnv)
+		data, err = upstream.CallHTTPWithLookup(ctx, s, t, req.Arguments, g.serverLookup(s))
 	}
 	if err != nil {
 		if errors.Is(err, upstream.ErrInvalid) {
@@ -130,7 +130,7 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 		}
 		return result, fault.New(fault.Upstream, "下游工具调用失败", err)
 	}
-	data = upstream.RedactResponseWithLookup(data, s, g.lookupEnv)
+	data = upstream.RedactResponseWithLookup(data, s, g.serverLookup(s))
 	if len(req.Fields) > 0 {
 		data = upstream.Project(data, req.Fields)
 	}

@@ -14,7 +14,7 @@ func (u *Service) RedactResponse(data any, s Server) any {
 	if u == nil {
 		return RedactResponse(data, s)
 	}
-	return redactResponse(data, s, u.lookupEnv, u.TokenSecrets()...)
+	return redactResponse(data, s, u.serverLookup(s), u.TokenSecrets()...)
 }
 
 func RedactResponse(data any, s Server) any {

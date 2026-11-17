@@ -112,3 +112,19 @@ type ImportOpenAPIRequest struct {
 type ImportOpenAPIResult struct {
 	Imported int `json:"imported"`
 }
+
+// SaveCredentialsRequest updates secrets for existing environment references.
+// An empty value explicitly removes that reference's saved credential.
+type SaveCredentialsRequest struct {
+	Values map[string]string `json:"values"`
+}
+type CredentialStatus struct {
+	Name        string `json:"name"`
+	Configured  bool   `json:"configured"`
+	Saved       bool   `json:"saved"`
+	Environment bool   `json:"environment"`
+}
+type ServerCredentials struct {
+	Persistent  bool               `json:"persistent"`
+	Credentials []CredentialStatus `json:"credentials"`
+}

@@ -23,6 +23,10 @@ var apiRoutes = []route{
 
 	{Method: "PUT", Path: "/api/servers", Summary: "Create or replace a tool source", Request: apitypes.Server{}, Responses: ok(apitypes.Server{})},
 	{Method: "POST", Path: "/api/servers/openapi", Summary: "Register an HTTP source and the tools generated from its OpenAPI document", Request: apitypes.ImportOpenAPIRequest{}, Responses: ok(apitypes.ImportOpenAPIResult{})},
+	{Method: "GET", Path: "/api/servers/{id}/credentials", Summary: "Read credential availability without secret values", Responses: ok(apitypes.ServerCredentials{})},
+	{Method: "PUT", Path: "/api/servers/{id}/credentials", Summary: "Save or clear service credentials", Request: apitypes.SaveCredentialsRequest{}, Responses: ok(apitypes.Saved{})},
+	{Method: "DELETE", Path: "/api/servers/{id}", Summary: "Delete a service, its tools and saved credentials", Responses: ok(apitypes.Deleted{})},
+
 	{Method: "POST", Path: "/api/servers/{id}/sync", Summary: "Re-read an MCP source's tools/list", Responses: ok(apitypes.SyncServerResult{})},
 	{Method: "POST", Path: "/api/servers/{id}/tools", Summary: "Choose which of a source's tools are enabled", Request: apitypes.EnableToolsRequest{}, Responses: ok(apitypes.Saved{})},
 	{Method: "PUT", Path: "/api/tools", Summary: "Create or replace a tool", Request: apitypes.Tool{}, Responses: ok(apitypes.Tool{})},

@@ -44,7 +44,7 @@ func TestStdioSessionReuseReconfigurationAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := New(Config{LookupEnv: func(string) string { return "runtime-secret" }})
+	service := New(Config{LookupEnv: func(string, string) string { return "runtime-secret" }})
 	t.Cleanup(func() { _ = service.Close() })
 	server := Server{ID: "counter", Kind: "mcp", Transport: "stdio", Command: executable, Args: []string{"-test.run=^TestStdioFixtureProcess$"}, Env: map[string]string{"GATEWAY_B2_STDIO_HELPER": "1", "COUNTER_MARKER": "${MARKER}"}}
 	tool := Tool{Name: "count"}

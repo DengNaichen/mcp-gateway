@@ -29,7 +29,7 @@ MyGo 原生桌面端（`cmd/gateway-desktop`）完全通过 `/api/*` 与后端�
 
 1. **运行大盘（`overview`）**：三步接入向导（接入服务、配置模型、连接 Agent）、近 12 小时运行脉冲（48 个 15 分钟请求/错误分桶）、运行健康度、最近 MCP 请求状态与快捷导航。
 2. **上游服务（`services`）**：管理 MCP stdio、MCP Streamable HTTP（支持浏览器 OAuth）、手动 HTTP REST 与 OpenAPI 导入服务；支持白名单勾选启用、工具编辑与自动维护配置。新导入工具默认禁用，需手动启用后才进入路由候选。
-3. **MCP 市场（`market`）**：浏览内置精选与在线 MCP Registry（`GET /api/market`），一键安装（`POST /api/market/install`）并将环境变量/Header/参数密钥注入进程内存。
+3. **MCP 市场（`market`）**：浏览内置精选与在线 MCP Registry（`GET /api/market`），一键安装（`POST /api/market/install`）并按服务保存 Header/Env 凭据（macOS 桌面端使用系统 Keychain）。
 4. **工具目录（`catalog`）**：按服务、只读/写属性跨服务浏览当前所有已启用工具的摘要与 Schema。
 5. **仓库绑定（`repos`）**：管理仓库锚点（Git `common_dir` / 非 Git `root_paths`）、`(repo_key, agent_key)` 权限矩阵、预览各 Agent 可达工具、复制 Hook 片段并开关 `enforce` 仓库隔离模式。
 6. **连接客户端（`clients`）**：一键向 Codex CLI、Claude Code、Cursor、OpenCode v2、Pi、Antigravity 安装/更新/卸载官方插件（含 `gateway-hook` 集成）或写入用户级 MCP 配置。
@@ -56,7 +56,7 @@ export GATEWAY_MODEL_API_KEY='你的 OpenAI API Key'
 - **Google Gemini Decisions**：模型 ID 以 `gemini-` 开头（如 `gemini-decision-1`），Base URL 自动补全 `/decisions`，通过 `x-goog-api-key` 认证。
 - **SystemOne**：模型 ID 为 `jev` / `jev-*` / `decision-model-*` 或 Base URL 以 `/systemone` 结尾（如 `.../v1` 自动补全或直填 `.../v1/systemone`），按单次最多 16 题自动分片评估 `"noul"` / `"choice"` 问题。
 
-桌面端「测试连通性」（`POST /api/model/ping`）校验通过后可将配置保存/切换为多组 `ModelProfile`（`PUT /api/model-profiles`、`POST /api/model-profiles/{id}/activate`）。API Key 仅保存在进程内存（`model.profileKeys`）中，绝不写入 SQLite，重启后需重新填写或通过环境变量注入。路由只调用 Decisions/SystemOne 接口，不调用 Chat Completions 或 JSON Mode；更换配置、Key 或启用工具后，已有验证指纹会失效并提示重新测试。
+桌面端「测试连通性」（`POST /api/model/ping`）校验通过后可将配置保存/切换为多组 `ModelProfile`（`PUT /api/model-profiles`、`POST /api/model-profiles/{id}/activate`）。macOS 桌面端将界面保存的 API Key 存入系统 Keychain，按模型档案隔离，重启后自动恢复；密钥不写入 SQLite。启动时的 `GATEWAY_MODEL_API_KEY` 临时覆盖当时激活的档案，界面显式更新或清除后以本次操作为准，该环境变量不会被自动持久化。路由只调用 Decisions/SystemOne 接口，不调用 Chat Completions 或 JSON Mode；更换配置、Key 或启用工具后，已有验证指纹会失效并提示重新测试。
 
 路由分三步，默认全开；`GATEWAY_ROUTING=flat` 退回只有第二步的平铺路由，`GATEWAY_ROUTING=hierarchical` 或 `refine` 只开其中一步：
 
@@ -152,6 +152,14 @@ GitHub 用 `X-Hub-Signature-256` 和 `X-GitHub-Delivery`；GitLab 用 `X-Gitlab-
 ```
 
 Git 来源可替换 files 为 `repository: {"url":"https://git.example/team/api.git","ref":"main","files":["openapi.yaml"],"project":"team/api","events_enabled":true,"webhook_secret_env":"SOURCE_WEBHOOK_SECRET"}`。
+
+## 桌面凭据保存
+
+macOS 桌面端默认使用系统 Keychain。模型密钥按档案保存；上游服务在「连接与认证配置 → 服务凭据」中为 `${ENV_VAR}` 引用填写值，点击「保存凭据」。留空保留原值，清除按钮删除已保存值。市场添加服务时填写的密钥也按服务保存。输入框不回显已有密钥。
+
+凭据命名空间由构建渠道和规范化数据目录决定；Dev、Stable、独立 worktree 与临时测试目录不会共用。更新应用但沿用相同渠道和数据目录时仍可恢复。历史环境变量引用不变；需要在服务凭据栏重新填写一次，已有进程环境不会被自动导入。移除引用、删除服务或模型档案会清理相应保存值。系统钥匙串不可访问时明确报错，不回退到明文文件。
+
+无界面后端及非 macOS 默认使用内存与环境变量。`GATEWAY_CREDENTIAL_STORE=keychain` 可在 macOS 无界面部署启用钥匙串，`GATEWAY_CREDENTIAL_STORE=memory` 可显式使用内存模式（重启不保留），其他值会报错。远程 MCP 浏览器 OAuth 会话仍使用原有进程内 TokenSource；本节保存的是模型 Key 与服务 Header/Env 凭据。
 
 ## 接入本地 Agent
 
@@ -257,7 +265,7 @@ Flags 放在子命令之前。`-url` 可指定网关地址，本机无认证模�
 }
 ```
 
-`env` 的值和 HTTP `headers` 一样使用 `${ENV_VAR}` 引用；密钥由启动网关的 shell 或内存 `runtimeSecrets` 提供。stdio 进程会在导入和连续调用之间保留，配置改变后下次连接会重新启动，网关退出时关闭。进程断线后不自动重试工具调用，以免重复执行；可以重新读取工具后再试。
+`env` 的值和 HTTP `headers` 一样使用 `${ENV_VAR}` 引用；密钥由启动网关的环境变量或按服务保存的凭据提供，环境变量优先。stdio 进程会在导入和连续调用之间保留，配置改变后下次连接会重新启动，网关退出时关闭。进程断线后不自动重试工具调用，以免重复执行；可以重新读取工具后再试。
 
 ### 远程 Streamable HTTP MCP 与浏览器 OAuth
 
@@ -305,7 +313,7 @@ sqlite3 data/gateway.db 'SELECT time, kind, status, title FROM activity ORDER BY
 | GET | /api/setup/status | 三步接入状态、检查结果和最近 MCP 客户端请求 |
 | POST | /api/setup/source | 保存来源并检查连接；MCP 同时读取工具 |
 | POST | /api/setup/model | 保存模型配置并发起真实路由检查 |
-| PUT | /api/settings | 保存模型配置；api_key 只更新内存 |
+| PUT | /api/settings | 保存模型配置与密钥（桌面端使用系统 Keychain） |
 | PUT | /api/servers | 添加或更新完整服务定义 |
 | PUT | /api/tools | 添加或更新完整工具定义 |
 | POST | /api/servers/{id}/sync | 同步原生 MCP 工具 |
@@ -320,7 +328,9 @@ sqlite3 data/gateway.db 'SELECT time, kind, status, title FROM activity ORDER BY
 | POST | /api/model-profiles/{id}/activate | 激活指定模型档案 |
 | DELETE | /api/model-profiles/{id} | 删除模型档案 |
 | GET | /api/market | 检索可安装的 MCP 市场服务 |
-| POST | /api/market/install | 安装市场服务并注入内存凭据 |
+| GET / PUT | /api/servers/{id}/credentials | 查看凭据状态（不返回值）/ 更新或清除凭据 |
+| DELETE | /api/servers/{id} | 删除服务、工具和已保存凭据 |
+| POST | /api/market/install | 安装市场服务并按服务保存凭据 |
 | GET | /api/scopes | 仓库绑定、作用域规则与观测记录 |
 | PUT | /api/scopes/mode | 开关 `enforce` 仓库隔离拦截模式 |
 | PUT / DELETE | /api/scopes/repositories | 新增、更新或删除仓库锚点 |

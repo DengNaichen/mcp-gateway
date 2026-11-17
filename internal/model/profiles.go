@@ -20,8 +20,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// ModelProfile is a saved Decisions model configuration. API keys remain in
-// process memory and are never persisted to SQLite.
+// ModelProfile is a saved Decisions model configuration. Keys are kept in the
+// credential store, never in SQLite or API responses.
 type ModelProfile struct {
 	ID             string `json:"id"`
 	BaseURL        string `json:"base_url"`
@@ -46,12 +46,14 @@ type Service struct {
 	settings      Settings
 	apiKey        string
 	profiles      []ModelProfile
-	profileKeys   secrets.Store
+	profileKeys   *secrets.Store
+	envProfileID  string
+	envKey        string
 	verifiedPings map[string]time.Time
 }
 
-func New(db *sql.DB) (*Service, error) {
-	g := &Service{db: db, settings: Settings{BaseURL: "https://api.openai.com/v1", Model: "gpt-6-luna", MaxTools: 4, TimeoutSeconds: 45}}
+func New(db *sql.DB, credentials *secrets.Store) (*Service, error) {
+	g := &Service{db: db, profileKeys: credentials, settings: Settings{BaseURL: "https://api.openai.com/v1", Model: "gpt-6-luna", MaxTools: 4, TimeoutSeconds: 45}}
 	count, err := store.Settings[Settings](db).Count()
 	if err != nil {
 		return nil, fmt.Errorf("read settings count: %w", err)
@@ -74,7 +76,7 @@ func New(db *sql.DB) (*Service, error) {
 	if v := os.Getenv("GATEWAY_MODEL"); v != "" {
 		g.settings.Model = v
 	}
-	g.apiKey = os.Getenv("GATEWAY_MODEL_API_KEY")
+	g.envKey = os.Getenv("GATEWAY_MODEL_API_KEY")
 	if err := validateSettings(g.settings); err != nil {
 		return nil, fmt.Errorf("invalid model settings: %w", err)
 	}
@@ -135,11 +137,22 @@ func (g *Service) initModelProfiles() error {
 	profiles[activeIdx].Model = g.settings.Model
 	profiles[activeIdx].MaxTools = g.settings.MaxTools
 	profiles[activeIdx].TimeoutSeconds = g.settings.TimeoutSeconds
-	if g.apiKey != "" {
-		g.profileKeys.Set(profiles[activeIdx].ID, g.apiKey)
-	}
+	g.envProfileID = profiles[activeIdx].ID
+	g.apiKey = g.profileKey(g.envProfileID)
 	g.profiles = profiles
 	return nil
+}
+
+func (g *Service) profileKey(id string) string {
+	if id == g.envProfileID && g.envKey != "" {
+		return g.envKey
+	}
+	return g.profileKeys.Get("model/" + id)
+}
+func (g *Service) clearOverride(id string) {
+	if id == g.envProfileID {
+		g.envKey = ""
+	}
 }
 
 func (g *Service) ModelProfiles() []ModelProfile {
@@ -147,7 +160,7 @@ func (g *Service) ModelProfiles() []ModelProfile {
 	defer g.mu.RUnlock()
 	out := make([]ModelProfile, len(g.profiles))
 	for i, p := range g.profiles {
-		p.KeyConfigured = g.profileKeys.Get(p.ID) != "" || (p.Active && g.apiKey != "")
+		p.KeyConfigured = g.profileKey(p.ID) != "" || (p.Active && g.apiKey != "")
 		out[i] = p
 	}
 	return out
@@ -170,16 +183,25 @@ func (g *Service) SaveSettings(s Settings, key string, clearKey bool) error {
 		nextProfiles[idx].TimeoutSeconds = s.TimeoutSeconds
 		nextProfiles[idx].UpdatedAt = time.Now().Format(time.RFC3339)
 	}
-	if err := store.RunTx(g.db, func(tx store.DBTX) error {
-		if err := persistSettingsTx(tx, s); err != nil {
-			return err
+	changes := map[string]string{}
+	if idx >= 0 && (clearKey || key != "") {
+		if clearKey {
+			key = ""
 		}
-		if nextProfiles != nil {
-			if err := persistModelProfilesTx(tx, nextProfiles); err != nil {
+		changes["model/"+g.profiles[idx].ID] = key
+	}
+	if err := g.profileKeys.Update(changes, func() error {
+		return store.RunTx(g.db, func(tx store.DBTX) error {
+			if err := persistSettingsTx(tx, s); err != nil {
 				return err
 			}
-		}
-		return nil
+			if nextProfiles != nil {
+				if err := persistModelProfilesTx(tx, nextProfiles); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
 	}); err != nil {
 		return err
 	}
@@ -192,10 +214,8 @@ func (g *Service) SaveSettings(s Settings, key string, clearKey bool) error {
 	}
 	if idx >= 0 {
 		g.profiles = nextProfiles
-		if clearKey {
-			g.profileKeys.Set(g.profiles[idx].ID, "")
-		} else if key != "" {
-			g.profileKeys.Set(g.profiles[idx].ID, key)
+		if clearKey || key != "" {
+			g.clearOverride(g.profiles[idx].ID)
 		}
 	}
 	return nil
@@ -265,30 +285,34 @@ func (g *Service) SaveModelProfile(p ModelProfile, key string, clearKey bool) (M
 		next = append([]ModelProfile{p}, next...)
 	}
 
-	if err := store.RunTx(g.db, func(tx store.DBTX) error {
-		if err := persistModelProfilesTx(tx, next); err != nil {
-			return err
+	changes := map[string]string{}
+	if clearKey || key != "" {
+		if clearKey {
+			key = ""
 		}
-		return persistSettingsTx(tx, s)
+		changes["model/"+savedID] = key
+	}
+	if err := g.profileKeys.Update(changes, func() error {
+		return store.RunTx(g.db, func(tx store.DBTX) error {
+			if err := persistModelProfilesTx(tx, next); err != nil {
+				return err
+			}
+			return persistSettingsTx(tx, s)
+		})
 	}); err != nil {
 		return ModelProfile{}, err
 	}
 
 	g.profiles = next
 	g.settings = s
-	if clearKey {
-		g.profileKeys.Set(savedID, "")
-		g.apiKey = ""
-	} else if key != "" {
-		g.profileKeys.Set(savedID, key)
-		g.apiKey = key
-	} else {
-		g.apiKey = g.profileKeys.Get(savedID)
+	if clearKey || key != "" {
+		g.clearOverride(savedID)
 	}
+	g.apiKey = g.profileKey(savedID)
 
 	outIdx := slices.IndexFunc(g.profiles, func(item ModelProfile) bool { return item.ID == savedID })
 	out := g.profiles[outIdx]
-	out.KeyConfigured = g.profileKeys.Get(savedID) != ""
+	out.KeyConfigured = g.profileKey(savedID) != ""
 	return out, nil
 }
 
@@ -322,7 +346,7 @@ func (g *Service) ActivateModelProfile(id string) (ModelProfile, error) {
 	}
 	g.profiles = next
 	g.settings = s
-	g.apiKey = g.profileKeys.Get(id)
+	g.apiKey = g.profileKey(id)
 
 	chosen.KeyConfigured = g.apiKey != ""
 	return chosen, nil
@@ -352,19 +376,21 @@ func (g *Service) DeleteModelProfile(id string) error {
 			MaxTools:       next[0].MaxTools,
 			TimeoutSeconds: next[0].TimeoutSeconds,
 		}
-		nextKey = g.profileKeys.Get(next[0].ID)
+		nextKey = g.profileKey(next[0].ID)
 	}
-	if err := store.RunTx(g.db, func(tx store.DBTX) error {
-		if wasActive {
-			if err := persistSettingsTx(tx, nextSettings); err != nil {
-				return err
+	if err := g.profileKeys.Update(map[string]string{"model/" + id: ""}, func() error {
+		return store.RunTx(g.db, func(tx store.DBTX) error {
+			if wasActive {
+				if err := persistSettingsTx(tx, nextSettings); err != nil {
+					return err
+				}
 			}
-		}
-		return persistModelProfilesTx(tx, next)
+			return persistModelProfilesTx(tx, next)
+		})
 	}); err != nil {
 		return err
 	}
-	g.profileKeys.Set(id, "")
+	g.clearOverride(id)
 	g.profiles = next
 	g.settings = nextSettings
 	g.apiKey = nextKey
@@ -422,7 +448,7 @@ func (g *Service) resolveEffectiveKey(profileID, apiKey string, clearKey bool) s
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	if profileID != "" {
-		effectiveKey = g.profileKeys.Get(profileID)
+		effectiveKey = g.profileKey(profileID)
 	}
 	if effectiveKey == "" && profileID == "" {
 		effectiveKey = g.apiKey

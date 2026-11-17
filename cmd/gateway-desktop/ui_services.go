@@ -100,6 +100,11 @@ type servicesPageState struct {
 	connRawJSON          string
 	connBusy             bool
 	connError            string
+	credentialServerID   string
+	credentialState      apitypes.ServerCredentials
+	credentialValues     map[string]string
+	credentialBusy       bool
+	credentialError      string
 
 	// Maintenance & health subtab
 	maintLoading          bool
@@ -983,7 +988,7 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 		SailCardTitle(
 			c,
 			"连接与认证配置",
-			"凭据仅支持 ${ENV_VAR} 引用，明文不落盘",
+			"配置中使用 ${ENV_VAR} 引用，凭据单独保存",
 			func() {
 				if ui.Segmented(c.Key("conn-mode-seg"), &st.connMode, "表单视图", "JSON 定义").Changed() {
 					if st.connMode == 1 {
@@ -1126,6 +1131,8 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 			}
 		})
 	})
+	u.renderServerCredentials(c, st, server)
+
 }
 
 func (st *servicesPageState) buildServerFromConnForm(orig apitypes.Server) (apitypes.Server, error) {

@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"gatewaylab/internal/secrets"
 	"gatewaylab/internal/store"
 )
 
@@ -239,7 +240,7 @@ func openTestService(dir string) (*testService, error) {
 	if err != nil {
 		return nil, err
 	}
-	svc, err := New(storage.DB)
+	svc, err := New(storage.DB, &secrets.Store{})
 	if err != nil {
 		_ = storage.Close()
 		return nil, err

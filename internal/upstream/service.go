@@ -8,11 +8,11 @@ import (
 )
 
 type Config struct {
-	LookupEnv   func(string) string
+	LookupEnv   func(string, string) string
 	OpenBrowser func(string) error
 }
 type Service struct {
-	lookupEnv   func(string) string
+	lookupEnv   func(string, string) string
 	openBrowser func(string) error
 	sessionMu   sync.Mutex
 	sessions    map[string]stdioSession
@@ -22,14 +22,16 @@ type Service struct {
 
 func New(config Config) *Service {
 	if config.LookupEnv == nil {
-		config.LookupEnv = os.Getenv
+		config.LookupEnv = func(_ string, key string) string { return os.Getenv(key) }
 	}
 	if config.OpenBrowser == nil {
 		config.OpenBrowser = defaultOpenBrowserURL
 	}
 	return &Service{lookupEnv: config.LookupEnv, openBrowser: config.OpenBrowser, sessions: map[string]stdioSession{}, oauthTokens: map[string]oauth2.TokenSource{}}
 }
-func (u *Service) expandEnv(value string) string { return os.Expand(value, u.lookupEnv) }
+func (u *Service) serverLookup(s Server) func(string) string {
+	return func(key string) string { return u.lookupEnv(s.ID, key) }
+}
 
 // TokenSecrets snapshots token sources under their owner lock, then resolves
 // them without holding it. Callers use these values only for error redaction.

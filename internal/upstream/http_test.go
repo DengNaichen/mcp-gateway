@@ -117,7 +117,7 @@ func TestCredentialsAreRedactedBeforeProjection(t *testing.T) {
 }
 
 func TestServiceRedactResponseRedactsOAuthTokensAndLookupSecrets(t *testing.T) {
-	svc := New(Config{LookupEnv: func(key string) string {
+	svc := New(Config{LookupEnv: func(_ string, key string) string {
 		if key == "KEY" {
 			return "env-secret-999"
 		}
