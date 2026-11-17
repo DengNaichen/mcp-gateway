@@ -12,9 +12,9 @@ var apiRoutes = []route{
 	{Method: "GET", Path: "/api/bootstrap", Summary: "Everything the control plane needs for its first screen", Responses: ok(apitypes.Bootstrap{})},
 	{Method: "GET", Path: "/api/events", Summary: "Recent activity", Responses: ok([]apitypes.Event{})},
 
-	{Method: "GET", Path: "/api/auth/me", Summary: "The caller's identity", Responses: ok(apitypes.AuthMe{})},
+	{Method: "GET", Path: "/api/auth/me", Summary: "The caller's identity", Authenticated: true, Responses: ok(apitypes.AuthMe{})},
 	{Method: "POST", Path: "/api/auth/login", Summary: "Exchange an access token for a session cookie (shared mode)", Public: true, Request: apitypes.LoginRequest{}, Responses: ok(apitypes.LoginResult{})},
-	{Method: "POST", Path: "/api/auth/logout", Summary: "End the session", Responses: ok(apitypes.SignedOut{})},
+	{Method: "POST", Path: "/api/auth/logout", Summary: "End the session", Authenticated: true, Responses: ok(apitypes.SignedOut{})},
 
 	{Method: "GET", Path: "/api/catalog", Summary: "Authorized services and tool summaries", Invocation: true, Query: []query{actorQuery, {"include_demo", "boolean", "Include demo services"}}, Responses: ok(apitypes.Catalog{})},
 	{Method: "GET", Path: "/api/tools/{id}/schema", Summary: "Full definition of one authorized tool", Invocation: true, Query: []query{actorQuery}, Responses: ok(apitypes.Tool{})},
@@ -29,10 +29,10 @@ var apiRoutes = []route{
 
 	{Method: "GET", Path: "/api/setup/status", Summary: "Onboarding progress", Responses: ok(apitypes.SetupStatus{})},
 	{Method: "POST", Path: "/api/setup/source", Summary: "Save a source and test its connection", Request: apitypes.Server{}, Responses: map[int]any{200: apitypes.ConnectionCheck{}, 400: apitypes.Error{}}},
-	{Method: "POST", Path: "/api/setup/model", Summary: "Save model settings and try a routing request", Request: apitypes.SetupModelRequest{}, Responses: map[int]any{200: apitypes.DiscoverResult{}, 400: apitypes.Error{}}},
-	{Method: "POST", Path: "/api/model/ping", Summary: "Test model connectivity without saving", Request: apitypes.PingModelRequest{}, Responses: map[int]any{200: apitypes.PingModelResult{}, 400: apitypes.Error{}}},
+	{Method: "POST", Path: "/api/setup/model", Summary: "Save model settings and try a routing request", Request: apitypes.SetupModelRequest{}, Responses: ok(apitypes.DiscoverResult{})},
+	{Method: "POST", Path: "/api/model/ping", Summary: "Test model connectivity without saving", Request: apitypes.PingModelRequest{}, Responses: ok(apitypes.PingModelResult{})},
 	{Method: "PUT", Path: "/api/settings", Summary: "Save the active model settings", Request: apitypes.SaveSettingsRequest{}, Responses: ok(apitypes.Saved{})},
-	{Method: "PUT", Path: "/api/model-profiles", Summary: "Create or update a model profile after a passing connectivity check", Request: apitypes.SaveModelProfileRequest{}, Responses: map[int]any{200: apitypes.ModelProfile{}, 400: apitypes.Error{}}},
+	{Method: "PUT", Path: "/api/model-profiles", Summary: "Create or update a model profile after a passing connectivity check", Request: apitypes.SaveModelProfileRequest{}, Responses: ok(apitypes.ModelProfile{})},
 	{Method: "POST", Path: "/api/model-profiles/{id}/activate", Summary: "Make a model profile active", Responses: ok(apitypes.ModelProfile{})},
 	{Method: "DELETE", Path: "/api/model-profiles/{id}", Summary: "Delete a model profile", Responses: ok(apitypes.Deleted{})},
 
@@ -66,6 +66,8 @@ type route struct {
 	Method, Path, Summary string
 	// Public routes skip shared-mode authentication.
 	Public bool
+	// Authenticated routes are open to any authenticated principal (including non-admin) in shared mode.
+	Authenticated bool
 	// Invocation routes are open to non-admin principals and honor repository
 	// scope (?agent= and X-Gateway-Scope).
 	Invocation bool

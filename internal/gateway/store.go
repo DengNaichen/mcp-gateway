@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"gatewaylab/internal/access"
 	"gatewaylab/internal/activity"
 	"gatewaylab/internal/demo"
+	"gatewaylab/internal/fault"
 	"gatewaylab/internal/maintenance"
 	"gatewaylab/internal/maintenance/sandbox"
 	"gatewaylab/internal/market"
@@ -142,7 +145,50 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
 	return g, nil
 }
 
+func (g *Gateway) Close() error {
+	if g.maintenance != nil {
+		g.maintenance.Close()
+	}
+	result := g.upstream.Close()
+	if err := g.storage.Close(); err != nil {
+		result = errors.Join(result, fmt.Errorf("close sqlite: %w", err))
+	}
+	return result
+}
+
+func (g *Gateway) loadRegistry() error {
+	initial, err := store.Registry(g.db).Load()
+	if err != nil {
+		return err
+	}
+	g.registry = registry.New(initial, store.Registry(g.db).Save)
+	return nil
+}
+
+func (g *Gateway) loadEvents() (err error) {
+	g.activity, err = activity.New(store.Activity(g.db))
+	return err
+}
+
 func (g *Gateway) Snapshot() registry.Registry { return g.registry.Snapshot() }
+
+func invalid(message string) error { return fault.New(fault.Invalid, message, nil) }
+
+func (g *Gateway) isAdminCaller(ctx context.Context) bool {
+	if g.access == nil {
+		return true
+	}
+	p, ok := access.PrincipalFrom(ctx)
+	return ok && p.Admin
+}
+
+func (g *Gateway) identityAllowsTool(ctx context.Context, t registry.Tool, actor string) bool {
+	return g.access.IdentityAllowsTool(ctx, t, actor)
+}
+
+func (g *Gateway) authorizedTool(ctx context.Context, t registry.Tool, actor string) bool {
+	return g.identityAllowsTool(ctx, t, actor) && g.scope.AllowsTool(ctx, t)
+}
 
 func (g *Gateway) lookupEnv(key string) string {
 	if g == nil {

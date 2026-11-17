@@ -10,12 +10,12 @@ import (
 )
 
 func (g *server) verifyModelConnection(ctx context.Context, w http.ResponseWriter, p model.ModelProfile, apiKey string, clearKey bool) bool {
-	if err := g.Model().VerifyModelConnection(ctx, p, apiKey, clearKey); err != nil {
+	if err := g.gw.Model().VerifyModelConnection(ctx, p, apiKey, clearKey); err != nil {
 		if errors.Is(err, model.ErrInvalid) {
 			fail(w, err)
 			return false
 		}
-		respond(w, 400, errorBody("模型连接测试失败，未保存配置", g.ErrorDetail(err), err))
+		failWithDetail(w, "模型连接测试失败，未保存配置", g.gw.ErrorDetail(err), err)
 		return false
 	}
 	return true
@@ -28,7 +28,7 @@ func (g *server) registerModel(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		if err := g.SaveSettings(domainSettings(in.Settings), in.APIKey, in.ClearKey); err != nil {
+		if err := g.gw.SaveSettings(domainSettings(in.Settings), in.APIKey, in.ClearKey); err != nil {
 			fail(w, err)
 			return
 		}
@@ -43,7 +43,7 @@ func (g *server) registerModel(mux *http.ServeMux) {
 		if !g.verifyModelConnection(r.Context(), w, domainProfile(in.ModelProfile), in.APIKey, in.ClearKey) {
 			return
 		}
-		saved, err := g.SaveModelProfile(domainProfile(in.ModelProfile), in.APIKey, in.ClearKey)
+		saved, err := g.gw.SaveModelProfile(domainProfile(in.ModelProfile), in.APIKey, in.ClearKey)
 		if err != nil {
 			fail(w, err)
 			return
@@ -51,7 +51,7 @@ func (g *server) registerModel(mux *http.ServeMux) {
 		respond(w, 200, wireProfile(saved))
 	})
 	mux.HandleFunc("POST /api/model-profiles/{id}/activate", func(w http.ResponseWriter, r *http.Request) {
-		activated, err := g.ActivateModelProfile(r.PathValue("id"))
+		activated, err := g.gw.ActivateModelProfile(r.PathValue("id"))
 		if err != nil {
 			fail(w, err)
 			return
@@ -59,7 +59,7 @@ func (g *server) registerModel(mux *http.ServeMux) {
 		respond(w, 200, wireProfile(activated))
 	})
 	mux.HandleFunc("DELETE /api/model-profiles/{id}", func(w http.ResponseWriter, r *http.Request) {
-		if err := g.DeleteModelProfile(r.PathValue("id")); err != nil {
+		if err := g.gw.DeleteModelProfile(r.PathValue("id")); err != nil {
 			fail(w, err)
 			return
 		}

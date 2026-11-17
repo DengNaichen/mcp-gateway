@@ -22,7 +22,7 @@ func (g *server) registerCapabilities(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, wireCatalog(g.Catalog(ctx, r.URL.Query().Get("actor"), r.URL.Query().Get("include_demo") == "true")))
+		respond(w, 200, wireCatalog(g.gw.Catalog(ctx, r.URL.Query().Get("actor"), r.URL.Query().Get("include_demo") == "true")))
 	})
 	mux.HandleFunc("GET /api/tools/{id}/schema", func(w http.ResponseWriter, r *http.Request) {
 		ctx, err := g.resolveRESTScope(r.Context(), r, "get_tool_schema", nil, nil)
@@ -30,7 +30,7 @@ func (g *server) registerCapabilities(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		tool, err := g.ToolSchema(ctx, r.PathValue("id"), r.URL.Query().Get("actor"))
+		tool, err := g.gw.ToolSchema(ctx, r.PathValue("id"), r.URL.Query().Get("actor"))
 		if err != nil {
 			fail(w, err)
 			return

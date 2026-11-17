@@ -4,9 +4,11 @@ import (
 	"context"
 	"slices"
 
+	"gatewaylab/internal/access"
 	"gatewaylab/internal/fault"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/routing"
+	"gatewaylab/internal/scope"
 )
 
 func (g *Gateway) ToolSchema(ctx context.Context, id, actor string) (registry.Tool, error) {
@@ -56,4 +58,8 @@ func (g *Gateway) Catalog(ctx context.Context, actor string, includeDemo bool) C
 		}
 	}
 	return out
+}
+
+func (g *Gateway) PreviewScope(ctx context.Context, repoKey, actor string) (scope.ScopePreviewResponse, error) {
+	return g.scope.PreviewScope(ctx, repoKey, access.RequestActor(ctx, actor))
 }

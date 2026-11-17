@@ -39,7 +39,7 @@ func OpenAPIDocument() ([]byte, error) {
 			"description": "The HTTP contract between the gateway backend and its control-plane clients (desktop app, web console). " +
 				"In local mode the backend listens on loopback only and requires no authentication. In shared mode every route " +
 				"except the public ones needs a bearer access token or the session cookie from /api/auth/login; routes that are " +
-				"not marked as invocation routes additionally need an admin principal. Every error response has the Error body.",
+				"not marked as invocation or authenticated routes additionally need an admin principal. Every error response has the Error body.",
 		},
 		"paths": paths,
 		"components": map[string]any{
@@ -74,6 +74,8 @@ func (g docGenerator) operation(r route) (map[string]any, error) {
 		op["security"] = []any{}
 	case r.Invocation:
 		op["description"] = "Invocation route: open to any authenticated principal in shared mode. Results are limited to what the principal (or, in local mode, the simulated actor) may use."
+	case r.Authenticated:
+		op["description"] = "Authenticated route: open to any authenticated principal in shared mode."
 	default:
 		op["description"] = "Management route: requires an admin principal in shared mode."
 	}

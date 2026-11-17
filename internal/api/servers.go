@@ -13,14 +13,14 @@ func (g *server) registerServers(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		if err := g.Registry().SaveServer(domainServer(in)); err != nil {
+		if err := g.gw.Registry().SaveServer(domainServer(in)); err != nil {
 			fail(w, err)
 			return
 		}
 		respond(w, 200, in)
 	})
 	mux.HandleFunc("POST /api/servers/{id}/sync", func(w http.ResponseWriter, r *http.Request) {
-		n, err := g.ImportMCP(r.Context(), r.PathValue("id"))
+		n, err := g.gw.ImportMCP(r.Context(), r.PathValue("id"))
 		if err != nil {
 			fail(w, err)
 			return
@@ -34,7 +34,7 @@ func (g *server) registerServers(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		n, err := g.ImportOpenAPI(r.Context(), domainServer(in.Server), []byte(in.Spec), in.SpecURL, in.OperationIDs)
+		n, err := g.gw.ImportOpenAPI(r.Context(), domainServer(in.Server), []byte(in.Spec), in.SpecURL, in.OperationIDs)
 		if err != nil {
 			fail(w, err)
 			return
@@ -47,7 +47,7 @@ func (g *server) registerServers(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		if err := g.Registry().SaveTool(domainTool(in)); err != nil {
+		if err := g.gw.Registry().SaveTool(domainTool(in)); err != nil {
 			fail(w, err)
 			return
 		}

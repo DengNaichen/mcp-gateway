@@ -2848,7 +2848,7 @@
     }
   },
   "info": {
-    "description": "The HTTP contract between the gateway backend and its control-plane clients (desktop app, web console). In local mode the backend listens on loopback only and requires no authentication. In shared mode every route except the public ones needs a bearer access token or the session cookie from /api/auth/login; routes that are not marked as invocation routes additionally need an admin principal. Every error response has the Error body.",
+    "description": "The HTTP contract between the gateway backend and its control-plane clients (desktop app, web console). In local mode the backend listens on loopback only and requires no authentication. In shared mode every route except the public ones needs a bearer access token or the session cookie from /api/auth/login; routes that are not marked as invocation or authenticated routes additionally need an admin principal. Every error response has the Error body.",
     "title": "MCP Gateway control plane API",
     "version": "1"
   },
@@ -2898,7 +2898,7 @@
     },
     "/api/auth/logout": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Authenticated route: open to any authenticated principal in shared mode.",
         "operationId": "post_auth_logout",
         "responses": {
           "200": {
@@ -2930,7 +2930,7 @@
     },
     "/api/auth/me": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Authenticated route: open to any authenticated principal in shared mode.",
         "operationId": "get_auth_me",
         "responses": {
           "200": {
@@ -3919,16 +3919,6 @@
             },
             "description": "OK"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Rejected; see error and detail"
-          },
           "default": {
             "content": {
               "application/json": {
@@ -4054,16 +4044,6 @@
               }
             },
             "description": "OK"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Rejected; see error and detail"
           },
           "default": {
             "content": {
@@ -4658,16 +4638,6 @@
               }
             },
             "description": "OK"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Rejected; see error and detail"
           },
           "default": {
             "content": {

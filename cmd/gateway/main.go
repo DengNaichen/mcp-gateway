@@ -52,19 +52,36 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	g.StartMaintenance(ctx)
+	slog.Info("gateway lab ready", "url", base, "mcp", base+"/mcp", "data", *data)
+	return serveAndShutdown(ctx, server, server.ListenAndServe, 5*time.Second)
+}
+
+func serveAndShutdown(ctx context.Context, server *http.Server, serve func() error, timeout time.Duration) error {
+	serveDone := make(chan error, 1)
 	go func() {
-		<-ctx.Done()
-		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := serve()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveDone <- fmt.Errorf("serve gateway: %w", err)
+			return
+		}
+		serveDone <- nil
+	}()
+	select {
+	case err := <-serveDone:
+		return err
+	case <-ctx.Done():
+		shutdown, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		if err := server.Shutdown(shutdown); err != nil {
+		if err := server.Shutdown(shutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("shutdown gateway", "error", err)
 		}
-	}()
-	slog.Info("gateway lab ready", "url", base, "mcp", base+"/mcp", "data", *data)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("serve gateway: %w", err)
+		select {
+		case err := <-serveDone:
+			return err
+		case <-shutdown.Done():
+			return nil
+		}
 	}
-	return nil
 }
 
 func main() {

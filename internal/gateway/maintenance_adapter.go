@@ -86,7 +86,7 @@ func (a maintenanceAdapter) CallMCP(ctx context.Context, s registry.Server, t re
 	return a.g.upstream.CallMCP(ctx, s, t, args)
 }
 func (a maintenanceAdapter) CallHTTP(ctx context.Context, s registry.Server, t registry.Tool, args map[string]any) (any, error) {
-	return upstream.CallHTTP(ctx, s, t, args)
+	return upstream.CallHTTPWithLookup(ctx, s, t, args, a.g.lookupEnv)
 }
 func (a maintenanceAdapter) RedactResponse(result any, s registry.Server) any {
 	return upstream.RedactResponseWithLookup(result, s, a.g.lookupEnv)
@@ -96,7 +96,7 @@ func (a maintenanceAdapter) Record(kind, actor, status, title string, start time
 	a.g.activity.Record(kind, actor, status, title, start, detail)
 }
 func (g *Gateway) callAdapter(ctx context.Context, s registry.Server, t registry.Tool, args map[string]any) (any, error) {
-	if err := upstream.CheckEnvironment(s, nil); err != nil {
+	if err := upstream.CheckEnvironment(s, g.lookupEnv); err != nil {
 		return nil, err
 	}
 	p, err := g.maintenance.AdapterPath(t)

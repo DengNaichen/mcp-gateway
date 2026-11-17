@@ -148,7 +148,7 @@ func TestModelProfileSaveRequiresReachableModel(t *testing.T) {
 		return w
 	}
 
-	// 1. PUT /api/model-profiles refuses to save when endpoint returns HTML.
+	// 1. PUT /api/model-profiles refuses to save when endpoint returns HTML (preserving 502).
 	badRes := doReq("PUT", "/api/model-profiles", map[string]any{
 		"base_url":        upstream.URL + "/systemone",
 		"model":           "jev",
@@ -156,14 +156,14 @@ func TestModelProfileSaveRequiresReachableModel(t *testing.T) {
 		"timeout_seconds": 15,
 		"api_key":         "valid-key",
 	})
-	if badRes.Code != 400 || !strings.Contains(badRes.Body.String(), "HTML") {
-		t.Fatalf("expected 400 HTML error, got %d %s", badRes.Code, badRes.Body.String())
+	if badRes.Code != 502 || !strings.Contains(badRes.Body.String(), "HTML") {
+		t.Fatalf("expected 502 HTML error, got %d %s", badRes.Code, badRes.Body.String())
 	}
 	if cfg, _ := g.Model().Config(); cfg.Model == "jev" {
 		t.Fatalf("broken profile must not be saved: %+v", cfg)
 	}
 
-	// 2. POST /api/setup/model also refuses to overwrite saved config when ping fails.
+	// 2. POST /api/setup/model also refuses to overwrite saved config when ping fails (preserving 502).
 	setupBad := doReq("POST", "/api/setup/model", map[string]any{
 		"base_url":        upstream.URL + "/v1",
 		"model":           "jev",
@@ -171,8 +171,8 @@ func TestModelProfileSaveRequiresReachableModel(t *testing.T) {
 		"timeout_seconds": 15,
 		"api_key":         "wrong-key",
 	})
-	if setupBad.Code != 400 {
-		t.Fatalf("expected 400 when ping fails, got %d %s", setupBad.Code, setupBad.Body.String())
+	if setupBad.Code != 502 {
+		t.Fatalf("expected 502 when ping fails, got %d %s", setupBad.Code, setupBad.Body.String())
 	}
 	if cfg, _ := g.Model().Config(); cfg.Model == "jev" {
 		t.Fatalf("failed setup/model must not overwrite settings: %+v", cfg)
@@ -205,5 +205,86 @@ func TestModelProfileSaveRequiresReachableModel(t *testing.T) {
 	}
 	if cfg, hasKey := g.Model().Config(); cfg.Model != "jev" || cfg.MaxTools != 6 || !hasKey {
 		t.Fatalf("expected saved jev config, got %+v hasKey=%v", cfg, hasKey)
+	}
+}
+
+func TestModelEndpointsPreserveUpstreamStatusAndRetryAfter(t *testing.T) {
+	rateLimited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respond(w, 429, map[string]any{"error": map[string]any{
+			"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "Rate limit exceeded. Please retry in 119.2s.",
+			"details": []map[string]any{{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "119.2s"}},
+		}})
+	}))
+	defer rateLimited.Close()
+
+	badGateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respond(w, 401, map[string]any{"error": map[string]any{"message": "invalid key"}})
+	}))
+	defer badGateway.Close()
+
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(2 * time.Second):
+		case <-r.Context().Done():
+		}
+	}))
+	defer slow.Close()
+
+	g, _ := testGateway(t)
+	handler := Handler(g)
+
+	call := func(ctx context.Context, method, path, baseURL string) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(map[string]any{
+			"base_url":        baseURL + "/v1",
+			"model":           "jev",
+			"max_tools":       4,
+			"timeout_seconds": 15,
+			"api_key":         "test-key",
+		})
+		req := httptest.NewRequest(method, "http://127.0.0.1"+path, bytes.NewReader(raw)).WithContext(ctx)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		return w
+	}
+
+	for _, tc := range []struct {
+		method, path string
+	}{
+		{"POST", "/api/model/ping"},
+		{"POST", "/api/setup/model"},
+		{"PUT", "/api/model-profiles"},
+	} {
+		t.Run(tc.path+"/429", func(t *testing.T) {
+			res := call(context.Background(), tc.method, tc.path, rateLimited.URL)
+			var payload map[string]any
+			if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if res.Code != 429 || res.Header().Get("Retry-After") != "120" || payload["code"] != model.CodeRateLimited || payload["retry_after_seconds"] != float64(120) {
+				t.Fatalf("got %d Retry-After=%q %v", res.Code, res.Header().Get("Retry-After"), payload)
+			}
+		})
+		t.Run(tc.path+"/502", func(t *testing.T) {
+			res := call(context.Background(), tc.method, tc.path, badGateway.URL)
+			var payload map[string]any
+			if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if res.Code != 502 || payload["code"] != model.CodeAuthFailed {
+				t.Fatalf("got %d %v", res.Code, payload)
+			}
+		})
+		t.Run(tc.path+"/504", func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+			defer cancel()
+			res := call(ctx, tc.method, tc.path, slow.URL)
+			var payload map[string]any
+			if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if res.Code != 504 || payload["code"] != model.CodeTimeout {
+				t.Fatalf("got %d %v", res.Code, payload)
+			}
+		})
 	}
 }

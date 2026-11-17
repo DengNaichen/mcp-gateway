@@ -19,7 +19,7 @@ func (g *server) registerExecute(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		out, err := g.Discover(scopedCtx, domainDiscoverRequest(in))
+		out, err := g.gw.Discover(scopedCtx, domainDiscoverRequest(in))
 		if err != nil {
 			fail(w, err)
 			return
@@ -38,7 +38,7 @@ func (g *server) registerExecute(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		out, err := g.Invoke(scopedCtx, domainInvokeRequest(in))
+		out, err := g.gw.Invoke(scopedCtx, domainInvokeRequest(in))
 		if err != nil {
 			fail(w, err)
 			return
