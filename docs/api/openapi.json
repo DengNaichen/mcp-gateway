@@ -1,0 +1,4855 @@
+{
+  "components": {
+    "schemas": {
+      "AcceptanceReport": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "missing_coverage": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/AcceptanceResult"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "routing_fingerprint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "missing_coverage",
+          "passed",
+          "results"
+        ],
+        "type": "object"
+      },
+      "AcceptanceResult": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "duration_ms",
+          "kind",
+          "name",
+          "passed"
+        ],
+        "type": "object"
+      },
+      "AcceptanceSuite": {
+        "additionalProperties": false,
+        "properties": {
+          "contracts": {
+            "items": {
+              "$ref": "#/components/schemas/ContractCase"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "routing": {
+            "items": {
+              "$ref": "#/components/schemas/RoutingCase"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "server_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contracts",
+          "routing",
+          "server_id"
+        ],
+        "type": "object"
+      },
+      "AccessInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "shared": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "actor",
+          "shared"
+        ],
+        "type": "object"
+      },
+      "AuthMe": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "principal": {
+            "$ref": "#/components/schemas/Principal"
+          },
+          "shared": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authenticated",
+          "principal",
+          "shared"
+        ],
+        "type": "object"
+      },
+      "Bootstrap": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "$ref": "#/components/schemas/AccessInfo"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "key_configured": {
+            "type": "boolean"
+          },
+          "mcp_url": {
+            "type": "string"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/ModelProfile"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "registry": {
+            "$ref": "#/components/schemas/Registry"
+          },
+          "scopes": {
+            "$ref": "#/components/schemas/ScopeOverview"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "setup": {
+            "$ref": "#/components/schemas/SetupStatus"
+          }
+        },
+        "required": [
+          "access",
+          "events",
+          "key_configured",
+          "mcp_url",
+          "profiles",
+          "registry",
+          "scopes",
+          "settings",
+          "setup"
+        ],
+        "type": "object"
+      },
+      "Cancelled": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cancelled"
+        ],
+        "type": "object"
+      },
+      "Capability": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "description",
+          "id",
+          "name",
+          "read_only",
+          "server_id",
+          "tags"
+        ],
+        "type": "object"
+      },
+      "Catalog": {
+        "additionalProperties": false,
+        "properties": {
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogServer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/Capability"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "servers",
+          "tools"
+        ],
+        "type": "object"
+      },
+      "CatalogServer": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tool_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "description",
+          "id",
+          "name",
+          "tool_count"
+        ],
+        "type": "object"
+      },
+      "ConnectionCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tool_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checked_at",
+          "message",
+          "stale",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ContractCase": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "exchanges": {
+            "items": {
+              "$ref": "#/components/schemas/HTTPExchange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "expect_error": {
+            "type": "boolean"
+          },
+          "expected": {},
+          "mcp_error": {
+            "type": "boolean"
+          },
+          "mcp_result": {},
+          "name": {
+            "type": "string"
+          },
+          "tool_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "arguments",
+          "name",
+          "tool_id"
+        ],
+        "type": "object"
+      },
+      "Deleted": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "type": "object"
+      },
+      "DiscoverRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "include_demo": {
+            "type": "boolean"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "services": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sim_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SimScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary_only": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "intent"
+        ],
+        "type": "object"
+      },
+      "DiscoverResult": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "type": "integer"
+          },
+          "eligible": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "output_tokens": {
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "type": "integer"
+          },
+          "question": {
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "servers": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/Selection"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "duration_ms",
+          "eligible",
+          "id",
+          "output_tokens",
+          "prompt_tokens",
+          "status",
+          "summary",
+          "tools"
+        ],
+        "type": "object"
+      },
+      "DiscoverSummaryResult": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "type": "integer"
+          },
+          "eligible": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "output_tokens": {
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "type": "integer"
+          },
+          "question": {
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "servers": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/Capability"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "duration_ms",
+          "eligible",
+          "id",
+          "output_tokens",
+          "prompt_tokens",
+          "status",
+          "summary",
+          "tools"
+        ],
+        "type": "object"
+      },
+      "EnableToolsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "retry_after_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "Event": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "detail": {},
+          "duration_ms": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "time": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "duration_ms",
+          "id",
+          "kind",
+          "status",
+          "time",
+          "title"
+        ],
+        "type": "object"
+      },
+      "EventScope": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "git_common_dir": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "matched_rule": {
+            "type": "string"
+          },
+          "remote_hint": {
+            "type": "string"
+          },
+          "repo_id": {
+            "type": "string"
+          },
+          "repo_name": {
+            "type": "string"
+          },
+          "root": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "matched_rule",
+          "repo_id",
+          "repo_name",
+          "root",
+          "status"
+        ],
+        "type": "object"
+      },
+      "HTTPExchange": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {},
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "query": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "response": {},
+          "response_headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "integer"
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "method",
+          "path",
+          "status"
+        ],
+        "type": "object"
+      },
+      "HTTPMapping": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "type": "boolean"
+          },
+          "parameters": {
+            "items": {
+              "$ref": "#/components/schemas/HTTPParameter"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "responses": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/HTTPResponse"
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "parameters"
+        ],
+        "type": "object"
+      },
+      "HTTPParameter": {
+        "additionalProperties": false,
+        "properties": {
+          "explode": {
+            "type": "boolean"
+          },
+          "in": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "style": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "explode",
+          "in",
+          "name",
+          "style"
+        ],
+        "type": "object"
+      },
+      "HTTPResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "media_type": {
+            "type": "string"
+          },
+          "schema": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "media_type"
+        ],
+        "type": "object"
+      },
+      "Health": {
+        "additionalProperties": false,
+        "properties": {
+          "application": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "data_identity": {
+            "type": "string"
+          },
+          "instance_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "application",
+          "channel",
+          "data_identity",
+          "instance_id",
+          "status",
+          "version"
+        ],
+        "type": "object"
+      },
+      "ImportOpenAPIRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "operation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "server": {
+            "$ref": "#/components/schemas/Server"
+          },
+          "spec": {
+            "type": "string"
+          },
+          "spec_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "server"
+        ],
+        "type": "object"
+      },
+      "ImportOpenAPIResult": {
+        "additionalProperties": false,
+        "properties": {
+          "imported": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "imported"
+        ],
+        "type": "object"
+      },
+      "InstallMarketRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "inputs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "server": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarketServer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "InstallMarketResult": {
+        "additionalProperties": false,
+        "properties": {
+          "server": {
+            "$ref": "#/components/schemas/Server"
+          },
+          "sync_error": {
+            "type": "string"
+          },
+          "tool_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "server",
+          "tool_count"
+        ],
+        "type": "object"
+      },
+      "InvokeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sim_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SimScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tool_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "arguments",
+          "tool_id"
+        ],
+        "type": "object"
+      },
+      "InvokeResult": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {},
+          "duration_ms": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "tool_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "duration_ms",
+          "id",
+          "protocol",
+          "tool_id"
+        ],
+        "type": "object"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
+      "LoginResult": {
+        "additionalProperties": false,
+        "properties": {
+          "principal": {
+            "$ref": "#/components/schemas/Principal"
+          }
+        },
+        "required": [
+          "principal"
+        ],
+        "type": "object"
+      },
+      "MaintenanceArtifact": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "name"
+        ],
+        "type": "object"
+      },
+      "MaintenanceRun": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "$ref": "#/components/schemas/AcceptanceReport"
+          },
+          "acceptance_input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcceptanceSuite"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "artifacts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "baseline": {
+            "type": "string"
+          },
+          "before": {
+            "items": {
+              "$ref": "#/components/schemas/Tool"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "force": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/SourceProvenance"
+          },
+          "published_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "published_by": {
+            "type": "string"
+          },
+          "review": {
+            "$ref": "#/components/schemas/PublicationReview"
+          },
+          "rolled_back_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rolled_back_by": {
+            "type": "string"
+          },
+          "server": {
+            "$ref": "#/components/schemas/Server"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/MaintenanceSource"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/Tool"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/MaintenanceTrigger"
+          }
+        },
+        "required": [
+          "acceptance",
+          "baseline",
+          "before",
+          "created_at",
+          "events",
+          "force",
+          "id",
+          "provenance",
+          "review",
+          "server",
+          "server_id",
+          "source",
+          "stage",
+          "status",
+          "tools",
+          "trigger"
+        ],
+        "type": "object"
+      },
+      "MaintenanceRunDetails": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/ToolChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "run": {
+            "$ref": "#/components/schemas/MaintenanceRun"
+          }
+        },
+        "required": [
+          "changes",
+          "run"
+        ],
+        "type": "object"
+      },
+      "MaintenanceSource": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_publish": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "format": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "interval_minutes": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "next_run_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RepositorySource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "auto_publish",
+          "enabled",
+          "files",
+          "instructions",
+          "interval_minutes",
+          "next_run_at",
+          "server_id",
+          "timeout_seconds",
+          "urls"
+        ],
+        "type": "object"
+      },
+      "MaintenanceStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceRun"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "runtime": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceSource"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "runs",
+          "runtime",
+          "sources"
+        ],
+        "type": "object"
+      },
+      "MaintenanceTrigger": {
+        "additionalProperties": false,
+        "properties": {
+          "commit": {
+            "type": "string"
+          },
+          "delivery_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "MarketInput": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "placeholder": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "boolean"
+          },
+          "where": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "where"
+        ],
+        "type": "object"
+      },
+      "MarketSearchResult": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MarketServer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "registry_error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "MarketServer": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "command": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "featured": {
+            "type": "boolean"
+          },
+          "homepage": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/MarketInput"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "publisher": {
+            "type": "string"
+          },
+          "runs": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "sign_in": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "featured",
+          "id",
+          "inputs",
+          "installed",
+          "publisher",
+          "runs",
+          "server_id",
+          "title",
+          "transport"
+        ],
+        "type": "object"
+      },
+      "ModelProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key_configured": {
+            "type": "boolean"
+          },
+          "max_tools": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "base_url",
+          "id",
+          "key_configured",
+          "max_tools",
+          "model",
+          "timeout_seconds"
+        ],
+        "type": "object"
+      },
+      "ObservedRepo": {
+        "additionalProperties": false,
+        "properties": {
+          "fingerprint": {
+            "type": "string"
+          },
+          "git_common_dir": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "last_agent": {
+            "type": "string"
+          },
+          "last_seen": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "remote_hint": {
+            "type": "string"
+          },
+          "request_count": {
+            "type": "integer"
+          },
+          "root": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "git_common_dir",
+          "kind",
+          "last_agent",
+          "last_seen",
+          "name",
+          "remote_hint",
+          "request_count",
+          "root"
+        ],
+        "type": "object"
+      },
+      "PingModelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "clear_key": {
+            "type": "boolean"
+          },
+          "max_tools": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "profile_id": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_url",
+          "max_tools",
+          "model",
+          "timeout_seconds"
+        ],
+        "type": "object"
+      },
+      "PingModelResult": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "duration_ms",
+          "model",
+          "ok"
+        ],
+        "type": "object"
+      },
+      "Principal": {
+        "additionalProperties": false,
+        "properties": {
+          "admin": {
+            "type": "boolean"
+          },
+          "allow_write": {
+            "type": "boolean"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "servers": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "admin",
+          "allow_write",
+          "groups",
+          "id",
+          "servers"
+        ],
+        "type": "object"
+      },
+      "PublicationReview": {
+        "additionalProperties": false,
+        "properties": {
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewReason"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reasons",
+          "required"
+        ],
+        "type": "object"
+      },
+      "Published": {
+        "additionalProperties": false,
+        "properties": {
+          "published": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "published"
+        ],
+        "type": "object"
+      },
+      "Registry": {
+        "additionalProperties": false,
+        "properties": {
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/Server"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/Tool"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "servers",
+          "tools"
+        ],
+        "type": "object"
+      },
+      "Repository": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "git_common_dirs": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "remote_hint": {
+            "type": "string"
+          },
+          "root_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "created_at",
+          "git_common_dirs",
+          "id",
+          "name",
+          "remote_hint",
+          "root_paths"
+        ],
+        "type": "object"
+      },
+      "RepositorySource": {
+        "additionalProperties": false,
+        "properties": {
+          "events_enabled": {
+            "type": "boolean"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "project": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "webhook_secret_env": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "events_enabled",
+          "files",
+          "ref",
+          "url"
+        ],
+        "type": "object"
+      },
+      "ReviewReason": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "tool_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "tool_id"
+        ],
+        "type": "object"
+      },
+      "RolledBack": {
+        "additionalProperties": false,
+        "properties": {
+          "rolled_back": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "rolled_back"
+        ],
+        "type": "object"
+      },
+      "RoutingCase": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "expected": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "forbidden": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "intent": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "no_match": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expected",
+          "intent",
+          "name"
+        ],
+        "type": "object"
+      },
+      "RunMaintenanceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "force": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "force"
+        ],
+        "type": "object"
+      },
+      "SaveModelProfileRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "api_key": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "clear_key": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key_configured": {
+            "type": "boolean"
+          },
+          "max_tools": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "base_url",
+          "id",
+          "key_configured",
+          "max_tools",
+          "model",
+          "timeout_seconds"
+        ],
+        "type": "object"
+      },
+      "SaveRepositoryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "git_common_dirs": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "remote_hint": {
+            "type": "string"
+          },
+          "root_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "SaveSettingsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "clear_key": {
+            "type": "boolean"
+          },
+          "max_tools": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_url",
+          "max_tools",
+          "model",
+          "timeout_seconds"
+        ],
+        "type": "object"
+      },
+      "Saved": {
+        "additionalProperties": false,
+        "properties": {
+          "saved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "saved"
+        ],
+        "type": "object"
+      },
+      "ScopeAgentPreview": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "has_write": {
+            "type": "boolean"
+          },
+          "matched_agent_key": {
+            "type": "string"
+          },
+          "matched_repo_key": {
+            "type": "string"
+          },
+          "server_count": {
+            "type": "integer"
+          },
+          "servers": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeServerSummary"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "source_label": {
+            "type": "string"
+          },
+          "tool_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent",
+          "has_write",
+          "matched_agent_key",
+          "matched_repo_key",
+          "server_count",
+          "servers",
+          "source_label",
+          "tool_count"
+        ],
+        "type": "object"
+      },
+      "ScopeModeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "enforce": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enforce"
+        ],
+        "type": "object"
+      },
+      "ScopeOverview": {
+        "additionalProperties": false,
+        "properties": {
+          "enforce": {
+            "type": "boolean"
+          },
+          "hook_bin_path": {
+            "type": "string"
+          },
+          "observed": {
+            "items": {
+              "$ref": "#/components/schemas/ObservedRepo"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "repositories": {
+            "items": {
+              "$ref": "#/components/schemas/Repository"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeRule"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enforce",
+          "hook_bin_path",
+          "observed",
+          "repositories",
+          "rules"
+        ],
+        "type": "object"
+      },
+      "ScopePreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "repo_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "actor",
+          "repo_key"
+        ],
+        "type": "object"
+      },
+      "ScopePreviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeAgentPreview"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "repo_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agents",
+          "repo_key"
+        ],
+        "type": "object"
+      },
+      "ScopeRule": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_key": {
+            "type": "string"
+          },
+          "grants": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceGrant"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "repo_key": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_key",
+          "grants",
+          "repo_key",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "ScopeServerSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "tool_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "access",
+          "server_id",
+          "tool_count"
+        ],
+        "type": "object"
+      },
+      "ScopeSnippetResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "config_path": {
+            "type": "string"
+          },
+          "hook_bin_path": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "mcp_url": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "config_path",
+          "hook_bin_path",
+          "instructions",
+          "mcp_url",
+          "snippet"
+        ],
+        "type": "object"
+      },
+      "Selection": {
+        "additionalProperties": false,
+        "properties": {
+          "actors": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "adapter": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "example": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "http": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HTTPMapping"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "input_schema": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "output_schema": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "actors",
+          "description",
+          "enabled",
+          "id",
+          "input_schema",
+          "name",
+          "read_only",
+          "reason",
+          "server_id",
+          "tags"
+        ],
+        "type": "object"
+      },
+      "Server": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "command": {
+            "type": "string"
+          },
+          "demo": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "oauth": {
+            "type": "boolean"
+          },
+          "redact_emails": {
+            "type": "boolean"
+          },
+          "redact_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "transport": {
+            "type": "string"
+          },
+          "work_dir": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "enabled",
+          "endpoint",
+          "id",
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ServiceGrant": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "tool_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "access",
+          "server_id",
+          "tool_ids"
+        ],
+        "type": "object"
+      },
+      "Settings": {
+        "additionalProperties": false,
+        "properties": {
+          "base_url": {
+            "type": "string"
+          },
+          "max_tools": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_url",
+          "max_tools",
+          "model",
+          "timeout_seconds"
+        ],
+        "type": "object"
+      },
+      "SetupModelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "clear_key": {
+            "type": "boolean"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "max_tools": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_url",
+          "max_tools",
+          "model",
+          "timeout_seconds"
+        ],
+        "type": "object"
+      },
+      "SetupStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_last_request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Event"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled_tools": {
+            "type": "integer"
+          },
+          "model_check": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_configured": {
+            "type": "boolean"
+          },
+          "model_ready": {
+            "type": "boolean"
+          },
+          "source_checks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ConnectionCheck"
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "sources": {
+            "type": "integer"
+          },
+          "tools_ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agent_last_request",
+          "enabled_tools",
+          "model_check",
+          "model_configured",
+          "model_ready",
+          "source_checks",
+          "sources",
+          "tools_ready"
+        ],
+        "type": "object"
+      },
+      "SignedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "signed_out": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "signed_out"
+        ],
+        "type": "object"
+      },
+      "SimScope": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_key": {
+            "type": "string"
+          },
+          "repo_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_key",
+          "repo_key"
+        ],
+        "type": "object"
+      },
+      "SourceProvenance": {
+        "additionalProperties": false,
+        "properties": {
+          "commit": {
+            "type": "string"
+          },
+          "documents": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "ref": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "documents"
+        ],
+        "type": "object"
+      },
+      "SyncServerResult": {
+        "additionalProperties": false,
+        "properties": {
+          "imported": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "imported"
+        ],
+        "type": "object"
+      },
+      "Tool": {
+        "additionalProperties": false,
+        "properties": {
+          "actors": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "adapter": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "example": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "http": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HTTPMapping"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "input_schema": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "output_schema": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "actors",
+          "description",
+          "enabled",
+          "id",
+          "input_schema",
+          "name",
+          "read_only",
+          "server_id",
+          "tags"
+        ],
+        "type": "object"
+      },
+      "ToolChange": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Tool"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "before": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Tool"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "WebhookResult": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "ignored": {
+            "type": "boolean"
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "run_id": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "sessionCookie": {
+        "in": "cookie",
+        "name": "gateway_session",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "The HTTP contract between the gateway backend and its control-plane clients (desktop app, web console). In local mode the backend listens on loopback only and requires no authentication. In shared mode every route except the public ones needs a bearer access token or the session cookie from /api/auth/login; routes that are not marked as invocation routes additionally need an admin principal. Every error response has the Error body.",
+    "title": "MCP Gateway control plane API",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "operationId": "post_auth_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [],
+        "summary": "Exchange an access token for a session cookie (shared mode)",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_auth_logout",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "End the session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_auth_me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMe"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "The caller's identity",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/bootstrap": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_bootstrap",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Bootstrap"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Everything the control plane needs for its first screen",
+        "tags": [
+          "bootstrap"
+        ]
+      }
+    },
+    "/api/catalog": {
+      "get": {
+        "description": "Invocation route: open to any authenticated principal in shared mode. Results are limited to what the principal (or, in local mode, the simulated actor) may use.",
+        "operationId": "get_catalog",
+        "parameters": [
+          {
+            "description": "Simulated identity in local mode; ignored when the caller is authenticated",
+            "in": "query",
+            "name": "actor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include demo services",
+            "in": "query",
+            "name": "include_demo",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Agent key used to resolve repository scope",
+            "in": "query",
+            "name": "agent",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Signed repository scope token issued by the scope hook",
+            "in": "header",
+            "name": "X-Gateway-Scope",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Catalog"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Authorized services and tool summaries",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/discover": {
+      "post": {
+        "description": "Invocation route: open to any authenticated principal in shared mode. Results are limited to what the principal (or, in local mode, the simulated actor) may use.",
+        "operationId": "post_discover",
+        "parameters": [
+          {
+            "description": "Agent key used to resolve repository scope",
+            "in": "query",
+            "name": "agent",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Signed repository scope token issued by the scope hook",
+            "in": "header",
+            "name": "X-Gateway-Scope",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DiscoverResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DiscoverSummaryResult"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Route an intent to a small set of authorized tools",
+        "tags": [
+          "discover"
+        ]
+      }
+    },
+    "/api/events": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_events",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Event"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Recent activity",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [],
+        "summary": "Liveness and instance identity",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/invoke": {
+      "post": {
+        "description": "Invocation route: open to any authenticated principal in shared mode. Results are limited to what the principal (or, in local mode, the simulated actor) may use.",
+        "operationId": "post_invoke",
+        "parameters": [
+          {
+            "description": "Agent key used to resolve repository scope",
+            "in": "query",
+            "name": "agent",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Signed repository scope token issued by the scope hook",
+            "in": "header",
+            "name": "X-Gateway-Scope",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvokeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvokeResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Invoke a registered tool",
+        "tags": [
+          "invoke"
+        ]
+      }
+    },
+    "/api/maintenance": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_maintenance",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Maintenance runtime, sources and recent runs",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/runs/{id}": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_maintenance_runs_by_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceRunDetails"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "A run and its tool changes",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/runs/{id}/artifacts/{name}": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_maintenance_runs_by_id_artifacts_by_name",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceArtifact"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "One run artifact",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/runs/{id}/cancel": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_maintenance_runs_by_id_cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cancelled"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Cancel a run",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/runs/{id}/publish": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_maintenance_runs_by_id_publish",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Published"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Publish a run's tools",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/runs/{id}/rollback": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_maintenance_runs_by_id_rollback",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolledBack"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Roll back to a run's baseline",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/sources": {
+      "put": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "put_maintenance_sources",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaintenanceSource"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Saved"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create or update a maintenance source",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/sources/{id}/acceptance": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_maintenance_sources_by_id_acceptance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptanceSuite"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "A source's acceptance suite",
+        "tags": [
+          "maintenance"
+        ]
+      },
+      "put": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "put_maintenance_sources_by_id_acceptance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptanceSuite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Saved"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Replace a source's acceptance suite",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/sources/{id}/run": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_maintenance_sources_by_id_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunMaintenanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceRun"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Start a maintenance run",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/sources/{id}/webhook/{provider}": {
+      "post": {
+        "operationId": "post_maintenance_sources_by_id_webhook_by_provider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResult"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [],
+        "summary": "Repository event webhook (authenticated by the provider signature)",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/market": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_market",
+        "parameters": [
+          {
+            "description": "Search text",
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketSearchResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Search installable MCP servers",
+        "tags": [
+          "market"
+        ]
+      }
+    },
+    "/api/market/icon": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_market_icon",
+        "parameters": [
+          {
+            "description": "Market server ID",
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Icon URL",
+            "in": "query",
+            "name": "url",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Proxied market icon",
+        "tags": [
+          "market"
+        ]
+      }
+    },
+    "/api/market/install": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_market_install",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallMarketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallMarketResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Install a market server",
+        "tags": [
+          "market"
+        ]
+      }
+    },
+    "/api/model-profiles": {
+      "put": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "put_model_profiles",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveModelProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProfile"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rejected; see error and detail"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create or update a model profile after a passing connectivity check",
+        "tags": [
+          "model-profiles"
+        ]
+      }
+    },
+    "/api/model-profiles/{id}": {
+      "delete": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "delete_model_profiles_by_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete a model profile",
+        "tags": [
+          "model-profiles"
+        ]
+      }
+    },
+    "/api/model-profiles/{id}/activate": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_model_profiles_by_id_activate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProfile"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Make a model profile active",
+        "tags": [
+          "model-profiles"
+        ]
+      }
+    },
+    "/api/model/ping": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_model_ping",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PingModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PingModelResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rejected; see error and detail"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Test model connectivity without saving",
+        "tags": [
+          "model"
+        ]
+      }
+    },
+    "/api/scopes": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_scopes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeOverview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Repository scopes, rules and observed repositories",
+        "tags": [
+          "scopes"
+        ]
+      }
+    },
+    "/api/scopes/mode": {
+      "put": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "put_scopes_mode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeModeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeModeRequest"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Turn scope enforcement on or off",
+        "tags": [
+          "scopes"
+        ]
+      }
+    },
+    "/api/scopes/preview": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_scopes_preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopePreviewResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Preview what each agent can reach in a repository",
+        "tags": [
+          "scopes"
+        ]
+      }
+    },
+    "/api/scopes/repositories": {
+      "put": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "put_scopes_repositories",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveRepositoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repository"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create or update a repository",
+        "tags": [
+          "scopes"
+        ]
+      }
+    },
+    "/api/scopes/repositories/{id}": {
+      "delete": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "delete_scopes_repositories_by_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete a repository",
+        "tags": [
+          "scopes"
+        ]
+      }
+    },
+    "/api/scopes/rules": {
+      "delete": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "delete_scopes_rules",
+        "parameters": [
+          {
+            "description": "Rule repository key",
+            "in": "query",
+            "name": "repo_key",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Rule agent key",
+            "in": "query",
+            "name": "agent_key",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete a scope rule",
+        "tags": [
+          "scopes"
+        ]
+      },
+      "put": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "put_scopes_rules",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeRule"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeRule"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create or replace a scope rule",
+        "tags": [
+          "scopes"
+        ]
+      }
+    },
+    "/api/scopes/snippets": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_scopes_snippets",
+        "parameters": [
+          {
+            "description": "Agent key",
+            "in": "query",
+            "name": "agent",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeSnippetResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Hook configuration snippet for an agent",
+        "tags": [
+          "scopes"
+        ]
+      }
+    },
+    "/api/servers": {
+      "put": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "put_servers",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Server"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Server"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create or replace a tool source",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/servers/openapi": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_servers_openapi",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportOpenAPIRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportOpenAPIResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Register an HTTP source and the tools generated from its OpenAPI document",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/servers/{id}/sync": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_servers_by_id_sync",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncServerResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Re-read an MCP source's tools/list",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/servers/{id}/tools": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_servers_by_id_tools",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnableToolsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Saved"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Choose which of a source's tools are enabled",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/settings": {
+      "put": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "put_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Saved"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Save the active model settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/setup/model": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_setup_model",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoverResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rejected; see error and detail"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Save model settings and try a routing request",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/setup/source": {
+      "post": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "post_setup_source",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Server"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionCheck"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Rejected; see error and detail"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Save a source and test its connection",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/setup/status": {
+      "get": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "get_setup_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Onboarding progress",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/tools": {
+      "put": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "put_tools",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Tool"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tool"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create or replace a tool",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/tools/{id}/schema": {
+      "get": {
+        "description": "Invocation route: open to any authenticated principal in shared mode. Results are limited to what the principal (or, in local mode, the simulated actor) may use.",
+        "operationId": "get_tools_by_id_schema",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Simulated identity in local mode; ignored when the caller is authenticated",
+            "in": "query",
+            "name": "actor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Agent key used to resolve repository scope",
+            "in": "query",
+            "name": "agent",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Signed repository scope token issued by the scope hook",
+            "in": "header",
+            "name": "X-Gateway-Scope",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tool"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Full definition of one authorized tool",
+        "tags": [
+          "tools"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    },
+    {
+      "sessionCookie": []
+    }
+  ]
+}

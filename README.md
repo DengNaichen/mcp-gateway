@@ -283,6 +283,9 @@ sqlite3 data/gateway.db 'SELECT time, kind, status, title FROM activity ORDER BY
 | POST | /api/auth/login | 管理令牌换取 HttpOnly 登录会话 |
 | POST | /api/auth/logout | 注销当前会话 |
 | GET | /api/auth/me | 当前身份 |
+| POST | /api/servers/openapi | 由服务端解析 OpenAPI 文档（内容或 URL），注册 HTTP 服务及其工具 |
+
+上表只列常用接口。完整契约（全部路由、请求/响应结构、错误格式、鉴权要求）见 [docs/api](docs/api/README.md) 下的 `openapi.json`，由契约测试守护。
 
 ## 共享模式与访问控制
 
