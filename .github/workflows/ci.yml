@@ -5,6 +5,10 @@ on:
   push:
     branches:
       - main
+  # Nightly full run with the test result cache bypassed (see GOFLAGS below).
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,9 +27,19 @@ jobs:
   test:
     name: Test (Linux)
     runs-on: ubuntu-latest
+    env:
+      # PRs and main pushes reuse Go's test result cache, so only packages
+      # whose inputs changed re-run. Scheduled and manual runs force every
+      # test to run to catch flaky or time/network-dependent tests.
+      GOFLAGS: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '-count=1' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # go test caches results by input file size + mtime; derive mtimes from
+      # content so unchanged files look unchanged across fresh checkouts.
+      - name: Stabilize file mtimes for the Go test cache
+        run: python3 scripts/ci-stable-mtime.py
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -63,10 +77,10 @@ jobs:
         run: python3 scripts/check-foundation.py
 
       - name: Run Go tests
-        run: CGO_ENABLED=0 go test -count=1 ./...
+        run: CGO_ENABLED=0 go test ./...
 
       - name: Run Go tests with race detector
-        run: CGO_ENABLED=1 go test -race -count=1 ./internal/... ./cmd/...
+        run: CGO_ENABLED=1 go test -race ./internal/... ./cmd/...
 
       - name: Test stable channel
         run: CGO_ENABLED=0 go test -ldflags="-X gatewaylab/internal/buildinfo.channel=stable" ./...
