@@ -61,40 +61,23 @@ jobs:
       - name: Vulnerability scan (govulncheck)
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
-  package:
-    name: Desktop Package (macOS)
-    needs: checks
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Daily CI cross-compiles on Linux. Signing, notarization and DMGs
+      # remain in release.yml on macOS.
+      - name: Cross-package macOS Dev and Stable apps (unsigned)
+        run: |
+          node scripts/build-channel.mjs package dev -platform darwin/arm64,darwin/amd64 -skip-dmg
+          node scripts/build-channel.mjs package stable -platform darwin/arm64,darwin/amd64 -skip-dmg
+          python3 scripts/verify-cross-packages.py
 
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          check-latest: true
-
-      - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "22"
-
-      - name: Verify desktop package build (ad-hoc)
-        run: make package
-
-      - name: Verify Stable package identity
-        run: node scripts/build-channel.mjs package stable -skip-dmg
-
-      - name: Archive Dev app with executable permissions
+      - name: Archive unsigned Dev apps with executable permissions
         run: |
           for app in build/dev/*/*.app; do
-            ditto -c -k --sequesterRsrc --keepParent "$app" "$(dirname "$app")/mcp-gateway-dev.zip"
+            tar -czf "$(dirname "$app")/mcp-gateway-dev-unsigned.tar.gz" -C "$(dirname "$app")" "$(basename "$app")"
           done
 
-      - name: Retain Dev build for testing
+      - name: Retain unsigned Dev builds for testing
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: mcp-gateway-dev-${{ github.sha }}
-          path: build/dev/*/*.zip
+          name: mcp-gateway-dev-unsigned-${{ github.sha }}
+          path: build/dev/*/*-unsigned.tar.gz
           if-no-files-found: error
