@@ -117,13 +117,20 @@ func (g *Gateway) DeleteServer(id string) error {
 	for _, key := range g.credentials.Prefix(credentialPrefix(id)) {
 		changes[key] = ""
 	}
-	return g.credentials.Update(changes, func() error {
+	for _, key := range g.credentials.Prefix("oauth/" + id + "/") {
+		changes[key] = ""
+	}
+	err := g.credentials.Update(changes, func() error {
 		return g.registry.Update(func(r registry.Registry) (registry.Registry, error) {
 			r.Servers = slices.DeleteFunc(r.Servers, func(s registry.Server) bool { return s.ID == id })
 			r.Tools = slices.DeleteFunc(r.Tools, func(t registry.Tool) bool { return t.ServerID == id })
 			return r, nil
 		})
 	})
+	if err == nil {
+		g.upstream.ForgetOAuth(id)
+	}
+	return err
 }
 
 func (g *Gateway) CredentialsPersistent() bool { return g.credentials.Persistent() }

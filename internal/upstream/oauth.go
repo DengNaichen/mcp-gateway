@@ -51,10 +51,12 @@ func defaultOpenBrowserURL(rawURL string) error {
 	return cmd.Start()
 }
 
-func (u *Service) oauthHandlerForServer(serverID string) (*auth.AuthorizationCodeHandler, func(), error) {
-	u.oauthMu.RLock()
-	existingTS := u.oauthTokens[serverID]
-	u.oauthMu.RUnlock()
+func (u *Service) oauthHandlerForServer(server Server) (*auth.AuthorizationCodeHandler, func(), error) {
+	serverID := oauthSessionKey(server)
+	existingTS, err := u.cachedOAuth(serverID)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	if existingTS != nil {
 		h, err := auth.NewAuthorizationCodeHandler(&auth.AuthorizationCodeHandlerConfig{
@@ -73,9 +75,9 @@ func (u *Service) oauthHandlerForServer(serverID string) (*auth.AuthorizationCod
 			AcceptUnadvertisedIss: true,
 			Client:                &http.Client{Timeout: 30 * time.Second},
 			AuthorizationCodeFetcher: func(ctx context.Context, _ *auth.AuthorizationArgs) (*auth.AuthorizationResult, error) {
-				u.oauthMu.Lock()
-				delete(u.oauthTokens, serverID)
-				u.oauthMu.Unlock()
+				if err := u.clearOAuth(serverID); err != nil {
+					return nil, err
+				}
 				return nil, fmt.Errorf("OAuth 授权已失效，请重新触发同步以完成浏览器登录")
 			},
 		})
@@ -175,13 +177,10 @@ func (u *Service) oauthHandlerForServer(serverID string) (*auth.AuthorizationCod
 			}
 		},
 		NewTokenSource: func(ctx context.Context, cfg *oauth2.Config, tok *oauth2.Token) (oauth2.TokenSource, error) {
-			ts := cfg.TokenSource(context.Background(), tok)
-			u.oauthMu.Lock()
-			if u.oauthTokens == nil {
-				u.oauthTokens = map[string]oauth2.TokenSource{}
+			ts, err := u.newOAuthSource(serverID, cfg, tok)
+			if err != nil {
+				return nil, err
 			}
-			u.oauthTokens[serverID] = ts
-			u.oauthMu.Unlock()
 			return ts, nil
 		},
 	})
