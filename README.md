@@ -1,6 +1,6 @@
 # Gateway Lab
 
-一个可以直接运行的 MCP Gateway 原型。Go 后端、MyGo 原生桌面端、SQLite 持久化；网关中的模型负责从可用工具里做选择，本地 Agent 继续负责规划和执行。新增的 Pi coding agent 在后台维护接入定义和适配代码，使服务变化能持续同步到路由模型可选的工具集合。
+一个可以直接运行的 MCP Gateway。Go 后端、MyGo 原生桌面端、SQLite 持久化；网关中的模型负责从可用工具里做选择，本地 Agent 继续负责规划和执行。支持 Repo × Agent 仓库级权限隔离（`gateway-hook`）、6 大主流客户端官方插件、MCP 市场、浏览器 OAuth 2.0、OpenAPI 原生 HTTP 参数映射与 Pi 后台自动维护。整体分层与运行时架构见 [`docs/architecture.md`](docs/architecture.md)。
 
 ## 启动
 
@@ -19,27 +19,29 @@ make dev      # 运行 Dev 原生桌面端
 curl http://127.0.0.1:8789/api/health
 ```
 
-MCP 入口为 `http://127.0.0.1:8789/mcp`，管理 API 位于 `/api/*`，`gatewayctl`、`gateway-hook` 和桌面端都通过它们访问网关。访问根路径 `/` 只返回指向 `/mcp` 与 `/api/health` 的 404 JSON。
+MCP 入口为 `http://127.0.0.1:8789/mcp`，管理 API 位于 `/api/*`，`gatewayctl`、`routingeval`、`gateway-hook` 和桌面端都通过它们访问网关。访问根路径 `/` 只返回指向 `/mcp` 与 `/api/health` 的 404 JSON。
 
-从源码构建需要 Go 1.26+；打包桌面端和发布脚本（`scripts/*.mjs`）需要 Node.js 22.12+。如果依赖下载受网络影响，可以使用 `GOPROXY=https://goproxy.cn,direct`。
+从源码构建需要 Go 1.27+；打包桌面端和发布脚本（`scripts/*.mjs`）需要 Node.js 22.12+。如果依赖下载受网络影响，可以使用 `GOPROXY=https://goproxy.cn,direct`。
 
-## 使用流程
+## 桌面控制台（9 个页面）
 
-桌面端首页「开始接入」按三个步骤引导：
+MyGo 原生桌面端（`cmd/gateway-desktop`）完全通过 `/api/*` 与后端通信，提供 9 个顶层功能页面：
 
-1. **接入工具**：填写 MCP 地址或本地 stdio 启动命令，点击「保存并读取工具」。也可以粘贴单个现有 `mcpServers` 配置。检查工具描述和读写属性，勾选后点击「保存工具选择」。新导入工具默认禁用，表单中的勾选只是待保存的选择。普通 HTTP API 则先检查地址，再填写具体工具的方法、路径和参数 schema。
-2. **配置模型**：填写 Decisions API 的 Base URL、模型 ID（当前支持 `gpt-6-luna`）和 API Key。「仅保存配置」不发起请求；「保存并测试路由」会用自己的工具定义发起一次真实模型请求，校验回答类型、相关性概率和工具映射，不执行下游工具。需要先启用至少一个自己的工具。更换配置、Key 或工具后，上次检查会显示需要重新测试。
-3. **连接 Agent**：选择 Codex、Claude Code 或通用 JSON，复制命令或配置，在本地客户端应用。重新打开客户端会话后，直接在 Agent 里提出任务。页面只读取状态，在网关收到 MCP 初始化、工具列表或工具调用请求后显示记录；不会通过界面自测模拟完成接入。
+1. **运行大盘（`overview`）**：三步接入向导（接入服务、配置模型、连接 Agent）、近 12 小时运行脉冲（48 个 15 分钟请求/错误分桶）、运行健康度、最近 MCP 请求状态与快捷导航。
+2. **上游服务（`services`）**：管理 MCP stdio、MCP Streamable HTTP（支持浏览器 OAuth）、手动 HTTP REST 与 OpenAPI 导入服务；支持白名单勾选启用、工具编辑与自动维护配置。新导入工具默认禁用，需手动启用后才进入路由候选。
+3. **MCP 市场（`market`）**：浏览内置精选与在线 MCP Registry（`GET /api/market`），一键安装（`POST /api/market/install`）并将环境变量/Header/参数密钥注入进程内存。
+4. **工具目录（`catalog`）**：按服务、只读/写属性跨服务浏览当前所有已启用工具的摘要与 Schema。
+5. **仓库绑定（`repos`）**：管理仓库锚点（Git `common_dir` / 非 Git `root_paths`）、`(repo_key, agent_key)` 权限矩阵、预览各 Agent 可达工具、复制 Hook 片段并开关 `enforce` 仓库隔离模式。
+6. **连接客户端（`clients`）**：一键向 Codex CLI、Claude Code、Cursor、OpenCode v2、Pi、Antigravity 安装/更新/卸载官方插件（含 `gateway-hook` 集成）或写入用户级 MCP 配置。
+7. **访问与路由（`settings`）**：配置并测试 Decisions 模型、管理多组已保存的模型档案（`model_profiles`）、调整 `max_tools` / 超时与认证策略。
+8. **请求日志（`logs`）**：查看最近请求、作用域归因（`scope`）、耗时与脱敏后详情（SQLite 保存全部历史）。
+9. **路由沙盒（`playground`）**：输入自然语言意图（及可选 `sim_scope` 模拟仓库/Agent 视角）实时调试 Decisions 相关性概率、查看真实 Schema 并手动试调用工具（支持 `fields` 响应裁剪）。
 
-三个步骤都可以先查看，未接入时进度保持未完成。连接失败会保留配置，显示错误详情，方便修改重试。HTTP 地址可达、工具已启用、模型已响应和 Agent 已发来请求分别显示，不代表下游任务一定成功。
-
-原来的工作台位于「调试」：查看 Decisions 相关性概率、真实 schema，或手动试调用工具。可选字段如 `logs.timestamp,logs.message` 会裁剪结果。「工具注册表」保留完整 JSON 编辑器和同步入口，「高级设置」保留路由参数。「调用记录」显示最近 100 条记录，SQLite 保存全部记录。
-
-内置的 Service Catalog 是 HTTP API，Observability 是使用官方 Go SDK 实现的原生 MCP 服务。示例调用实际经过对应适配器和本机 HTTP 请求，响应明确带有 `demo: true`。演示工具不计入接入进度，默认不参与发现。演示工具同样需要先配置模型；调试页选择内置示例会开启「包含演示工具」。
+内置的 Service Catalog（HTTP API）与 Observability（Go SDK 原生 MCP）示例服务实际经过对应适配器运行，响应带有 `demo: true`；演示工具默认不参与发现，在沙盒勾选「包含演示工具」时启用。
 
 ## 模型配置
 
-可以在桌面端设置页填写，也可以用环境变量启动：
+可以在桌面端「访问与路由」页填写并管理多组已保存的模型档案（`model_profiles`），也可以用环境变量启动：
 
 ```sh
 export GATEWAY_MODEL_BASE_URL='https://api.openai.com/v1'
@@ -48,7 +50,13 @@ export GATEWAY_MODEL_API_KEY='你的 OpenAI API Key'
 ./start.sh
 ```
 
-模型 ID 以 `gemini-` 开头时使用 Google Gemini Decisions API（如 Base URL `https://generativelanguage.googleapis.com/v1beta`、模型 `gemini-decision-1`），其他模型使用 OpenAI 风格的 Decisions API。Base URL 自动补全 `/decisions`；也可直接填写完整 endpoint。Key 只保存在内存，不写数据库，重启后重新填写或使用环境变量。路由只调用 Decisions API，不调用 Chat Completions，也不使用 JSON Mode。已有配置若使用旧模型或 `/chat/completions` 地址，需要重新填写模型和地址，再测试路由。切换服务时请同时更新或清除旧 Key。
+支持三种 Decisions 协议，按模型 ID 与地址自动选择：
+
+- **OpenAI Decisions**：默认协议，Base URL 自动补全 `/decisions`，使用 Bearer 认证（如 `gpt-6-luna`）。
+- **Google Gemini Decisions**：模型 ID 以 `gemini-` 开头（如 `gemini-decision-1`），Base URL 自动补全 `/decisions`，通过 `x-goog-api-key` 认证。
+- **SystemOne**：模型 ID 为 `jev` / `jev-*` / `decision-model-*` 或 Base URL 以 `/systemone` 结尾（如 `.../v1` 自动补全或直填 `.../v1/systemone`），按单次最多 16 题自动分片评估 `"noul"` / `"choice"` 问题。
+
+桌面端「测试连通性」（`POST /api/model/ping`）校验通过后可将配置保存/切换为多组 `ModelProfile`（`PUT /api/model-profiles`、`POST /api/model-profiles/{id}/activate`）。API Key 仅保存在进程内存（`model.profileKeys`）中，绝不写入 SQLite，重启后需重新填写或通过环境变量注入。路由只调用 Decisions/SystemOne 接口，不调用 Chat Completions 或 JSON Mode；更换配置、Key 或启用工具后，已有验证指纹会失效并提示重新测试。
 
 路由分三步，默认全开；`GATEWAY_ROUTING=flat` 退回只有第二步的平铺路由，`GATEWAY_ROUTING=hierarchical` 或 `refine` 只开其中一步：
 
@@ -175,35 +183,51 @@ http://127.0.0.1:8789/mcp
 
 给 Agent 的建议指引：需要外部能力时先描述当前任务调用 discover_tools，按返回的 input_schema 填参数，再用 invoke_tool 执行；任务变化时重新发现。工具定义作为发现结果返回，通过固定 invoke_tool 执行，不依赖客户端动态注入新工具。
 
-## 命令行 / Code Mode
+## 命令行 / Code Mode 与官方客户端插件
 
 ```sh
-./bin/gatewayctl list
-./bin/gatewayctl -summary search 'CI job log trace'
-./bin/gatewayctl schema gitlab.job_trace
-./bin/gatewayctl -demo search '排查 billing 最近报错的原因'
-./bin/gatewayctl -context '已知服务名为 billing' search '查错误日志'
-./bin/gatewayctl -args '{"service":"billing","minutes":10}' \
+./bin/dev/gatewayctl list
+./bin/dev/gatewayctl -summary search 'CI job log trace'
+./bin/dev/gatewayctl schema gitlab.job_trace
+./bin/dev/gatewayctl -demo search '排查 billing 最近报错的原因'
+./bin/dev/gatewayctl -context '已知服务名为 billing' search '查错误日志'
+./bin/dev/gatewayctl -args '{"service":"billing","minutes":10}' \
   -fields 'logs.timestamp,logs.message' \
   call observability.search_error_logs > result.json
 ```
 
 Flags 放在子命令之前。`-url` 可指定网关地址，本机无认证模式的 `-actor observer` 可切换模拟身份；共享模式用 `GATEWAY_TOKEN`，客户端 actor 不改变真实身份。CLI 的 stdout 只有 JSON，方便重定向文件或用 jq 处理。
 
-## 接入 HTTP API
+`gatewayctl plugin` 与桌面端「连接客户端」共享 [`internal/clientplugin`](internal/clientplugin) 引擎（模板内嵌自 [`plugins/`](plugins)），支持为 **Codex CLI、Claude Code、Cursor、OpenCode v2、Pi、Antigravity** 6 个客户端管理官方插件与用户级 MCP 配置：
 
-在注册表添加 `kind: "http"` 服务，Endpoint 作为工具路径的基地址。添加工具时填写 `server_id`、`method`、`path` 和 JSON Schema。
+```sh
+./bin/dev/gatewayctl plugin status
+./bin/dev/gatewayctl plugin install -client claude
+./bin/dev/gatewayctl plugin update -client all
+./bin/dev/gatewayctl plugin remove -client cursor
+```
 
-- GET / DELETE：参数编码到 query string；复杂值编码为 JSON 字符串。
-- POST / PUT / PATCH：参数作为 JSON 请求体。
-- 普通配置映射不解析路径模板。可在「自动维护」提供 OpenAPI 或源码资料，让 Pi 生成工具定义；动态路径由生成的适配脚本处理。当前不支持交互式 OAuth。
-- `headers` 只接受环境变量引用，例如 `{"Authorization":"Bearer ${SERVICE_TOKEN}"}`，实际密钥从 Go 进程环境读取。
+## 仓库级工作区作用域（Repo × Agent Scoping）
 
-## 接入本地 stdio MCP
+网关支持按「本地代码仓库 × Coding Agent」细粒度限制可发现与可调用的下游工具集（详见 [`docs/architecture.md`](docs/architecture.md)）：
+
+- **本机 Hook 签名（`./bin/dev/gateway-hook`）**：各客户端官方插件在工具调用前调用 `gateway-hook`（支持 `claude`、`codex`、`cursor`、`antigravity` 宿主模式及 `opencode`/`pi` 的 `sign` 子命令），识别当前会话 `cwd` 与 Git `common_dir`，使用 `<data>/scope.key` 对请求参数规范化哈希后签发 60 秒有效的 `v1` HMAC-SHA256 上下文凭证（注入渠道隔离字段 `_gw_ctx` 或 `_gw_ctx_mcp_gateway_dev`）。
+- **服务端校验与优先级**：网关结合主体 RBAC 与 `(repo_key, agent_key)` 四级整条覆盖规则（`(R, agent) > (R, *) > (*, agent) > (*, *)`）求取严格交集，并通过 `jtiCache` 防止凭证重放。
+- **Fail-open 与 Enforce 模式**：`gateway-hook` 遇到本机异常或未初始化密钥时默认 fail-open 以免卡死 Agent；桌面端「仓库绑定」或 `PUT /api/scopes/mode` 开启 `enforce: true` 后，服务端对缺失、多根歧义或无效凭证一律以 `403` 拒绝（`scope_required` / `ambiguous_workspace` / `scope_invalid`）。
+
+## 接入 HTTP API 与 OpenAPI 原生映射
+
+在注册表添加 `kind: "http"` 服务，Endpoint 作为工具路径的基地址。既可手动添加工具，也可通过「上游服务 -> OpenAPI 导入」或 `POST /api/servers/openapi` 解析 OpenAPI 3.0/3.1（JSON/YAML）文档自动生成服务与工具：
+
+- **原生参数映射（`internal/upstream/http_mapping.go`）**：完整支持路径模板参数（path）、query 参数（含 `deepObject`）、请求头（header）、Cookie、JSON body 以及基于 OpenAPI 声明状态码与 JSON Schema 的响应校验（`application/json`、`text/plain`、`empty`）。
+- **手动 HTTP 工具**：GET / DELETE 参数编码到 query string；POST / PUT / PATCH 参数作为 JSON 请求体。
+- **`headers` 凭据占位符**：只接受环境变量引用，例如 `{"Authorization":"Bearer ${SERVICE_TOKEN}"}`，实际密钥在出站时从进程内存或环境解析。
+
+## 接入本地与远程 MCP 服务
 
 ### 只读服务器容器日志
 
-`make backend` 同时构建 `bin/gateway-sshlogs`，它是一个本地 stdio MCP 服务，通过已有 SSH 身份读取指定远端容器的 stdout/stderr，不安装远端服务或开放新端口。在首页选择「本地进程（stdio）」，命令使用该程序的绝对路径，参数示例：
+`make backend` 同时构建 `bin/dev/gateway-sshlogs`，它是一个本地 stdio MCP 服务，通过已有 SSH 身份读取指定远端容器的 stdout/stderr，不安装远端服务或开放新端口。在「上游服务」选择「本地进程（stdio）」，命令使用该程序的绝对路径，参数示例：
 
 ```json
 ["-host", "服务器 IP", "-user", "SSH 用户", "-identity", "/absolute/path/to/private-key", "-service", "backend=backend-container", "-service", "web=web-container"]
@@ -215,7 +239,7 @@ Flags 放在子命令之前。`-url` 可指定网关地址，本机无认证模�
 
 ### 其他 stdio 服务
 
-首页选择「本地进程（stdio）」，分别填写命令和 JSON 字符串数组参数。由 Go 进程直接启动，不经过 shell；命令必须在网关进程的 PATH 中，或使用绝对路径。`npx`、`uvx` 等命令需要在本机预先可用，首次安装依赖时可能需要先在终端运行。
+在「上游服务」选择「本地进程（stdio）」，分别填写命令和 JSON 字符串数组参数。由 Go 进程直接启动，不经过 shell；命令必须在网关进程的 PATH 中，或使用绝对路径。`npx`、`uvx` 等命令需要在本机预先可用，首次安装依赖时可能需要先在终端运行。
 
 完整服务定义示例：
 
@@ -233,25 +257,36 @@ Flags 放在子命令之前。`-url` 可指定网关地址，本机无认证模�
 }
 ```
 
-`env` 的值和 HTTP `headers` 一样使用 `${ENV_VAR}` 引用；密钥由启动网关的 shell 提供，修改后需重启网关。stdio 进程会在导入和连续调用之间保留，配置改变后下次连接会重新启动，网关退出时关闭。进程断线后不自动重试工具调用，以免重复执行；可以重新读取工具后再试。
+`env` 的值和 HTTP `headers` 一样使用 `${ENV_VAR}` 引用；密钥由启动网关的 shell 或内存 `runtimeSecrets` 提供。stdio 进程会在导入和连续调用之间保留，配置改变后下次连接会重新启动，网关退出时关闭。进程断线后不自动重试工具调用，以免重复执行；可以重新读取工具后再试。
 
-原生 MCP 下游支持 Streamable HTTP 和 stdio，使用官方 MCP Go SDK 处理协议、初始化、session 与响应。当前不支持旧 HTTP+SSE transport 或交互式 OAuth。
+### 远程 Streamable HTTP MCP 与浏览器 OAuth
+
+原生 MCP 下游支持 Streamable HTTP 和 stdio，使用官方 MCP Go SDK 处理协议、初始化、session 与响应。对于开启 `oauth: true` 的远程 Streamable HTTP MCP 服务（包括通过「MCP 市场」一键安装的需要登录的远程服务），网关支持**交互式浏览器 OAuth 2.0 + PKCE 与动态客户端注册（DCR）**：
+
+- 同步或调用触发未授权响应时，网关自动在本机 loopback 临时端口启动回调服务并拉起系统浏览器完成登录；
+- 校验授权 URL 仅允许 `https`（或本机 `http` loopback），获取的 `oauth2.TokenSource` 仅驻留进程内存，不写入 SQLite；
+- 当前不支持旧版 HTTP+SSE transport。
 
 ## SQLite
 
-首次运行创建 `data/gateway.db`，启用 WAL 和外键。`-data` 可改变数据库所在目录。数据模型：
+首次运行创建 `data/gateway.db`，启用 WAL 和外键。`-data` 可改变数据库所在目录。全部 14 张数据表如下：
 
 | 表 | 保存内容 |
 | --- | --- |
-| servers | 服务 ID 和 JSON 定义 |
-| tools | 工具 ID、所属服务和 JSON 定义 |
-| settings | 不含 API Key 的模型和路由配置 |
-| activity | 请求时间、实际身份（本机模式为模拟身份）、状态、耗时及 JSON 详情 |
+| servers | 服务 ID、排序 `position` 和 JSON 定义 |
+| tools | 工具 ID、所属服务、排序 `position` 和 JSON 定义 |
+| settings | 不含 API Key 的当前激活模型和路由配置 |
+| model_profiles | 已保存的多组 Decisions 模型配置档案（不含 API Key） |
+| activity | 请求时间、实际身份（本机模式为模拟身份）、状态、耗时及脱敏后的 JSON 详情 |
 | connection_checks | 来源及模型的最近检查结果、时间和配置指纹，不保存凭据 |
 | maintenance_sources | 每个服务的来源、调度、维护指引及发布设置 |
 | maintenance_runs | 版本、来源 commit、验收报告、发布/回退身份和时间、产物哈希 |
 | maintenance_acceptance | 独立的负责人契约与路由验收用例 |
 | maintenance_deliveries | 签名来源事件、delivery 去重和任务分配 |
+| scope_state | 全局仓库隔离拦截开关（`enforce`） |
+| repositories | 已绑定仓库实体及本地 Git `common_dir` / `root_paths` 锚点 |
+| scope_rules | `(repo_key, agent_key)` 二维作用域授权矩阵规则 |
+| scope_observations | 来自已验签 Hook 的未绑定工作区观测记录 |
 
 ```sh
 sqlite3 data/gateway.db '.tables'
@@ -266,7 +301,7 @@ sqlite3 data/gateway.db 'SELECT time, kind, status, title FROM activity ORDER BY
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | GET | /api/health | 运行状态 |
-| GET | /api/bootstrap | Registry、脱敏配置、最近记录和 MCP 地址 |
+| GET | /api/bootstrap | Registry、脱敏配置、最近记录、12h 运行脉冲和 MCP 地址 |
 | GET | /api/setup/status | 三步接入状态、检查结果和最近 MCP 客户端请求 |
 | POST | /api/setup/source | 保存来源并检查连接；MCP 同时读取工具 |
 | POST | /api/setup/model | 保存模型配置并发起真实路由检查 |
@@ -280,6 +315,17 @@ sqlite3 data/gateway.db 'SELECT time, kind, status, title FROM activity ORDER BY
 | GET | /api/events | 最近 100 条记录 |
 | GET | /api/catalog | 当前身份可见的能力摘要 |
 | GET | /api/tools/{id}/schema | 授权后的单个 schema |
+| POST | /api/model/ping | 测试模型连通性（不保存配置） |
+| PUT | /api/model-profiles | 保存或更新模型档案（需先通过连通性测试） |
+| POST | /api/model-profiles/{id}/activate | 激活指定模型档案 |
+| DELETE | /api/model-profiles/{id} | 删除模型档案 |
+| GET | /api/market | 检索可安装的 MCP 市场服务 |
+| POST | /api/market/install | 安装市场服务并注入内存凭据 |
+| GET | /api/scopes | 仓库绑定、作用域规则与观测记录 |
+| PUT | /api/scopes/mode | 开关 `enforce` 仓库隔离拦截模式 |
+| PUT / DELETE | /api/scopes/repositories | 新增、更新或删除仓库锚点 |
+| PUT / DELETE | /api/scopes/rules | 新增、替换或删除 `(repo_key, agent_key)` 规则 |
+| POST | /api/scopes/preview | 预览仓库下各 Agent 可达工具 |
 | POST | /api/auth/login | 管理令牌换取 HttpOnly 登录会话 |
 | POST | /api/auth/logout | 注销当前会话 |
 | GET | /api/auth/me | 当前身份 |
@@ -346,17 +392,36 @@ make build     # 构建后端与命令行工具
 ```
 
 ```text
-cmd/gateway          Go 网关入口（无界面）
-cmd/gateway-desktop  MyGo 原生桌面端
-cmd/gatewayctl       CLI
-internal/gateway     SQLite、Registry、模型选择、协议适配与 API
+cmd/gateway           Go 网关入口（无界面）
+cmd/gateway-desktop   MyGo 原生桌面端（9 页控制台，仅通过 /api HTTP 通信）
+cmd/gatewayctl        CLI 与官方客户端插件管理（gatewayctl plugin）
+cmd/gateway-hook      本机 Coding Agent 工作区作用域 HMAC 签名 Hook
+cmd/routingeval       工具路由评测工具
+cmd/sshlogs           只读远端容器日志 stdio MCP 服务
+internal/api          HTTP / MCP / Webhook 传输适配、OpenAPI 生成与契约测试
+internal/apiclient    基于 apitypes 的类型化 /api HTTP 客户端
+internal/apitypes     控制面 /api 线缆契约 DTO
+internal/gateway      应用外观与跨域协调根（含 publicationConfigMu）
+internal/routing      纯零 I/O 三步路由策略引擎
+internal/model        OpenAI / Gemini / SystemOne Decisions 客户端与模型档案
+internal/store        SQLite DDL/SQL 与迁移唯一拥有者（14 张表）
+internal/scope        Repo × Agent 作用域评估与 JTI 防重放
+internal/workspace    工作区锚点识别与 HMAC scope token 签发/验签
+internal/upstream     stdio / Streamable HTTP MCP、浏览器 OAuth、OpenAPI HTTP 映射与脱敏
+internal/maintenance  自动维护编排、Webhook 队列、独立验收、Docker/Pi 沙箱
+internal/market       MCP 市场检索与安装
+internal/access       共享模式主体 RBAC 与登录会话
+internal/clientconfig 本机 6 大客户端用户级 MCP 配置管理
+internal/clientplugin 本机 6 大客户端官方插件生命周期管理（内嵌 plugins/）
 ```
+
+详细包分层、自动化护栏与核心运行机制见 [`docs/architecture.md`](docs/architecture.md)。
 
 参考：[Uber MCP Gateway](https://www.uber.com/pr/en/blog/designing-mcp-gateway/)、[官方 MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)、[OpenAI Decisions API](https://developers.openai.com/api/reference/resources/decisions/methods/create)。
 
-## 原生桌面端：连接客户端
+## 原生桌面端：连接客户端与官方插件
 
-MyGo 桌面端侧栏「连接客户端」可将本 Gateway 的 MCP 入口写入 Codex CLI、Claude Code、Cursor、OpenCode v2、Pi 和 Antigravity 的用户级配置，并支持撤回。客户端通过该入口发现 `discover_tools`、`get_tool_schema` 和 `invoke_tool`。
+MyGo 桌面端侧栏「连接客户端」与 `./bin/dev/gatewayctl plugin` 共同管理 Codex CLI、Claude Code、Cursor、OpenCode v2、Pi 和 Antigravity 的官方插件安装与用户级 MCP 配置写入，并支持升级和撤回。客户端通过该入口发现 `discover_tools`、`get_tool_schema` 和 `invoke_tool`，并在启用官方插件后自动通过 `gateway-hook` 携带仓库作用域凭证。
 
 页面显示实际配置路径和文件状态。写入保留其他配置；同名冲突不会覆盖；撤回只移除本应用写入且未被外部修改的条目。配置后需重载客户端并保持 Gateway 运行，Pi 可使用 `/reload`。共享鉴权模式还需在客户端补充 Bearer Token。
 
