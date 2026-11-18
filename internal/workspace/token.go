@@ -150,6 +150,17 @@ func SignToken(key []byte, claims Claims) (string, error) {
 
 // VerifyToken verifies the HMAC signature and claim invariants of a v1 scope token.
 func VerifyToken(key []byte, token string, expected VerifyParams, now time.Time) (Claims, error) {
+	claims, err := decodeVerifiedTokenClaims(key, token)
+	if err != nil {
+		return Claims{}, err
+	}
+	if err := validateTokenClaims(claims, expected, now); err != nil {
+		return Claims{}, err
+	}
+	return claims, nil
+}
+
+func decodeVerifiedTokenClaims(key []byte, token string) (Claims, error) {
 	if len(key) != ScopeKeyLength {
 		return Claims{}, fmt.Errorf("%w: key not ready", ErrTokenInvalid)
 	}
@@ -185,48 +196,51 @@ func VerifyToken(key []byte, token string, expected VerifyParams, now time.Time)
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 		return Claims{}, fmt.Errorf("%w: trailing claims data", ErrTokenInvalid)
 	}
+	return claims, nil
+}
 
+func validateTokenClaims(claims Claims, expected VerifyParams, now time.Time) error {
 	if claims.V != TokenVersion {
-		return Claims{}, fmt.Errorf("%w: unsupported version %d", ErrTokenInvalid, claims.V)
+		return fmt.Errorf("%w: unsupported version %d", ErrTokenInvalid, claims.V)
 	}
 	wantChannel := expected.Channel
 	if wantChannel == "" {
 		wantChannel = buildinfo.Current().Channel
 	}
 	if claims.Channel != wantChannel {
-		return Claims{}, fmt.Errorf("%w: channel mismatch", ErrTokenInvalid)
+		return fmt.Errorf("%w: channel mismatch", ErrTokenInvalid)
 	}
 	if !IsKnownAgent(claims.Agent) {
-		return Claims{}, fmt.Errorf("%w: unknown agent %q", ErrTokenInvalid, claims.Agent)
+		return fmt.Errorf("%w: unknown agent %q", ErrTokenInvalid, claims.Agent)
 	}
 	if expected.URLAgent != "" && claims.Agent != expected.URLAgent {
-		return Claims{}, fmt.Errorf("%w: agent mismatch (%s != %s)", ErrTokenInvalid, claims.Agent, expected.URLAgent)
+		return fmt.Errorf("%w: agent mismatch (%s != %s)", ErrTokenInvalid, claims.Agent, expected.URLAgent)
 	}
 	if len(expected.AllowedOps) > 0 && !slices.Contains(expected.AllowedOps, claims.Op) {
-		return Claims{}, fmt.Errorf("%w: operation mismatch", ErrTokenInvalid)
+		return fmt.Errorf("%w: operation mismatch", ErrTokenInvalid)
 	}
 	if expected.ArgsHash != "" && subtleCompareStrings(claims.ArgsHash, expected.ArgsHash) != 1 {
-		return Claims{}, fmt.Errorf("%w: arguments hash mismatch", ErrTokenInvalid)
+		return fmt.Errorf("%w: arguments hash mismatch", ErrTokenInvalid)
 	}
 	if claims.JTI == "" || len(claims.JTI) > 128 {
-		return Claims{}, fmt.Errorf("%w: invalid jti", ErrTokenInvalid)
+		return fmt.Errorf("%w: invalid jti", ErrTokenInvalid)
 	}
 	nowUnix := now.Unix()
 	if claims.IAT <= 0 || claims.EXP <= claims.IAT || claims.EXP-claims.IAT > 300 {
-		return Claims{}, fmt.Errorf("%w: invalid token lifetime", ErrTokenInvalid)
+		return fmt.Errorf("%w: invalid token lifetime", ErrTokenInvalid)
 	}
 	if claims.IAT > nowUnix+5 {
-		return Claims{}, fmt.Errorf("%w: token issued in the future", ErrTokenInvalid)
+		return fmt.Errorf("%w: token issued in the future", ErrTokenInvalid)
 	}
 	if nowUnix > claims.EXP {
-		return Claims{}, fmt.Errorf("%w: token expired", ErrTokenInvalid)
+		return fmt.Errorf("%w: token expired", ErrTokenInvalid)
 	}
 	if !claims.Ambiguous {
 		if strings.TrimSpace(claims.Cwd) == "" || !filepath.IsAbs(claims.Cwd) {
-			return Claims{}, fmt.Errorf("%w: invalid cwd", ErrTokenInvalid)
+			return fmt.Errorf("%w: invalid cwd", ErrTokenInvalid)
 		}
 	}
-	return claims, nil
+	return nil
 }
 
 func subtleCompareStrings(a, b string) int {

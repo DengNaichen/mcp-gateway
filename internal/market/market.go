@@ -417,6 +417,20 @@ func fetchOfficialMCPRegistry(ctx context.Context, query string) ([]MarketServer
 }
 
 func convertOfficialRegistryServer(r officialRegistryServer) (MarketServer, bool) {
+	m, ok := registryServerMetadata(r)
+	if !ok {
+		return MarketServer{}, false
+	}
+	if applyRegistryRemote(&m, r) {
+		return m, true
+	}
+	if applyRegistryPackage(&m, r) {
+		return m, true
+	}
+	return MarketServer{}, false
+}
+
+func registryServerMetadata(r officialRegistryServer) (MarketServer, bool) {
 	short := r.Name
 	if idx := strings.LastIndex(short, "/"); idx >= 0 {
 		short = short[idx+1:]
@@ -463,7 +477,7 @@ func convertOfficialRegistryServer(r officialRegistryServer) (MarketServer, bool
 		icon = ghAvatar(owner)
 	}
 
-	m := MarketServer{
+	return MarketServer{
 		ID:          r.Name,
 		ServerID:    serverID,
 		Title:       title,
@@ -473,8 +487,10 @@ func convertOfficialRegistryServer(r officialRegistryServer) (MarketServer, bool
 		Description: r.Description,
 		Featured:    false,
 		Inputs:      []MarketInput{},
-	}
+	}, true
+}
 
+func applyRegistryRemote(m *MarketServer, r officialRegistryServer) bool {
 	for _, rm := range r.Remotes {
 		if rm.Type != "streamable-http" || strings.Contains(rm.URL, "{") || !strings.HasPrefix(rm.URL, "https://") {
 			continue
@@ -483,25 +499,29 @@ func convertOfficialRegistryServer(r officialRegistryServer) (MarketServer, bool
 		m.Runs = "远程"
 		m.Endpoint = rm.URL
 		for _, h := range rm.Headers {
-			if h.IsRequired || h.IsSecret {
-				format := "{}"
-				if h.Value != "" {
-					format = marketPlaceholderRe.ReplaceAllString(h.Value, "{}")
-				}
-				m.Inputs = append(m.Inputs, MarketInput{
-					Key:         h.Name,
-					Where:       "header",
-					Label:       h.Name,
-					Description: h.Description,
-					Secret:      h.IsSecret,
-					Required:    h.IsRequired,
-					Format:      format,
-				})
+			if !h.IsRequired && !h.IsSecret {
+				continue
 			}
+			format := "{}"
+			if h.Value != "" {
+				format = marketPlaceholderRe.ReplaceAllString(h.Value, "{}")
+			}
+			m.Inputs = append(m.Inputs, MarketInput{
+				Key:         h.Name,
+				Where:       "header",
+				Label:       h.Name,
+				Description: h.Description,
+				Secret:      h.IsSecret,
+				Required:    h.IsRequired,
+				Format:      format,
+			})
 		}
-		return m, true
+		return true
 	}
+	return false
+}
 
+func applyRegistryPackage(m *MarketServer, r officialRegistryServer) bool {
 	for _, want := range []string{"npm", "pypi"} {
 		for _, pkg := range r.Packages {
 			if pkg.RegistryType != want || pkg.Identifier == "" || (pkg.Transport.Type != "" && pkg.Transport.Type != "stdio") {
@@ -529,11 +549,10 @@ func convertOfficialRegistryServer(r officialRegistryServer) (MarketServer, bool
 					})
 				}
 			}
-			return m, true
+			return true
 		}
 	}
-
-	return MarketServer{}, false
+	return false
 }
 
 func extractGitHubOwner(rawURL string) string {
