@@ -35,6 +35,57 @@ func (w *trackingWriter) Write(b []byte) (int, error) {
 
 func (w *trackingWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
+type mcpRPCInput struct {
+	ID     json.RawMessage `json:"id"`
+	Method string          `json:"method"`
+	Params struct {
+		ClientInfo struct {
+			Name string `json:"name"`
+		} `json:"clientInfo"`
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
+	} `json:"params"`
+}
+
+func rewriteMCPToolArgs(body, cleanArgs []byte) []byte {
+	var envelope map[string]json.RawMessage
+	if json.Unmarshal(body, &envelope) != nil {
+		return body
+	}
+	var paramsMap map[string]json.RawMessage
+	if json.Unmarshal(envelope["params"], &paramsMap) != nil {
+		return body
+	}
+	paramsMap["arguments"] = cleanArgs
+	newParams, err := json.Marshal(paramsMap)
+	if err != nil {
+		return body
+	}
+	envelope["params"] = newParams
+	rewritten, err := json.Marshal(envelope)
+	if err != nil {
+		return body
+	}
+	return rewritten
+}
+
+func (g *server) observeMCPLifecycle(r *http.Request, agent string, input mcpRPCInput, start time.Time) {
+	if !slices.Contains([]string{"initialize", "tools/list"}, input.Method) {
+		return
+	}
+	client := input.Params.ClientInfo.Name
+	if client == "" {
+		client = agent
+	}
+	if client == "" {
+		client = r.UserAgent()
+	}
+	if client == "" {
+		client = "MCP client"
+	}
+	g.activity.Record("agent", access.RequestActor(r.Context(), "developer"), "observed", input.Method, start, map[string]any{"client": client, "agent": agent, "method": input.Method})
+}
+
 // Observe only real requests arriving at the MCP endpoint. Browser status checks
 // never create an Agent connection or complete the third onboarding step.
 func (g *server) trackMCP(next http.Handler) http.Handler {
@@ -54,69 +105,47 @@ func (g *server) trackMCP(next http.Handler) http.Handler {
 			return
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
-		var envelope map[string]json.RawMessage
-		var input struct {
-			ID     json.RawMessage `json:"id"`
-			Method string          `json:"method"`
-			Params struct {
-				ClientInfo struct {
-					Name string `json:"name"`
-				} `json:"clientInfo"`
-				Name      string          `json:"name"`
-				Arguments json.RawMessage `json:"arguments"`
-			} `json:"params"`
-		}
+		var input mcpRPCInput
 		if err := json.Unmarshal(body, &input); err != nil {
 			next.ServeHTTP(w, r)
 			return
 		}
 		start := time.Now()
 		if input.Method == "tools/call" && workspace.IsMetaTool(input.Params.Name) {
-			scopedCtx, cleanArgs, scopeErr := g.gw.Scope().ResolveMCPToolCallScope(r.Context(), agent, input.Params.Name, input.Params.Arguments)
+			scopedCtx, cleanArgs, scopeErr := g.scope.ResolveMCPToolCallScope(r.Context(), agent, input.Params.Name, input.Params.Arguments)
 			if scopeErr != nil {
-				g.recordRejectedMCPScope(r.Context(), agent, input.Params.Name, input.Params.Arguments, start, scopeErr)
+				g.recordRejectedMCPScope(r.Context(), rejectedMCPScope{
+					agent: agent, toolName: input.Params.Name, rawArgs: input.Params.Arguments, start: start, err: scopeErr,
+				})
 				writeJSONRPCScopeError(w, input.ID, scopeErr)
 				return
 			}
 			r = r.WithContext(scopedCtx)
-			if json.Unmarshal(body, &envelope) == nil {
-				var paramsMap map[string]json.RawMessage
-				if json.Unmarshal(envelope["params"], &paramsMap) == nil {
-					paramsMap["arguments"] = cleanArgs
-					if newParams, pErr := json.Marshal(paramsMap); pErr == nil {
-						envelope["params"] = newParams
-						if rewritten, mErr := json.Marshal(envelope); mErr == nil {
-							body = rewritten
-						}
-					}
-				}
-			}
+			body = rewriteMCPToolArgs(body, cleanArgs)
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			r.ContentLength = int64(len(body))
 		}
 		tracked := &trackingWriter{ResponseWriter: w}
 		next.ServeHTTP(tracked, r)
-		if slices.Contains([]string{"initialize", "tools/list"}, input.Method) && tracked.status == 200 {
-			client := input.Params.ClientInfo.Name
-			if client == "" {
-				client = agent
-			}
-			if client == "" {
-				client = r.UserAgent()
-			}
-			if client == "" {
-				client = "MCP client"
-			}
-			g.gw.Activity().Record("agent", access.RequestActor(r.Context(), "developer"), "observed", input.Method, start, map[string]any{"client": client, "agent": agent, "method": input.Method})
+		if tracked.status == http.StatusOK {
+			g.observeMCPLifecycle(r, agent, input, start)
 		}
 	})
 }
 
-func (g *server) recordRejectedMCPScope(ctx context.Context, agent, toolName string, rawArgs []byte, start time.Time, scopeErr error) {
+type rejectedMCPScope struct {
+	agent    string
+	toolName string
+	rawArgs  []byte
+	start    time.Time
+	err      error
+}
+
+func (g *server) recordRejectedMCPScope(ctx context.Context, rej rejectedMCPScope) {
 	actor := access.RequestActor(ctx, "")
 	status := "invalid"
 	var app *scope.Error
-	if errors.As(scopeErr, &app) {
+	if errors.As(rej.err, &app) {
 		switch app.Code {
 		case "scope_required":
 			status = "missing"
@@ -124,30 +153,30 @@ func (g *server) recordRejectedMCPScope(ctx context.Context, agent, toolName str
 			status = "ambiguous"
 		}
 	}
-	evScope := scope.EventScope{Agent: agent, Status: status}
-	switch toolName {
+	evScope := scope.EventScope{Agent: rej.agent, Status: status}
+	switch rej.toolName {
 	case "discover_tools":
 		var in struct {
 			Intent string `json:"intent"`
 		}
-		_ = json.Unmarshal(rawArgs, &in)
+		_ = json.Unmarshal(rej.rawArgs, &in)
 		title := in.Intent
 		if title == "" {
 			title = "discover_tools"
 		}
-		g.gw.Activity().Record("discover", actor, "error", title, start, map[string]any{"error": g.gw.ErrorDetail(scopeErr), "scope": evScope})
+		g.activity.Record("discover", actor, "error", title, rej.start, map[string]any{"error": g.gw.ErrorDetail(rej.err), "scope": evScope})
 	case "invoke_tool":
 		var in struct {
 			ToolID string `json:"tool_id"`
 		}
-		_ = json.Unmarshal(rawArgs, &in)
+		_ = json.Unmarshal(rej.rawArgs, &in)
 		title := in.ToolID
 		if title == "" {
 			title = "invoke_tool"
 		}
-		g.gw.Activity().Record("invoke", actor, "error", title, start, map[string]any{"tool_id": in.ToolID, "error": g.gw.ErrorDetail(scopeErr), "scope": evScope})
+		g.activity.Record("invoke", actor, "error", title, rej.start, map[string]any{"tool_id": in.ToolID, "error": g.gw.ErrorDetail(rej.err), "scope": evScope})
 	}
-	g.gw.RecordAgentTool(toolName, actor, start, scopeErr)
+	g.gw.RecordAgentTool(rej.toolName, actor, rej.start, rej.err)
 }
 
 func writeJSONRPCScopeError(w http.ResponseWriter, rawID json.RawMessage, err error) {

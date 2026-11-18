@@ -21,7 +21,7 @@ const adminTestToken = "admin-test-token-01234567890123456789"
 const readerTestToken = "reader-test-token-01234567890123456789"
 const writerTestToken = "writer-test-token-01234567890123456789"
 
-func sharedGateway(t *testing.T) *gateway.Gateway {
+func sharedGateway(t *testing.T) (*gateway.Gateway, gateway.Services) {
 	t.Helper()
 	t.Setenv("AUTH_ADMIN", adminTestToken)
 	t.Setenv("AUTH_READER", readerTestToken)
@@ -36,12 +36,12 @@ func sharedGateway(t *testing.T) *gateway.Gateway {
 		t.Fatal(err)
 	}
 	t.Setenv("GATEWAY_AUTH_FILE", path)
-	g, _ := testGateway(t)
+	g, svcs, _ := testGateway(t)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]any{"status": "ok", "token": "private", "email": "person@example.com", "logs": []any{map[string]any{"user": map[string]any{"ssn": "123-45-6789"}}}})
 	}))
 	t.Cleanup(upstream.Close)
-	if err := g.Registry().SaveServer(registry.Server{ID: "service", Name: "Service", Kind: "http", Endpoint: upstream.URL, Enabled: true, RedactEmails: true, RedactFields: []string{"logs.user.ssn"}}); err != nil {
+	if err := svcs.Registry.SaveServer(registry.Server{ID: "service", Name: "Service", Kind: "http", Endpoint: upstream.URL, Enabled: true, RedactEmails: true, RedactFields: []string{"logs.user.ssn"}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"read", "write"} {
@@ -49,15 +49,15 @@ func sharedGateway(t *testing.T) *gateway.Gateway {
 		if name == "write" {
 			tool.Method = "POST"
 		}
-		if err := g.Registry().SaveTool(tool); err != nil {
+		if err := svcs.Registry.SaveTool(tool); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return g
+	return g, svcs
 }
 func TestAccessIdentityScopeAndRedaction(t *testing.T) {
-	g := sharedGateway(t)
-	handler := Handler(g)
+	g, svcs := sharedGateway(t)
+	handler := Handler(g, svcs)
 	call := func(method, path, token, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(body))
 		if token != "" {
@@ -89,14 +89,14 @@ func TestAccessIdentityScopeAndRedaction(t *testing.T) {
 	if got := call("POST", "/api/invoke", writerTestToken, `{"tool_id":"service.write","arguments":{}}`); got.Code != 200 {
 		t.Fatalf("authorized write failed: %d %s", got.Code, got.Body)
 	}
-	actor := g.Activity().Recent()[0].Actor
+	actor := svcs.Activity.Recent()[0].Actor
 	if actor != "writer" {
 		t.Fatalf("audit actor was not server-derived: %s", actor)
 	}
 }
 func TestAdminLoginCookieLogoutAndCSRF(t *testing.T) {
-	g := sharedGateway(t)
-	handler := Handler(g)
+	g, svcs := sharedGateway(t)
+	handler := Handler(g, svcs)
 	req := httptest.NewRequest("POST", "http://localhost/api/auth/login", bytes.NewReader(mustJSON(t, map[string]string{"token": adminTestToken})))
 	out := httptest.NewRecorder()
 	handler.ServeHTTP(out, req)
@@ -139,8 +139,8 @@ func TestAdminLoginCookieLogoutAndCSRF(t *testing.T) {
 	}
 }
 func TestMCPUsesAuthenticatedPrincipal(t *testing.T) {
-	g := sharedGateway(t)
-	host := httptest.NewServer(Handler(g))
+	g, svcs := sharedGateway(t)
+	host := httptest.NewServer(Handler(g, svcs))
 	defer host.Close()
 	client := mcp.NewClient(&mcp.Implementation{Name: "auth-test", Version: "1"}, nil)
 	session, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{Endpoint: host.URL + "/mcp", HTTPClient: &http.Client{Transport: headerTransport{headers: map[string]string{"Authorization": "Bearer " + readerTestToken}, base: http.DefaultTransport}}}, nil)
@@ -159,27 +159,27 @@ func TestMCPUsesAuthenticatedPrincipal(t *testing.T) {
 }
 func TestPublicListenerRequiresAuthentication(t *testing.T) {
 	t.Setenv("GATEWAY_AUTH_FILE", "")
-	if g, err := gateway.New(t.TempDir(), "http://0.0.0.0:8788"); err == nil {
+	if g, _, err := gateway.New(t.TempDir(), "http://0.0.0.0:8788"); err == nil {
 		if closeErr := g.Close(); closeErr != nil {
 			t.Error(closeErr)
 		}
 		t.Fatal("public listener accepted without auth")
 	}
-	g, _ := testGateway(t)
+	g, svcs, _ := testGateway(t)
 	req := httptest.NewRequest("GET", "http://attacker.invalid/api/bootstrap", nil)
 	out := httptest.NewRecorder()
-	Handler(g).ServeHTTP(out, req)
+	Handler(g, svcs).ServeHTTP(out, req)
 	if out.Code != 403 {
 		t.Fatal("local mode accepted a rebinding host")
 	}
 }
 
 func TestLocalModeRejectsNonLoopbackHost(t *testing.T) {
-	g, _ := testGateway(t)
-	if g.Access() != nil {
+	g, svcs, _ := testGateway(t)
+	if svcs.Access != nil {
 		t.Fatal("test gateway must run in local mode")
 	}
-	handler := Handler(g)
+	handler := Handler(g, svcs)
 	const message = "本机模式不接受外部 Host，请配置认证后共享"
 	for _, host := range []string{"evil.example", "evil.example:8788", "192.168.1.10:8788", "10.0.0.1", "[2001:db8::1]:8788", "localhost.evil.example", "127.0.0.1.evil.example", "0.0.0.0:8788", ""} {
 		req := httptest.NewRequest("GET", "/api/health", nil)
@@ -202,8 +202,8 @@ func TestLocalModeRejectsNonLoopbackHost(t *testing.T) {
 }
 
 func TestAccessMetadataDrivenRoutesAndMCPIdentity(t *testing.T) {
-	g := sharedGateway(t)
-	handler := Handler(g)
+	g, svcs := sharedGateway(t)
+	handler := Handler(g, svcs)
 	call := func(method, path, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(`{}`))
 		if token != "" {
@@ -250,7 +250,7 @@ func TestAccessMetadataDrivenRoutesAndMCPIdentity(t *testing.T) {
 	if _, err := session.ListTools(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
-	events := g.Activity().Recent()
+	events := svcs.Activity.Recent()
 	if len(events) == 0 || events[0].Kind != "agent" || events[0].Actor != "reader" {
 		t.Fatalf("expected agent tools/list event attributed to reader, got %+v", events)
 	}

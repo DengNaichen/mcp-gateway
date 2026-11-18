@@ -36,7 +36,7 @@ func TestModelVerificationPersistenceAndReset(t *testing.T) {
 	dir := t.TempDir()
 	creds := &credentialBackend{}
 	openGateway := func() *Gateway {
-		g, err := NewWithOptions(dir, "http://127.0.0.1:0", Options{CredentialBackend: creds})
+		g, _, err := NewWithOptions(dir, "http://127.0.0.1:0", Options{CredentialBackend: creds})
 		if err != nil {
 			t.Fatalf("open gateway: %v", err)
 		}
@@ -47,7 +47,7 @@ func TestModelVerificationPersistenceAndReset(t *testing.T) {
 	if err := g.SaveServer(registry.Server{ID: "svc1", Name: "Service 1", Kind: "http", Endpoint: "https://api.example.com", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Registry().SaveTool(registry.Tool{ID: "svc1.read", ServerID: "svc1", Name: "read", Description: "Read item", Method: "GET", Path: "/items", ReadOnly: true, Enabled: true, Actors: []string{"developer"}, InputSchema: objectSchema(map[string]any{})}); err != nil {
+	if err := g.registry.SaveTool(registry.Tool{ID: "svc1.read", ServerID: "svc1", Name: "read", Description: "Read item", Method: "GET", Path: "/items", ReadOnly: true, Enabled: true, Actors: []string{"developer"}, InputSchema: objectSchema(map[string]any{})}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -86,7 +86,7 @@ func TestModelVerificationPersistenceAndReset(t *testing.T) {
 	}
 
 	// 2. Adding or toggling real tools does NOT invalidate model verification.
-	if err := g.Registry().SaveTool(registry.Tool{ID: "svc1.write", ServerID: "svc1", Name: "write", Description: "Write item", Method: "POST", Path: "/items", ReadOnly: false, Enabled: true, Actors: []string{"developer"}, InputSchema: objectSchema(map[string]any{})}); err != nil {
+	if err := g.registry.SaveTool(registry.Tool{ID: "svc1.write", ServerID: "svc1", Name: "write", Description: "Write item", Method: "POST", Path: "/items", ReadOnly: false, Enabled: true, Actors: []string{"developer"}, InputSchema: objectSchema(map[string]any{})}); err != nil {
 		t.Fatal(err)
 	}
 	if err := g.EnableTools("svc1", []string{"svc1.read"}); err != nil {
@@ -193,7 +193,7 @@ func TestLegacySingletonModelCheckCompatibility(t *testing.T) {
 	t.Setenv("GATEWAY_CREDENTIAL_STORE", "")
 	t.Setenv("GATEWAY_MODEL_API_KEY", "")
 
-	g, err := NewWithOptions(t.TempDir(), "http://127.0.0.1:0", Options{CredentialBackend: &credentialBackend{}})
+	g, _, err := NewWithOptions(t.TempDir(), "http://127.0.0.1:0", Options{CredentialBackend: &credentialBackend{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestLegacySingletonModelCheckCompatibility(t *testing.T) {
 	if err := g.SaveServer(registry.Server{ID: "svc1", Name: "Service 1", Kind: "http", Endpoint: "https://api.example.com", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Registry().SaveTool(registry.Tool{ID: "svc1.read", ServerID: "svc1", Name: "read", Description: "Read item", Method: "GET", Path: "/items", ReadOnly: true, Enabled: true, Actors: []string{"developer"}, InputSchema: objectSchema(map[string]any{})}); err != nil {
+	if err := g.registry.SaveTool(registry.Tool{ID: "svc1.read", ServerID: "svc1", Name: "read", Description: "Read item", Method: "GET", Path: "/items", ReadOnly: true, Enabled: true, Actors: []string{"developer"}, InputSchema: objectSchema(map[string]any{})}); err != nil {
 		t.Fatal(err)
 	}
 

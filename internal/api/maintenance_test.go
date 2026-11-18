@@ -19,8 +19,10 @@ import (
 	"gatewaylab/internal/registry"
 )
 
-func testGateway(t *testing.T) (*gateway.Gateway, string) { return testGatewayOptions(t, "", nil) }
-func testGatewayOptions(t *testing.T, command string, policy *sandbox.Policy) (*gateway.Gateway, string) {
+func testGateway(t *testing.T) (*gateway.Gateway, gateway.Services, string) {
+	return testGatewayOptions(t, "", nil)
+}
+func testGatewayOptions(t *testing.T, command string, policy *sandbox.Policy) (*gateway.Gateway, gateway.Services, string) {
 	t.Helper()
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("Node.js is required for adapter/process tests")
@@ -45,7 +47,7 @@ func testGatewayOptions(t *testing.T, command string, policy *sandbox.Policy) (*
 		t.Setenv("GATEWAY_SANDBOX_IMAGE", policy.Image)
 	}
 	t.Setenv("GATEWAY_PI_COMMAND", command)
-	g, err := gateway.New(t.TempDir(), "http://localhost:8788")
+	g, svcs, err := gateway.New(t.TempDir(), "http://localhost:8788")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,17 +56,17 @@ func testGatewayOptions(t *testing.T, command string, policy *sandbox.Policy) (*
 			t.Error(err)
 		}
 	})
-	useKeywordModel(t, g)
-	if err := g.Registry().SaveServer(registry.Server{ID: "service", Name: "Service", Kind: "http", Endpoint: "http://127.0.0.1:1", Enabled: true}); err != nil {
+	useKeywordModel(t, g, svcs)
+	if err := svcs.Registry.SaveServer(registry.Server{ID: "service", Name: "Service", Kind: "http", Endpoint: "http://127.0.0.1:1", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	reference := filepath.Join(t.TempDir(), "api.json")
 	putSource(t, reference, "v1", "")
-	if err := g.Maintenance().SaveSource(maintenance.MaintenanceSource{ServerID: "service", Files: []string{reference}, IntervalMinutes: 60, TimeoutSeconds: 30, AutoPublish: true}); err != nil {
+	if err := svcs.Maintenance.SaveSource(maintenance.MaintenanceSource{ServerID: "service", Files: []string{reference}, IntervalMinutes: 60, TimeoutSeconds: 30, AutoPublish: true}); err != nil {
 		t.Fatal(err)
 	}
-	setLogsAcceptance(t, g, "v1", "")
-	return g, reference
+	setLogsAcceptance(t, svcs.Maintenance, "v1", "")
+	return g, svcs, reference
 }
 func putSource(t *testing.T, path, version, mode string) {
 	t.Helper()
@@ -99,9 +101,9 @@ func enqueueTest(t *testing.T, m *maintenance.Maintainer, force bool) maintenanc
 }
 
 func TestMaintenanceLifecycleAndRollback(t *testing.T) {
-	g, reference := testGateway(t)
-	g.StartMaintenance(context.Background())
-	m := g.Maintenance()
+	g, svcs, reference := testGateway(t)
+	m := svcs.Maintenance
+	m.Start(context.Background())
 	first := approveRun(t, m, enqueueTest(t, m, false).ID)
 	if len(first.Tools) != 1 || !first.Tools[0].Enabled {
 		t.Fatalf("bad published tools: %+v", first.Tools)
@@ -115,7 +117,7 @@ func TestMaintenanceLifecycleAndRollback(t *testing.T) {
 		t.Fatal("unchanged source fingerprint changed")
 	}
 	putSource(t, reference, "v2", "")
-	setLogsAcceptance(t, g, "v2", "")
+	setLogsAcceptance(t, m, "v2", "")
 	third := approveRun(t, m, enqueueTest(t, m, false).ID)
 	if third.Tools[0].Path != "/logs/v2" {
 		t.Fatal("new definition not published")
@@ -126,7 +128,7 @@ func TestMaintenanceLifecycleAndRollback(t *testing.T) {
 	if err := m.Publish(third.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	if got := serverTools(g.Snapshot(), "service"); len(got) != 1 || got[0].Path != "/logs/v1" {
+	if got := serverTools(svcs.Registry.Snapshot(), "service"); len(got) != 1 || got[0].Path != "/logs/v1" {
 		t.Fatalf("rollback failed: %+v", got)
 	}
 	// A return to an older source snapshot must rebuild, not match any historical hash.
@@ -135,37 +137,37 @@ func TestMaintenanceLifecycleAndRollback(t *testing.T) {
 		t.Fatal("rolled-back input incorrectly skipped")
 	}
 	putSource(t, reference, "v3", "empty")
-	setLogsAcceptance(t, g, "v3", "empty")
+	setLogsAcceptance(t, m, "v3", "empty")
 	empty := approveRun(t, m, enqueueTest(t, m, false).ID)
-	if len(serverTools(g.Snapshot(), "service")) != 0 {
+	if len(serverTools(svcs.Registry.Snapshot(), "service")) != 0 {
 		t.Fatal("removed tools retained")
 	}
 	if err := m.Publish(empty.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	if len(serverTools(g.Snapshot(), "service")) != 1 {
+	if len(serverTools(svcs.Registry.Snapshot(), "service")) != 1 {
 		t.Fatal("empty catalog rollback failed")
 	}
 }
 func TestMaintenanceConflictInvalidAndCancellation(t *testing.T) {
-	g, reference := testGateway(t)
-	m := g.Maintenance()
+	_, svcs, reference := testGateway(t)
+	m := svcs.Maintenance
 	s, _ := m.Source("service")
 	s.AutoPublish = false
 	if err := m.SaveSource(s); err != nil {
 		t.Fatal(err)
 	}
-	g.StartMaintenance(context.Background())
+	m.Start(context.Background())
 	r := waitRun(t, m, enqueueTest(t, m, false).ID, "ready")
 	server := r.Server
 	server.Description = "manual edit"
-	if err := g.Registry().SaveServer(server); err != nil {
+	if err := svcs.Registry.SaveServer(server); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.Publish(r.ID, false); err == nil {
 		t.Fatal("published over concurrent edit")
 	}
-	if len(serverTools(g.Snapshot(), "service")) != 0 {
+	if len(serverTools(svcs.Registry.Snapshot(), "service")) != 0 {
 		t.Fatal("conflicting publish changed registry")
 	}
 	putSource(t, reference, "v2", "invalid")
@@ -187,7 +189,7 @@ func TestMaintenanceConflictInvalidAndCancellation(t *testing.T) {
 	waitRun(t, m, enqueueTest(t, m, false).ID, "ready")
 }
 func TestMaintenanceAdapterInvoke(t *testing.T) {
-	g, reference := testGateway(t)
+	g, svcs, reference := testGateway(t)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.EscapedPath() != "/logs/billing%2Fapi" || r.Header.Get("Authorization") != "Bearer test-token" {
 			t.Errorf("wrong adapter request: %s", r.URL)
@@ -198,13 +200,13 @@ func TestMaintenanceAdapterInvoke(t *testing.T) {
 	}))
 	defer upstream.Close()
 	t.Setenv("SERVICE_TEST_TOKEN", "test-token")
-	if err := g.Registry().SaveServer(registry.Server{ID: "service", Name: "Service", Kind: "http", Endpoint: upstream.URL, Enabled: true, Headers: map[string]string{"Authorization": "Bearer ${SERVICE_TEST_TOKEN}"}}); err != nil {
+	if err := svcs.Registry.SaveServer(registry.Server{ID: "service", Name: "Service", Kind: "http", Endpoint: upstream.URL, Enabled: true, Headers: map[string]string{"Authorization": "Bearer ${SERVICE_TEST_TOKEN}"}}); err != nil {
 		t.Fatal(err)
 	}
 	putSource(t, reference, "v1", "adapter")
-	setLogsAcceptance(t, g, "v1", "adapter")
-	g.StartMaintenance(context.Background())
-	r := approveRun(t, g.Maintenance(), enqueueTest(t, g.Maintenance(), false).ID)
+	setLogsAcceptance(t, svcs.Maintenance, "v1", "adapter")
+	svcs.Maintenance.Start(context.Background())
+	r := approveRun(t, svcs.Maintenance, enqueueTest(t, svcs.Maintenance, false).ID)
 	got, err := g.Invoke(context.Background(), gateway.InvokeRequest{ToolID: "service.logs", Arguments: map[string]any{"service": "billing/api"}})
 	if err != nil {
 		t.Fatal(err)
@@ -229,21 +231,21 @@ func mustJSON(t *testing.T, v any) []byte {
 }
 
 func TestNativeMCPMaintenance(t *testing.T) {
-	g, _ := testGateway(t)
-	upstream := httptest.NewServer(Handler(g))
+	g, svcs, _ := testGateway(t)
+	upstream := httptest.NewServer(Handler(g, svcs))
 	defer upstream.Close()
-	if err := g.Registry().SaveServer(registry.Server{ID: "native", Name: "Native", Kind: "mcp", Endpoint: upstream.URL + "/demo/mcp", Enabled: true}); err != nil {
+	if err := svcs.Registry.SaveServer(registry.Server{ID: "native", Name: "Native", Kind: "mcp", Endpoint: upstream.URL + "/demo/mcp", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Maintenance().SaveSource(maintenance.MaintenanceSource{ServerID: "native", IntervalMinutes: 60, TimeoutSeconds: 30, AutoPublish: true}); err != nil {
+	if err := svcs.Maintenance.SaveSource(maintenance.MaintenanceSource{ServerID: "native", IntervalMinutes: 60, TimeoutSeconds: 30, AutoPublish: true}); err != nil {
 		t.Fatal(err)
 	}
-	g.StartMaintenance(context.Background())
-	r, err := g.Maintenance().Run("native", false)
+	svcs.Maintenance.Start(context.Background())
+	r, err := svcs.Maintenance.Run("native", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := waitRun(t, g.Maintenance(), r.ID, "ready")
+	result := waitRun(t, svcs.Maintenance, r.ID, "ready")
 	if len(result.Tools) == 0 {
 		t.Fatal("native tools not synchronized")
 	}
@@ -254,37 +256,33 @@ func TestNativeMCPMaintenance(t *testing.T) {
 	}
 }
 func TestArtifactIntegrityAndRestart(t *testing.T) {
-	g, reference := testGateway(t)
-	m := g.Maintenance()
+	g, svcs, reference := testGateway(t)
+	m := svcs.Maintenance
 	source, _ := m.Source("service")
 	source.AutoPublish = false
 	if err := m.SaveSource(source); err != nil {
 		t.Fatal(err)
 	}
 	putSource(t, reference, "v1", "adapter")
-	setLogsAcceptance(t, g, "v1", "adapter")
-	g.StartMaintenance(context.Background())
+	setLogsAcceptance(t, m, "v1", "adapter")
+	m.Start(context.Background())
 	r := waitRun(t, m, enqueueTest(t, m, true).ID, "ready")
 	if err := g.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reloadedGateway, err := gateway.New(g.DataDir(), g.BaseURL())
+	reloadedGateway, reloadedSvcs, err := gateway.New(svcs.DataDir, svcs.BaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer reloadedGateway.Close()
-	reloaded := reloadedGateway.Maintenance()
+	reloaded := reloadedSvcs.Maintenance
 	m = reloaded
-
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	reloadedRun, _ := reloaded.GetRun(r.ID)
 	if reloadedRun.Status != "ready" || len(reloadedRun.Artifacts) == 0 {
 		t.Fatal("validated draft did not survive reload")
 	}
-	path := filepath.Join(filepath.Join(g.DataDir(), "maintenance", r.ID), "revision", "adapter.mjs")
+	path := filepath.Join(filepath.Join(svcs.DataDir, "maintenance", r.ID), "revision", "adapter.mjs")
 	if err := os.Chmod(path, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -294,16 +292,16 @@ func TestArtifactIntegrityAndRestart(t *testing.T) {
 	if err := m.Publish(r.ID, false); err == nil {
 		t.Fatal("tampered revision published")
 	}
-	if len(serverTools(g.Snapshot(), "service")) != 0 {
+	if len(serverTools(reloadedSvcs.Registry.Snapshot(), "service")) != 0 {
 		t.Fatal("tampered revision affected registry")
 	}
 }
 func TestMaintenanceUpdatesModelCandidates(t *testing.T) {
 	// The fake model below answers only the yes/no stage.
 	t.Setenv("GATEWAY_ROUTING", "flat")
-	g, reference := testGateway(t)
-	g.StartMaintenance(context.Background())
-	approveRun(t, g.Maintenance(), enqueueTest(t, g.Maintenance(), false).ID)
+	g, svcs, reference := testGateway(t)
+	svcs.Maintenance.Start(context.Background())
+	approveRun(t, svcs.Maintenance, enqueueTest(t, svcs.Maintenance, false).ID)
 	calls := 0
 	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -329,7 +327,7 @@ func TestMaintenanceUpdatesModelCandidates(t *testing.T) {
 		respond(w, 200, decisionFixture("selected", 0.9))
 	}))
 	defer modelServer.Close()
-	settings, _ := g.Model().Config()
+	settings, _ := svcs.Model.Config()
 	settings.BaseURL = modelServer.URL
 	settings.Model = "fixture"
 	if err := g.SaveSettings(settings, "", false); err != nil {
@@ -340,8 +338,8 @@ func TestMaintenanceUpdatesModelCandidates(t *testing.T) {
 		t.Fatalf("model discovery: %+v %v", result, err)
 	}
 	putSource(t, reference, "v2", "empty")
-	setLogsAcceptance(t, g, "v2", "empty")
-	approveRun(t, g.Maintenance(), enqueueTest(t, g.Maintenance(), false).ID)
+	setLogsAcceptance(t, svcs.Maintenance, "v2", "empty")
+	approveRun(t, svcs.Maintenance, enqueueTest(t, svcs.Maintenance, false).ID)
 	result, err = g.Discover(context.Background(), gateway.DiscoverRequest{Intent: "logs"})
 	if err != nil || len(result.Tools) != 0 || result.Status != "no_match" || calls != 1 {
 		t.Fatalf("stale tools reached router: %+v %v calls=%d", result, err, calls)

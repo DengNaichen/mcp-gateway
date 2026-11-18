@@ -21,9 +21,9 @@ func TestLiveGitLabMaintenanceChangeAndRollback(t *testing.T) {
 	if endpoint == "" || project == "" || os.Getenv("GATEWAY_TEST_GITLAB_TOKEN") == "" {
 		t.Skip("set GATEWAY_TEST_GITLAB_URL/PROJECT/TOKEN for read-only CI/log integration")
 	}
-	g, _ := testGateway(t)
-	m := g.Maintenance()
-	if err := g.Registry().SaveServer(registry.Server{ID: "gitlab", Name: "GitLab CI", Kind: "http", Endpoint: endpoint, Enabled: true, Headers: map[string]string{"Private-Token": "${GATEWAY_TEST_GITLAB_TOKEN}"}, RedactEmails: true}); err != nil {
+	g, svcs, _ := testGateway(t)
+	m := svcs.Maintenance
+	if err := svcs.Registry.SaveServer(registry.Server{ID: "gitlab", Name: "GitLab CI", Kind: "http", Endpoint: endpoint, Enabled: true, Headers: map[string]string{"Private-Token": "${GATEWAY_TEST_GITLAB_TOKEN}"}, RedactEmails: true}); err != nil {
 		t.Fatal(err)
 	}
 	spec, err := os.ReadFile("../../examples/gitlab-openapi.yaml")
@@ -48,7 +48,7 @@ func TestLiveGitLabMaintenanceChangeAndRollback(t *testing.T) {
 	if err := m.SaveSource(maintenance.MaintenanceSource{ServerID: "gitlab", Format: "openapi", Files: []string{file}, AutoPublish: true, IntervalMinutes: 60, TimeoutSeconds: 60}); err != nil {
 		t.Fatal(err)
 	}
-	g.StartMaintenance(context.Background())
+	m.Start(context.Background())
 	run, err := m.Run("gitlab", false)
 	if err != nil {
 		t.Fatal(err)
@@ -118,7 +118,7 @@ func TestLiveGitLabMaintenanceChangeAndRollback(t *testing.T) {
 	if err := m.Publish(next.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(serverTools(g.Snapshot(), "gitlab"), first.Tools) {
+	if !reflect.DeepEqual(serverTools(svcs.Registry.Snapshot(), "gitlab"), first.Tools) {
 		t.Fatal("rollback did not restore prior catalog")
 	}
 	t.Log("source update, independent acceptance, automatic compatible publication, routing and rollback passed")

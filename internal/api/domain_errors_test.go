@@ -84,13 +84,13 @@ func TestDomainErrorHTTPCompatibility(t *testing.T) {
 		}
 	})
 	t.Run("invoke-upstream-validation-stays-400", func(t *testing.T) {
-		g, _ := testGateway(t)
-		if err := g.Registry().SaveServer(registry.Server{
+		g, svcs, _ := testGateway(t)
+		if err := svcs.Registry.SaveServer(registry.Server{
 			ID: "svc", Name: "Svc", Kind: "http", Endpoint: "http://127.0.0.1:1", Enabled: true,
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if err := g.Registry().SaveTool(registry.Tool{
+		if err := svcs.Registry.SaveTool(registry.Tool{
 			ID:          "svc.get",
 			ServerID:    "svc",
 			Name:        "get",
@@ -108,7 +108,7 @@ func TestDomainErrorHTTPCompatibility(t *testing.T) {
 			t.Fatal(err)
 		}
 		w := httptest.NewRecorder()
-		Handler(g).ServeHTTP(w, httptest.NewRequest("POST", "http://127.0.0.1/api/invoke", strings.NewReader(`{"tool_id":"svc.get","arguments":{"path":{"id":".."}}}`)))
+		Handler(g, svcs).ServeHTTP(w, httptest.NewRequest("POST", "http://127.0.0.1/api/invoke", strings.NewReader(`{"tool_id":"svc.get","arguments":{"path":{"id":".."}}}`)))
 		if w.Code != 400 {
 			t.Fatalf("expected 400 for upstream path validation error, got %d %s", w.Code, w.Body.String())
 		}

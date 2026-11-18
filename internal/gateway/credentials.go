@@ -76,7 +76,7 @@ func (g *Gateway) SetServerCredentials(id string, values map[string]string) erro
 	// Validate against the latest registry while holding the credential write lock.
 	// This mutation never writes a previously read server configuration back.
 	return g.credentials.Update(changes, func() error {
-		for _, s := range g.Snapshot().Servers {
+		for _, s := range g.registry.Snapshot().Servers {
 			if s.ID != id {
 				continue
 			}
@@ -100,7 +100,7 @@ type CredentialStatus struct {
 }
 
 func (g *Gateway) ServerCredentials(id string) ([]CredentialStatus, error) {
-	for _, s := range g.Snapshot().Servers {
+	for _, s := range g.registry.Snapshot().Servers {
 		if s.ID != id {
 			continue
 		}
@@ -119,7 +119,7 @@ type OAuthStatus struct {
 }
 
 func (g *Gateway) ServerOAuthInfo(id string) (*OAuthStatus, *market.OAuthRemoteTarget, error) {
-	for _, s := range g.Snapshot().Servers {
+	for _, s := range g.registry.Snapshot().Servers {
 		if s.ID != id {
 			continue
 		}
@@ -138,7 +138,7 @@ func (g *Gateway) ServerOAuthInfo(id string) (*OAuthStatus, *market.OAuthRemoteT
 
 func (g *Gateway) ClearServerOAuth(id string) error {
 	found := false
-	for _, s := range g.Snapshot().Servers {
+	for _, s := range g.registry.Snapshot().Servers {
 		if s.ID == id {
 			found = true
 			break
@@ -182,5 +182,3 @@ func (g *Gateway) DeleteServer(id string) error {
 	}
 	return err
 }
-
-func (g *Gateway) CredentialsPersistent() bool { return g.credentials.Persistent() }

@@ -30,9 +30,9 @@ func TestPiRealRPCContract(t *testing.T) {
 	if os.Getenv("GATEWAY_TEST_DOCKER") == "1" {
 		policy = &sandbox.Policy{Mode: "docker", Image: "node@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da"}
 	}
-	g, _ := testGatewayOptions(t, command, policy)
-	m := g.Maintenance()
-	setLogsAcceptance(t, g, "v1", "real-pi")
+	_, svcs, _ := testGatewayOptions(t, command, policy)
+	m := svcs.Maintenance
+	setLogsAcceptance(t, m, "v1", "real-pi")
 	agentDir := t.TempDir()
 	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
 	t.Setenv("PI_TELEMETRY", "0")
@@ -109,7 +109,7 @@ func TestPiRealRPCContract(t *testing.T) {
 	if err := m.SaveSource(source); err != nil {
 		t.Fatal(err)
 	}
-	g.StartMaintenance(context.Background())
+	m.Start(context.Background())
 	run := approveRun(t, m, enqueueTest(t, m, true).ID)
 	if requests.Load() < 2 || len(run.Tools) != 1 {
 		t.Fatalf("real Pi did not complete tool loop: requests=%d run=%+v", requests.Load(), run)

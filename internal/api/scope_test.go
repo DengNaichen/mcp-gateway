@@ -64,7 +64,7 @@ func initGitRepoForScopeTest(t *testing.T, dir, remoteURL string, withCommit boo
 	return realDir
 }
 
-func signMCPArgs(t *testing.T, g *gateway.Gateway, agent, cwd string, ambiguous bool, op string, args map[string]any) map[string]any {
+func signMCPArgs(t *testing.T, dataDir, agent, cwd string, ambiguous bool, op string, args map[string]any) map[string]any {
 	t.Helper()
 	ctxField := workspace.CurrentContextField()
 	cloned := make(map[string]any, len(args)+1)
@@ -78,7 +78,7 @@ func signMCPArgs(t *testing.T, g *gateway.Gateway, agent, cwd string, ambiguous 
 		t.Fatal(err)
 	}
 	now := time.Now()
-	tok, err := workspace.SignToken(scopeKey(t, g), workspace.Claims{
+	tok, err := workspace.SignToken(scopeKey(t, dataDir), workspace.Claims{
 		Channel:   buildinfo.Current().Channel,
 		Agent:     agent,
 		Cwd:       cwd,
@@ -96,7 +96,7 @@ func signMCPArgs(t *testing.T, g *gateway.Gateway, agent, cwd string, ambiguous 
 	return cloned
 }
 
-func registerMultiServiceUpstream(t *testing.T, g *gateway.Gateway) {
+func registerMultiServiceUpstream(t *testing.T, reg *registry.Service) {
 	t.Helper()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]any{"ok": true, "path": r.URL.Path, "method": r.Method})
@@ -112,7 +112,7 @@ func registerMultiServiceUpstream(t *testing.T, g *gateway.Gateway) {
 		{"gitlab", "GitLab", "CI Pipeline 与合并请求"},
 		{"roster", "Roster", "团队任务与 Spec 管理"},
 	} {
-		if err := g.Registry().SaveServer(registry.Server{
+		if err := reg.SaveServer(registry.Server{
 			ID:          srv.id,
 			Name:        srv.name,
 			Description: srv.desc,
@@ -133,7 +133,7 @@ func registerMultiServiceUpstream(t *testing.T, g *gateway.Gateway) {
 			{"get", "Get single item in " + srv.id, true, "GET", []string{"developer"}},
 			{"mutate", "Create or update item in " + srv.id, false, "POST", []string{"developer"}},
 		} {
-			if err := g.Registry().SaveTool(registry.Tool{
+			if err := reg.SaveTool(registry.Tool{
 				ID:          srv.id + "." + spec.name,
 				ServerID:    srv.id,
 				Name:        spec.name,
@@ -153,15 +153,15 @@ func registerMultiServiceUpstream(t *testing.T, g *gateway.Gateway) {
 }
 
 func TestScopeRulesSurviveRegistryReconciliation(t *testing.T) {
-	g, err := gateway.New(t.TempDir(), "http://127.0.0.1:8789")
+	g, svcs, err := gateway.New(t.TempDir(), "http://127.0.0.1:8789")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer g.Close()
-	if err := g.Registry().SaveServer(registry.Server{ID: "svc", Name: "Svc", Description: "legacy", Kind: "http", Endpoint: "http://127.0.0.1:9999", Enabled: true}); err != nil {
+	if err := svcs.Registry.SaveServer(registry.Server{ID: "svc", Name: "Svc", Description: "legacy", Kind: "http", Endpoint: "http://127.0.0.1:9999", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	overview := g.Scope().ScopeOverview()
+	overview := svcs.Scope.ScopeOverview()
 	if overview.Enforce {
 		t.Fatal("default enforce must be false")
 	}
@@ -172,23 +172,23 @@ func TestScopeRulesSurviveRegistryReconciliation(t *testing.T) {
 	// Bind a repo + rule referencing 'svc', then reconcile servers/tools via SaveServer/SaveTool
 	// and confirm rules survive reconciliation.
 	repoDir := initGitRepoForScopeTest(t, filepath.Join(t.TempDir(), "app"), "", false)
-	repo, err := g.Scope().SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "app", Path: repoDir})
+	repo, err := svcs.Scope.SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "app", Path: repoDir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.Scope().SaveScopeRule(scope.ScopeRule{
+	if _, err := svcs.Scope.SaveScopeRule(scope.ScopeRule{
 		RepoKey: repo.ID,
 		Grants:  []scope.ServiceGrant{{ServerID: "svc", Access: "rw"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Registry().SaveServer(registry.Server{ID: "svc", Name: "Svc Updated", Description: "updated", Kind: "http", Endpoint: "http://127.0.0.1:9999", Enabled: true}); err != nil {
+	if err := svcs.Registry.SaveServer(registry.Server{ID: "svc", Name: "Svc Updated", Description: "updated", Kind: "http", Endpoint: "http://127.0.0.1:9999", Enabled: true}); err != nil {
 		t.Fatalf("SaveServer failed after scope_rules added: %v", err)
 	}
-	if err := g.Registry().SaveTool(registry.Tool{ID: "svc.ping", ServerID: "svc", Name: "ping", Description: "ping", InputSchema: objectSchema(map[string]any{}), Enabled: true, ReadOnly: true, Actors: []string{"developer"}, Method: "GET", Path: "/ping"}); err != nil {
+	if err := svcs.Registry.SaveTool(registry.Tool{ID: "svc.ping", ServerID: "svc", Name: "ping", Description: "ping", InputSchema: objectSchema(map[string]any{}), Enabled: true, ReadOnly: true, Actors: []string{"developer"}, Method: "GET", Path: "/ping"}); err != nil {
 		t.Fatalf("SaveTool failed after scope_rules added: %v", err)
 	}
-	after := g.Scope().ScopeOverview()
+	after := svcs.Scope.ScopeOverview()
 	if len(after.Rules) != 2 {
 		t.Fatalf("scope_rules lost after writeRegistry: %+v", after.Rules)
 	}
@@ -196,11 +196,11 @@ func TestScopeRulesSurviveRegistryReconciliation(t *testing.T) {
 
 func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	workspace.ClearCache()
-	g, _ := testGateway(t)
-	useKeywordModel(t, g)
-	registerMultiServiceUpstream(t, g)
+	g, svcs, _ := testGateway(t)
+	useKeywordModel(t, g, svcs)
+	registerMultiServiceUpstream(t, svcs.Registry)
 
-	host := httptest.NewServer(Handler(g))
+	host := httptest.NewServer(Handler(g, svcs))
 	defer host.Close()
 
 	// Create repos:
@@ -268,7 +268,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	}
 
 	// 1b. Valid token used once succeeds, replayed a second time MUST fail 403 scope_invalid!
-	signedOnce := signMCPArgs(t, g, "codex", repoMain, false, "discover_tools", map[string]any{"intent": "github list"})
+	signedOnce := signMCPArgs(t, svcs.DataDir, "codex", repoMain, false, "discover_tools", map[string]any{"intent": "github list"})
 	if err := toolCallErr(codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: signedOnce})); err != nil {
 		t.Fatalf("first call with valid token failed: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	}
 
 	// 1c. Argument tampering after signing (ArgsHash mismatch) -> 403 scope_invalid!
-	tampered := signMCPArgs(t, g, "codex", repoMain, false, "invoke_tool", map[string]any{"tool_id": "github.list", "arguments": map[string]any{}})
+	tampered := signMCPArgs(t, svcs.DataDir, "codex", repoMain, false, "invoke_tool", map[string]any{"tool_id": "github.list", "arguments": map[string]any{}})
 	tampered["tool_id"] = "github.mutate"
 	err = toolCallErr(codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: tampered}))
 	if err == nil || !strings.Contains(err.Error(), "scope_invalid") {
@@ -286,7 +286,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	}
 
 	// 1d. Agent mismatch (?agent=claude URL receiving token signed for codex) -> 403 scope_invalid!
-	mismatch := signMCPArgs(t, g, "codex", repoMain, false, "discover_tools", map[string]any{"intent": "github list"})
+	mismatch := signMCPArgs(t, svcs.DataDir, "codex", repoMain, false, "discover_tools", map[string]any{"intent": "github list"})
 	err = toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: mismatch}))
 	if err == nil || !strings.Contains(err.Error(), "scope_invalid") {
 		t.Fatalf("agent-mismatched token not rejected with scope_invalid: %v", err)
@@ -294,7 +294,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 
 	// 1e. Expired token -> 403 scope_invalid!
 	expiredHash, _ := workspace.CanonicalArgsHash(map[string]any{"intent": "github"}, ctxField)
-	expiredTok, err := workspace.SignToken(scopeKey(t, g), workspace.Claims{
+	expiredTok, err := workspace.SignToken(scopeKey(t, svcs.DataDir), workspace.Claims{
 		Channel:  buildinfo.Current().Channel,
 		Agent:    "codex",
 		Cwd:      repoMain,
@@ -348,15 +348,15 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	}
 
 	// --- Bind repositories & configure precedence rules ---
-	boundMain, err := g.Scope().SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "mcp-gateway", Path: repoMain})
+	boundMain, err := svcs.Scope.SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "mcp-gateway", Path: repoMain})
 	if err != nil {
 		t.Fatal(err)
 	}
-	boundEmpty, err := g.Scope().SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "fresh-empty", Path: repoEmpty})
+	boundEmpty, err := svcs.Scope.SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "fresh-empty", Path: repoEmpty})
 	if err != nil {
 		t.Fatal(err)
 	}
-	boundDir, err := g.Scope().SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "proj", Path: dirProj})
+	boundDir, err := svcs.Scope.SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "proj", Path: dirProj})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,13 +374,13 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 		{RepoKey: boundEmpty.ID, Grants: []scope.ServiceGrant{{ServerID: "github", Access: "ro"}}},
 		{RepoKey: boundDir.ID, Grants: []scope.ServiceGrant{{ServerID: "gitlab", Access: "rw"}}},
 	} {
-		if _, err := g.Scope().SaveScopeRule(r); err != nil {
+		if _, err := svcs.Scope.SaveScopeRule(r); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	// Enable enforcement!
-	if err := g.Scope().SetScopeMode(true); err != nil {
+	if err := svcs.Scope.SetScopeMode(true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -394,7 +394,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	}
 
 	// --- Invariant 3: Ambiguous workspace when enforce == true MUST return 403 ambiguous_workspace ---
-	ambigArgs := signMCPArgs(t, g, "cursor", "", true, "discover_tools", map[string]any{"intent": "roster list"})
+	ambigArgs := signMCPArgs(t, svcs.DataDir, "cursor", "", true, "discover_tools", map[string]any{"intent": "roster list"})
 	err = toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: ambigArgs}))
 	if err == nil || !strings.Contains(err.Error(), "ambiguous_workspace") {
 		t.Fatalf("ambiguous workspace did not return ambiguous_workspace: %v", err)
@@ -402,32 +402,32 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 
 	// --- Invariant 4: Worktree subdir automatically hits boundMain via shared CommonDir; all agents share the repo rule! ---
 	// Codex in repoWTSub: gets roster RW (roster.mutate allowed!) + github.list ONLY (github.get & gitlab.list denied!).
-	wtInvokeOK := signMCPArgs(t, g, "codex", repoWTSub, false, "invoke_tool", map[string]any{"tool_id": "roster.mutate", "arguments": map[string]any{}})
+	wtInvokeOK := signMCPArgs(t, svcs.DataDir, "codex", repoWTSub, false, "invoke_tool", map[string]any{"tool_id": "roster.mutate", "arguments": map[string]any{}})
 	if res, err := codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: wtInvokeOK}); err != nil || res.IsError {
 		t.Fatalf("codex in linked worktree subdir failed authorized roster.mutate: %v %+v", err, res)
 	}
-	wtSubsetDenied := signMCPArgs(t, g, "codex", repoWTSub, false, "get_tool_schema", map[string]any{"tool_id": "github.get"})
+	wtSubsetDenied := signMCPArgs(t, svcs.DataDir, "codex", repoWTSub, false, "get_tool_schema", map[string]any{"tool_id": "github.get"})
 	if err := toolCallErr(codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "get_tool_schema", Arguments: wtSubsetDenied})); err == nil {
 		t.Fatal("codex accessed github.get excluded by ToolIDs subset")
 	}
-	wtSubsetAllowed := signMCPArgs(t, g, "codex", repoWTSub, false, "get_tool_schema", map[string]any{"tool_id": "github.list"})
+	wtSubsetAllowed := signMCPArgs(t, svcs.DataDir, "codex", repoWTSub, false, "get_tool_schema", map[string]any{"tool_id": "github.list"})
 	if err := toolCallErr(codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "get_tool_schema", Arguments: wtSubsetAllowed})); err != nil {
 		t.Fatalf("codex denied github.list included in ToolIDs subset: %v", err)
 	}
 
 	// Claude in repoMain shares the same repo rule as Codex: roster.mutate allowed, gitlab.list denied.
-	claudeGitlab := signMCPArgs(t, g, "claude", repoMain, false, "invoke_tool", map[string]any{"tool_id": "gitlab.list", "arguments": map[string]any{}})
+	claudeGitlab := signMCPArgs(t, svcs.DataDir, "claude", repoMain, false, "invoke_tool", map[string]any{"tool_id": "gitlab.list", "arguments": map[string]any{}})
 	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeGitlab})); err == nil {
 		t.Fatal("claude accessed ungranted gitlab.list inside mcp-gateway")
 	}
-	claudeWrite := signMCPArgs(t, g, "claude", repoMain, false, "invoke_tool", map[string]any{"tool_id": "roster.mutate", "arguments": map[string]any{}})
+	claudeWrite := signMCPArgs(t, svcs.DataDir, "claude", repoMain, false, "invoke_tool", map[string]any{"tool_id": "roster.mutate", "arguments": map[string]any{}})
 	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeWrite})); err != nil {
 		t.Fatalf("claude denied authorized repo tool roster.mutate: %v", err)
 	}
 
 	// --- Invariant 5: Evil clone with identical RemoteHint at different path MUST NOT match mcp-gateway! ---
 	// Unconfigured repoEvilClone falls through to "*" = [] -> 0 tools for any agent, and records in Observed!
-	evilDiscover := signMCPArgs(t, g, "codex", repoEvilClone, false, "discover_tools", map[string]any{"intent": "roster list"})
+	evilDiscover := signMCPArgs(t, svcs.DataDir, "codex", repoEvilClone, false, "discover_tools", map[string]any{"intent": "roster list"})
 	evilRes, err := codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: evilDiscover})
 	if err != nil {
 		t.Fatalf("discover in unconfigured repo returned error instead of 0-tool no_match: %v", err)
@@ -437,29 +437,29 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 		t.Fatalf("evil clone with spoofed RemoteHint got tools! %s", evilText)
 	}
 	// Verify repoEvilClone was recorded in scope_observations!
-	ov := g.Scope().ScopeOverview()
+	ov := svcs.Scope.ScopeOverview()
 	if !slices.ContainsFunc(ov.Observed, func(o scope.ObservedRepo) bool { return o.Root == repoEvilClone && o.LastAgent == "codex" }) {
 		t.Fatalf("expected evil-clone in Observed, got %+v", ov.Observed)
 	}
-	claudeUnconf := signMCPArgs(t, g, "claude", repoEvilClone, false, "invoke_tool", map[string]any{"tool_id": "gitlab.list", "arguments": map[string]any{}})
+	claudeUnconf := signMCPArgs(t, svcs.DataDir, "claude", repoEvilClone, false, "invoke_tool", map[string]any{"tool_id": "gitlab.list", "arguments": map[string]any{}})
 	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeUnconf})); err == nil {
 		t.Fatal("claude in unconfigured repo bypassed empty global default")
 	}
 
 	// --- Invariant 6: Empty `git init` repo without origin & Dir segment-boundary (/proj != /proj-old) ---
-	emptyRead := signMCPArgs(t, g, "cursor", repoEmpty, false, "invoke_tool", map[string]any{"tool_id": "github.list", "arguments": map[string]any{}})
+	emptyRead := signMCPArgs(t, svcs.DataDir, "cursor", repoEmpty, false, "invoke_tool", map[string]any{"tool_id": "github.list", "arguments": map[string]any{}})
 	if err := toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: emptyRead})); err != nil {
 		t.Fatalf("empty git init repo failed to match CommonDir: %v", err)
 	}
-	emptyWrite := signMCPArgs(t, g, "cursor", repoEmpty, false, "invoke_tool", map[string]any{"tool_id": "github.mutate", "arguments": map[string]any{}})
+	emptyWrite := signMCPArgs(t, svcs.DataDir, "cursor", repoEmpty, false, "invoke_tool", map[string]any{"tool_id": "github.mutate", "arguments": map[string]any{}})
 	if err := toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: emptyWrite})); err == nil {
 		t.Fatal("RO repo grant allowed write tool github.mutate")
 	}
-	projOK := signMCPArgs(t, g, "cursor", dirProj, false, "invoke_tool", map[string]any{"tool_id": "gitlab.mutate", "arguments": map[string]any{}})
+	projOK := signMCPArgs(t, svcs.DataDir, "cursor", dirProj, false, "invoke_tool", map[string]any{"tool_id": "gitlab.mutate", "arguments": map[string]any{}})
 	if err := toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: projOK})); err != nil {
 		t.Fatalf("/proj dir anchor failed: %v", err)
 	}
-	projOldDenied := signMCPArgs(t, g, "cursor", dirProjOld, false, "invoke_tool", map[string]any{"tool_id": "gitlab.mutate", "arguments": map[string]any{}})
+	projOldDenied := signMCPArgs(t, svcs.DataDir, "cursor", dirProjOld, false, "invoke_tool", map[string]any{"tool_id": "gitlab.mutate", "arguments": map[string]any{}})
 	if err := toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: projOldDenied})); err == nil {
 		t.Fatal("/proj-old erroneously matched /proj dir anchor!")
 	}
@@ -467,13 +467,13 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	// Regression: an unbound Git repo nested inside bound KindDir `dirProj` MUST NOT fall through
 	// to inherit `dirProj`'s RootPaths grants!
 	nestedUntrustedGit := initGitRepoForScopeTest(t, filepath.Join(dirProj, "nested-untrusted-git"), "", false)
-	nestedDenied := signMCPArgs(t, g, "cursor", nestedUntrustedGit, false, "invoke_tool", map[string]any{"tool_id": "gitlab.mutate", "arguments": map[string]any{}})
+	nestedDenied := signMCPArgs(t, svcs.DataDir, "cursor", nestedUntrustedGit, false, "invoke_tool", map[string]any{"tool_id": "gitlab.mutate", "arguments": map[string]any{}})
 	if err := toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: nestedDenied})); err == nil {
 		t.Fatal("unbound Git repo nested inside bound KindDir RootPaths inherited parent dir grants!")
 	}
 
 	// --- Verify Activity Logs contain detail.scope (including agent for audit) ---
-	events := g.Activity().Recent()
+	events := svcs.Activity.Recent()
 	foundDiscoverScope := false
 	foundInvokeScope := false
 	for _, ev := range events {
@@ -499,9 +499,9 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 
 func TestSingleServiceScopeSkipsHierarchicalSelectServices(t *testing.T) {
 	t.Setenv("GATEWAY_ROUTING", "hierarchical")
-	g, _ := testGateway(t)
+	g, svcs, _ := testGateway(t)
 
-	registerMultiServiceUpstream(t, g)
+	registerMultiServiceUpstream(t, svcs.Registry)
 
 	var serviceStageCalls atomic.Int32
 	var toolStageCalls atomic.Int32
@@ -532,7 +532,7 @@ func TestSingleServiceScopeSkipsHierarchicalSelectServices(t *testing.T) {
 	}))
 	t.Cleanup(modelSrv.Close)
 
-	settings, _ := g.Model().Config()
+	settings, _ := svcs.Model.Config()
 	settings.BaseURL, settings.Model = modelSrv.URL, "gpt-6-luna"
 	if err := g.SaveSettings(settings, "", false); err != nil {
 		t.Fatal(err)
@@ -548,24 +548,24 @@ func TestSingleServiceScopeSkipsHierarchicalSelectServices(t *testing.T) {
 
 	// 2. Scoped to single service (roster only) -> selectServices MUST be skipped (0 new calls)!
 	repoDir := initGitRepoForScopeTest(t, filepath.Join(t.TempDir(), "single-svc"), "", false)
-	repo, err := g.Scope().SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "single-svc", Path: repoDir})
+	repo, err := svcs.Scope.SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "single-svc", Path: repoDir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.Scope().SaveScopeRule(scope.ScopeRule{
+	if _, err := svcs.Scope.SaveScopeRule(scope.ScopeRule{
 		RepoKey: repo.ID,
 		Grants:  []scope.ServiceGrant{{ServerID: "roster", Access: "ro"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Scope().SetScopeMode(true); err != nil {
+	if err := svcs.Scope.SetScopeMode(true); err != nil {
 		t.Fatal(err)
 	}
 
 	serviceStageCalls.Store(0)
 	toolStageCalls.Store(0)
 
-	simCtx, err := g.Scope().EvaluateSimulatedScope(scope.SimScope{RepoKey: repo.ID})
+	simCtx, err := svcs.Scope.EvaluateSimulatedScope(scope.SimScope{RepoKey: repo.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -581,11 +581,11 @@ func TestSingleServiceScopeSkipsHierarchicalSelectServices(t *testing.T) {
 	}
 
 	// 3. Internal TestModel and Maintenance Acceptance MUST bypass repo scope even when enforce == true!
-	useKeywordModel(t, g)
+	useKeywordModel(t, g, svcs)
 	if _, err := g.TestModel(context.Background(), "list github items"); err != nil {
 		t.Fatalf("TestModel blocked by repo scope enforce: %v", err)
 	}
-	report := g.Maintenance().EvaluateAcceptance(context.Background(), maintenance.MaintenanceRun{
+	report := svcs.Maintenance.EvaluateAcceptance(context.Background(), maintenance.MaintenanceRun{
 		ServerID: "github",
 		Server:   registry.Server{ID: "github", Name: "GitHub", Kind: "http", Endpoint: "http://127.0.0.1:9", Enabled: true},
 		Tools: []registry.Tool{
@@ -607,9 +607,9 @@ func TestSingleServiceScopeSkipsHierarchicalSelectServices(t *testing.T) {
 }
 
 func TestSharedModeRESTNonAdminGuardSimScopeAndHTTPAPIs(t *testing.T) {
-	g := sharedGateway(t)
-	useKeywordModel(t, g)
-	handler := Handler(g)
+	g, svcs := sharedGateway(t)
+	useKeywordModel(t, g, svcs)
+	handler := Handler(g, svcs)
 
 	doReq := func(method, path, bearer, scopeHdr string, body any) *httptest.ResponseRecorder {
 		t.Helper()
@@ -729,7 +729,7 @@ func TestSharedModeRESTNonAdminGuardSimScopeAndHTTPAPIs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tok, err := workspace.SignToken(scopeKey(t, g), workspace.Claims{
+		tok, err := workspace.SignToken(scopeKey(t, svcs.DataDir), workspace.Claims{
 			Channel:  buildinfo.Current().Channel,
 			Agent:    "codex",
 			Cwd:      repoDir,
@@ -776,22 +776,22 @@ func TestSharedModeRESTNonAdminGuardSimScopeAndHTTPAPIs(t *testing.T) {
 
 func TestEndToEndGatewayHookBinaryToGatewayMCP(t *testing.T) {
 	workspace.ClearCache()
-	g, _ := testGateway(t)
-	useKeywordModel(t, g)
-	registerMultiServiceUpstream(t, g)
+	g, svcs, _ := testGateway(t)
+	useKeywordModel(t, g, svcs)
+	registerMultiServiceUpstream(t, svcs.Registry)
 
 	repoDir := initGitRepoForScopeTest(t, filepath.Join(t.TempDir(), "e2e-repo"), "git@github.com:DengNaichen/mcp-gateway.git", true)
-	repo, err := g.Scope().SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "e2e-repo", Path: repoDir})
+	repo, err := svcs.Scope.SaveRepository(context.Background(), scope.SaveRepositoryRequest{Name: "e2e-repo", Path: repoDir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.Scope().SaveScopeRule(scope.ScopeRule{
+	if _, err := svcs.Scope.SaveScopeRule(scope.ScopeRule{
 		RepoKey: repo.ID,
 		Grants:  []scope.ServiceGrant{{ServerID: "github", Access: "ro"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Scope().SetScopeMode(true); err != nil {
+	if err := svcs.Scope.SetScopeMode(true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -812,7 +812,7 @@ func TestEndToEndGatewayHookBinaryToGatewayMCP(t *testing.T) {
 			"arguments": map[string]any{},
 		},
 	})
-	hookCmd := exec.Command(hookBin, "claude", "--data", g.DataDir())
+	hookCmd := exec.Command(hookBin, "claude", "--data", svcs.DataDir)
 	hookCmd.Stdin = bytes.NewReader(hookStdin)
 	hookOut, err := hookCmd.CombinedOutput()
 	if err != nil {
@@ -828,7 +828,7 @@ func TestEndToEndGatewayHookBinaryToGatewayMCP(t *testing.T) {
 		t.Fatalf("decode hook stdout: %v\n%s", err, hookOut)
 	}
 
-	host := httptest.NewServer(Handler(g))
+	host := httptest.NewServer(Handler(g, svcs))
 	defer host.Close()
 
 	cl := mcp.NewClient(&mcp.Implementation{Name: "claude-code", Version: "1"}, nil)

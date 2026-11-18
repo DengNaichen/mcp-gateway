@@ -35,7 +35,7 @@ func (g *server) ensureMCPCallScope(ctx context.Context, req *mcp.CallToolReques
 	if _, ok := scope.RequestScopeFrom(ctx); ok {
 		return ctx, raw, nil
 	}
-	return g.gw.Scope().ResolveMCPToolCallScope(ctx, mcpHeader(req, "X-Gateway-Agent"), toolName, raw)
+	return g.scope.ResolveMCPToolCallScope(ctx, mcpHeader(req, "X-Gateway-Agent"), toolName, raw)
 }
 
 // toolError reports a failed meta-tool call as a tool result with isError set,

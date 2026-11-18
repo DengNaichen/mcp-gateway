@@ -10,7 +10,7 @@ import (
 )
 
 func TestRegistryOperationsDoNotAcquirePublicationConfigMutex(t *testing.T) {
-	g, err := New(t.TempDir(), "http://127.0.0.1:8789")
+	g, _, err := New(t.TempDir(), "http://127.0.0.1:8789")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,8 +18,8 @@ func TestRegistryOperationsDoNotAcquirePublicationConfigMutex(t *testing.T) {
 	g.publicationConfigMu.Lock()
 	done := make(chan error, 1)
 	go func() {
-		_ = g.Snapshot()
-		done <- g.Registry().SaveServer(registry.Server{ID: "independent", Name: "Independent", Kind: "http", Endpoint: "https://example.com"})
+		_ = g.registry.Snapshot()
+		done <- g.registry.SaveServer(registry.Server{ID: "independent", Name: "Independent", Kind: "http", Endpoint: "https://example.com"})
 	}()
 	select {
 	case err := <-done:
@@ -37,16 +37,16 @@ func TestRegistryOperationsDoNotAcquirePublicationConfigMutex(t *testing.T) {
 func TestInitializationFailureReleasesDataDirectory(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("GATEWAY_MODEL_BASE_URL", "invalid")
-	if g, err := New(dir, "http://127.0.0.1:8789"); err == nil {
+	if g, _, err := New(dir, "http://127.0.0.1:8789"); err == nil {
 		_ = g.Close()
 		t.Fatal("expected model settings failure")
 	}
 	t.Setenv("GATEWAY_MODEL_BASE_URL", "")
-	g, err := New(dir, "http://127.0.0.1:8789")
+	g, _, err := New(dir, "http://127.0.0.1:8789")
 	if err != nil {
 		t.Fatalf("initialization leaked lock: %v", err)
 	}
-	if other, err := New(dir, "http://127.0.0.1:8790"); !errors.Is(err, store.ErrLocked) {
+	if other, _, err := New(dir, "http://127.0.0.1:8790"); !errors.Is(err, store.ErrLocked) {
 		if other != nil {
 			_ = other.Close()
 		}
@@ -55,7 +55,7 @@ func TestInitializationFailureReleasesDataDirectory(t *testing.T) {
 	if err := g.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := New(dir, "http://127.0.0.1:8790")
+	reopened, _, err := New(dir, "http://127.0.0.1:8790")
 	if err != nil {
 		t.Fatalf("close leaked lock: %v", err)
 	}

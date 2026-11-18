@@ -332,12 +332,12 @@ func TestResponsesMatchSchema(t *testing.T) {
 	}
 	pointer := strings.NewReplacer("~", "~0", "/", "~1")
 
-	g, err := gateway.New(t.TempDir(), "http://localhost")
+	g, svcs, err := gateway.New(t.TempDir(), "http://localhost")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = g.Close() })
-	handler := Handler(g)
+	handler := Handler(g, svcs)
 	check := func(method, target, documentedPath string, body any) {
 		t.Helper()
 		var reader *bytes.Reader

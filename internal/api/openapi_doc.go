@@ -69,6 +69,26 @@ func (g docGenerator) operation(r route) (map[string]any, error) {
 		"summary":     r.Summary,
 		"tags":        []any{segments[0]},
 	}
+	applyOperationSecurity(op, r)
+	if params := operationParameters(r); len(params) > 0 {
+		op["parameters"] = params
+	}
+	reqBody, err := g.operationRequestBody(r.Request)
+	if err != nil {
+		return nil, err
+	}
+	if reqBody != nil {
+		op["requestBody"] = reqBody
+	}
+	responses, err := g.operationResponses(r.Responses)
+	if err != nil {
+		return nil, err
+	}
+	op["responses"] = responses
+	return op, nil
+}
+
+func applyOperationSecurity(op map[string]any, r route) {
 	switch {
 	case r.Public:
 		op["security"] = []any{}
@@ -79,6 +99,9 @@ func (g docGenerator) operation(r route) (map[string]any, error) {
 	default:
 		op["description"] = "Management route: requires an admin principal in shared mode."
 	}
+}
+
+func operationParameters(r route) []any {
 	params := []any{}
 	for _, m := range pathParam.FindAllStringSubmatch(r.Path, -1) {
 		params = append(params, map[string]any{"name": m[1], "in": "path", "required": true, "schema": map[string]any{"type": "string"}})
@@ -92,51 +115,61 @@ func (g docGenerator) operation(r route) (map[string]any, error) {
 			map[string]any{"name": "X-Gateway-Scope", "in": "header", "description": "Signed repository scope token issued by the scope hook", "schema": map[string]any{"type": "string"}},
 		)
 	}
-	if len(params) > 0 {
-		op["parameters"] = params
-	}
-	switch body := r.Request.(type) {
+	return params
+}
+
+func (g docGenerator) operationRequestBody(req any) (map[string]any, error) {
+	switch body := req.(type) {
 	case nil:
+		return nil, nil
 	case rawBody:
-		op["requestBody"] = map[string]any{"required": true, "content": map[string]any{body.MediaType: map[string]any{"schema": map[string]any{}}}}
+		return map[string]any{"required": true, "content": map[string]any{body.MediaType: map[string]any{"schema": map[string]any{}}}}, nil
 	default:
 		schema, err := g.schema(reflect.TypeOf(body))
 		if err != nil {
 			return nil, err
 		}
-		op["requestBody"] = map[string]any{"required": true, "content": map[string]any{"application/json": map[string]any{"schema": schema}}}
+		return map[string]any{"required": true, "content": map[string]any{"application/json": map[string]any{"schema": schema}}}, nil
 	}
+}
+
+func (g docGenerator) operationResponses(respMap map[int]any) (map[string]any, error) {
 	errorSchema, err := g.schema(reflect.TypeFor[apitypes.Error]())
 	if err != nil {
 		return nil, err
 	}
 	responses := map[string]any{"default": map[string]any{"description": "Error", "content": jsonContent(errorSchema)}}
-	for status, body := range r.Responses {
-		var content map[string]any
-		switch body := body.(type) {
-		case binary:
-			content = map[string]any{body.MediaType: map[string]any{"schema": map[string]any{"type": "string", "format": "binary"}}}
-		case oneOf:
-			variants := []any{}
-			for _, v := range body {
-				s, err := g.schema(reflect.TypeOf(v))
-				if err != nil {
-					return nil, err
-				}
-				variants = append(variants, s)
-			}
-			content = jsonContent(map[string]any{"oneOf": variants})
-		default:
-			s, err := g.schema(reflect.TypeOf(body))
-			if err != nil {
-				return nil, err
-			}
-			content = jsonContent(s)
+	for status, body := range respMap {
+		content, err := g.responseContent(body)
+		if err != nil {
+			return nil, err
 		}
 		responses[strconv.Itoa(status)] = map[string]any{"description": httpStatusText(status), "content": content}
 	}
-	op["responses"] = responses
-	return op, nil
+	return responses, nil
+}
+
+func (g docGenerator) responseContent(body any) (map[string]any, error) {
+	switch body := body.(type) {
+	case binary:
+		return map[string]any{body.MediaType: map[string]any{"schema": map[string]any{"type": "string", "format": "binary"}}}, nil
+	case oneOf:
+		variants := make([]any, 0, len(body))
+		for _, v := range body {
+			s, err := g.schema(reflect.TypeOf(v))
+			if err != nil {
+				return nil, err
+			}
+			variants = append(variants, s)
+		}
+		return jsonContent(map[string]any{"oneOf": variants}), nil
+	default:
+		s, err := g.schema(reflect.TypeOf(body))
+		if err != nil {
+			return nil, err
+		}
+		return jsonContent(s), nil
+	}
 }
 
 func operationID(method, path string) string {

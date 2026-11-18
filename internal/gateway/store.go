@@ -59,22 +59,24 @@ type Options struct {
 	CredentialBackend  secrets.Backend
 }
 
-func New(dir, baseURL string) (*Gateway, error) { return NewWithOptions(dir, baseURL, Options{}) }
-func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
+func New(dir, baseURL string) (*Gateway, Services, error) {
+	return NewWithOptions(dir, baseURL, Options{})
+}
+func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, Services, error) {
 	execution, err := sandbox.LoadPolicy()
 	if err != nil {
-		return nil, err
+		return nil, Services{}, err
 	}
 	policy, err := access.LoadPolicy(baseURL)
 	if err != nil {
-		return nil, err
+		return nil, Services{}, err
 	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, fmt.Errorf("create data directory: %w", err)
+		return nil, Services{}, fmt.Errorf("create data directory: %w", err)
 	}
 	storage, err := store.Open(dir)
 	if err != nil {
-		return nil, err
+		return nil, Services{}, err
 	}
 	ready := false
 	defer func() {
@@ -86,7 +88,7 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
 	}()
 	scopeKey, err := workspace.EnsureScopeKey(dir)
 	if err != nil {
-		return nil, fmt.Errorf("initialize scope key: %w", err)
+		return nil, Services{}, fmt.Errorf("initialize scope key: %w", err)
 	}
 	db := storage.DB
 	g := &Gateway{
@@ -98,74 +100,82 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
 		db:         db,
 		storage:    storage,
 	}
+	g.credentials, err = openCredentialStore(dir, opts)
+	if err != nil {
+		return nil, Services{}, err
+	}
+	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupServerEnv, OpenBrowser: opts.OpenBrowser, LoadOAuth: g.credentials.Get, SaveOAuth: func(key, value string) error {
+		return g.credentials.Update(map[string]string{key: value}, nil)
+	}})
+	if err := g.loadRegistry(); err != nil {
+		return nil, Services{}, err
+	}
+	count, err := store.Settings[model.Settings](db).Count()
+	if err != nil {
+		return nil, Services{}, fmt.Errorf("read settings count: %w", err)
+	}
+	if count == 0 {
+		if err := g.registry.Update(func(registry.Registry) (registry.Registry, error) { return demo.Registry(baseURL), nil }); err != nil {
+			return nil, Services{}, err
+		}
+	}
+	// Relocate built-in demo endpoints when the listening port changes.
+	g.registry = registry.New(relocateDemoEndpoints(g.registry.Snapshot(), baseURL), store.Registry(db).Save)
+	g.scope, err = scope.New(scope.Options{
+		DB: db, Dir: dir, BaseURL: baseURL, Key: scopeKey,
+		Clock: time.Now, Shared: g.access != nil, Snapshot: g.registry.Snapshot,
+		AdminCaller: g.isAdminCaller,
+	})
+	if err != nil {
+		return nil, Services{}, err
+	}
+	if err := g.loadEvents(); err != nil {
+		return nil, Services{}, err
+	}
+	g.model, err = model.New(db, g.credentials)
+	if err != nil {
+		return nil, Services{}, err
+	}
+
+	if g.routing, err = loadRoutingOptions(); err != nil {
+		return nil, Services{}, err
+	}
+	g.maintenance, err = newMaintainer(g)
+	if err != nil {
+		return nil, Services{}, err
+	}
+	g.market = market.New(market.Options{Dir: dir, Snapshot: g.registry.Snapshot, ImportMCP: g.ImportMCP, SaveCredentials: g.saveServerCredentials, ErrorDetail: g.ErrorDetail})
+	ready = true
+	return g, g.services(), nil
+}
+
+func openCredentialStore(dir string, opts Options) (*secrets.Store, error) {
 	backend := opts.CredentialBackend
 	mode := os.Getenv("GATEWAY_CREDENTIAL_STORE")
 	if mode != "" && mode != "memory" && mode != "keychain" {
 		return nil, invalid("GATEWAY_CREDENTIAL_STORE 必须为 memory 或 keychain")
 	}
 	if backend == nil && mode != "memory" && (mode == "keychain" || (opts.PersistCredentials && runtime.GOOS == "darwin")) {
+		var err error
 		backend, err = secrets.Keychain(buildinfo.Current().Channel, dir)
 		if err != nil {
 			return nil, err
 		}
 	}
-	g.credentials, err = secrets.Open(backend)
-	if err != nil {
-		return nil, err
-	}
-	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupServerEnv, OpenBrowser: opts.OpenBrowser, LoadOAuth: g.credentials.Get, SaveOAuth: func(key, value string) error {
-		return g.credentials.Update(map[string]string{key: value}, nil)
-	}})
-	if err := g.loadRegistry(); err != nil {
-		return nil, err
-	}
-	g.scope, err = scope.New(scope.Options{
-		DB: db, Dir: dir, BaseURL: baseURL, Key: scopeKey,
-		Clock: time.Now, Shared: g.access != nil, Snapshot: g.Snapshot,
-		AdminCaller: g.isAdminCaller,
-	})
-	if err != nil {
-		return nil, err
-	}
-	count, err := store.Settings[model.Settings](db).Count()
-	if err != nil {
-		return nil, fmt.Errorf("read settings count: %w", err)
-	}
-	if count == 0 {
-		if err := g.registry.Update(func(registry.Registry) (registry.Registry, error) { return demo.Registry(baseURL), nil }); err != nil {
-			return nil, err
-		}
-	}
-	if err := g.loadEvents(); err != nil {
-		return nil, err
-	}
-	// Relocate built-in demo endpoints when the listening port changes.
-	relocated := g.Snapshot()
-	for i := range relocated.Servers {
-		if relocated.Servers[i].Demo {
-			if relocated.Servers[i].Kind == "mcp" {
-				relocated.Servers[i].Endpoint = baseURL + "/demo/mcp"
+	return secrets.Open(backend)
+}
+
+func relocateDemoEndpoints(reg registry.Registry, baseURL string) registry.Registry {
+	for i := range reg.Servers {
+		if reg.Servers[i].Demo {
+			if reg.Servers[i].Kind == "mcp" {
+				reg.Servers[i].Endpoint = baseURL + "/demo/mcp"
 			} else {
-				relocated.Servers[i].Endpoint = baseURL + "/demo/api"
+				reg.Servers[i].Endpoint = baseURL + "/demo/api"
 			}
 		}
 	}
-	g.registry = registry.New(relocated, store.Registry(db).Save)
-	g.model, err = model.New(db, g.credentials)
-	if err != nil {
-		return nil, err
-	}
-
-	if g.routing, err = loadRoutingOptions(); err != nil {
-		return nil, err
-	}
-	g.maintenance, err = newMaintainer(g)
-	if err != nil {
-		return nil, err
-	}
-	g.market = market.New(market.Options{Dir: dir, Snapshot: g.Snapshot, ImportMCP: g.ImportMCP, SaveCredentials: g.saveServerCredentials, ErrorDetail: g.ErrorDetail})
-	ready = true
-	return g, nil
+	return reg
 }
 
 func (g *Gateway) Close() error {
@@ -193,8 +203,6 @@ func (g *Gateway) loadEvents() (err error) {
 	return err
 }
 
-func (g *Gateway) Snapshot() registry.Registry { return g.registry.Snapshot() }
-
 func invalid(message string) error { return fault.New(fault.Invalid, message, nil) }
 
 func (g *Gateway) isAdminCaller(ctx context.Context) bool {
@@ -205,16 +213,8 @@ func (g *Gateway) isAdminCaller(ctx context.Context) bool {
 	return ok && p.Admin
 }
 
-func (g *Gateway) identityAllowsTool(ctx context.Context, t registry.Tool, actor string) bool {
-	return g.access.IdentityAllowsTool(ctx, t, actor)
-}
-
 func (g *Gateway) authorizedTool(ctx context.Context, t registry.Tool, actor string) bool {
-	return g.identityAllowsTool(ctx, t, actor) && g.scope.AllowsTool(ctx, t)
-}
-
-func (g *Gateway) record(kind, actor, status, title string, started time.Time, detail any) {
-	g.activity.Record(kind, actor, status, title, started, detail)
+	return g.access.IdentityAllowsTool(ctx, t, actor) && g.scope.AllowsTool(ctx, t)
 }
 
 func newID() string { return fmt.Sprintf("%x", time.Now().UnixNano()) }

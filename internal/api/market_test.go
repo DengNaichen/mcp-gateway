@@ -93,13 +93,13 @@ func TestOAuthBrowserSignInAndImportMCP(t *testing.T) {
 		return nil
 	}
 
-	g, err := gateway.NewWithOptions(t.TempDir(), "http://127.0.0.1:0", gateway.Options{OpenBrowser: openBrowserURL})
+	g, svcs, err := gateway.NewWithOptions(t.TempDir(), "http://127.0.0.1:0", gateway.Options{OpenBrowser: openBrowserURL})
 	if err != nil {
 		t.Fatalf("new gateway: %v", err)
 	}
 	defer g.Close()
 
-	res, err := g.Market().InstallMarketServer(context.Background(), market.InstallMarketRequest{
+	res, err := svcs.Market.InstallMarketServer(context.Background(), market.InstallMarketRequest{
 		ID: "custom-saas",
 		Server: &market.MarketServer{
 			ID:        "custom-saas",

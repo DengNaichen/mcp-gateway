@@ -18,7 +18,7 @@ import (
 )
 
 func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
-	r := g.Snapshot()
+	r := g.registry.Snapshot()
 	i := slices.IndexFunc(r.Servers, func(s registry.Server) bool { return s.ID == id })
 	if i < 0 || r.Servers[i].Kind != "mcp" {
 		return 0, invalid("请选择已注册的 MCP 服务")
@@ -80,12 +80,12 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 			status = "error"
 			detail["error"] = g.ErrorDetail(retErr)
 		}
-		g.record("invoke", req.Actor, status, req.ToolID, started, detail)
+		g.activity.Record("invoke", req.Actor, status, req.ToolID, started, detail)
 	}()
 	if err := g.scope.CheckExecutionScope(ctx); err != nil {
 		return result, err
 	}
-	r := g.Snapshot()
+	r := g.registry.Snapshot()
 	i := slices.IndexFunc(r.Tools, func(t registry.Tool) bool { return t.ID == req.ToolID })
 	if i < 0 {
 		return result, fault.New(fault.NotFound, "工具不存在", nil)

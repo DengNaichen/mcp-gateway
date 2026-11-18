@@ -128,19 +128,19 @@ func TestOpenAPIWireContract(t *testing.T) {
 	}
 }
 func TestOpenAPIMaintenanceWithoutPi(t *testing.T) {
-	g, reference := testGatewayOptions(t, "nonexistent-pi-binary", nil)
+	_, svcs, reference := testGatewayOptions(t, "nonexistent-pi-binary", nil)
 	if err := os.WriteFile(reference, []byte(openAPIFixture), 0600); err != nil {
 		t.Fatal(err)
 	}
-	m := g.Maintenance()
-	setLogsAcceptance(t, g, "v1", "openapi")
+	m := svcs.Maintenance
+	setLogsAcceptance(t, m, "v1", "openapi")
 	source, _ := m.Source("service")
 	source.Format = "openapi"
 	source.OperationIDs = []string{"logs"}
 	if err := m.SaveSource(source); err != nil {
 		t.Fatal(err)
 	}
-	g.StartMaintenance(context.Background())
+	m.Start(context.Background())
 	r := approveRun(t, m, enqueueTest(t, m, false).ID)
 	if len(r.Tools) != 1 || r.Tools[0].HTTP == nil || !strings.Contains(r.Summary, "未调用模型") {
 		t.Fatalf("wrong deterministic result: %+v", r)

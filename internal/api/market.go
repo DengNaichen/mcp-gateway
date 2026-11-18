@@ -8,10 +8,10 @@ import (
 
 func (g *server) registerMarket(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/market", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 200, wireMarketSearch(g.gw.Market().MarketServers(r.Context(), r.URL.Query().Get("q"))))
+		respond(w, 200, wireMarketSearch(g.market.MarketServers(r.Context(), r.URL.Query().Get("q"))))
 	})
 	mux.HandleFunc("GET /api/market/icon", func(w http.ResponseWriter, r *http.Request) {
-		data, ct, err := g.gw.Market().MarketIcon(r.Context(), r.URL.Query().Get("id"), r.URL.Query().Get("url"))
+		data, ct, err := g.market.MarketIcon(r.Context(), r.URL.Query().Get("id"), r.URL.Query().Get("url"))
 		if err != nil {
 			fail(w, err)
 			return
@@ -31,7 +31,7 @@ func (g *server) registerMarket(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		out, err := g.gw.Market().InstallMarketServer(r.Context(), domainInstallRequest(in))
+		out, err := g.market.InstallMarketServer(r.Context(), domainInstallRequest(in))
 		if err != nil {
 			fail(w, err)
 			return

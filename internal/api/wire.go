@@ -2,8 +2,12 @@ package api
 
 // Converters between domain types and the apitypes wire contract. Flat structs
 // use Go struct conversion, which stops compiling as soon as the two field sets
-// diverge; nested structs map field by field. wire_test.go checks that every
-// domain field reaches the wire, so a new domain field cannot be dropped silently.
+// diverge; nested structs map field by field. Named one-line helpers remain here
+// when passed as callbacks to mapSlice/mapPtr/mapValues, shared across callers,
+// or passed directly to respond(...) so contract_test.go can resolve their
+// apitypes return type; other single-caller conversions are inlined.
+// wire_test.go checks that every domain field reaches the wire, so a new domain
+// field cannot be dropped silently.
 
 import (
 	"gatewaylab/internal/access"
@@ -147,7 +151,6 @@ func wireInvokeResult(r gateway.InvokeResult) apitypes.InvokeResult { return api
 
 // --- model ---
 
-func wireSettings(s model.Settings) apitypes.Settings   { return apitypes.Settings(s) }
 func domainSettings(s apitypes.Settings) model.Settings { return model.Settings(s) }
 func wireProfile(p model.ModelProfile) apitypes.ModelProfile {
 	return apitypes.ModelProfile(p)
@@ -167,9 +170,6 @@ func wireEventScope(s scope.EventScope) apitypes.EventScope   { return apitypes.
 func domainSimScope(s apitypes.SimScope) scope.SimScope       { return scope.SimScope(s) }
 func wireSnippet(s scope.ScopeSnippetResponse) apitypes.ScopeSnippetResponse {
 	return apitypes.ScopeSnippetResponse(s)
-}
-func domainSaveRepository(r apitypes.SaveRepositoryRequest) scope.SaveRepositoryRequest {
-	return scope.SaveRepositoryRequest(r)
 }
 
 func wireRule(r scope.ScopeRule) apitypes.ScopeRule {

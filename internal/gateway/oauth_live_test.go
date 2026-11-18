@@ -23,7 +23,7 @@ func TestLiveOAuthRestart(t *testing.T) {
 	}
 	// Keep this opt-in probe confined to one directory under the OS temp root.
 	dir := filepath.Join(os.TempDir(), "mcp-gateway-oauth-live-acceptance")
-	g, err := NewWithOptions(dir, "http://127.0.0.1:0", Options{PersistCredentials: true, OpenBrowser: func(raw string) error {
+	g, _, err := NewWithOptions(dir, "http://127.0.0.1:0", Options{PersistCredentials: true, OpenBrowser: func(raw string) error {
 		if os.Getenv("GATEWAY_LIVE_NO_BROWSER") == "1" {
 			return errors.New("unexpected browser after restart")
 		}

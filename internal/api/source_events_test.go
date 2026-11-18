@@ -39,16 +39,16 @@ func testRepository(t *testing.T) (string, string) {
 	return dir, testGit(t, dir, "rev-parse", "HEAD")
 }
 func TestRepositorySnapshotAndContentChange(t *testing.T) {
-	g, _ := testGateway(t)
+	_, svcs, _ := testGateway(t)
 	repo, firstSHA := testRepository(t)
-	m := g.Maintenance()
+	m := svcs.Maintenance
 	source, _ := m.Source("service")
 	source.Files = nil
 	source.Repository = &maintenance.RepositorySource{URL: repo, Ref: "main", Files: []string{"api.json"}}
 	if err := m.SaveSource(source); err != nil {
 		t.Fatal(err)
 	}
-	g.StartMaintenance(context.Background())
+	m.Start(context.Background())
 	first := approveRun(t, m, enqueueTest(t, m, false).ID)
 	if first.Provenance.Commit != firstSHA || first.Provenance.Documents["repository:api.json"] == "" {
 		t.Fatal("missing provenance")
@@ -66,7 +66,7 @@ func TestRepositorySnapshotAndContentChange(t *testing.T) {
 	putSource(t, filepath.Join(repo, "api.json"), "v2", "")
 	testGit(t, repo, "add", "api.json")
 	testGit(t, repo, "commit", "-m", "interface changed")
-	setLogsAcceptance(t, g, "v2", "")
+	setLogsAcceptance(t, m, "v2", "")
 	changed := approveRun(t, m, enqueueTest(t, m, false).ID)
 	if changed.Tools[0].Path != "/logs/v2" || changed.Provenance.Commit != testGit(t, repo, "rev-parse", "HEAD") {
 		t.Fatal("new contract was not pinned")
@@ -76,9 +76,9 @@ func TestRepositorySnapshotAndContentChange(t *testing.T) {
 	}
 }
 func TestSourceWebhookAuthenticationCoalescingAndReplay(t *testing.T) {
-	g, _ := testGateway(t)
+	g, svcs, _ := testGateway(t)
 	repo, sha := testRepository(t)
-	m := g.Maintenance()
+	m := svcs.Maintenance
 	t.Setenv("GATEWAY_TEST_WEBHOOK_SECRET", "gateway-test-signing-secret")
 	source, _ := m.Source("service")
 	source.Files = nil
@@ -86,7 +86,7 @@ func TestSourceWebhookAuthenticationCoalescingAndReplay(t *testing.T) {
 	if err := m.SaveSource(source); err != nil {
 		t.Fatal(err)
 	}
-	handler := Handler(g)
+	handler := Handler(g, svcs)
 	send := func(id, signature, ref string) *httptest.ResponseRecorder {
 		body := mustJSON(t, map[string]any{"ref": ref, "after": sha, "repository": map[string]string{"full_name": "team/service"}})
 		req := httptest.NewRequest(http.MethodPost, "/api/maintenance/sources/service/webhook/github", bytes.NewReader(body))

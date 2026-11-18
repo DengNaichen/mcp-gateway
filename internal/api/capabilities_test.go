@@ -9,9 +9,9 @@ import (
 )
 
 func TestSummaryDiscoveryAndSchemaAuthorization(t *testing.T) {
-	g, _ := testGateway(t)
-	g.StartMaintenance(context.Background())
-	approveRun(t, g.Maintenance(), enqueueTest(t, g.Maintenance(), false).ID)
+	g, svcs, _ := testGateway(t)
+	svcs.Maintenance.Start(context.Background())
+	approveRun(t, svcs.Maintenance, enqueueTest(t, svcs.Maintenance, false).ID)
 	result, err := g.Discover(context.Background(), gateway.DiscoverRequest{Intent: "logs"})
 	if err != nil {
 		t.Fatal(err)

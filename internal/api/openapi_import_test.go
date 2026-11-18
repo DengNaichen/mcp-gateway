@@ -12,12 +12,12 @@ import (
 )
 
 func TestImportOpenAPIOverHTTP(t *testing.T) {
-	g, err := gateway.New(t.TempDir(), "http://localhost")
+	g, svcs, err := gateway.New(t.TempDir(), "http://localhost")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = g.Close() })
-	handler := Handler(g)
+	handler := Handler(g, svcs)
 	specHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/openapi.yaml" {
 			http.NotFound(w, r)
@@ -40,7 +40,7 @@ func TestImportOpenAPIOverHTTP(t *testing.T) {
 		return apitypes.Server{ID: id, Name: id, Endpoint: "https://ci.example.com", Enabled: true}
 	}
 	registered := func(serverID string) (kind string, tools []string) {
-		snapshot := g.Snapshot()
+		snapshot := svcs.Registry.Snapshot()
 		for _, s := range snapshot.Servers {
 			if s.ID == serverID {
 				kind = s.Kind

@@ -4,16 +4,15 @@ import (
 	"fmt"
 	"testing"
 
-	"gatewaylab/internal/gateway"
 	"gatewaylab/internal/model"
 	"gatewaylab/internal/workspace"
 )
 
 type decisionQuestion = model.Question
 
-func scopeKey(t *testing.T, g *gateway.Gateway) []byte {
+func scopeKey(t *testing.T, dataDir string) []byte {
 	t.Helper()
-	key, err := workspace.EnsureScopeKey(g.DataDir())
+	key, err := workspace.EnsureScopeKey(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}

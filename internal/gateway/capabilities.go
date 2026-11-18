@@ -13,7 +13,7 @@ func (g *Gateway) ToolSchema(ctx context.Context, id, actor string) (registry.To
 	if err := g.scope.CheckExecutionScope(ctx); err != nil {
 		return registry.Tool{}, err
 	}
-	reg := g.Snapshot()
+	reg := g.registry.Snapshot()
 	i := slices.IndexFunc(reg.Tools, func(t registry.Tool) bool { return t.ID == id })
 	if i < 0 {
 		return registry.Tool{}, fault.New(fault.NotFound, "工具不存在", nil)
@@ -38,7 +38,7 @@ type Catalog struct {
 }
 
 func (g *Gateway) Catalog(ctx context.Context, actor string, includeDemo bool) Catalog {
-	reg := g.Snapshot()
+	reg := g.registry.Snapshot()
 	out := Catalog{Servers: []CatalogServer{}, Tools: []routing.Capability{}}
 	for _, server := range reg.Servers {
 		if !server.Enabled || server.Demo && !includeDemo {

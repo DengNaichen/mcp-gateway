@@ -11,12 +11,12 @@ import (
 
 // Exercise the actual transport adapters after domain errors lost HTTP status fields.
 func TestPolicyDomainHTTPCompatibility(t *testing.T) {
-	g, err := gateway.New(t.TempDir(), "http://127.0.0.1:0")
+	g, svcs, err := gateway.New(t.TempDir(), "http://127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer g.Close()
-	handler := Handler(g)
+	handler := Handler(g, svcs)
 	for _, tc := range []struct {
 		method, path, body string
 		status             int
