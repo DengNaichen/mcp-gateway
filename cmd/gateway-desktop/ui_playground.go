@@ -367,7 +367,7 @@ func (u *DesktopUI) renderPlaygroundComposer(
 			if st.routing {
 				btnLabel = "路由中…"
 			}
-			if ui.PrimaryButton(c.Key("pg-discover-btn"), btnLabel).
+			if SailPrimaryButton(c.Key("pg-discover-btn"), btnLabel).
 				Disabled(strings.TrimSpace(st.intent) == "" || st.routing).
 				Clicked() {
 				u.runPlaygroundDiscover(st, st.intent, effectiveActor)
@@ -558,7 +558,7 @@ func (u *DesktopUI) renderPlaygroundInspector(
 						if st.loadingSchema {
 							btnText = "加载中…"
 						}
-						if ui.PrimaryButton(c.Key("pg-fetch-schema"), btnText).Disabled(st.loadingSchema).Clicked() {
+						if SailPrimaryButton(c.Key("pg-fetch-schema"), btnText).Disabled(st.loadingSchema).Clicked() {
 							u.fetchPlaygroundToolSchema(st, sel.ID, effectiveActor)
 						}
 						if full, ok := toolsByID[sel.ID]; ok && full.InputSchema != nil {
@@ -575,7 +575,7 @@ func (u *DesktopUI) renderPlaygroundInspector(
 				})
 			}
 
-			if ui.PrimaryButton(c.Key("pg-goto-invoke"), "试运行此工具").Clicked() {
+			if SailPrimaryButton(c.Key("pg-goto-invoke"), "试运行此工具").Clicked() {
 				st.inspectorTab = 1
 			}
 			return
@@ -615,7 +615,7 @@ func (u *DesktopUI) renderPlaygroundInspector(
 			if st.invoking {
 				invokeLabel = "执行中…"
 			}
-			if ui.PrimaryButton(c.Key("pg-invoke-btn"), invokeLabel).Disabled(st.invoking).Clicked() {
+			if SailPrimaryButton(c.Key("pg-invoke-btn"), invokeLabel).Disabled(st.invoking).Clicked() {
 				u.runPlaygroundInvoke(st, sel.ID, effectiveActor)
 			}
 			ui.Textf(c, "身份 · %s", effectiveActor).Font("monospace").FontSize(12).TextColor(SailInkMuted)

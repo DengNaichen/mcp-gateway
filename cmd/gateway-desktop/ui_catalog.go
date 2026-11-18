@@ -508,8 +508,8 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 			MinWidth(0).
 			Radius(10).
 			Background(SailBgCanvas).
-			Border(1, SailBorder).
-			Shadow(0, 1, 2, 0, SailCardShadow).
+			Border(1, SailSurfaceBorder).
+			Shadow(0, 3, 10, 0, SailCardShadow).
 			Clip().
 			Children(func() {
 				SailListCardHeader(c, "工具列表", fmt.Sprintf("%d 项", len(filtered)), nil)
@@ -681,8 +681,8 @@ func (u *DesktopUI) renderCatalogDetailPanel(
 		Gap(16).
 		Radius(10).
 		Background(SailBgCanvas).
-		Border(1, SailBorder).
-		Shadow(0, 1, 2, 0, SailCardShadow).
+		Border(1, SailSurfaceBorder).
+		Shadow(0, 3, 10, 0, SailCardShadow).
 		Children(func() {
 			// Top Status Row + Collapse Button (Badge Diet).
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
@@ -747,7 +747,7 @@ func (u *DesktopUI) renderCatalogDetailPanel(
 				})
 
 				ui.Row(c).FillWidth().Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
-					if ui.PrimaryButton(c.Key("cat-sandbox-jump-"+tool.ID), "沙盒测试").Grow(1).Clicked() {
+					if SailPrimaryButton(c.Key("cat-sandbox-jump-"+tool.ID), "沙盒测试").Grow(1).Clicked() {
 						intent := catalogBuildTestIntent(tool)
 						actor := catalogPickTestActor(tool)
 						u.OpenPlaygroundReplay(intent, actor)
@@ -885,7 +885,7 @@ func (u *DesktopUI) renderCatalogEditTab(c *ui.Context, st *catalogPageState, to
 			if st.savingContract {
 				saveLabel = "保存中…"
 			}
-			if ui.PrimaryButton(c.Key("cat-edit-save-"+tool.ID), saveLabel).Disabled(st.savingContract).Clicked() {
+			if SailPrimaryButton(c.Key("cat-edit-save-"+tool.ID), saveLabel).Disabled(st.savingContract).Clicked() {
 				u.catalogSaveToolMetadata(st, tool)
 			}
 		})
@@ -1040,7 +1040,7 @@ func catalogRenderSelect(c *ui.Context, key string, selected *string, options []
 			Radius(8).
 			Background(SailBgCanvas).
 			Border(1, SailBorder).
-			Shadow(0, 6, 18, 0, SailCardShadow)
+			Shadow(0, 6, 18, 0, SailFloatingShadow)
 		for _, opt := range options {
 			o := opt
 			item := sel.Item(o.Value).Padding(6, 10).Radius(5).Cursor(ui.CursorPointer)

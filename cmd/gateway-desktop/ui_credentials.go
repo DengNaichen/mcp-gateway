@@ -126,7 +126,7 @@ func (u *DesktopUI) renderServerCredentials(c *ui.Context, st *servicesPageState
 				if st.credentialBusy && st.connBusy {
 					testBtnLabel = "验证连接中…"
 				}
-				if ui.PrimaryButton(c.Key("credential-save-test-"+server.ID), testBtnLabel).Disabled(st.credentialBusy || st.connBusy || len(values) == 0).Clicked() {
+				if SailPrimaryButton(c.Key("credential-save-test-"+server.ID), testBtnLabel).Disabled(st.credentialBusy || st.connBusy || len(values) == 0).Clicked() {
 					u.saveServerCredentialValues(st, server, values, true)
 				}
 			}

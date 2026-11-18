@@ -101,7 +101,7 @@ func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
 			Radius(10).
 			Background(SailBgCanvas).
 			Border(1, SailBorder).
-			Shadow(0, 12, 36, 0, ui.RGBA(10, 37, 64, 0.25))
+			Shadow(0, 12, 36, 0, SailModalShadow)
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Text(c, "手动配置 Hook").FontSize(17).Bold().TextColor(SailInkStrong)
@@ -184,7 +184,7 @@ func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
 			if SailSmallButton(c.Key("hook-refresh-btn"), "重新获取").Disabled(st.loadingAgent != "").Clicked() {
 				u.ensureHookSnippetLoaded(st, activeAgent.ID, true)
 			}
-			if ui.PrimaryButton(c.Key("hook-copy-primary"), "复制配置片段").
+			if SailPrimaryButton(c.Key("hook-copy-primary"), "复制配置片段").
 				Disabled(strings.TrimSpace(snip.Snippet) == "").
 				Clicked() {
 				c.WriteClipboard(snip.Snippet)

@@ -712,8 +712,8 @@ func (u *DesktopUI) renderLoginView(c *ui.Context) {
 				Gap(16).
 				Radius(10).
 				Background(SailBgCanvas).
-				Border(1, SailBorder).
-				Shadow(0, 4, 16, 0, SailCardShadow).
+				Border(1, SailSurfaceBorder).
+				Shadow(0, 3, 10, 0, SailCardShadow).
 				Children(func() {
 					ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 						ui.Box(c).Size(32, 32).Radius(8).Background(SailAccentSoft).Border(1, SailAccentBorder).Center().Children(func() {
@@ -738,7 +738,7 @@ func (u *DesktopUI) renderLoginView(c *ui.Context) {
 						}
 					})
 
-					if ui.PrimaryButton(c, "登录").FillWidth().Disabled(u.LoggingIn || strings.TrimSpace(u.LoginToken) == "").Clicked() {
+					if SailPrimaryButton(c, "登录").FillWidth().Disabled(u.LoggingIn || strings.TrimSpace(u.LoginToken) == "").Clicked() {
 						u.submitLogin()
 					}
 				})
@@ -768,7 +768,7 @@ func (u *DesktopUI) renderBootView(c *ui.Context) {
 					if u.BootError != "" {
 						ui.Text(c, "无法连接网关控制面").FontSize(15.5).Bold().TextColor(SailInkStrong)
 						ui.Text(c, u.BootError).FontSize(12.5).TextColor(SailInkMuted).TextAlign(ui.Center)
-						if ui.PrimaryButton(c, "重试连接").Clicked() {
+						if SailPrimaryButton(c, "重试连接").Clicked() {
 							u.Refresh()
 						}
 					} else {
@@ -940,8 +940,8 @@ func (u *DesktopUI) renderNavGroup(c *ui.Context, heading string, items []navIte
 				Cursor(ui.CursorPointer)
 			if active {
 				btn.Background(SailBgCanvas).
-					Border(1, SailBorder).
-					Shadow(0, 1, 2, 0, SailCardShadow)
+					Border(1, SailSurfaceBorder).
+					Shadow(0, 2, 6, 0, SailControlShadow)
 			} else if btn.Hovered() {
 				btn.Background(SailBgMuted)
 			}
@@ -1063,18 +1063,13 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						u.Navigate(ViewSettings)
 					}
 
-					refreshBtn := ui.ButtonBase(c.Key("top-refresh-btn")).
+					refreshBtn := SailButton(c.Key("top-refresh-btn"), "").
 						Padding(5, 10).
 						Radius(6).
 						Gap(5).
 						AlignItems(ui.Center).
-						Background(SailBgCanvas).
-						Border(1, SailBorder).
 						Disabled(u.Refreshing).
 						Cursor(ui.CursorPointer)
-					if refreshBtn.Hovered() {
-						refreshBtn.Background(SailBgHover)
-					}
 					refreshBtn.Children(func() {
 						ui.Icon(c, IconRefresh).Size(12.5, 12.5).TextColor(SailInkMuted)
 						lbl := "刷新"

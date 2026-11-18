@@ -278,8 +278,8 @@ func (u *DesktopUI) renderLogsTimelinePane(
 		Shrink(0).
 		Radius(10).
 		Background(SailBgCanvas).
-		Border(1, SailBorder).
-		Shadow(0, 1, 2, 0, SailCardShadow).
+		Border(1, SailSurfaceBorder).
+		Shadow(0, 3, 10, 0, SailCardShadow).
 		Clip().
 		Children(func() {
 			SailListCardHeader(c, "时间线", fmt.Sprintf("%d 条", len(filtered)), nil)
@@ -401,8 +401,8 @@ func (u *DesktopUI) renderLogsInspectorPane(
 		Gap(18).
 		Radius(10).
 		Background(SailBgCanvas).
-		Border(1, SailBorder).
-		Shadow(0, 1, 2, 0, SailCardShadow).
+		Border(1, SailSurfaceBorder).
+		Shadow(0, 3, 10, 0, SailCardShadow).
 		Children(func() {
 			// 1. Inspector Header + Quick Actions.
 			ui.Row(c).FillWidth().AlignItems(ui.Start).Justify(ui.SpaceBetween).Gap(12).Children(func() {

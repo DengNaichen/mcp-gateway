@@ -93,7 +93,7 @@ func (u *DesktopUI) renderMarket(c *ui.Context) {
 		if st.loading && st.registryQuery != "" {
 			regBtnLabel = "搜索中…"
 		}
-		if ui.Button(c.Key("mkt-search-reg"), regBtnLabel).Disabled(st.loading).Clicked() {
+		if SailButton(c.Key("mkt-search-reg"), regBtnLabel).Disabled(st.loading).Clicked() {
 			u.fetchMarket(st, strings.TrimSpace(st.query))
 		}
 	})
@@ -177,7 +177,7 @@ func (u *DesktopUI) renderMarket(c *ui.Context) {
 
 func renderMarketFilterPill(c *ui.Context, st *marketPageState, id, label string) {
 	if st.filter == id {
-		if ui.PrimaryButton(c.Key("mkt-flt-"+id), label).Clicked() {
+		if SailPrimaryButton(c.Key("mkt-flt-"+id), label).Clicked() {
 			st.filter = id
 		}
 		return
@@ -239,8 +239,8 @@ func (u *DesktopUI) renderMarketCard(c *ui.Context, st *marketPageState, item ap
 		Gap(12).
 		Radius(10).
 		Background(SailBgCanvas).
-		Border(1, SailBorder).
-		Shadow(0, 1, 2, 0, SailCardShadow).
+		Border(1, SailSurfaceBorder).
+		Shadow(0, 3, 10, 0, SailCardShadow).
 		Justify(ui.SpaceBetween).
 		Children(func() {
 			ui.Column(c).FillWidth().Gap(10).Children(func() {
@@ -438,7 +438,7 @@ func (u *DesktopUI) renderMarketInstallModal(c *ui.Context, st *marketPageState,
 			Radius(10).
 			Background(SailBgCanvas).
 			Border(1, SailBorder).
-			Shadow(0, 12, 36, 0, ui.RGBA(10, 37, 64, 0.25))
+			Shadow(0, 12, 36, 0, SailModalShadow)
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
 			ui.Row(c).AlignItems(ui.Center).Gap(10).Grow(1).MinWidth(0).Children(func() {
@@ -494,14 +494,14 @@ func (u *DesktopUI) renderMarketInstallModal(c *ui.Context, st *marketPageState,
 		}
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if ui.Button(c.Key("mkt-modal-cancel"), "取消").Disabled(st.installingID != "").Clicked() {
+			if SailButton(c.Key("mkt-modal-cancel"), "取消").Disabled(st.installingID != "").Clicked() {
 				st.showModal = false
 			}
 			confirmLabel := "确认添加并同步工具"
 			if st.installingID == item.ID {
 				confirmLabel = "添加中…"
 			}
-			if ui.PrimaryButton(c.Key("mkt-modal-submit"), confirmLabel).Disabled(st.installingID != "").Clicked() {
+			if SailPrimaryButton(c.Key("mkt-modal-submit"), confirmLabel).Disabled(st.installingID != "").Clicked() {
 				for _, inp := range item.Inputs {
 					if inp.Required && strings.TrimSpace(st.modalInputs[inp.Key]) == "" {
 						st.modalErr = "请填写必填项：" + inp.Label

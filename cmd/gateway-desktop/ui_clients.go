@@ -320,7 +320,7 @@ func (u *DesktopUI) renderPluginRow(c *ui.Context, st *clientsPageState, row cli
 func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, st *clientsPageState, row clientplugin.Status, busy bool, fullDetail string) {
 	switch {
 	case row.CanUpdate:
-		btn := ui.PrimaryButton(c.Key("update-plugin"), "更新插件").
+		btn := SailPrimaryButton(c.Key("update-plugin"), "更新插件").
 			Padding(5, 11).
 			FontSize(12.5).
 			Label(row.Name + " 更新插件").
@@ -332,7 +332,7 @@ func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, st *clientsPageStat
 			u.runClientPlugin(row.ID, "update")
 		}
 	case row.CanInstall && row.HasLegacyMCP:
-		btn := ui.PrimaryButton(c.Key("upgrade-plugin"), "升级为插件").
+		btn := SailPrimaryButton(c.Key("upgrade-plugin"), "升级为插件").
 			Padding(5, 11).
 			FontSize(12.5).
 			Label(row.Name + " 升级为插件").
@@ -344,7 +344,7 @@ func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, st *clientsPageStat
 			u.runClientPlugin(row.ID, "install")
 		}
 	case row.CanInstall:
-		btn := ui.PrimaryButton(c.Key("install-plugin"), "安装插件").
+		btn := SailPrimaryButton(c.Key("install-plugin"), "安装插件").
 			Padding(5, 11).
 			FontSize(12.5).
 			Label(row.Name + " 安装插件").
@@ -398,7 +398,7 @@ func (u *DesktopUI) renderClientVerifyModal(c *ui.Context, st *clientsPageState)
 			Radius(10).
 			Background(SailBgCanvas).
 			Border(1, SailBorder).
-			Shadow(0, 12, 36, 0, ui.RGBA(10, 37, 64, 0.25)).
+			Shadow(0, 12, 36, 0, SailModalShadow).
 			Clip()
 
 		ui.Row(c).
@@ -429,7 +429,7 @@ func (u *DesktopUI) renderClientVerifyModal(c *ui.Context, st *clientsPageState)
 				if SailSmallButton(c.Key("verify-modal-cancel"), "关闭").Clicked() {
 					st.showVerifyModal = false
 				}
-				if ui.PrimaryButton(c.Key("verify-modal-copy-close"), "复制并关闭").Padding(5, 12).FontSize(12.5).Clicked() {
+				if SailPrimaryButton(c.Key("verify-modal-copy-close"), "复制并关闭").Padding(5, 12).FontSize(12.5).Clicked() {
 					c.WriteClipboard(promptText)
 					u.Notify("已复制 " + clientName + " 验证 Prompt")
 					st.showVerifyModal = false

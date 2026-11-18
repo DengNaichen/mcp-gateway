@@ -43,7 +43,10 @@
       --neutral: #475569;
       --neutral-bg: #f1f5f9;
       --neutral-border: #e2e8f0;
-      --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.035);
+      --surface-border: rgba(15, 23, 42, 0.065);
+      --shadow-control: 0 2px 6px rgba(15, 23, 42, 0.07);
+      --shadow-card: 0 3px 10px rgba(15, 23, 42, 0.04);
+      --shadow-floating: 0 6px 18px rgba(15, 23, 42, 0.12);
       --shadow-modal: 0 12px 36px rgba(10, 37, 64, 0.25);
       --backdrop-modal: rgba(10, 37, 64, 0.42);
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -88,8 +91,11 @@
       --neutral: #a3b1c6;
       --neutral-bg: #1b263b;
       --neutral-border: #2b3750;
-      --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35);
-      --shadow-modal: 0 16px 40px rgba(0, 0, 0, 0.55);
+      --surface-border: rgba(255, 255, 255, 0.08);
+      --shadow-control: 0 2px 6px rgba(0, 0, 0, 0.32);
+      --shadow-card: 0 3px 10px rgba(0, 0, 0, 0.20);
+      --shadow-floating: 0 6px 18px rgba(0, 0, 0, 0.40);
+      --shadow-modal: 0 12px 36px rgba(0, 0, 0, 0.55);
       --backdrop-modal: rgba(3, 7, 18, 0.6);
     }
 
@@ -184,10 +190,10 @@
     .nav-item:hover { background: var(--bg-muted); }
     .nav-item.active {
       background: var(--bg-canvas);
-      border-color: var(--border);
+      border-color: var(--surface-border);
       color: var(--ink-strong);
       font-weight: 600;
-      box-shadow: var(--shadow-card);
+      box-shadow: var(--shadow-control);
     }
     .nav-item-left {
       display: flex;
@@ -337,7 +343,7 @@
     }
     .card {
       background: var(--bg-canvas);
-      border: 1px solid var(--border);
+      border: 1px solid var(--surface-border);
       border-radius: 10px;
       padding: 20px 22px;
       box-shadow: var(--shadow-card);
@@ -347,7 +353,7 @@
     }
     .card-flush {
       background: var(--bg-canvas);
-      border: 1px solid var(--border);
+      border: 1px solid var(--surface-border);
       border-radius: 10px;
       box-shadow: var(--shadow-card);
       overflow: hidden;
@@ -523,7 +529,8 @@
 
     /* Controls */
     .btn {
-      border: 1px solid var(--border);
+      border: 1px solid var(--surface-border);
+      box-shadow: var(--shadow-control);
       background: var(--bg-canvas);
       color: var(--ink-body);
       border-radius: 6px;
@@ -538,7 +545,8 @@
       gap: 6px;
       transition: background 0.1s ease, border-color 0.1s ease;
     }
-    .btn:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--border-strong); color: var(--ink-strong); }
+    .btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--ink-strong); }
+    .btn:active:not(:disabled) { box-shadow: none; background: var(--bg-muted); }
     .btn:disabled { opacity: 0.55; cursor: default; }
     .btn-sm { padding: 4px 10px; font-size: 12px; }
     .btn-primary {
@@ -548,6 +556,7 @@
       font-weight: 600;
     }
     .btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: #ffffff; }
+    .btn-primary:active:not(:disabled) { background: var(--accent-pressed); }
     .btn-danger {
       background: var(--danger-bg);
       border-color: var(--danger-border);
@@ -608,7 +617,7 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 4px;
-      box-shadow: 0 8px 24px rgba(10, 37, 64, 0.16);
+      box-shadow: var(--shadow-floating);
       z-index: 120;
       display: flex;
       flex-direction: column;
@@ -705,7 +714,7 @@
     }
     .kpi-card {
       background: var(--bg-canvas);
-      border: 1px solid var(--border);
+      border: 1px solid var(--surface-border);
       border-radius: 10px;
       padding: 18px 20px;
       box-shadow: var(--shadow-card);
@@ -723,7 +732,7 @@
 
     .pulse-card {
       background: var(--bg-canvas);
-      border: 1px solid var(--border);
+      border: 1px solid var(--surface-border);
       border-radius: 10px;
       padding: 14px 20px;
       box-shadow: var(--shadow-card);
@@ -1206,7 +1215,7 @@
     }
     .market-card {
       background: var(--bg-canvas);
-      border: 1px solid var(--border);
+      border: 1px solid var(--surface-border);
       border-radius: 10px;
       padding: 16px 18px;
       box-shadow: var(--shadow-card);

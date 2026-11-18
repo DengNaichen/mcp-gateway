@@ -315,7 +315,7 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 			if st.repoBusy {
 				addLbl = "添加中…"
 			}
-			if ui.PrimaryButton(c.Key("repos-add-repo-btn"), addLbl).Disabled(st.repoBusy).Clicked() {
+			if SailPrimaryButton(c.Key("repos-add-repo-btn"), addLbl).Disabled(st.repoBusy).Clicked() {
 				u.pickAndBindLocalRepo(st)
 			}
 		}
@@ -340,8 +340,8 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 		Shrink(0).
 		Radius(10).
 		Background(SailBgCanvas).
-		Border(1, SailBorder).
-		Shadow(0, 1, 2, 0, SailCardShadow).
+		Border(1, SailSurfaceBorder).
+		Shadow(0, 3, 10, 0, SailCardShadow).
 		Clip().
 		Children(func() {
 			// 1. Pinned First Row: 全局默认 (repo_key = "*")
@@ -685,7 +685,7 @@ func (u *DesktopUI) renderRepoDefaultServicesCard(
 				saveLbl = "保存中…"
 			}
 			canSave := draft.dirty || (repoKey != "*" && !hasSavedRule)
-			if ui.PrimaryButton(c.Key("def-save-"+repoKey), saveLbl).Disabled(!canSave || draft.saving).Clicked() {
+			if SailPrimaryButton(c.Key("def-save-"+repoKey), saveLbl).Disabled(!canSave || draft.saving).Clicked() {
 				u.saveDraftRuleAsync(st, draft, repoKey)
 			}
 		})

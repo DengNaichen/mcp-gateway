@@ -154,7 +154,7 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 
 	// 1. Clean Page Header (pure runtime gateway actions).
 	SailSectionHeader(c, "概览", "", func() {
-		sandboxBtn := ui.Button(c.Key("ov-hdr-sandbox"), "").Padding(5, 11).FontSize(12.5)
+		sandboxBtn := SailButton(c.Key("ov-hdr-sandbox"), "").Padding(5, 11).FontSize(12.5)
 		sandboxBtn.Children(func() {
 			ui.Icon(c, IconWaypoints).Size(13.5, 13.5)
 			ui.Text(c, "路由沙盒").SingleLine()
@@ -163,7 +163,7 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 			u.OpenPlaygroundReplay("", "")
 		}
 
-		addSvcBtn := ui.PrimaryButton(c.Key("ov-hdr-add-svc"), "").Padding(5, 12).FontSize(12.5)
+		addSvcBtn := SailPrimaryButton(c.Key("ov-hdr-add-svc"), "").Padding(5, 12).FontSize(12.5)
 		addSvcBtn.Children(func() {
 			ui.Icon(c, ovIconPlus).Size(13.5, 13.5)
 			ui.Text(c, "添加上游服务").SingleLine()
@@ -260,7 +260,7 @@ func (u *DesktopUI) renderOverviewSetupBanner(
 						}
 					}
 				} else if setup.ModelConfigured && state.KeyConfigured {
-					verifyBtn := ui.Button(c.Key("ov-banner-verify-btn"), "").
+					verifyBtn := SailButton(c.Key("ov-banner-verify-btn"), "").
 						Padding(5, 11).
 						FontSize(12.5).
 						Disabled(ov.testingModel)
@@ -495,8 +495,8 @@ func ovMetricCard(c *ui.Context, fn func()) {
 		Gap(8).
 		Radius(10).
 		Background(SailBgCanvas).
-		Border(1, SailBorder).
-		Shadow(0, 1, 2, 0, SailCardShadow).
+		Border(1, SailSurfaceBorder).
+		Shadow(0, 3, 10, 0, SailCardShadow).
 		Children(fn)
 }
 
@@ -529,8 +529,8 @@ func (u *DesktopUI) renderOverviewPulseCard(
 		Gap(10).
 		Radius(10).
 		Background(SailBgCanvas).
-		Border(1, SailBorder).
-		Shadow(0, 1, 2, 0, SailCardShadow).
+		Border(1, SailSurfaceBorder).
+		Shadow(0, 3, 10, 0, SailCardShadow).
 		Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
 				ui.Row(c).Gap(8).AlignItems(ui.Baseline).Children(func() {
@@ -1090,7 +1090,7 @@ func ovRenderSlideDrawerShell(
 			Radius(10).
 			Background(SailBgCanvas).
 			Border(1, SailBorder).
-			Shadow(0, 12, 36, 0, ui.RGBA(10, 37, 64, 0.25)).
+			Shadow(0, 12, 36, 0, SailModalShadow).
 			Clip()
 
 		// Header
@@ -1494,7 +1494,7 @@ func ovRenderArrowLinkBtn(c *ui.Context, key, label string) bool {
 }
 
 func ovRenderDrawerArrowBtn(c *ui.Context, key, label string) bool {
-	btn := ui.Button(c.Key(key), "").Padding(5, 11).FontSize(12.5)
+	btn := SailButton(c.Key(key), "").Padding(5, 11).FontSize(12.5)
 	btn.Children(func() {
 		ui.Text(c, label).SingleLine()
 		ui.Icon(c, IconArrowUpRight).Size(12, 12).Shrink(0)
