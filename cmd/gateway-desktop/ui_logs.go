@@ -742,17 +742,44 @@ func logsKindBadgeLabel(kind string) string {
 func logsParseEventDetail(ev apitypes.Event, toolByID map[string]apitypes.Tool) logsParsedDetail {
 	var out logsParsedDetail
 
-	var detailAny any
-	if len(ev.Detail) > 0 {
-		if err := json.Unmarshal(ev.Detail, &detailAny); err == nil && detailAny != nil {
-			out.DetailJSON = PrettyJSON(detailAny)
-		} else {
-			out.DetailJSON = string(ev.Detail)
-		}
-	} else {
+	detailAny := logsParseDetailPayload(ev.Detail)
+	if len(ev.Detail) == 0 {
 		out.DetailJSON = "{}"
+	} else if detailAny != nil {
+		out.DetailJSON = PrettyJSON(detailAny)
+	} else {
+		out.DetailJSON = string(ev.Detail)
+	}
+	out.FullEventJSON = logsBuildFullEventJSON(ev, detailAny)
+
+	m, ok := detailAny.(map[string]any)
+	if !ok || m == nil {
+		return out
 	}
 
+	logsParseDetailScalars(m, &out)
+	out.Scope = logsParseDetailScope(m["scope"])
+	out.Servers = logsParseStringList(m, "servers")
+	out.Fields = logsParseStringList(m, "fields")
+	if rawTools, ok := m["tools"].([]any); ok {
+		out.Tools = logsParseMatchedTools(rawTools, toolByID)
+	}
+
+	return out
+}
+
+func logsParseDetailPayload(raw []byte) any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil
+	}
+	return v
+}
+
+func logsBuildFullEventJSON(ev apitypes.Event, detailAny any) string {
 	fullEnvelope := map[string]any{
 		"id":          ev.ID,
 		"time":        ev.Time,
@@ -765,22 +792,20 @@ func logsParseEventDetail(ev apitypes.Event, toolByID map[string]apitypes.Tool) 
 	if detailAny != nil {
 		fullEnvelope["detail"] = detailAny
 	}
-	out.FullEventJSON = PrettyJSON(fullEnvelope)
+	return PrettyJSON(fullEnvelope)
+}
 
-	m, ok := detailAny.(map[string]any)
-	if !ok || m == nil {
-		return out
+func logsStringField(m map[string]any, key string) string {
+	if v, ok := m[key].(string); ok {
+		return strings.TrimSpace(v)
 	}
+	return ""
+}
 
-	if v, ok := m["model"].(string); ok {
-		out.Model = strings.TrimSpace(v)
-	}
-	if v, ok := m["summary"].(string); ok {
-		out.Summary = strings.TrimSpace(v)
-	}
-	if v, ok := m["question"].(string); ok {
-		out.Question = strings.TrimSpace(v)
-	}
+func logsParseDetailScalars(m map[string]any, out *logsParsedDetail) {
+	out.Model = logsStringField(m, "model")
+	out.Summary = logsStringField(m, "summary")
+	out.Question = logsStringField(m, "question")
 	if v, ok := m["error"]; ok && v != nil {
 		errStr := strings.TrimSpace(fmt.Sprint(v))
 		if errStr != "" && errStr != "<nil>" {
@@ -799,143 +824,130 @@ func logsParseEventDetail(ev apitypes.Event, toolByID map[string]apitypes.Tool) 
 		iv := int(v)
 		out.OutputTokens = &iv
 	}
-	if v, ok := m["tool_id"].(string); ok {
-		out.ToolID = strings.TrimSpace(v)
-	}
-	if v, ok := m["client"].(string); ok {
-		out.Client = strings.TrimSpace(v)
-	}
-	if v, ok := m["method"].(string); ok {
-		out.Method = strings.TrimSpace(v)
-	}
-	if v, ok := m["tool"].(string); ok {
-		out.AgentToolName = strings.TrimSpace(v)
-	}
-	if rawScope, ok := m["scope"].(map[string]any); ok && len(rawScope) > 0 {
-		sc := &logsParsedScope{}
-		if s, ok := rawScope["agent"].(string); ok {
-			sc.Agent = strings.TrimSpace(s)
-		}
-		if s, ok := rawScope["repo_id"].(string); ok {
-			sc.RepoID = strings.TrimSpace(s)
-		}
-		if s, ok := rawScope["repo_name"].(string); ok {
-			sc.RepoName = strings.TrimSpace(s)
-		}
-		if s, ok := rawScope["kind"].(string); ok {
-			sc.Kind = strings.TrimSpace(s)
-		}
-		if s, ok := rawScope["root"].(string); ok {
-			sc.Root = strings.TrimSpace(s)
-		} else if s, ok := rawScope["cwd"].(string); ok {
-			sc.Root = strings.TrimSpace(s)
-		}
-		if s, ok := rawScope["git_common_dir"].(string); ok {
-			sc.GitCommonDir = strings.TrimSpace(s)
-		}
-		if s, ok := rawScope["remote_hint"].(string); ok {
-			sc.RemoteHint = strings.TrimSpace(s)
-		}
-		if s, ok := rawScope["matched_rule"].(string); ok {
-			sc.MatchedRule = strings.TrimSpace(s)
-		}
-		if s, ok := rawScope["status"].(string); ok {
-			sc.Status = strings.TrimSpace(s)
-		} else if s, ok := rawScope["context_status"].(string); ok {
-			sc.Status = strings.TrimSpace(s)
-		}
-		if sc.Agent != "" || sc.RepoID != "" || sc.RepoName != "" || sc.Root != "" || sc.MatchedRule != "" || sc.Status != "" {
-			out.Scope = sc
-		}
-	}
-	if rawServers, ok := m["servers"].([]any); ok {
-		for _, item := range rawServers {
-			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
-				out.Servers = append(out.Servers, strings.TrimSpace(s))
-			}
-		}
-	}
-	if rawFields, ok := m["fields"].([]any); ok {
-		for _, item := range rawFields {
-			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
-				out.Fields = append(out.Fields, strings.TrimSpace(s))
-			}
-		}
-	}
+	out.ToolID = logsStringField(m, "tool_id")
+	out.Client = logsStringField(m, "client")
+	out.Method = logsStringField(m, "method")
+	out.AgentToolName = logsStringField(m, "tool")
+}
 
-	if rawTools, ok := m["tools"].([]any); ok {
-		for _, raw := range rawTools {
-			switch item := raw.(type) {
-			case string:
-				id := strings.TrimSpace(item)
-				if id == "" {
-					continue
-				}
-				mt := logsMatchedTool{ID: id, Name: id}
-				if reg, exists := toolByID[id]; exists {
-					mt.Name = reg.Name
-					mt.ServerID = reg.ServerID
-					mt.Description = reg.Description
-					mt.ReadOnly = reg.ReadOnly
-					mt.HasReadOnly = true
-				} else if parts := strings.SplitN(id, ".", 2); len(parts) == 2 {
-					mt.ServerID = parts[0]
-					mt.Name = parts[1]
-				}
-				out.Tools = append(out.Tools, mt)
+func logsParseDetailScope(raw any) *logsParsedScope {
+	rawScope, ok := raw.(map[string]any)
+	if !ok || len(rawScope) == 0 {
+		return nil
+	}
+	sc := &logsParsedScope{
+		Agent:        logsStringField(rawScope, "agent"),
+		RepoID:       logsStringField(rawScope, "repo_id"),
+		RepoName:     logsStringField(rawScope, "repo_name"),
+		Kind:         logsStringField(rawScope, "kind"),
+		Root:         logsStringField(rawScope, "root"),
+		GitCommonDir: logsStringField(rawScope, "git_common_dir"),
+		RemoteHint:   logsStringField(rawScope, "remote_hint"),
+		MatchedRule:  logsStringField(rawScope, "matched_rule"),
+		Status:       logsStringField(rawScope, "status"),
+	}
+	if sc.Root == "" {
+		sc.Root = logsStringField(rawScope, "cwd")
+	}
+	if sc.Status == "" {
+		sc.Status = logsStringField(rawScope, "context_status")
+	}
+	if sc.Agent != "" || sc.RepoID != "" || sc.RepoName != "" || sc.Root != "" || sc.MatchedRule != "" || sc.Status != "" {
+		return sc
+	}
+	return nil
+}
 
-			case map[string]any:
-				var mt logsMatchedTool
-				if s, ok := item["id"].(string); ok {
-					mt.ID = strings.TrimSpace(s)
-				} else if s, ok := item["tool_id"].(string); ok {
-					mt.ID = strings.TrimSpace(s)
-				}
-				if s, ok := item["name"].(string); ok {
-					mt.Name = strings.TrimSpace(s)
-				}
-				if s, ok := item["server_id"].(string); ok {
-					mt.ServerID = strings.TrimSpace(s)
-				}
-				if s, ok := item["description"].(string); ok {
-					mt.Description = strings.TrimSpace(s)
-				}
-				if s, ok := item["reason"].(string); ok {
-					mt.Reason = strings.TrimSpace(s)
-				}
-				if ro, ok := item["read_only"].(bool); ok {
-					mt.ReadOnly = ro
-					mt.HasReadOnly = true
-				}
-				if reg, exists := toolByID[mt.ID]; exists {
-					if mt.Name == "" {
-						mt.Name = reg.Name
-					}
-					if mt.ServerID == "" {
-						mt.ServerID = reg.ServerID
-					}
-					if mt.Description == "" {
-						mt.Description = reg.Description
-					}
-					if !mt.HasReadOnly {
-						mt.ReadOnly = reg.ReadOnly
-						mt.HasReadOnly = true
-					}
-				} else if mt.ServerID == "" && strings.Contains(mt.ID, ".") {
-					parts := strings.SplitN(mt.ID, ".", 2)
-					mt.ServerID = parts[0]
-					if mt.Name == "" {
-						mt.Name = parts[1]
-					}
-				}
-				if mt.ID != "" || mt.Name != "" {
-					out.Tools = append(out.Tools, mt)
-				}
-			}
+func logsParseStringList(m map[string]any, key string) []string {
+	raw, ok := m[key].([]any)
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, item := range raw {
+		if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+			out = append(out, strings.TrimSpace(s))
 		}
 	}
-
 	return out
+}
+
+func logsParseMatchedTools(rawTools []any, toolByID map[string]apitypes.Tool) []logsMatchedTool {
+	out := make([]logsMatchedTool, 0, len(rawTools))
+	for _, raw := range rawTools {
+		switch item := raw.(type) {
+		case string:
+			if mt, ok := logsParseMatchedToolString(item, toolByID); ok {
+				out = append(out, mt)
+			}
+		case map[string]any:
+			if mt, ok := logsParseMatchedToolMap(item, toolByID); ok {
+				out = append(out, mt)
+			}
+		}
+	}
+	return out
+}
+
+func logsEnrichMatchedTool(mt *logsMatchedTool, toolByID map[string]apitypes.Tool) {
+	if reg, exists := toolByID[mt.ID]; exists {
+		if mt.Name == "" {
+			mt.Name = reg.Name
+		}
+		if mt.ServerID == "" {
+			mt.ServerID = reg.ServerID
+		}
+		if mt.Description == "" {
+			mt.Description = reg.Description
+		}
+		if !mt.HasReadOnly {
+			mt.ReadOnly = reg.ReadOnly
+			mt.HasReadOnly = true
+		}
+		return
+	}
+	if mt.ServerID == "" && strings.Contains(mt.ID, ".") {
+		parts := strings.SplitN(mt.ID, ".", 2)
+		mt.ServerID = parts[0]
+		if mt.Name == "" {
+			mt.Name = parts[1]
+		}
+	}
+}
+
+func logsParseMatchedToolString(raw string, toolByID map[string]apitypes.Tool) (logsMatchedTool, bool) {
+	id := strings.TrimSpace(raw)
+	if id == "" {
+		return logsMatchedTool{}, false
+	}
+	mt := logsMatchedTool{ID: id}
+	logsEnrichMatchedTool(&mt, toolByID)
+	if mt.Name == "" {
+		mt.Name = id
+	}
+	return mt, true
+}
+
+func logsParseMatchedToolMap(item map[string]any, toolByID map[string]apitypes.Tool) (logsMatchedTool, bool) {
+	var mt logsMatchedTool
+	if s, ok := item["id"].(string); ok {
+		mt.ID = strings.TrimSpace(s)
+	} else if s, ok := item["tool_id"].(string); ok {
+		mt.ID = strings.TrimSpace(s)
+	}
+	mt.Name = logsStringField(item, "name")
+	mt.ServerID = logsStringField(item, "server_id")
+	mt.Description = logsStringField(item, "description")
+	mt.Reason = logsStringField(item, "reason")
+	if ro, ok := item["read_only"].(bool); ok {
+		mt.ReadOnly = ro
+		mt.HasReadOnly = true
+	}
+	logsEnrichMatchedTool(&mt, toolByID)
+	if mt.ID != "" || mt.Name != "" {
+		return mt, true
+	}
+	return logsMatchedTool{}, false
 }
 
 func hasSegmentPathPrefix(target, anchor string) bool {
@@ -958,62 +970,87 @@ func logsMatchedBoundRepo(state *apitypes.Bootstrap, sc logsParsedScope) *apityp
 	if state == nil {
 		return nil
 	}
-	if sc.RepoID != "" && sc.RepoID != "*" {
-		for i := range state.Scopes.Repositories {
-			if state.Scopes.Repositories[i].ID == sc.RepoID {
-				return &state.Scopes.Repositories[i]
-			}
-		}
+	repos := state.Scopes.Repositories
+	if repo := logsFindRepoByID(repos, sc.RepoID); repo != nil {
+		return repo
 	}
-	effectiveCommonDir := sc.GitCommonDir
-	effectiveKind := sc.Kind
-	if effectiveCommonDir == "" && sc.Root != "" {
-		for _, obs := range state.Scopes.Observed {
-			if obs.Root == sc.Root {
-				if obs.GitCommonDir != "" {
-					effectiveCommonDir = obs.GitCommonDir
-				}
-				if effectiveKind == "" && obs.Kind != "" {
-					effectiveKind = obs.Kind
-				}
-				break
-			}
-		}
-	}
-	isGit := effectiveKind == "git" || effectiveCommonDir != ""
+	effectiveCommonDir, isGit := logsEffectiveGitScope(state.Scopes.Observed, sc)
 	if isGit {
-		for i := range state.Scopes.Repositories {
-			repo := &state.Scopes.Repositories[i]
-			if effectiveCommonDir != "" && slices.Contains(repo.GitCommonDirs, effectiveCommonDir) {
-				return repo
-			}
-			if effectiveCommonDir == "" && sc.Root != "" {
-				for _, cd := range repo.GitCommonDirs {
-					if filepath.Base(cd) == ".git" && filepath.Dir(cd) == sc.Root {
-						return repo
-					}
-				}
-			}
-		}
+		return logsMatchGitRepo(repos, effectiveCommonDir, sc.Root)
+	}
+	return logsMatchRootPrefixRepo(repos, sc.Root)
+}
+
+func logsFindRepoByID(repos []apitypes.Repository, repoID string) *apitypes.Repository {
+	if repoID == "" || repoID == "*" {
 		return nil
 	}
-	if sc.Root != "" {
-		var best *apitypes.Repository
-		bestLen := -1
-		for i := range state.Scopes.Repositories {
-			repo := &state.Scopes.Repositories[i]
-			for _, rp := range repo.RootPaths {
-				if hasSegmentPathPrefix(sc.Root, rp) && len(rp) > bestLen {
-					best = repo
-					bestLen = len(rp)
-				}
-			}
-		}
-		if best != nil {
-			return best
+	for i := range repos {
+		if repos[i].ID == repoID {
+			return &repos[i]
 		}
 	}
 	return nil
+}
+
+func logsEffectiveGitScope(observed []apitypes.ObservedRepo, sc logsParsedScope) (commonDir string, isGit bool) {
+	commonDir = sc.GitCommonDir
+	kind := sc.Kind
+	if commonDir == "" && sc.Root != "" {
+		for _, obs := range observed {
+			if obs.Root != sc.Root {
+				continue
+			}
+			if obs.GitCommonDir != "" {
+				commonDir = obs.GitCommonDir
+			}
+			if kind == "" && obs.Kind != "" {
+				kind = obs.Kind
+			}
+			break
+		}
+	}
+	return commonDir, kind == "git" || commonDir != ""
+}
+
+func logsMatchGitRepo(repos []apitypes.Repository, commonDir, root string) *apitypes.Repository {
+	for i := range repos {
+		repo := &repos[i]
+		if commonDir != "" && slices.Contains(repo.GitCommonDirs, commonDir) {
+			return repo
+		}
+		if commonDir == "" && root != "" && repoHasDotGitAtRoot(repo.GitCommonDirs, root) {
+			return repo
+		}
+	}
+	return nil
+}
+
+func repoHasDotGitAtRoot(commonDirs []string, root string) bool {
+	for _, cd := range commonDirs {
+		if filepath.Base(cd) == ".git" && filepath.Dir(cd) == root {
+			return true
+		}
+	}
+	return false
+}
+
+func logsMatchRootPrefixRepo(repos []apitypes.Repository, root string) *apitypes.Repository {
+	if root == "" {
+		return nil
+	}
+	var best *apitypes.Repository
+	bestLen := -1
+	for i := range repos {
+		repo := &repos[i]
+		for _, rp := range repo.RootPaths {
+			if hasSegmentPathPrefix(root, rp) && len(rp) > bestLen {
+				best = repo
+				bestLen = len(rp)
+			}
+		}
+	}
+	return best
 }
 
 func logsResolveReplayRepoKey(state *apitypes.Bootstrap, sc logsParsedScope) string {
