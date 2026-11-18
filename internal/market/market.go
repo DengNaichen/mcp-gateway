@@ -145,46 +145,49 @@ func ghAvatar(owner string) string {
 	return "https://github.com/" + owner + ".png?size=96"
 }
 
-func remoteMarketServer(id, title, publisher, icon, homepage, endpoint, desc string, signIn bool, inputs ...MarketInput) MarketServer {
-	if inputs == nil {
-		inputs = []MarketInput{}
-	}
-	return MarketServer{
-		ID:          id,
-		ServerID:    id,
-		Title:       title,
-		Publisher:   publisher,
-		Icon:        icon,
-		Homepage:    homepage,
-		Description: desc,
-		Transport:   "http",
-		Runs:        "远程",
-		Endpoint:    endpoint,
-		SignIn:      signIn,
-		Featured:    true,
-		Inputs:      inputs,
-	}
+// curatedServerSpec captures the inputs for one entry in curatedMarketServers.
+// Endpoint marks a remote SaaS server; Command marks a local stdio tool.
+type curatedServerSpec struct {
+	ID        string
+	Title     string
+	Publisher string
+	Icon      string
+	Homepage  string
+	Desc      string
+	Endpoint  string
+	SignIn    bool
+	Command   string
+	Args      []string
+	Inputs    []MarketInput
 }
 
-func localMarketServer(id, title, publisher, icon, homepage, command string, args []string, desc string, inputs ...MarketInput) MarketServer {
-	if inputs == nil {
-		inputs = []MarketInput{}
-	}
-	return MarketServer{
-		ID:          id,
-		ServerID:    id,
-		Title:       title,
-		Publisher:   publisher,
-		Icon:        icon,
-		Homepage:    homepage,
-		Description: desc,
-		Transport:   "stdio",
-		Runs:        command,
-		Command:     command,
-		Args:        args,
+func curatedServer(s curatedServerSpec) MarketServer {
+	m := MarketServer{
+		ID:          s.ID,
+		ServerID:    s.ID,
+		Title:       s.Title,
+		Publisher:   s.Publisher,
+		Icon:        s.Icon,
+		Homepage:    s.Homepage,
+		Description: s.Desc,
 		Featured:    true,
-		Inputs:      inputs,
+		Inputs:      s.Inputs,
 	}
+	if s.Endpoint != "" {
+		m.Transport = "http"
+		m.Runs = "远程"
+		m.Endpoint = s.Endpoint
+		m.SignIn = s.SignIn
+	} else {
+		m.Transport = "stdio"
+		m.Runs = s.Command
+		m.Command = s.Command
+		m.Args = s.Args
+	}
+	if m.Inputs == nil {
+		m.Inputs = []MarketInput{}
+	}
+	return m
 }
 
 // curatedMarketServers returns the curated catalog: 17 remote SaaS services
@@ -193,70 +196,26 @@ func localMarketServer(id, title, publisher, icon, homepage, command string, arg
 // process-wide UI language instead of freezing the language at init time.
 func curatedMarketServers() []MarketServer {
 	return []MarketServer{
-		remoteMarketServer("notion", "Notion", "Notion", ghAvatar("makenotion"), "https://developers.notion.com/docs/mcp",
-			"https://mcp.notion.com/mcp",
-			i18n.T("market.catalog.notion.description"), true),
-		remoteMarketServer("linear", "Linear", "Linear", ghAvatar("linear"), "https://linear.app/docs/mcp",
-			"https://mcp.linear.app/mcp",
-			i18n.T("market.catalog.linear.description"), true),
-		remoteMarketServer("figma", "Figma", "Figma", ghAvatar("figma"), "https://help.figma.com/hc/en-us/articles/32132100833559",
-			"https://mcp.figma.com/mcp",
-			i18n.T("market.catalog.figma.description"), true),
-		remoteMarketServer("github", "GitHub", "GitHub", ghAvatar("github"), "https://github.com/github/github-mcp-server",
-			"https://api.githubcopilot.com/mcp/",
-			i18n.T("market.catalog.github.description"), false,
-			MarketInput{Key: "Authorization", Where: "header", Label: "Personal Access Token", Description: i18n.T("market.catalog.github.token_description"), Placeholder: "github_pat_...", Secret: true, Required: true, Format: "Bearer {}"}),
-		remoteMarketServer("sentry", "Sentry", "Sentry", ghAvatar("getsentry"), "https://docs.sentry.io/product/sentry-mcp/",
-			"https://mcp.sentry.dev/mcp",
-			i18n.T("market.catalog.sentry.description"), true),
-		remoteMarketServer("atlassian", "Atlassian", "Atlassian", ghAvatar("atlassian"), "https://www.atlassian.com/platform/remote-mcp-server",
-			"https://mcp.atlassian.com/v1/mcp",
-			i18n.T("market.catalog.atlassian.description"), true),
-		remoteMarketServer("supabase", "Supabase", "Supabase", ghAvatar("supabase"), "https://supabase.com/docs/guides/getting-started/mcp",
-			"https://mcp.supabase.com/mcp",
-			i18n.T("market.catalog.supabase.description"), true),
-		remoteMarketServer("stripe", "Stripe", "Stripe", ghAvatar("stripe"), "https://docs.stripe.com/mcp",
-			"https://mcp.stripe.com",
-			i18n.T("market.catalog.stripe.description"), true),
-		remoteMarketServer("vercel", "Vercel", "Vercel", ghAvatar("vercel"), "https://vercel.com/docs/mcp/vercel-mcp",
-			"https://mcp.vercel.com",
-			i18n.T("market.catalog.vercel.description"), true),
-		remoteMarketServer("neon", "Neon", "Neon", ghAvatar("neondatabase"), "https://neon.com/docs/ai/neon-mcp-server",
-			"https://mcp.neon.tech/mcp",
-			i18n.T("market.catalog.neon.description"), true),
-		remoteMarketServer("context7", "Context7", "Upstash", ghAvatar("upstash"), "https://context7.com",
-			"https://mcp.context7.com/mcp",
-			i18n.T("market.catalog.context7.description"), false,
-			MarketInput{Key: "CONTEXT7_API_KEY", Where: "header", Label: i18n.T("market.catalog.common.api_key_optional"), Description: i18n.T("market.catalog.context7.api_key_description"), Placeholder: "ctx7_...", Secret: true, Format: "{}"}),
-		remoteMarketServer("deepwiki", "DeepWiki", "Cognition", ghAvatar("CognitionAI"), "https://deepwiki.com",
-			"https://mcp.deepwiki.com/mcp",
-			i18n.T("market.catalog.deepwiki.description"), false),
-		remoteMarketServer("exa", "Exa", "Exa", ghAvatar("exa-labs"), "https://docs.exa.ai/reference/exa-mcp",
-			"https://mcp.exa.ai/mcp",
-			i18n.T("market.catalog.exa.description"), false),
-		remoteMarketServer("anysearch", "AnySearch", "AnySearch", ghAvatar("anysearch-ai"), "https://github.com/anysearch-ai/anysearch-mcp-server",
-			"https://api.anysearch.com/mcp",
-			i18n.T("market.catalog.brave.description"), false,
-			MarketInput{Key: "Authorization", Where: "header", Label: i18n.T("market.catalog.common.api_key_optional"), Description: i18n.T("market.catalog.brave.api_key_description"), Placeholder: "as_sk_...", Secret: true, Format: "Bearer {}"}),
-		remoteMarketServer("cloudflare-docs", "Cloudflare Docs", "Cloudflare", ghAvatar("cloudflare"), "https://github.com/cloudflare/mcp-server-cloudflare",
-			"https://docs.mcp.cloudflare.com/mcp",
-			i18n.T("market.catalog.cloudflare.description"), false),
-		remoteMarketServer("microsoft-learn", "Microsoft Learn", "Microsoft", ghAvatar("microsoft"), "https://github.com/MicrosoftDocs/mcp",
-			"https://learn.microsoft.com/api/mcp",
-			i18n.T("market.catalog.microsoft.description"), false),
-		remoteMarketServer("huggingface", "Hugging Face", "Hugging Face", ghAvatar("huggingface"), "https://huggingface.co/settings/mcp",
-			"https://huggingface.co/mcp",
-			i18n.T("market.catalog.huggingface.description"), false),
-		localMarketServer("playwright", "Playwright", "Microsoft", "https://playwright.dev/img/playwright-logo.svg", "https://github.com/microsoft/playwright-mcp",
-			"npx", []string{"-y", "@playwright/mcp@latest"},
-			i18n.T("market.catalog.playwright.description")),
-		localMarketServer("chrome-devtools", "Chrome DevTools", "Google", ghAvatar("ChromeDevTools"), "https://github.com/ChromeDevTools/chrome-devtools-mcp",
-			"npx", []string{"-y", "chrome-devtools-mcp@latest"},
-			i18n.T("market.catalog.chrome_devtools.description")),
-		localMarketServer("filesystem", "Filesystem", "Model Context Protocol", ghAvatar("modelcontextprotocol"), "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
-			"npx", []string{"-y", "@modelcontextprotocol/server-filesystem"},
-			i18n.T("market.catalog.filesystem.description"),
-			MarketInput{Key: "dir", Where: "arg", Label: i18n.T("market.catalog.filesystem.dir_label"), Description: i18n.T("market.catalog.filesystem.dir_description"), Placeholder: "/Users/username/Developer", Required: true}),
+		curatedServer(curatedServerSpec{ID: "notion", Title: "Notion", Publisher: "Notion", Icon: ghAvatar("makenotion"), Homepage: "https://developers.notion.com/docs/mcp", Endpoint: "https://mcp.notion.com/mcp", Desc: i18n.T("market.catalog.notion.description"), SignIn: true}),
+		curatedServer(curatedServerSpec{ID: "linear", Title: "Linear", Publisher: "Linear", Icon: ghAvatar("linear"), Homepage: "https://linear.app/docs/mcp", Endpoint: "https://mcp.linear.app/mcp", Desc: i18n.T("market.catalog.linear.description"), SignIn: true}),
+		curatedServer(curatedServerSpec{ID: "figma", Title: "Figma", Publisher: "Figma", Icon: ghAvatar("figma"), Homepage: "https://help.figma.com/hc/en-us/articles/32132100833559", Endpoint: "https://mcp.figma.com/mcp", Desc: i18n.T("market.catalog.figma.description"), SignIn: true}),
+		curatedServer(curatedServerSpec{ID: "github", Title: "GitHub", Publisher: "GitHub", Icon: ghAvatar("github"), Homepage: "https://github.com/github/github-mcp-server", Endpoint: "https://api.githubcopilot.com/mcp/", Desc: i18n.T("market.catalog.github.description"), SignIn: false, Inputs: []MarketInput{{Key: "Authorization", Where: "header", Label: "Personal Access Token", Description: i18n.T("market.catalog.github.token_description"), Placeholder: "github_pat_...", Secret: true, Required: true, Format: "Bearer {}"}}}),
+		curatedServer(curatedServerSpec{ID: "sentry", Title: "Sentry", Publisher: "Sentry", Icon: ghAvatar("getsentry"), Homepage: "https://docs.sentry.io/product/sentry-mcp/", Endpoint: "https://mcp.sentry.dev/mcp", Desc: i18n.T("market.catalog.sentry.description"), SignIn: true}),
+		curatedServer(curatedServerSpec{ID: "atlassian", Title: "Atlassian", Publisher: "Atlassian", Icon: ghAvatar("atlassian"), Homepage: "https://www.atlassian.com/platform/remote-mcp-server", Endpoint: "https://mcp.atlassian.com/v1/mcp", Desc: i18n.T("market.catalog.atlassian.description"), SignIn: true}),
+		curatedServer(curatedServerSpec{ID: "supabase", Title: "Supabase", Publisher: "Supabase", Icon: ghAvatar("supabase"), Homepage: "https://supabase.com/docs/guides/getting-started/mcp", Endpoint: "https://mcp.supabase.com/mcp", Desc: i18n.T("market.catalog.supabase.description"), SignIn: true}),
+		curatedServer(curatedServerSpec{ID: "stripe", Title: "Stripe", Publisher: "Stripe", Icon: ghAvatar("stripe"), Homepage: "https://docs.stripe.com/mcp", Endpoint: "https://mcp.stripe.com", Desc: i18n.T("market.catalog.stripe.description"), SignIn: true}),
+		curatedServer(curatedServerSpec{ID: "vercel", Title: "Vercel", Publisher: "Vercel", Icon: ghAvatar("vercel"), Homepage: "https://vercel.com/docs/mcp/vercel-mcp", Endpoint: "https://mcp.vercel.com", Desc: i18n.T("market.catalog.vercel.description"), SignIn: true}),
+		curatedServer(curatedServerSpec{ID: "neon", Title: "Neon", Publisher: "Neon", Icon: ghAvatar("neondatabase"), Homepage: "https://neon.com/docs/ai/neon-mcp-server", Endpoint: "https://mcp.neon.tech/mcp", Desc: i18n.T("market.catalog.neon.description"), SignIn: true}),
+		curatedServer(curatedServerSpec{ID: "context7", Title: "Context7", Publisher: "Upstash", Icon: ghAvatar("upstash"), Homepage: "https://context7.com", Endpoint: "https://mcp.context7.com/mcp", Desc: i18n.T("market.catalog.context7.description"), SignIn: false, Inputs: []MarketInput{{Key: "CONTEXT7_API_KEY", Where: "header", Label: i18n.T("market.catalog.common.api_key_optional"), Description: i18n.T("market.catalog.context7.api_key_description"), Placeholder: "ctx7_...", Secret: true, Format: "{}"}}}),
+		curatedServer(curatedServerSpec{ID: "deepwiki", Title: "DeepWiki", Publisher: "Cognition", Icon: ghAvatar("CognitionAI"), Homepage: "https://deepwiki.com", Endpoint: "https://mcp.deepwiki.com/mcp", Desc: i18n.T("market.catalog.deepwiki.description"), SignIn: false}),
+		curatedServer(curatedServerSpec{ID: "exa", Title: "Exa", Publisher: "Exa", Icon: ghAvatar("exa-labs"), Homepage: "https://docs.exa.ai/reference/exa-mcp", Endpoint: "https://mcp.exa.ai/mcp", Desc: i18n.T("market.catalog.exa.description"), SignIn: false}),
+		curatedServer(curatedServerSpec{ID: "anysearch", Title: "AnySearch", Publisher: "AnySearch", Icon: ghAvatar("anysearch-ai"), Homepage: "https://github.com/anysearch-ai/anysearch-mcp-server", Endpoint: "https://api.anysearch.com/mcp", Desc: i18n.T("market.catalog.brave.description"), SignIn: false, Inputs: []MarketInput{{Key: "Authorization", Where: "header", Label: i18n.T("market.catalog.common.api_key_optional"), Description: i18n.T("market.catalog.brave.api_key_description"), Placeholder: "as_sk_...", Secret: true, Format: "Bearer {}"}}}),
+		curatedServer(curatedServerSpec{ID: "cloudflare-docs", Title: "Cloudflare Docs", Publisher: "Cloudflare", Icon: ghAvatar("cloudflare"), Homepage: "https://github.com/cloudflare/mcp-server-cloudflare", Endpoint: "https://docs.mcp.cloudflare.com/mcp", Desc: i18n.T("market.catalog.cloudflare.description"), SignIn: false}),
+		curatedServer(curatedServerSpec{ID: "microsoft-learn", Title: "Microsoft Learn", Publisher: "Microsoft", Icon: ghAvatar("microsoft"), Homepage: "https://github.com/MicrosoftDocs/mcp", Endpoint: "https://learn.microsoft.com/api/mcp", Desc: i18n.T("market.catalog.microsoft.description"), SignIn: false}),
+		curatedServer(curatedServerSpec{ID: "huggingface", Title: "Hugging Face", Publisher: "Hugging Face", Icon: ghAvatar("huggingface"), Homepage: "https://huggingface.co/settings/mcp", Endpoint: "https://huggingface.co/mcp", Desc: i18n.T("market.catalog.huggingface.description"), SignIn: false}),
+		curatedServer(curatedServerSpec{ID: "playwright", Title: "Playwright", Publisher: "Microsoft", Icon: "https://playwright.dev/img/playwright-logo.svg", Homepage: "https://github.com/microsoft/playwright-mcp", Command: "npx", Args: []string{"-y", "@playwright/mcp@latest"}, Desc: i18n.T("market.catalog.playwright.description")}),
+		curatedServer(curatedServerSpec{ID: "chrome-devtools", Title: "Chrome DevTools", Publisher: "Google", Icon: ghAvatar("ChromeDevTools"), Homepage: "https://github.com/ChromeDevTools/chrome-devtools-mcp", Command: "npx", Args: []string{"-y", "chrome-devtools-mcp@latest"}, Desc: i18n.T("market.catalog.chrome_devtools.description")}),
+		curatedServer(curatedServerSpec{ID: "filesystem", Title: "Filesystem", Publisher: "Model Context Protocol", Icon: ghAvatar("modelcontextprotocol"), Homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem", Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem"}, Desc: i18n.T("market.catalog.filesystem.description"), Inputs: []MarketInput{{Key: "dir", Where: "arg", Label: i18n.T("market.catalog.filesystem.dir_label"), Description: i18n.T("market.catalog.filesystem.dir_description"), Placeholder: "/Users/username/Developer", Required: true}}}),
 	}
 }
 
