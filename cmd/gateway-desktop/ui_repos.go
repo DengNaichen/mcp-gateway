@@ -352,8 +352,6 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 				Gap(10).
 				AlignItems(ui.Center).
 				Justify(ui.SpaceBetween).
-				BorderWidth(0, 0, 1, 0).
-				BorderColor(SailDivider).
 				Cursor(ui.CursorPointer)
 			if globalSelected {
 				globalBtn.Background(SailAccentSoft)
@@ -381,25 +379,10 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 			}
 
 			// 2. Section Header: 已绑定仓库
-			ui.Row(c).
-				FillWidth().
-				Padding(8, 16).
-				Background(SailBgSubtle).
-				BorderWidth(0, 0, 1, 0).
-				BorderColor(SailDivider).
-				AlignItems(ui.Center).
-				Justify(ui.SpaceBetween).
-				Children(func() {
-					ui.Text(c, "已绑定仓库").FontSize(11.5).FontWeight(600).TextColor(SailInkMuted).SingleLine()
-					ui.Textf(c, "%d", len(state.Scopes.Repositories)).FontSize(11.5).FontFeatures("tnum").TextColor(SailInkFaint).SingleLine()
-				})
+			SailGroupHeader(c, "已绑定仓库", len(state.Scopes.Repositories), 16, false)
 
 			if len(state.Scopes.Repositories) == 0 {
-				hasMoreBelow := len(state.Scopes.Observed) > 0
-				emptyRow := ui.Column(c).FillWidth().Padding(16)
-				if hasMoreBelow {
-					emptyRow.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-				}
+				emptyRow := ui.Column(c).FillWidth().Padding(6, 16, 14, 16)
 				emptyRow.Children(func() {
 					ui.Text(c, "尚未绑定仓库").FontSize(12.5).TextColor(SailInkFaint)
 				})
@@ -407,7 +390,7 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 				for idx, repoItem := range state.Scopes.Repositories {
 					repo := repoItem
 					selected := st.selectedRepoKey == repo.ID
-					hasMoreBelow := idx < len(state.Scopes.Repositories)-1 || len(state.Scopes.Observed) > 0
+					hasMoreBelow := idx < len(state.Scopes.Repositories)-1
 
 					rowWrap := ui.Row(c.Key("repos-row-"+repo.ID)).
 						FillWidth().
@@ -501,18 +484,7 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 
 			// 3. Observed Unbound Section: 最近请求 · 未绑定
 			if len(state.Scopes.Observed) > 0 {
-				ui.Row(c).
-					FillWidth().
-					Padding(8, 16).
-					Background(SailBgSubtle).
-					BorderWidth(0, 0, 1, 0).
-					BorderColor(SailDivider).
-					AlignItems(ui.Center).
-					Justify(ui.SpaceBetween).
-					Children(func() {
-						ui.Text(c, "最近请求 · 未绑定").FontSize(11.5).FontWeight(600).TextColor(SailInkMuted).SingleLine()
-						ui.Textf(c, "%d", len(state.Scopes.Observed)).FontSize(11.5).FontFeatures("tnum").TextColor(SailInkFaint).SingleLine()
-					})
+				SailGroupHeader(c, "最近请求 · 未绑定", len(state.Scopes.Observed), 16, false)
 
 				for idx, obsItem := range state.Scopes.Observed {
 					obs := obsItem
