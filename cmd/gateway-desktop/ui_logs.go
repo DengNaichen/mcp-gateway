@@ -96,65 +96,14 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 	}
 	st := u.logsState()
 	events := u.State.Events
-
-	toolByID := make(map[string]apitypes.Tool, len(u.State.Registry.Tools))
-	for _, t := range u.State.Registry.Tools {
-		toolByID[t.ID] = t
-	}
+	toolByID := logsBuildToolIndex(u.State.Registry.Tools)
 
 	// Consume cross-page navigation handoff (e.g. from Overview blind-spot row).
 	if targetID := u.consumePendingEventID(); targetID != "" {
-		st.selectedID = targetID
-		for idx, ev := range events {
-			if ev.ID == targetID {
-				if !logsMatchesFilters(ev, st) {
-					st.resetFilters()
-				}
-				if idx >= st.timelineLimit {
-					st.timelineLimit = idx + 50
-				}
-				break
-			}
-		}
+		logsApplyPendingEvent(events, st, targetID)
 	}
 
-	// Compute summary counts across all events for quick context.
-	var (
-		okCount        int
-		unmatchedCount int
-		errCount       int
-	)
-	for _, ev := range events {
-		switch {
-		case logsIsErrorStatus(ev.Status):
-			errCount++
-		case logsIsUnmatchedStatus(ev.Status):
-			unmatchedCount++
-		default:
-			okCount++
-		}
-	}
-
-	filtered := make([]apitypes.Event, 0, len(events))
-	for _, ev := range events {
-		if logsMatchesFilters(ev, st) {
-			filtered = append(filtered, ev)
-		}
-	}
-
-	var activeEvent *apitypes.Event
-	if len(filtered) > 0 {
-		for i := range filtered {
-			if filtered[i].ID == st.selectedID {
-				activeEvent = &filtered[i]
-				break
-			}
-		}
-		if activeEvent == nil {
-			activeEvent = &filtered[0]
-			st.selectedID = filtered[0].ID
-		}
-	}
+	filtered, errCount, activeEvent := logsPrepareEventsView(events, st)
 
 	// 1. Page Header.
 	SailSectionHeader(
@@ -175,6 +124,75 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 	)
 
 	// 2. Compact Filter Bar.
+	renderLogsFilterBar(c, st, len(filtered), len(events))
+
+	// 3. Empty State or Split Master-Detail Workbench.
+	if len(filtered) == 0 {
+		u.renderLogsEmptyState(c, st, len(events))
+		return
+	}
+
+	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(22).Children(func() {
+		u.renderLogsTimelinePane(c, st, filtered, activeEvent)
+		if activeEvent != nil {
+			u.renderLogsInspectorPane(c, st, *activeEvent, toolByID)
+		}
+	})
+}
+
+func logsBuildToolIndex(tools []apitypes.Tool) map[string]apitypes.Tool {
+	toolByID := make(map[string]apitypes.Tool, len(tools))
+	for _, t := range tools {
+		toolByID[t.ID] = t
+	}
+	return toolByID
+}
+
+func logsApplyPendingEvent(events []apitypes.Event, st *logsPageState, targetID string) {
+	st.selectedID = targetID
+	for idx, ev := range events {
+		if ev.ID != targetID {
+			continue
+		}
+		if !logsMatchesFilters(ev, st) {
+			st.resetFilters()
+		}
+		if idx >= st.timelineLimit {
+			st.timelineLimit = idx + 50
+		}
+		break
+	}
+}
+
+func logsPrepareEventsView(events []apitypes.Event, st *logsPageState) ([]apitypes.Event, int, *apitypes.Event) {
+	var errCount int
+	filtered := make([]apitypes.Event, 0, len(events))
+	for _, ev := range events {
+		if logsIsErrorStatus(ev.Status) {
+			errCount++
+		}
+		if logsMatchesFilters(ev, st) {
+			filtered = append(filtered, ev)
+		}
+	}
+
+	var activeEvent *apitypes.Event
+	if len(filtered) > 0 {
+		for i := range filtered {
+			if filtered[i].ID == st.selectedID {
+				activeEvent = &filtered[i]
+				break
+			}
+		}
+		if activeEvent == nil {
+			activeEvent = &filtered[0]
+			st.selectedID = filtered[0].ID
+		}
+	}
+	return filtered, errCount, activeEvent
+}
+
+func renderLogsFilterBar(c *ui.Context, st *logsPageState, filteredCount, totalCount int) {
 	SailCard(c.Key("logs-filter-card"), func() {
 		ui.Row(c).FillWidth().Wrap().Gap(10).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Row(c).Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
@@ -208,7 +226,7 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 						st.resetFilters()
 					}
 				}
-				ui.Textf(c, "%d / %d", len(filtered), len(events)).
+				ui.Textf(c, "%d / %d", filteredCount, totalCount).
 					FontSize(12).
 					TextColor(SailInkMuted).
 					FontFeatures("tnum").
@@ -216,46 +234,35 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 			})
 		})
 	})
+}
 
-	// 3. Empty State or Split Master-Detail Workbench.
-	if len(filtered) == 0 {
-		if len(events) == 0 {
-			SailEmptyState(
-				c,
-				i18n.T("ops.no-requests"),
-				"",
-				i18n.T("ops.goto-playground"),
-				func() {
-					u.Navigate(ViewPlayground)
-				},
-			)
-		} else {
-			var resetFn func()
-			resetLbl := ""
-			if st.hasActiveFilters() {
-				resetLbl = i18n.T("ops.clear-filters")
-				resetFn = st.resetFilters
-			}
-			SailEmptyState(
-				c,
-				i18n.T("ops.no-matching-logs"),
-				"",
-				resetLbl,
-				resetFn,
-			)
-		}
+func (u *DesktopUI) renderLogsEmptyState(c *ui.Context, st *logsPageState, totalCount int) {
+	if totalCount == 0 {
+		SailEmptyState(
+			c,
+			i18n.T("ops.no-requests"),
+			"",
+			i18n.T("ops.goto-playground"),
+			func() {
+				u.Navigate(ViewPlayground)
+			},
+		)
 		return
 	}
+	var resetFn func()
+	resetLbl := ""
+	if st.hasActiveFilters() {
+		resetLbl = i18n.T("ops.clear-filters")
+		resetFn = st.resetFilters
+	}
+	SailEmptyState(c, i18n.T("ops.no-matching-logs"), "", resetLbl, resetFn)
+}
 
-	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(22).Children(func() {
-		// Left Column: Hairline Timeline List.
-		u.renderLogsTimelinePane(c, st, filtered, activeEvent)
-
-		// Right Column: Selected Event Trace Inspector.
-		if activeEvent != nil {
-			u.renderLogsInspectorPane(c, st, *activeEvent, toolByID)
-		}
-	})
+type logsTimelineRowProps struct {
+	rowKey   string
+	ev       apitypes.Event
+	selected bool
+	isLast   bool
 }
 
 func (u *DesktopUI) renderLogsTimelinePane(
@@ -268,10 +275,9 @@ func (u *DesktopUI) renderLogsTimelinePane(
 	if st.timelineLimit <= 0 {
 		st.timelineLimit = logsDefaultTimelineLimit
 	}
-	hasMore := false
-	if visibleCount > st.timelineLimit {
+	hasMore := visibleCount > st.timelineLimit
+	if hasMore {
 		visibleCount = st.timelineLimit
-		hasMore = true
 	}
 
 	applyCardElevation(
@@ -297,81 +303,12 @@ func (u *DesktopUI) renderLogsTimelinePane(
 						rowKey = fmt.Sprintf("%s#%d", ev.ID, i)
 					}
 					seenRowKeys[ev.ID]++
-					selected := activeEvent != nil && activeEvent.ID == ev.ID
-					isLast := i == visibleCount-1 && !hasMore
-
-					rowBg := SailBgSurface
-					if selected {
-						rowBg = SailAccentSoft
-					}
-
-					rowBtn := ui.ButtonBase(c.Key("logs-item-"+rowKey)).
-						Column().
-						FillWidth().
-						Padding(12, 18).
-						Gap(5).
-						AlignItems(ui.Stretch).
-						Background(rowBg).
-						Cursor(ui.CursorPointer)
-					if !isLast {
-						rowBtn.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-					}
-					if rowBtn.Hovered() && !selected {
-						rowBtn.Background(SailBgHover)
-					}
-
-					rowBtn.Children(func() {
-						// Anchor 1 & 3: Status dot + quiet kind (+ Error badge if error) on left; latency + time on right.
-						ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-							ui.Row(c).Gap(6).AlignItems(ui.Center).MinWidth(0).Children(func() {
-								SailStatusDot(c, logsStatusDotColor(ev.Status))
-								ui.Text(c, logsKindBadgeLabel(ev.Kind)).
-									Font("monospace").
-									FontSize(11.5).
-									TextColor(SailInkMuted).
-									SingleLine()
-								if logsIsErrorStatus(ev.Status) {
-									SailBadge(c, i18n.T("ops.status-error"), ToneDanger)
-								}
-							})
-
-							ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
-								ui.Textf(c, "%d ms", ev.DurationMS).
-									Font("monospace").
-									FontSize(11).
-									TextColor(SailInkMuted).
-									FontFeatures("tnum").
-									SingleLine()
-								ui.Text(c, FormatTime(ev.Time)).
-									FontSize(11).
-									TextColor(SailInkFaint).
-									FontFeatures("tnum").
-									SingleLine()
-							})
-						})
-
-						// Anchor 2: Primary Intent or Tool ID.
-						titleText := strings.TrimSpace(ev.Title)
-						if titleText == "" {
-							titleText = ev.ID
-						}
-						titleColor := SailInkStrong
-						if selected {
-							titleColor = SailAccent
-						}
-						titleElem := ui.Text(c, titleText).
-							FontSize(13).
-							FontWeight(500).
-							TextColor(titleColor).
-							SingleLine()
-						if ev.Kind == "invoke" || ev.Kind == "agent" || ev.Kind == "agent_tool" {
-							titleElem.Font("monospace").FontSize(12.5)
-						}
+					renderLogsTimelineRow(c, st, logsTimelineRowProps{
+						rowKey:   rowKey,
+						ev:       ev,
+						selected: activeEvent != nil && activeEvent.ID == ev.ID,
+						isLast:   i == visibleCount-1 && !hasMore,
 					})
-
-					if rowBtn.Clicked() {
-						st.selectedID = ev.ID
-					}
 				}
 
 				if hasMore {
@@ -383,6 +320,82 @@ func (u *DesktopUI) renderLogsTimelinePane(
 				}
 			})
 	})
+}
+
+func renderLogsTimelineRow(c *ui.Context, st *logsPageState, p logsTimelineRowProps) {
+	ev := p.ev
+	rowBg := SailBgSurface
+	if p.selected {
+		rowBg = SailAccentSoft
+	}
+
+	rowBtn := ui.ButtonBase(c.Key("logs-item-"+p.rowKey)).
+		Column().
+		FillWidth().
+		Padding(12, 18).
+		Gap(5).
+		AlignItems(ui.Stretch).
+		Background(rowBg).
+		Cursor(ui.CursorPointer)
+	if !p.isLast {
+		rowBtn.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+	}
+	if rowBtn.Hovered() && !p.selected {
+		rowBtn.Background(SailBgHover)
+	}
+
+	rowBtn.Children(func() {
+		// Anchor 1 & 3: Status dot + quiet kind (+ Error badge if error) on left; latency + time on right.
+		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+			ui.Row(c).Gap(6).AlignItems(ui.Center).MinWidth(0).Children(func() {
+				SailStatusDot(c, logsStatusDotColor(ev.Status))
+				ui.Text(c, logsKindBadgeLabel(ev.Kind)).
+					Font("monospace").
+					FontSize(11.5).
+					TextColor(SailInkMuted).
+					SingleLine()
+				if logsIsErrorStatus(ev.Status) {
+					SailBadge(c, i18n.T("ops.status-error"), ToneDanger)
+				}
+			})
+
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
+				ui.Textf(c, "%d ms", ev.DurationMS).
+					Font("monospace").
+					FontSize(11).
+					TextColor(SailInkMuted).
+					FontFeatures("tnum").
+					SingleLine()
+				ui.Text(c, FormatTime(ev.Time)).
+					FontSize(11).
+					TextColor(SailInkFaint).
+					FontFeatures("tnum").
+					SingleLine()
+			})
+		})
+
+		// Anchor 2: Primary Intent or Tool ID.
+		titleText := strings.TrimSpace(ev.Title)
+		if titleText == "" {
+			titleText = ev.ID
+		}
+		titleColor := SailInkStrong
+		if p.selected {
+			titleColor = SailAccent
+		}
+		titleElem := ui.Text(c, titleText).
+			FontSize(13).
+			FontWeight(500).
+			TextColor(titleColor).
+			SingleLine()
+		if ev.Kind == "invoke" || ev.Kind == "agent" || ev.Kind == "agent_tool" {
+			titleElem.Font("monospace").FontSize(12.5)
+		}
+	})
+
+	if rowBtn.Clicked() {
+		st.selectedID = ev.ID
+	}
 }
 
 func (u *DesktopUI) renderLogsInspectorPane(
@@ -402,235 +415,274 @@ func (u *DesktopUI) renderLogsInspectorPane(
 			Radius(10).
 			Background(SailBgSurface),
 	).Children(func() {
-		// 1. Inspector Header + Quick Actions.
-		ui.Row(c).FillWidth().AlignItems(ui.Start).Justify(ui.SpaceBetween).Gap(12).Children(func() {
-			ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
-				ui.Row(c).Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
-					if logsIsErrorStatus(ev.Status) {
-						SailBadgeDot(c, ev.Status, ToneDanger)
-					} else if ev.Status == "needs_context" {
-						SailBadgeDot(c, ev.Status, ToneWarning)
-					} else {
-						SailQuietStatus(c, ev.Status, logsStatusDotColor(ev.Status), SailInkStrong)
-					}
-					ui.Text(c, logsKindBadgeLabel(ev.Kind)).
-						Font("monospace").
-						FontSize(12).
-						TextColor(SailInkMuted).
-						SingleLine()
-					ui.Text(c, ev.ID).
-						Font("monospace").
-						FontSize(11.5).
-						TextColor(SailInkFaint).
-						Selectable().
-						SingleLine()
+			u.renderLogsInspectorHeader(c, ev, parsed, toolByID)
+			renderLogsInspectorMetrics(c, ev, parsed)
+			renderLogsInspectorMetaCard(c, parsed)
+
+			if sc := parsed.Scope; sc != nil {
+				u.renderLogsScopeCard(c, st, ev.ID, *sc)
+			}
+
+			if parsed.Summary != "" {
+				SailSubtleCard(c, func() {
+					ui.Text(c, parsed.Summary).FontSize(13).LineHeight(1.5).TextColor(SailInkStrong).Selectable()
 				})
-
-				titleText := strings.TrimSpace(ev.Title)
-				if titleText == "" {
-					titleText = ev.ID
-				}
-				titleElem := ui.Text(c, titleText).
-					FontSize(16.5).
-					Bold().
-					TextColor(SailInkStrong).
-					Selectable()
-				if ev.Kind == "invoke" {
-					titleElem.Font("monospace").FontSize(15.5)
-				}
-			})
-
-			ui.Row(c).Shrink(0).Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
-				if ev.Kind == "discover" && strings.TrimSpace(ev.Title) != "" {
-					if SailSmallButton(c.Key("logs-replay-"+ev.ID), i18n.T("ops.replay-in-sandbox")).Clicked() {
-						if parsed.Scope != nil {
-							replayRepo := logsResolveReplayRepoKey(u.State, *parsed.Scope)
-							u.OpenPlaygroundReplay(ev.Title, ev.Actor, replayRepo)
-						} else {
-							u.OpenPlaygroundReplay(ev.Title, ev.Actor)
-						}
-					}
-				}
-				if ev.Kind == "invoke" {
-					targetToolID := parsed.ToolID
-					if targetToolID == "" {
-						targetToolID = ev.Title
-					}
-					if regTool, ok := toolByID[targetToolID]; ok {
-						if SailSmallButton(c.Key("logs-jump-cat-"+ev.ID), i18n.T("ops.view-contract")).Clicked() {
-							u.OpenCatalogTool(regTool.ID, regTool.ServerID)
-						}
-					}
-				}
-				if SailSmallButton(c.Key("logs-copy-json-"+ev.ID), i18n.T("ops.copy-json")).Clicked() {
-					c.WriteClipboard(parsed.FullEventJSON)
-					u.Notify(i18n.T("ops.copied-event-json"))
-				}
-			})
-		})
-
-		// 2. Borderless Key Trace Metrics Strip (no chatty captions).
-		ui.Row(c).FillWidth().Wrap().Gap(12).Children(func() {
-			logsMetricTile(c, i18n.T("ops.duration"), fmt.Sprintf("%d ms", ev.DurationMS), "", true)
-
-			tokMain := "—"
-			tokSub := ""
-			if parsed.PromptTokens != nil || parsed.OutputTokens != nil {
-				pt, ot := 0, 0
-				if parsed.PromptTokens != nil {
-					pt = *parsed.PromptTokens
-				}
-				if parsed.OutputTokens != nil {
-					ot = *parsed.OutputTokens
-				}
-				tokMain = fmt.Sprintf("%d tok", pt+ot)
-				tokSub = fmt.Sprintf("%d in · %d out", pt, ot)
 			}
-			logsMetricTile(c, "Token", tokMain, tokSub, true)
-
-			actorStr := ev.Actor
-			if actorStr == "" {
-				actorStr = "anonymous"
+			if parsed.Question != "" {
+				SailAlertBox(c, ToneWarning, i18n.T("ops.needs-context"), parsed.Question)
 			}
-			logsMetricTile(c, i18n.T("ops.actor"), actorStr, "", true)
+			if parsed.Error != "" {
+				SailAlertBox(c, ToneDanger, i18n.T("ops.execution-error"), parsed.Error)
+			}
 
-			logsMetricTile(c, i18n.T("ops.time"), FormatTime(ev.Time), ev.Time.Local().Format("2006-01-02"), true)
+			u.renderLogsMatchedToolsCard(c, ev, parsed, toolByID)
+			u.renderLogsPayloadViewer(c, st, parsed)
 		})
+}
 
-		// Secondary metadata row when model / candidate pool / protocol details exist.
-		hasExtraMeta := parsed.Model != "" ||
-			parsed.Eligible != nil ||
-			len(parsed.Servers) > 0 ||
-			parsed.Client != "" ||
-			parsed.Method != "" ||
-			len(parsed.Fields) > 0
-		if hasExtraMeta {
-			SailSubtleCard(c, func() {
-				if parsed.Model != "" {
-					SailKeyValueRow(c, i18n.T("ops.routing-model"), parsed.Model, true)
+func (u *DesktopUI) renderLogsInspectorHeader(
+	c *ui.Context,
+	ev apitypes.Event,
+	parsed logsParsedDetail,
+	toolByID map[string]apitypes.Tool,
+) {
+	ui.Row(c).FillWidth().AlignItems(ui.Start).Justify(ui.SpaceBetween).Gap(12).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
+			ui.Row(c).Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
+				if logsIsErrorStatus(ev.Status) {
+					SailBadgeDot(c, ev.Status, ToneDanger)
+				} else if ev.Status == "needs_context" {
+					SailBadgeDot(c, ev.Status, ToneWarning)
+				} else {
+					SailQuietStatus(c, ev.Status, logsStatusDotColor(ev.Status), SailInkStrong)
 				}
-				if parsed.Eligible != nil {
-					SailKeyValueRow(c, i18n.T("ops.candidate-narrowing"), fmt.Sprintf("%d → %d", *parsed.Eligible, len(parsed.Tools)), true)
-				}
-				if len(parsed.Servers) > 0 {
-					SailKeyValueRow(c, i18n.T("ops.matched-services"), strings.Join(parsed.Servers, ", "), true)
-				}
-				if parsed.Method != "" {
-					SailKeyValueRow(c, i18n.T("ops.protocol-method"), parsed.Method, true)
-				}
-				if parsed.AgentToolName != "" {
-					SailKeyValueRow(c, i18n.T("ops.meta-tool"), parsed.AgentToolName, true)
-				}
-				if parsed.Client != "" {
-					SailKeyValueRow(c, i18n.T("ops.client-label"), parsed.Client, true)
-				}
-				if len(parsed.Fields) > 0 {
-					SailKeyValueRow(c, i18n.T("ops.trimmed-fields"), strings.Join(parsed.Fields, ", "), true)
-				}
-			})
-		}
-
-		// Scope Trace Card when detail.scope is present.
-		if sc := parsed.Scope; sc != nil {
-			u.renderLogsScopeCard(c, st, ev.ID, *sc)
-		}
-
-		// 3. Semantic Summary / Question / Error.
-		if parsed.Summary != "" {
-			SailSubtleCard(c, func() {
-				ui.Text(c, parsed.Summary).FontSize(13).LineHeight(1.5).TextColor(SailInkStrong).Selectable()
-			})
-		}
-		if parsed.Question != "" {
-			SailAlertBox(c, ToneWarning, i18n.T("ops.needs-context"), parsed.Question)
-		}
-		if parsed.Error != "" {
-			SailAlertBox(c, ToneDanger, i18n.T("ops.execution-error"), parsed.Error)
-		}
-
-		// 4. Matched Candidate Tools (hairline rows, no nested bordered cards).
-		if len(parsed.Tools) > 0 {
-			SailSubtleCard(c, func() {
-				ui.Text(c, i18n.T("ops.matched-tools-count", len(parsed.Tools))).
+				ui.Text(c, logsKindBadgeLabel(ev.Kind)).
+					Font("monospace").
 					FontSize(12).
-					FontWeight(600).
-					TextColor(SailInkMuted)
-
-				ui.Column(c).FillWidth().Children(func() {
-					for idx, mt := range parsed.Tools {
-						item := mt
-						isLast := idx == len(parsed.Tools)-1
-						r := ui.Column(c.Key(fmt.Sprintf("logs-hit-%s-%d", ev.ID, idx))).
-							FillWidth().
-							Padding(10, 0).
-							Gap(4)
-						if !isLast {
-							r.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-						}
-						r.Children(func() {
-							ui.Row(c).FillWidth().Wrap().Gap(8).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-								ui.Row(c).Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
-									displayID := item.ID
-									if displayID == "" {
-										displayID = item.Name
-									}
-									ui.Text(c, displayID).
-										Font("monospace").
-										FontSize(12.5).
-										FontWeight(600).
-										TextColor(SailInkStrong).
-										Selectable()
-
-									if item.HasReadOnly && !item.ReadOnly {
-										SailBadge(c, i18n.T("ops.write-access"), ToneWarning)
-									}
-								})
-
-								if item.ID != "" {
-									if _, exists := toolByID[item.ID]; exists {
-										if SailSmallButton(c.Key(fmt.Sprintf("logs-open-tool-%s-%d", ev.ID, idx)), i18n.T("ops.catalog-detail")).Clicked() {
-											u.OpenCatalogTool(item.ID, item.ServerID)
-										}
-									}
-								}
-							})
-
-							if item.Reason != "" {
-								ui.Text(c, item.Reason).
-									FontSize(12.5).
-									LineHeight(1.48).
-									TextColor(SailInkBody).
-									Selectable()
-							} else if item.Description != "" {
-								SailDescSummary(c, item.Description, "", 2)
-							}
-						})
-					}
-				})
+					TextColor(SailInkMuted).
+					SingleLine()
+				ui.Text(c, ev.ID).
+					Font("monospace").
+					FontSize(11.5).
+					TextColor(SailInkFaint).
+					Selectable().
+					SingleLine()
 			})
-		} else if ev.Kind == "discover" && parsed.Error == "" {
+
+			titleText := strings.TrimSpace(ev.Title)
+			if titleText == "" {
+				titleText = ev.ID
+			}
+			titleElem := ui.Text(c, titleText).
+				FontSize(16.5).
+				Bold().
+				TextColor(SailInkStrong).
+				Selectable()
+			if ev.Kind == "invoke" {
+				titleElem.Font("monospace").FontSize(15.5)
+			}
+		})
+
+		ui.Row(c).Shrink(0).Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
+			if ev.Kind == "discover" && strings.TrimSpace(ev.Title) != "" {
+				if SailSmallButton(c.Key("logs-replay-"+ev.ID), i18n.T("ops.replay-in-sandbox")).Clicked() {
+					if parsed.Scope != nil {
+						replayRepo := logsResolveReplayRepoKey(u.State, *parsed.Scope)
+						u.OpenPlaygroundReplay(ev.Title, ev.Actor, replayRepo)
+					} else {
+						u.OpenPlaygroundReplay(ev.Title, ev.Actor)
+					}
+				}
+			}
+			if ev.Kind == "invoke" {
+				targetToolID := parsed.ToolID
+				if targetToolID == "" {
+					targetToolID = ev.Title
+				}
+				if regTool, ok := toolByID[targetToolID]; ok {
+					if SailSmallButton(c.Key("logs-jump-cat-"+ev.ID), i18n.T("ops.view-contract")).Clicked() {
+						u.OpenCatalogTool(regTool.ID, regTool.ServerID)
+					}
+				}
+			}
+			if SailSmallButton(c.Key("logs-copy-json-"+ev.ID), i18n.T("ops.copy-json")).Clicked() {
+				c.WriteClipboard(parsed.FullEventJSON)
+				u.Notify(i18n.T("ops.copied-event-json"))
+			}
+		})
+	})
+}
+
+func renderLogsInspectorMetrics(c *ui.Context, ev apitypes.Event, parsed logsParsedDetail) {
+	ui.Row(c).FillWidth().Wrap().Gap(12).Children(func() {
+		logsMetricTile(c, i18n.T("ops.duration"), fmt.Sprintf("%d ms", ev.DurationMS), "", true)
+
+		tokMain := "—"
+		tokSub := ""
+		if parsed.PromptTokens != nil || parsed.OutputTokens != nil {
+			pt, ot := 0, 0
+			if parsed.PromptTokens != nil {
+				pt = *parsed.PromptTokens
+			}
+			if parsed.OutputTokens != nil {
+				ot = *parsed.OutputTokens
+			}
+			tokMain = fmt.Sprintf("%d tok", pt+ot)
+			tokSub = fmt.Sprintf("%d in · %d out", pt, ot)
+		}
+		logsMetricTile(c, "Token", tokMain, tokSub, true)
+
+		actorStr := ev.Actor
+		if actorStr == "" {
+			actorStr = "anonymous"
+		}
+		logsMetricTile(c, i18n.T("ops.actor"), actorStr, "", true)
+		logsMetricTile(c, i18n.T("ops.time"), FormatTime(ev.Time), ev.Time.Local().Format("2006-01-02"), true)
+	})
+}
+
+func renderLogsInspectorMetaCard(c *ui.Context, parsed logsParsedDetail) {
+	hasExtraMeta := parsed.Model != "" ||
+		parsed.Eligible != nil ||
+		len(parsed.Servers) > 0 ||
+		parsed.Client != "" ||
+		parsed.Method != "" ||
+		len(parsed.Fields) > 0
+	if !hasExtraMeta {
+		return
+	}
+	SailSubtleCard(c, func() {
+		if parsed.Model != "" {
+			SailKeyValueRow(c, i18n.T("ops.routing-model"), parsed.Model, true)
+		}
+		if parsed.Eligible != nil {
+			SailKeyValueRow(c, i18n.T("ops.candidate-narrowing"), fmt.Sprintf("%d → %d", *parsed.Eligible, len(parsed.Tools)), true)
+		}
+		if len(parsed.Servers) > 0 {
+			SailKeyValueRow(c, i18n.T("ops.matched-services"), strings.Join(parsed.Servers, ", "), true)
+		}
+		if parsed.Method != "" {
+			SailKeyValueRow(c, i18n.T("ops.protocol-method"), parsed.Method, true)
+		}
+		if parsed.AgentToolName != "" {
+			SailKeyValueRow(c, i18n.T("ops.meta-tool"), parsed.AgentToolName, true)
+		}
+		if parsed.Client != "" {
+			SailKeyValueRow(c, i18n.T("ops.client-label"), parsed.Client, true)
+		}
+		if len(parsed.Fields) > 0 {
+			SailKeyValueRow(c, i18n.T("ops.trimmed-fields"), strings.Join(parsed.Fields, ", "), true)
+		}
+	})
+}
+
+type logsMatchedToolRowProps struct {
+	evID           string
+	idx            int
+	item           logsMatchedTool
+	isLast         bool
+	hasCatalogTool bool
+}
+
+func (u *DesktopUI) renderLogsMatchedToolsCard(
+	c *ui.Context,
+	ev apitypes.Event,
+	parsed logsParsedDetail,
+	toolByID map[string]apitypes.Tool,
+) {
+	if len(parsed.Tools) == 0 {
+		if ev.Kind == "discover" && parsed.Error == "" {
 			SailSubtleCard(c, func() {
 				ui.Text(c, i18n.T("ops.no-candidate-tools")).FontSize(12.5).TextColor(SailInkMuted)
 			})
 		}
+		return
+	}
 
-		// 5. Formatted JSON Payload Viewer.
-		ui.Column(c).FillWidth().Gap(10).Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.Start).Children(func() {
-				ui.Segmented(c.Key("logs-payload-tab"), &st.payloadTab, i18n.T("ops.raw-event-json"), i18n.T("ops.detail-payload")).
-					Label(i18n.T("ops.payload-view"))
-			})
+	SailSubtleCard(c, func() {
+		ui.Text(c, i18n.T("ops.matched-tools-count", len(parsed.Tools))).
+			FontSize(12).
+			FontWeight(600).
+			TextColor(SailInkMuted)
 
-			if st.payloadTab == 1 {
-				SailCodeBlock(c, "DETAIL PAYLOAD", parsed.DetailJSON, func() {
-					u.Notify(i18n.T("ops.copied-detail-payload"))
-				})
-			} else {
-				SailCodeBlock(c, "EVENT TRACE", parsed.FullEventJSON, func() {
-					u.Notify(i18n.T("ops.copied-full-event-json"))
+		ui.Column(c).FillWidth().Children(func() {
+			for idx, mt := range parsed.Tools {
+				_, exists := toolByID[mt.ID]
+				u.renderLogsMatchedToolRow(c, logsMatchedToolRowProps{
+					evID:           ev.ID,
+					idx:            idx,
+					item:           mt,
+					isLast:         idx == len(parsed.Tools)-1,
+					hasCatalogTool: mt.ID != "" && exists,
 				})
 			}
 		})
+	})
+}
+
+func (u *DesktopUI) renderLogsMatchedToolRow(c *ui.Context, p logsMatchedToolRowProps) {
+	item := p.item
+	r := ui.Column(c.Key(fmt.Sprintf("logs-hit-%s-%d", p.evID, p.idx))).
+		FillWidth().
+		Padding(10, 0).
+		Gap(4)
+	if !p.isLast {
+		r.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+	}
+	r.Children(func() {
+		ui.Row(c).FillWidth().Wrap().Gap(8).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+			ui.Row(c).Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
+				displayID := item.ID
+				if displayID == "" {
+					displayID = item.Name
+				}
+				ui.Text(c, displayID).
+					Font("monospace").
+					FontSize(12.5).
+					FontWeight(600).
+					TextColor(SailInkStrong).
+					Selectable()
+
+				if item.HasReadOnly && !item.ReadOnly {
+					SailBadge(c, i18n.T("ops.write-access"), ToneWarning)
+				}
+			})
+
+			if p.hasCatalogTool {
+				if SailSmallButton(c.Key(fmt.Sprintf("logs-open-tool-%s-%d", p.evID, p.idx)), i18n.T("ops.catalog-detail")).Clicked() {
+					u.OpenCatalogTool(item.ID, item.ServerID)
+				}
+			}
+		})
+
+		if item.Reason != "" {
+			ui.Text(c, item.Reason).
+				FontSize(12.5).
+				LineHeight(1.48).
+				TextColor(SailInkBody).
+				Selectable()
+		} else if item.Description != "" {
+			SailDescSummary(c, item.Description, "", 2)
+		}
+	})
+}
+
+func (u *DesktopUI) renderLogsPayloadViewer(c *ui.Context, st *logsPageState, parsed logsParsedDetail) {
+	ui.Column(c).FillWidth().Gap(10).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.Start).Children(func() {
+			ui.Segmented(c.Key("logs-payload-tab"), &st.payloadTab, i18n.T("ops.raw-event-json"), i18n.T("ops.detail-payload")).
+				Label(i18n.T("ops.payload-view"))
+		})
+
+		if st.payloadTab == 1 {
+			SailCodeBlock(c, "DETAIL PAYLOAD", parsed.DetailJSON, func() {
+				u.Notify(i18n.T("ops.copied-detail-payload"))
+			})
+		} else {
+			SailCodeBlock(c, "EVENT TRACE", parsed.FullEventJSON, func() {
+				u.Notify(i18n.T("ops.copied-full-event-json"))
+			})
+		}
 	})
 }
 

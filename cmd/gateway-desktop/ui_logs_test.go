@@ -249,3 +249,36 @@ func TestLogsMatchesFilters(t *testing.T) {
 		t.Fatal("unmatched event must not match success filter")
 	}
 }
+
+func TestLogsPrepareEventsViewAndPendingEvent(t *testing.T) {
+	events := []apitypes.Event{
+		{ID: "e1", Kind: "discover", Status: "selected", Title: "first"},
+		{ID: "e2", Kind: "invoke", Status: "error", Title: "second"},
+		{ID: "e3", Kind: "discover", Status: "failed", Title: "third"},
+	}
+	st := &logsPageState{kindIdx: 1, statusIdx: 1, timelineLimit: 1}
+	logsApplyPendingEvent(events, st, "e3")
+	if st.selectedID != "e3" {
+		t.Fatalf("selectedID = %q, want e3", st.selectedID)
+	}
+	if st.kindIdx != 0 || st.statusIdx != 0 {
+		t.Fatalf("expected incompatible filters to reset, got kind=%d status=%d", st.kindIdx, st.statusIdx)
+	}
+	if st.timelineLimit < 3 {
+		t.Fatalf("expected timelineLimit to expand for e3, got %d", st.timelineLimit)
+	}
+
+	filtered, errCount, active := logsPrepareEventsView(events, st)
+	if len(filtered) != 3 || errCount != 2 {
+		t.Fatalf("filtered=%d errCount=%d, want 3, 2", len(filtered), errCount)
+	}
+	if active == nil || active.ID != "e3" {
+		t.Fatalf("active = %+v, want e3", active)
+	}
+
+	st.selectedID = "missing"
+	_, _, fallback := logsPrepareEventsView(events, st)
+	if fallback == nil || fallback.ID != "e1" || st.selectedID != "e1" {
+		t.Fatalf("expected fallback to first event e1, got %+v (selected=%q)", fallback, st.selectedID)
+	}
+}
