@@ -1264,7 +1264,7 @@ func (u *DesktopUI) renderOverviewLogDrawer(
 					ov.drawerOpen = false
 					if parsed.Scope != nil {
 						replayRepo := logsResolveReplayRepoKey(state, *parsed.Scope)
-						u.OpenPlaygroundReplay(ev.Title, ev.Actor, replayRepo, parsed.Scope.Agent)
+						u.OpenPlaygroundReplay(ev.Title, ev.Actor, replayRepo)
 					} else {
 						u.OpenPlaygroundReplay(ev.Title, ev.Actor)
 					}

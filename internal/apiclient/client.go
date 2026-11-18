@@ -396,18 +396,10 @@ func (c *Client) SaveScopeRule(ctx context.Context, rule apitypes.ScopeRule) (ap
 	return out, err
 }
 
-func (c *Client) DeleteScopeRule(ctx context.Context, repoKey, agentKey string) error {
+func (c *Client) DeleteScopeRule(ctx context.Context, repoKey string) error {
 	q := url.Values{}
 	q.Set("repo_key", repoKey)
-	q.Set("agent_key", agentKey)
 	return c.doJSON(ctx, http.MethodDelete, "/scopes/rules?"+q.Encode(), nil, nil)
-}
-
-func (c *Client) PreviewScope(ctx context.Context, repoKey, actor string) (apitypes.ScopePreviewResponse, error) {
-	payload := apitypes.ScopePreviewRequest{RepoKey: repoKey, Actor: actor}
-	var out apitypes.ScopePreviewResponse
-	err := c.doJSON(ctx, http.MethodPost, "/scopes/preview", payload, &out)
-	return out, err
 }
 
 func (c *Client) GetHookSnippet(ctx context.Context, agent string) (apitypes.ScopeSnippetResponse, error) {

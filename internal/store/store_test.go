@@ -250,12 +250,15 @@ func TestLegacyMigrationRetainsRegistryAndScopeData(t *testing.T) {
 		t.Fatalf("migration reordered data: %+v %v", got, err)
 	}
 	var version int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 7 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 8 {
 		t.Fatalf("version=%d, %v", version, err)
 	}
 	rules, err := ScopeRules[map[string]any](db.DB).List()
 	if err != nil || len(rules) != 1 || rules[0]["repo_key"] != "*" {
 		t.Fatalf("scope seed: %+v %v", rules, err)
+	}
+	if _, hasAgentKey := rules[0]["agent_key"]; hasAgentKey {
+		t.Fatalf("migrated rule should not retain agent_key: %+v", rules[0])
 	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
@@ -265,6 +268,60 @@ func TestLegacyMigrationRetainsRegistryAndScopeData(t *testing.T) {
 		t.Fatalf("migration not idempotent: %v", err)
 	}
 	_ = reopened.Close()
+}
+
+func TestLegacyScopeRulesMigrationDropsAgentOverrides(t *testing.T) {
+	dir := t.TempDir()
+	raw, err := sql.Open("sqlite", filepath.Join(dir, "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`
+CREATE TABLE servers(id TEXT PRIMARY KEY,definition TEXT NOT NULL CHECK(json_valid(definition)),position INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE tools(id TEXT PRIMARY KEY,server_id TEXT NOT NULL REFERENCES servers(id),definition TEXT NOT NULL CHECK(json_valid(definition)),position INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE scope_state(id INTEGER PRIMARY KEY CHECK(id=1),definition TEXT NOT NULL CHECK(json_valid(definition)));
+CREATE TABLE repositories(id TEXT PRIMARY KEY,definition TEXT NOT NULL CHECK(json_valid(definition)));
+CREATE TABLE scope_rules(repo_key TEXT NOT NULL,agent_key TEXT NOT NULL,definition TEXT NOT NULL CHECK(json_valid(definition)),PRIMARY KEY(repo_key,agent_key));
+CREATE TABLE scope_observations(fingerprint TEXT PRIMARY KEY,last_seen TEXT NOT NULL,definition TEXT NOT NULL CHECK(json_valid(definition)));
+INSERT INTO scope_state(id,definition) VALUES(1,'{"enforce":true}');
+INSERT INTO scope_rules(repo_key,agent_key,definition) VALUES
+  ('*','*','{"repo_key":"*","agent_key":"*","grants":[]}'),
+  ('*','codex','{"repo_key":"*","agent_key":"codex","grants":[{"server_id":"svc","access":"rw"}]}'),
+  ('repo-1','*','{"repo_key":"repo-1","agent_key":"*","grants":[{"server_id":"svc","access":"ro"}]}'),
+  ('repo-1','claude','{"repo_key":"repo-1","agent_key":"claude","grants":[{"server_id":"svc","access":"rw"}]}');
+PRAGMA user_version=7;`); err != nil {
+		t.Fatal(err)
+	}
+	_ = raw.Close()
+
+	db, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	rules, err := ScopeRules[map[string]any](db.DB).List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rules) != 2 {
+		t.Fatalf("expected only 2 repo-level rules after v8 migration, got %+v", rules)
+	}
+	if rules[0]["repo_key"] != "*" || len(rules[0]["grants"].([]any)) != 0 {
+		t.Fatalf("unexpected migrated global default rule: %+v", rules[0])
+	}
+	if rules[1]["repo_key"] != "repo-1" {
+		t.Fatalf("unexpected migrated repo-1 rule: %+v", rules[1])
+	}
+	grants := rules[1]["grants"].([]any)
+	if len(grants) != 1 || grants[0].(map[string]any)["access"] != "ro" {
+		t.Fatalf("expected repo-1 to retain ro rule rather than agent override, got %+v", rules[1])
+	}
+	for _, r := range rules {
+		if _, hasAgentKey := r["agent_key"]; hasAgentKey {
+			t.Fatalf("migrated rule still contains agent_key: %+v", r)
+		}
+	}
 }
 
 func TestRunTxAndErrNotFound(t *testing.T) {

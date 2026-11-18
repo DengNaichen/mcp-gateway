@@ -2112,52 +2112,6 @@
         ],
         "type": "object"
       },
-      "ScopeAgentPreview": {
-        "additionalProperties": false,
-        "properties": {
-          "agent": {
-            "type": "string"
-          },
-          "has_write": {
-            "type": "boolean"
-          },
-          "matched_agent_key": {
-            "type": "string"
-          },
-          "matched_repo_key": {
-            "type": "string"
-          },
-          "server_count": {
-            "type": "integer"
-          },
-          "servers": {
-            "items": {
-              "$ref": "#/components/schemas/ScopeServerSummary"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "source_label": {
-            "type": "string"
-          },
-          "tool_count": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "agent",
-          "has_write",
-          "matched_agent_key",
-          "matched_repo_key",
-          "server_count",
-          "servers",
-          "source_label",
-          "tool_count"
-        ],
-        "type": "object"
-      },
       "ScopeModeRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2216,50 +2170,9 @@
         ],
         "type": "object"
       },
-      "ScopePreviewRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "actor": {
-            "type": "string"
-          },
-          "repo_key": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "actor",
-          "repo_key"
-        ],
-        "type": "object"
-      },
-      "ScopePreviewResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "agents": {
-            "items": {
-              "$ref": "#/components/schemas/ScopeAgentPreview"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "repo_key": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "agents",
-          "repo_key"
-        ],
-        "type": "object"
-      },
       "ScopeRule": {
         "additionalProperties": false,
         "properties": {
-          "agent_key": {
-            "type": "string"
-          },
           "grants": {
             "items": {
               "$ref": "#/components/schemas/ServiceGrant"
@@ -2277,30 +2190,9 @@
           }
         },
         "required": [
-          "agent_key",
           "grants",
           "repo_key",
           "updated_at"
-        ],
-        "type": "object"
-      },
-      "ScopeServerSummary": {
-        "additionalProperties": false,
-        "properties": {
-          "access": {
-            "type": "string"
-          },
-          "server_id": {
-            "type": "string"
-          },
-          "tool_count": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "access",
-          "server_id",
-          "tool_count"
         ],
         "type": "object"
       },
@@ -2699,15 +2591,11 @@
       "SimScope": {
         "additionalProperties": false,
         "properties": {
-          "agent_key": {
-            "type": "string"
-          },
           "repo_key": {
             "type": "string"
           }
         },
         "required": [
-          "agent_key",
           "repo_key"
         ],
         "type": "object"
@@ -3082,7 +2970,7 @@
             }
           },
           {
-            "description": "Agent key used to resolve repository scope",
+            "description": "Agent key identifying the calling client",
             "in": "query",
             "name": "agent",
             "schema": {
@@ -3132,7 +3020,7 @@
         "operationId": "post_discover",
         "parameters": [
           {
-            "description": "Agent key used to resolve repository scope",
+            "description": "Agent key identifying the calling client",
             "in": "query",
             "name": "agent",
             "schema": {
@@ -3269,7 +3157,7 @@
         "operationId": "post_invoke",
         "parameters": [
           {
-            "description": "Agent key used to resolve repository scope",
+            "description": "Agent key identifying the calling client",
             "in": "query",
             "name": "agent",
             "schema": {
@@ -4204,48 +4092,6 @@
         ]
       }
     },
-    "/api/scopes/preview": {
-      "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
-        "operationId": "post_scopes_preview",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScopePreviewRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScopePreviewResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Preview what each agent can reach in a repository",
-        "tags": [
-          "scopes"
-        ]
-      }
-    },
     "/api/scopes/repositories": {
       "put": {
         "description": "Management route: requires an admin principal in shared mode.",
@@ -4339,14 +4185,6 @@
             "description": "Rule repository key",
             "in": "query",
             "name": "repo_key",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Rule agent key",
-            "in": "query",
-            "name": "agent_key",
             "schema": {
               "type": "string"
             }
@@ -5006,7 +4844,7 @@
             }
           },
           {
-            "description": "Agent key used to resolve repository scope",
+            "description": "Agent key identifying the calling client",
             "in": "query",
             "name": "agent",
             "schema": {

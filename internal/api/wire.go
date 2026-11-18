@@ -165,9 +165,6 @@ func wireGrant(g scope.ServiceGrant) apitypes.ServiceGrant    { return apitypes.
 func domainGrant(g apitypes.ServiceGrant) scope.ServiceGrant  { return scope.ServiceGrant(g) }
 func wireEventScope(s scope.EventScope) apitypes.EventScope   { return apitypes.EventScope(s) }
 func domainSimScope(s apitypes.SimScope) scope.SimScope       { return scope.SimScope(s) }
-func wireServerSummary(s scope.ScopeServerSummary) apitypes.ScopeServerSummary {
-	return apitypes.ScopeServerSummary(s)
-}
 func wireSnippet(s scope.ScopeSnippetResponse) apitypes.ScopeSnippetResponse {
 	return apitypes.ScopeSnippetResponse(s)
 }
@@ -176,11 +173,11 @@ func domainSaveRepository(r apitypes.SaveRepositoryRequest) scope.SaveRepository
 }
 
 func wireRule(r scope.ScopeRule) apitypes.ScopeRule {
-	return apitypes.ScopeRule{RepoKey: r.RepoKey, AgentKey: r.AgentKey, Grants: mapSlice(r.Grants, wireGrant), UpdatedAt: r.UpdatedAt}
+	return apitypes.ScopeRule{RepoKey: r.RepoKey, Grants: mapSlice(r.Grants, wireGrant), UpdatedAt: r.UpdatedAt}
 }
 
 func domainRule(r apitypes.ScopeRule) scope.ScopeRule {
-	return scope.ScopeRule{RepoKey: r.RepoKey, AgentKey: r.AgentKey, Grants: mapSlice(r.Grants, domainGrant), UpdatedAt: r.UpdatedAt}
+	return scope.ScopeRule{RepoKey: r.RepoKey, Grants: mapSlice(r.Grants, domainGrant), UpdatedAt: r.UpdatedAt}
 }
 
 func wireScopeOverview(o scope.ScopeOverview) apitypes.ScopeOverview {
@@ -188,17 +185,6 @@ func wireScopeOverview(o scope.ScopeOverview) apitypes.ScopeOverview {
 		Enforce: o.Enforce, HookBinPath: o.HookBinPath, Repositories: mapSlice(o.Repositories, wireRepository),
 		Rules: mapSlice(o.Rules, wireRule), Observed: mapSlice(o.Observed, wireObserved),
 	}
-}
-
-func wireAgentPreview(p scope.ScopeAgentPreview) apitypes.ScopeAgentPreview {
-	return apitypes.ScopeAgentPreview{
-		Agent: p.Agent, MatchedRepoKey: p.MatchedRepoKey, MatchedAgentKey: p.MatchedAgentKey, SourceLabel: p.SourceLabel,
-		ServerCount: p.ServerCount, ToolCount: p.ToolCount, HasWrite: p.HasWrite, Servers: mapSlice(p.Servers, wireServerSummary),
-	}
-}
-
-func wireScopePreview(p scope.ScopePreviewResponse) apitypes.ScopePreviewResponse {
-	return apitypes.ScopePreviewResponse{RepoKey: p.RepoKey, Agents: mapSlice(p.Agents, wireAgentPreview)}
 }
 
 // --- market ---

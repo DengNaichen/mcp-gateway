@@ -8,7 +8,7 @@ type DiscoverRequest struct {
 	Actor       string   `json:"actor,omitempty"`
 	IncludeDemo bool     `json:"include_demo,omitempty"`
 	SummaryOnly bool     `json:"summary_only,omitempty"`
-	// SimScope simulates a repository/agent scope from the control plane.
+	// SimScope simulates a repository scope from the control plane.
 	SimScope *SimScope `json:"sim_scope,omitempty"`
 }
 

@@ -1,6 +1,6 @@
 # Gateway Lab
 
-一个可以直接运行的 MCP Gateway。Go 后端、MyGo 原生桌面端、SQLite 持久化；网关中的模型负责从可用工具里做选择，本地 Agent 继续负责规划和执行。支持 Repo × Agent 仓库级权限隔离（`gateway-hook`）、6 大主流客户端官方插件、MCP 市场、浏览器 OAuth 2.0、OpenAPI 原生 HTTP 参数映射与 Pi 后台自动维护。整体分层与运行时架构见 [`docs/architecture.md`](docs/architecture.md)。
+一个可以直接运行的 MCP Gateway。Go 后端、MyGo 原生桌面端、SQLite 持久化；网关中的模型负责从可用工具里做选择，本地 Agent 继续负责规划和执行。支持仓库级工作区权限隔离（`gateway-hook`）、6 大主流客户端官方插件、MCP 市场、浏览器 OAuth 2.0、OpenAPI 原生 HTTP 参数映射与 Pi 后台自动维护。整体分层与运行时架构见 [`docs/architecture.md`](docs/architecture.md)。
 
 ## 启动
 
@@ -31,11 +31,11 @@ MyGo 原生桌面端（`cmd/gateway-desktop`）完全通过 `/api/*` 与后端�
 2. **上游服务（`services`）**：管理 MCP stdio、MCP Streamable HTTP（支持浏览器 OAuth）、手动 HTTP REST 与 OpenAPI 导入服务；支持白名单勾选启用、工具编辑与自动维护配置。新导入工具默认禁用，需手动启用后才进入路由候选。
 3. **MCP 市场（`market`）**：浏览内置精选与在线 MCP Registry（`GET /api/market`），一键安装（`POST /api/market/install`）并按服务保存 Header/Env 凭据（macOS 桌面端使用系统 Keychain）。
 4. **工具目录（`catalog`）**：按服务、只读/写属性跨服务浏览当前所有已启用工具的摘要与 Schema。
-5. **仓库绑定（`repos`）**：管理仓库锚点（Git `common_dir` / 非 Git `root_paths`）、`(repo_key, agent_key)` 权限矩阵、预览各 Agent 可达工具、复制 Hook 片段并开关 `enforce` 仓库隔离模式。
+5. **仓库绑定（`repos`）**：管理仓库锚点（Git `common_dir` / 非 Git `root_paths`）、仓库权限矩阵、复制 Hook 片段并开关 `enforce` 仓库隔离模式。
 6. **连接客户端（`clients`）**：一键向 Codex CLI、Claude Code、Cursor、OpenCode v2、Pi、Antigravity 安装/更新/卸载官方插件（含 `gateway-hook` 集成）或写入用户级 MCP 配置。
 7. **访问与路由（`settings`）**：配置并测试 Decisions 模型、管理多组已保存的模型档案（`model_profiles`）、调整 `max_tools` / 超时与认证策略。
 8. **请求日志（`logs`）**：查看最近请求、作用域归因（`scope`）、耗时与脱敏后详情（SQLite 保存全部历史）。
-9. **路由沙盒（`playground`）**：输入自然语言意图（及可选 `sim_scope` 模拟仓库/Agent 视角）实时调试 Decisions 相关性概率、查看真实 Schema 并手动试调用工具（支持 `fields` 响应裁剪）。
+9. **路由沙盒（`playground`）**：输入自然语言意图（及可选 `sim_scope` 模拟仓库视角）实时调试 Decisions 相关性概率、查看真实 Schema 并手动试调用工具（支持 `fields` 响应裁剪）。
 
 内置的 Service Catalog（HTTP API）与 Observability（Go SDK 原生 MCP）示例服务实际经过对应适配器运行，响应带有 `demo: true`；演示工具默认不参与发现，在沙盒勾选「包含演示工具」时启用。
 
@@ -215,12 +215,12 @@ Flags 放在子命令之前。`-url` 可指定网关地址，本机无认证模�
 ./bin/dev/gatewayctl plugin remove -client cursor
 ```
 
-## 仓库级工作区作用域（Repo × Agent Scoping）
+## 仓库级工作区作用域（Repository Scoping）
 
-网关支持按「本地代码仓库 × Coding Agent」细粒度限制可发现与可调用的下游工具集（详见 [`docs/architecture.md`](docs/architecture.md)）：
+网关支持按本地代码仓库细粒度限制可发现与可调用的下游工具集（详见 [`docs/architecture.md`](docs/architecture.md)）：
 
 - **本机 Hook 签名（`./bin/dev/gateway-hook`）**：各客户端官方插件在工具调用前调用 `gateway-hook`（支持 `claude`、`codex`、`cursor`、`antigravity` 宿主模式及 `opencode`/`pi` 的 `sign` 子命令），识别当前会话 `cwd` 与 Git `common_dir`，使用 `<data>/scope.key` 对请求参数规范化哈希后签发 60 秒有效的 `v1` HMAC-SHA256 上下文凭证（注入渠道隔离字段 `_gw_ctx` 或 `_gw_ctx_mcp_gateway_dev`）。
-- **服务端校验与优先级**：网关结合主体 RBAC 与 `(repo_key, agent_key)` 四级整条覆盖规则（`(R, agent) > (R, *) > (*, agent) > (*, *)`）求取严格交集，并通过 `jtiCache` 防止凭证重放。
+- **服务端校验与优先级**：网关结合主体 RBAC 与仓库级两层整条覆盖规则（`具体仓库规则 > 全局默认 (*)`）求取严格交集，并通过 `jtiCache` 防止凭证重放。
 - **Fail-open 与 Enforce 模式**：`gateway-hook` 遇到本机异常或未初始化密钥时默认 fail-open 以免卡死 Agent；桌面端「仓库绑定」或 `PUT /api/scopes/mode` 开启 `enforce: true` 后，服务端对缺失、多根歧义或无效凭证一律以 `403` 拒绝（`scope_required` / `ambiguous_workspace` / `scope_invalid`）。
 
 ## 接入 HTTP API 与 OpenAPI 原生映射
@@ -293,7 +293,7 @@ Flags 放在子命令之前。`-url` 可指定网关地址，本机无认证模�
 | maintenance_deliveries | 签名来源事件、delivery 去重和任务分配 |
 | scope_state | 全局仓库隔离拦截开关（`enforce`） |
 | repositories | 已绑定仓库实体及本地 Git `common_dir` / `root_paths` 锚点 |
-| scope_rules | `(repo_key, agent_key)` 二维作用域授权矩阵规则 |
+| scope_rules | 仓库作用域授权矩阵规则（`repo_key`） |
 | scope_observations | 来自已验签 Hook 的未绑定工作区观测记录 |
 
 ```sh
@@ -334,8 +334,7 @@ sqlite3 data/gateway.db 'SELECT time, kind, status, title FROM activity ORDER BY
 | GET | /api/scopes | 仓库绑定、作用域规则与观测记录 |
 | PUT | /api/scopes/mode | 开关 `enforce` 仓库隔离拦截模式 |
 | PUT / DELETE | /api/scopes/repositories | 新增、更新或删除仓库锚点 |
-| PUT / DELETE | /api/scopes/rules | 新增、替换或删除 `(repo_key, agent_key)` 规则 |
-| POST | /api/scopes/preview | 预览仓库下各 Agent 可达工具 |
+| PUT / DELETE | /api/scopes/rules | 新增、替换或删除仓库作用域规则（`repo_key`） |
 | POST | /api/auth/login | 管理令牌换取 HttpOnly 登录会话 |
 | POST | /api/auth/logout | 注销当前会话 |
 | GET | /api/auth/me | 当前身份 |
@@ -415,7 +414,7 @@ internal/gateway      应用外观与跨域协调根（含 publicationConfigMu�
 internal/routing      纯零 I/O 三步路由策略引擎
 internal/model        OpenAI / Gemini / SystemOne Decisions 客户端与模型档案
 internal/store        SQLite DDL/SQL 与迁移唯一拥有者（14 张表）
-internal/scope        Repo × Agent 作用域评估与 JTI 防重放
+internal/scope        仓库级工作区作用域评估与 JTI 防重放
 internal/workspace    工作区锚点识别与 HMAC scope token 签发/验签
 internal/upstream     stdio / Streamable HTTP MCP、浏览器 OAuth、OpenAPI HTTP 映射与脱敏
 internal/maintenance  自动维护编排、Webhook 队列、独立验收、Docker/Pi 沙箱

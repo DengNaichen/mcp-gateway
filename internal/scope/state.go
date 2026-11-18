@@ -66,14 +66,38 @@ func (g *Service) loadScopes() error {
 	for _, repo := range repos {
 		state.Repositories = append(state.Repositories, normalizeRepositorySlices(repo))
 	}
-	rules, err := store.ScopeRules[ScopeRule](g.db).List()
+	type persistedScopeRule struct {
+		RepoKey   string         `json:"repo_key"`
+		AgentKey  string         `json:"agent_key"`
+		Grants    []ServiceGrant `json:"grants"`
+		UpdatedAt string         `json:"updated_at"`
+	}
+	rules, err := store.ScopeRules[persistedScopeRule](g.db).List()
 	if err != nil {
 		return err
 	}
 	hasWildcardDefault := false
-	for _, rule := range rules {
-		rule = normalizeScopeRuleSlices(rule)
-		if rule.RepoKey == "*" && rule.AgentKey == "*" {
+	seenRepoKeys := map[string]bool{}
+	for _, raw := range rules {
+		repoKey := strings.TrimSpace(raw.RepoKey)
+		agentKey := strings.TrimSpace(raw.AgentKey)
+		// Ignore and clean up legacy per-agent overrides so they can never take effect as ghost rules.
+		if agentKey != "" && agentKey != "*" {
+			if repoKey != "" {
+				_ = store.ScopeRules[persistedScopeRule](g.db).Delete(repoKey)
+			}
+			continue
+		}
+		if repoKey == "" || seenRepoKeys[repoKey] {
+			continue
+		}
+		seenRepoKeys[repoKey] = true
+		rule := normalizeScopeRuleSlices(ScopeRule{
+			RepoKey:   repoKey,
+			Grants:    raw.Grants,
+			UpdatedAt: raw.UpdatedAt,
+		})
+		if rule.RepoKey == "*" {
 			hasWildcardDefault = true
 		}
 		state.Rules = append(state.Rules, rule)
@@ -81,7 +105,6 @@ func (g *Service) loadScopes() error {
 	if !hasWildcardDefault {
 		def := ScopeRule{
 			RepoKey:   "*",
-			AgentKey:  "*",
 			Grants:    []ServiceGrant{},
 			UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 		}
@@ -132,27 +155,11 @@ func sortRepositories(repos []Repository) {
 }
 
 func sortScopeRules(rules []ScopeRule) {
-	rank := func(r ScopeRule) int {
-		switch {
-		case r.RepoKey == "*" && r.AgentKey == "*":
-			return 0
-		case r.RepoKey == "*":
-			return 1
-		case r.AgentKey == "*":
-			return 2
-		default:
-			return 3
-		}
-	}
 	sort.Slice(rules, func(i, j int) bool {
-		ri, rj := rank(rules[i]), rank(rules[j])
-		if ri != rj {
-			return ri < rj
+		if (rules[i].RepoKey == "*") != (rules[j].RepoKey == "*") {
+			return rules[i].RepoKey == "*"
 		}
-		if rules[i].RepoKey != rules[j].RepoKey {
-			return rules[i].RepoKey < rules[j].RepoKey
-		}
-		return rules[i].AgentKey < rules[j].AgentKey
+		return rules[i].RepoKey < rules[j].RepoKey
 	})
 }
 
@@ -184,7 +191,6 @@ func (g *Service) ScopeOverview() ScopeOverview {
 		}
 		rules[i] = ScopeRule{
 			RepoKey:   rl.RepoKey,
-			AgentKey:  rl.AgentKey,
 			Grants:    grants,
 			UpdatedAt: rl.UpdatedAt,
 		}
@@ -430,7 +436,7 @@ func (g *Service) DeleteRepository(id string) error {
 	if err := store.Repositories[Repository](tx).Delete(id); err != nil {
 		return fmt.Errorf("delete repository: %w", err)
 	}
-	if err := store.ScopeRules[ScopeRule](tx).DeleteRepository(id); err != nil {
+	if err := store.ScopeRules[ScopeRule](tx).Delete(id); err != nil {
 		return fmt.Errorf("delete repository rules: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -449,12 +455,8 @@ func (g *Service) DeleteRepository(id string) error {
 
 func (g *Service) SaveScopeRule(in ScopeRule) (ScopeRule, error) {
 	repoKey := strings.TrimSpace(in.RepoKey)
-	agentKey := strings.ToLower(strings.TrimSpace(in.AgentKey))
 	if repoKey == "" {
 		return ScopeRule{}, invalid("repo_key 不能为空")
-	}
-	if agentKey != "*" && !workspace.IsKnownAgent(agentKey) {
-		return ScopeRule{}, invalid("agent_key 必须是 * 或有效客户端标识 (codex, claude, cursor, opencode, pi)")
 	}
 
 	g.mu.Lock()
@@ -505,7 +507,6 @@ func (g *Service) SaveScopeRule(in ScopeRule) (ScopeRule, error) {
 
 	rule := ScopeRule{
 		RepoKey:   repoKey,
-		AgentKey:  agentKey,
 		Grants:    normalizedGrants,
 		UpdatedAt: g.now().UTC().Format(time.RFC3339),
 	}
@@ -513,13 +514,13 @@ func (g *Service) SaveScopeRule(in ScopeRule) (ScopeRule, error) {
 	if err != nil {
 		return ScopeRule{}, err
 	}
-	if err := store.ScopeRules[json.RawMessage](g.db).Put(rule.RepoKey, rule.AgentKey, raw); err != nil {
+	if err := store.ScopeRules[json.RawMessage](g.db).Put(rule.RepoKey, raw); err != nil {
 		return ScopeRule{}, fmt.Errorf("persist scope rule: %w", err)
 	}
 
 	nextRules := slices.Clone(g.scope.Rules)
 	idx := slices.IndexFunc(nextRules, func(r ScopeRule) bool {
-		return r.RepoKey == rule.RepoKey && r.AgentKey == rule.AgentKey
+		return r.RepoKey == rule.RepoKey
 	})
 	if idx >= 0 {
 		nextRules[idx] = rule
@@ -531,32 +532,27 @@ func (g *Service) SaveScopeRule(in ScopeRule) (ScopeRule, error) {
 	return rule, nil
 }
 
-func (g *Service) DeleteScopeRule(repoKey, agentKey string) error {
+func (g *Service) DeleteScopeRule(repoKey string) error {
 	repoKey = strings.TrimSpace(repoKey)
-	agentKey = strings.ToLower(strings.TrimSpace(agentKey))
-	if repoKey == "" || agentKey == "" {
-		return invalid("需要提供 repo_key 与 agent_key")
-	}
-	if agentKey != "*" && !workspace.IsKnownAgent(agentKey) {
-		return invalid("agent_key 无效")
+	if repoKey == "" {
+		return invalid("需要提供 repo_key")
 	}
 
-	if repoKey == "*" && agentKey == "*" {
+	if repoKey == "*" {
 		_, err := g.SaveScopeRule(ScopeRule{
-			RepoKey:  "*",
-			AgentKey: "*",
-			Grants:   []ServiceGrant{},
+			RepoKey: "*",
+			Grants:  []ServiceGrant{},
 		})
 		return err
 	}
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if err := store.ScopeRules[ScopeRule](g.db).Delete(repoKey, agentKey); err != nil {
+	if err := store.ScopeRules[ScopeRule](g.db).Delete(repoKey); err != nil {
 		return fmt.Errorf("delete scope rule: %w", err)
 	}
 	g.scope.Rules = slices.DeleteFunc(slices.Clone(g.scope.Rules), func(r ScopeRule) bool {
-		return r.RepoKey == repoKey && r.AgentKey == agentKey
+		return r.RepoKey == repoKey
 	})
 	return nil
 }

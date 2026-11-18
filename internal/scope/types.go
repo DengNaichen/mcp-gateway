@@ -41,7 +41,6 @@ type ServiceGrant struct {
 
 type ScopeRule struct {
 	RepoKey   string         `json:"repo_key"`
-	AgentKey  string         `json:"agent_key"`
 	Grants    []ServiceGrant `json:"grants"`
 	UpdatedAt string         `json:"updated_at"`
 }
@@ -58,28 +57,6 @@ type ObservedRepo struct {
 	RequestCount int    `json:"request_count"`
 }
 
-type ScopeServerSummary struct {
-	ServerID  string `json:"server_id"`
-	Access    string `json:"access"`
-	ToolCount int    `json:"tool_count"`
-}
-
-type ScopeAgentPreview struct {
-	Agent           string               `json:"agent"`
-	MatchedRepoKey  string               `json:"matched_repo_key"`
-	MatchedAgentKey string               `json:"matched_agent_key"`
-	SourceLabel     string               `json:"source_label"`
-	ServerCount     int                  `json:"server_count"`
-	ToolCount       int                  `json:"tool_count"`
-	HasWrite        bool                 `json:"has_write"`
-	Servers         []ScopeServerSummary `json:"servers"`
-}
-
-type ScopePreviewResponse struct {
-	RepoKey string              `json:"repo_key"`
-	Agents  []ScopeAgentPreview `json:"agents"`
-}
-
 type ScopeSnippetResponse struct {
 	Agent        string `json:"agent"`
 	ConfigPath   string `json:"config_path"`
@@ -90,8 +67,7 @@ type ScopeSnippetResponse struct {
 }
 
 type SimScope struct {
-	RepoKey  string `json:"repo_key"`
-	AgentKey string `json:"agent_key"`
+	RepoKey string `json:"repo_key"`
 }
 
 type EventScope struct {
@@ -133,32 +109,29 @@ type Service struct {
 	shared                    bool
 	snapshot                  func() registry.Registry
 	adminCaller               func(context.Context) bool
-	identityAllowsTool        func(context.Context, registry.Tool, string) bool
 }
 type Options struct {
-	DB                 *sql.DB
-	Dir, BaseURL       string
-	Key                []byte
-	Clock              func() time.Time
-	Shared             bool
-	Snapshot           func() registry.Registry
-	AdminCaller        func(context.Context) bool
-	IdentityAllowsTool func(context.Context, registry.Tool, string) bool
+	DB           *sql.DB
+	Dir, BaseURL string
+	Key          []byte
+	Clock        func() time.Time
+	Shared       bool
+	Snapshot     func() registry.Registry
+	AdminCaller  func(context.Context) bool
 }
 
 func New(o Options) (*Service, error) {
 	g := &Service{
-		db:                 o.DB,
-		dir:                o.Dir,
-		baseURL:            o.BaseURL,
-		scopeKey:           slices.Clone(o.Key),
-		clock:              o.Clock,
-		shared:             o.Shared,
-		snapshot:           o.Snapshot,
-		adminCaller:        o.AdminCaller,
-		identityAllowsTool: o.IdentityAllowsTool,
-		hookBinPath:        workspace.ResolveHookBinary("", o.Dir),
-		jtiReplay:          newJTICache(),
+		db:          o.DB,
+		dir:         o.Dir,
+		baseURL:     o.BaseURL,
+		scopeKey:    slices.Clone(o.Key),
+		clock:       o.Clock,
+		shared:      o.Shared,
+		snapshot:    o.Snapshot,
+		adminCaller: o.AdminCaller,
+		hookBinPath: workspace.ResolveHookBinary("", o.Dir),
+		jtiReplay:   newJTICache(),
 	}
 	if err := g.loadScopes(); err != nil {
 		return nil, err

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
 
 	"github.com/egoist/mygo"
@@ -44,7 +43,7 @@ func agentDisplayName(id string) string {
 		}
 	}
 	if id == "" || id == "*" {
-		return "全部客户端"
+		return ""
 	}
 	return id
 }
@@ -61,8 +60,6 @@ func agentIndex(id string) int {
 type ruleDraft struct {
 	grants           []apitypes.ServiceGrant
 	dirty            bool
-	localOnly        bool
-	expanded         bool
 	expandedServerID string
 	saving           bool
 }
@@ -78,12 +75,7 @@ type reposPageState struct {
 	confirmDeleteRepoName string
 	showDeleteConfirm     bool
 
-	drafts map[string]*ruleDraft // key: repoKey + "::" + agentKey
-
-	// Preview cache from POST /api/scopes/preview
-	previewKey     string
-	previewLoading bool
-	preview        *apitypes.ScopePreviewResponse
+	drafts map[string]*ruleDraft // key: repoKey
 }
 
 func (u *DesktopUI) reposState() *reposPageState {
@@ -119,23 +111,18 @@ func cloneGrants(in []apitypes.ServiceGrant) []apitypes.ServiceGrant {
 	return out
 }
 
-func findScopeRule(rules []apitypes.ScopeRule, repoKey, agentKey string) (*apitypes.ScopeRule, bool) {
+func findScopeRule(rules []apitypes.ScopeRule, repoKey string) (*apitypes.ScopeRule, bool) {
 	for i := range rules {
-		if rules[i].RepoKey == repoKey && rules[i].AgentKey == agentKey {
+		if rules[i].RepoKey == repoKey {
 			return &rules[i], true
 		}
 	}
 	return nil, false
 }
 
-func draftMapKey(repoKey, agentKey string) string {
-	return repoKey + "::" + agentKey
-}
-
-func (st *reposPageState) ensureDraft(rules []apitypes.ScopeRule, repoKey, agentKey string) *ruleDraft {
-	key := draftMapKey(repoKey, agentKey)
-	d, ok := st.drafts[key]
-	saved, hasSaved := findScopeRule(rules, repoKey, agentKey)
+func (st *reposPageState) ensureDraft(rules []apitypes.ScopeRule, repoKey string) *ruleDraft {
+	d, ok := st.drafts[repoKey]
+	saved, hasSaved := findScopeRule(rules, repoKey)
 	if !ok {
 		var initial []apitypes.ServiceGrant
 		if hasSaved {
@@ -144,13 +131,12 @@ func (st *reposPageState) ensureDraft(rules []apitypes.ScopeRule, repoKey, agent
 			initial = []apitypes.ServiceGrant{}
 		}
 		d = &ruleDraft{
-			grants:   initial,
-			expanded: agentKey == "*",
+			grants: initial,
 		}
-		st.drafts[key] = d
+		st.drafts[repoKey] = d
 		return d
 	}
-	if !d.dirty && !d.localOnly && !d.saving {
+	if !d.dirty && !d.saving {
 		if hasSaved {
 			d.grants = cloneGrants(saved.Grants)
 		} else {
@@ -205,20 +191,20 @@ func primaryRepoPath(repo apitypes.Repository) string {
 }
 
 func repoBoundServiceSummary(repoID string, rules []apitypes.ScopeRule) string {
-	if r, ok := findScopeRule(rules, repoID, "*"); ok {
+	if r, ok := findScopeRule(rules, repoID); ok {
 		if len(r.Grants) == 0 {
 			return "无服务"
 		}
 		return fmt.Sprintf("%d 个服务", len(r.Grants))
 	}
-	if g, ok := findScopeRule(rules, "*", "*"); ok && len(g.Grants) > 0 {
+	if g, ok := findScopeRule(rules, "*"); ok && len(g.Grants) > 0 {
 		return fmt.Sprintf("继承 %d", len(g.Grants))
 	}
 	return "无服务"
 }
 
 func globalDefaultServiceSummary(rules []apitypes.ScopeRule) string {
-	if r, ok := findScopeRule(rules, "*", "*"); ok && len(r.Grants) > 0 {
+	if r, ok := findScopeRule(rules, "*"); ok && len(r.Grants) > 0 {
 		return fmt.Sprintf("%d 个服务", len(r.Grants))
 	}
 	return "默认无服务"
@@ -226,29 +212,19 @@ func globalDefaultServiceSummary(rules []apitypes.ScopeRule) string {
 
 // --- Deterministic Local Scope Policy Evaluator (mirrors backend precedence) ---
 
-func resolveEffectiveScopeRule(scopes apitypes.ScopeOverview, repoKey, agentKey string) (grants []apitypes.ServiceGrant, matchedRepo, matchedAgent, sourceLabel string) {
+func resolveEffectiveScopeRule(scopes apitypes.ScopeOverview, repoKey string) (grants []apitypes.ServiceGrant, matchedRepo, sourceLabel string) {
 	if repoKey != "" && repoKey != "*" {
-		if agentKey != "" && agentKey != "*" {
-			if r, ok := findScopeRule(scopes.Rules, repoKey, agentKey); ok {
-				return r.Grants, repoKey, agentKey, "客户端例外"
-			}
-		}
-		if r, ok := findScopeRule(scopes.Rules, repoKey, "*"); ok {
-			return r.Grants, repoKey, "*", "仓库默认"
+		if r, ok := findScopeRule(scopes.Rules, repoKey); ok {
+			return r.Grants, repoKey, "仓库默认"
 		}
 	}
-	if agentKey != "" && agentKey != "*" {
-		if r, ok := findScopeRule(scopes.Rules, "*", agentKey); ok {
-			return r.Grants, "*", agentKey, "客户端例外"
-		}
-	}
-	if r, ok := findScopeRule(scopes.Rules, "*", "*"); ok {
+	if r, ok := findScopeRule(scopes.Rules, "*"); ok {
 		if len(r.Grants) == 0 {
-			return r.Grants, "*", "*", "无权限"
+			return r.Grants, "*", "无权限"
 		}
-		return r.Grants, "*", "*", "全局默认"
+		return r.Grants, "*", "全局默认"
 	}
-	return nil, "*", "*", "无权限"
+	return nil, "*", "无权限"
 }
 
 func scopeGrantAllowsTool(grants []apitypes.ServiceGrant, t apitypes.Tool) bool {
@@ -265,152 +241,6 @@ func scopeGrantAllowsTool(grants []apitypes.ServiceGrant, t apitypes.Tool) bool 
 		return true
 	}
 	return false
-}
-
-func computeLocalScopePreview(state *apitypes.Bootstrap, repoKey, actor string) []apitypes.ScopeAgentPreview {
-	if state == nil {
-		return nil
-	}
-	if actor == "" {
-		if state.Access.Shared && state.Access.Actor != "" {
-			actor = state.Access.Actor
-		} else {
-			actor = "developer"
-		}
-	}
-
-	activeServers := make(map[string]apitypes.Server)
-	for _, s := range state.Registry.Servers {
-		if s.Enabled && !s.Demo {
-			activeServers[s.ID] = s
-		}
-	}
-
-	out := make([]apitypes.ScopeAgentPreview, 0, len(scopeAgents))
-	for _, ag := range scopeAgents {
-		grants, matchedRepo, matchedAgent, srcLabel := resolveEffectiveScopeRule(state.Scopes, repoKey, ag.ID)
-		var (
-			toolCount    int
-			hasWrite     bool
-			srvSummaries []apitypes.ScopeServerSummary
-		)
-		for _, g := range grants {
-			if _, ok := activeServers[g.ServerID]; !ok {
-				continue
-			}
-			cnt := 0
-			srvWrite := false
-			for _, t := range state.Registry.Tools {
-				if t.ServerID != g.ServerID || !t.Enabled {
-					continue
-				}
-				if !slices.Contains(t.Actors, "*") && !slices.Contains(t.Actors, actor) {
-					continue
-				}
-				if !scopeGrantAllowsTool(grants, t) {
-					continue
-				}
-				cnt++
-				if !t.ReadOnly {
-					srvWrite = true
-				}
-			}
-			if cnt > 0 {
-				acc := "ro"
-				if srvWrite {
-					acc = "rw"
-					hasWrite = true
-				}
-				toolCount += cnt
-				srvSummaries = append(srvSummaries, apitypes.ScopeServerSummary{
-					ServerID:  g.ServerID,
-					Access:    acc,
-					ToolCount: cnt,
-				})
-			}
-		}
-		if len(srvSummaries) == 0 && toolCount == 0 && srcLabel == "全局默认" {
-			srcLabel = "无权限"
-		}
-		out = append(out, apitypes.ScopeAgentPreview{
-			Agent:           ag.ID,
-			MatchedRepoKey:  matchedRepo,
-			MatchedAgentKey: matchedAgent,
-			SourceLabel:     srcLabel,
-			ServerCount:     len(srvSummaries),
-			ToolCount:       toolCount,
-			HasWrite:        hasWrite,
-			Servers:         srvSummaries,
-		})
-	}
-	return out
-}
-
-func formatPreviewSourceLabel(p apitypes.ScopeAgentPreview) string {
-	s := strings.TrimSpace(p.SourceLabel)
-	switch s {
-	case "客户端例外", "仓库默认", "无权限":
-		return s
-	case "全局默认":
-		if p.ServerCount == 0 && p.ToolCount == 0 {
-			return "无权限"
-		}
-		return "全局默认"
-	case "repo_agent", "agent_override", "global_agent", "client_override":
-		return "客户端例外"
-	case "repo_default", "repo":
-		return "仓库默认"
-	case "global_default", "global", "default":
-		if p.ServerCount == 0 && p.ToolCount == 0 {
-			return "无权限"
-		}
-		return "全局默认"
-	case "none", "denied", "empty", "unconfigured":
-		return "无权限"
-	}
-	if p.ServerCount == 0 && p.ToolCount == 0 {
-		if p.MatchedAgentKey != "" && p.MatchedAgentKey != "*" {
-			return "客户端例外"
-		}
-		if p.MatchedRepoKey != "" && p.MatchedRepoKey != "*" {
-			return "仓库默认"
-		}
-		return "无权限"
-	}
-	if s != "" {
-		return s
-	}
-	if p.MatchedAgentKey != "" && p.MatchedAgentKey != "*" {
-		return "客户端例外"
-	}
-	if p.MatchedRepoKey != "" && p.MatchedRepoKey != "*" {
-		return "仓库默认"
-	}
-	return "全局默认"
-}
-
-func previewRefreshSignature(state *apitypes.Bootstrap, repoKey, actor string) string {
-	var b strings.Builder
-	b.WriteString(repoKey)
-	b.WriteByte('|')
-	b.WriteString(actor)
-	b.WriteByte('|')
-	for _, r := range state.Scopes.Rules {
-		b.WriteString(r.RepoKey)
-		b.WriteByte(':')
-		b.WriteString(r.AgentKey)
-		b.WriteByte('=')
-		for _, g := range r.Grants {
-			b.WriteString(g.ServerID)
-			b.WriteByte('/')
-			b.WriteString(g.Access)
-			b.WriteByte('/')
-			b.WriteString(strings.Join(g.ToolIDs, ","))
-			b.WriteByte(';')
-		}
-		b.WriteByte('|')
-	}
-	return b.String()
 }
 
 // --- Main Repos View (`仓库绑定`) ---
@@ -443,43 +273,6 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 		if selectedRepo == nil {
 			st.selectedRepoKey = "*"
 		}
-	}
-
-	previewActor := "developer"
-	if state.Access.Shared && state.Access.Actor != "" {
-		previewActor = state.Access.Actor
-	}
-
-	// Trigger backend POST /api/scopes/preview when selection or rules change.
-	sig := previewRefreshSignature(state, st.selectedRepoKey, previewActor)
-	if u.Client != nil && st.previewKey != sig && !st.previewLoading {
-		targetRepoKey := st.selectedRepoKey
-		st.previewKey = sig
-		st.previewLoading = true
-		u.RunAsync(func() error {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			resp, err := u.Client.PreviewScope(ctx, targetRepoKey, previewActor)
-			if err != nil {
-				u.updateUI(func() {
-					st.previewLoading = false
-				})
-				if apiclient.IsUnauthorized(err) {
-					return err
-				}
-				return nil
-			}
-			u.updateUI(func() {
-				st.previewLoading = false
-				if len(resp.Agents) > 0 {
-					if resp.RepoKey == "" {
-						resp.RepoKey = targetRepoKey
-					}
-					st.preview = &resp
-				}
-			})
-			return nil
-		})
 	}
 
 	// Render modals.
@@ -537,7 +330,7 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 	// 2. Master-Detail Split Layout (Left ~280px Flush List + Right Detail Column).
 	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(22).Children(func() {
 		u.renderReposLeftColumn(c, st, state)
-		u.renderReposRightColumn(c, st, state, selectedRepo, previewActor)
+		u.renderReposRightColumn(c, st, state, selectedRepo)
 	})
 }
 
@@ -772,7 +565,6 @@ func (u *DesktopUI) renderReposRightColumn(
 	st *reposPageState,
 	state *apitypes.Bootstrap,
 	selectedRepo *apitypes.Repository,
-	previewActor string,
 ) {
 	repoKey := st.selectedRepoKey
 
@@ -780,14 +572,8 @@ func (u *DesktopUI) renderReposRightColumn(
 		// 1. Detail Header Card
 		u.renderRepoDetailHeaderCard(c, st, state, selectedRepo)
 
-		// 2. Default Services Card: (repoKey, "*")
+		// 2. Default Services Card (repoKey)
 		u.renderRepoDefaultServicesCard(c, st, state, repoKey)
-
-		// 3. Per-Agent Overrides Card: (repoKey, agent)
-		u.renderRepoAgentOverridesCard(c, st, state, repoKey)
-
-		// 4. Six-Client Effective Preview Card (read-only)
-		u.renderRepoSixClientPreviewCard(c, st, state, repoKey, previewActor)
 	})
 }
 
@@ -799,7 +585,7 @@ func (u *DesktopUI) renderRepoDetailHeaderCard(
 ) {
 	SailCard(c, func() {
 		if selectedRepo == nil {
-			SailCardTitle(c, "全局默认", "适用于尚未单独绑定的仓库与客户端兜底规则", func() {
+			SailCardTitle(c, "全局默认", "适用于尚未单独绑定规则的仓库兜底", func() {
 				if state.Scopes.Enforce {
 					SailQuietStatus(c, "强制隔离中", SailSuccessInk, SailInkStrong)
 				} else {
@@ -864,8 +650,8 @@ func (u *DesktopUI) renderRepoDefaultServicesCard(
 	state *apitypes.Bootstrap,
 	repoKey string,
 ) {
-	draft := st.ensureDraft(state.Scopes.Rules, repoKey, "*")
-	_, hasSavedRule := findScopeRule(state.Scopes.Rules, repoKey, "*")
+	draft := st.ensureDraft(state.Scopes.Rules, repoKey)
+	_, hasSavedRule := findScopeRule(state.Scopes.Rules, repoKey)
 	servers := enabledRealServers(state)
 	toolsBySrv := enabledToolsByServer(state)
 
@@ -886,12 +672,12 @@ func (u *DesktopUI) renderRepoDefaultServicesCard(
 
 			if repoKey != "*" && hasSavedRule && !draft.dirty {
 				if SailSmallButton(c.Key("def-inherit-"+repoKey), "恢复继承全局").Disabled(draft.saving).Clicked() {
-					u.deleteScopeRuleAsync(st, repoKey, "*", "已恢复继承全局默认规则")
+					u.deleteScopeRuleAsync(st, repoKey, "已恢复继承全局默认规则")
 				}
 			}
 			if draft.dirty {
 				if SailSmallButton(c.Key("def-reset-"+repoKey), "重置").Disabled(draft.saving).Clicked() {
-					u.resetDraft(state.Scopes.Rules, draft, repoKey, "*")
+					u.resetDraft(state.Scopes.Rules, draft, repoKey)
 				}
 			}
 			saveLbl := "保存"
@@ -900,7 +686,7 @@ func (u *DesktopUI) renderRepoDefaultServicesCard(
 			}
 			canSave := draft.dirty || (repoKey != "*" && !hasSavedRule)
 			if ui.PrimaryButton(c.Key("def-save-"+repoKey), saveLbl).Disabled(!canSave || draft.saving).Clicked() {
-				u.saveDraftRuleAsync(st, draft, repoKey, "*")
+				u.saveDraftRuleAsync(st, draft, repoKey)
 			}
 		})
 
@@ -1152,267 +938,6 @@ func (u *DesktopUI) renderGrantToolSubsetDrawer(
 	})
 }
 
-func (u *DesktopUI) renderRepoAgentOverridesCard(
-	c *ui.Context,
-	st *reposPageState,
-	state *apitypes.Bootstrap,
-	repoKey string,
-) {
-	servers := enabledRealServers(state)
-	toolsBySrv := enabledToolsByServer(state)
-
-	var activeAgents []scopeAgentMeta
-	var availableAgents []scopeAgentMeta
-	for _, ag := range scopeAgents {
-		_, hasSaved := findScopeRule(state.Scopes.Rules, repoKey, ag.ID)
-		d, hasDraft := st.drafts[draftMapKey(repoKey, ag.ID)]
-		if hasSaved || (hasDraft && d.localOnly) {
-			activeAgents = append(activeAgents, ag)
-		} else {
-			availableAgents = append(availableAgents, ag)
-		}
-	}
-
-	note := "全部继承默认规则"
-	if len(activeAgents) > 0 {
-		note = fmt.Sprintf("%d 个例外", len(activeAgents))
-	}
-
-	SailFlushCard(c, func() {
-		SailListCardHeader(c, "客户端例外", note, func() {
-			addOverrideBtn := SailSmallButton(c.Key("add-agent-override-"+repoKey), "+ 添加客户端例外").
-				Disabled(len(availableAgents) == 0)
-			if len(availableAgents) > 0 {
-				addOverrideBtn.PopoverMenuButton(func(menu *ui.Menu) {
-					for _, agItem := range availableAgents {
-						ag := agItem
-						if menu.Item(ag.Name).Chosen() {
-							baseRule, hasBase := findScopeRule(state.Scopes.Rules, repoKey, "*")
-							var seed []apitypes.ServiceGrant
-							if hasBase {
-								seed = cloneGrants(baseRule.Grants)
-							} else if globalRule, ok := findScopeRule(state.Scopes.Rules, "*", "*"); ok {
-								seed = cloneGrants(globalRule.Grants)
-							} else {
-								seed = []apitypes.ServiceGrant{}
-							}
-							st.drafts[draftMapKey(repoKey, ag.ID)] = &ruleDraft{
-								grants:    seed,
-								dirty:     true,
-								localOnly: true,
-								expanded:  true,
-							}
-						}
-					}
-				})
-			}
-		})
-
-		if len(activeAgents) == 0 {
-			ui.Row(c).FillWidth().Padding(16, 20).Children(func() {
-				ui.Textf(c, "暂无客户端例外，%d 个客户端均按默认服务规则生效", len(scopeAgents)).FontSize(12.5).TextColor(SailInkMuted)
-			})
-			return
-		}
-
-		for idx, agItem := range activeAgents {
-			ag := agItem
-			draft := st.ensureDraft(state.Scopes.Rules, repoKey, ag.ID)
-			_, hasSaved := findScopeRule(state.Scopes.Rules, repoKey, ag.ID)
-			isLast := idx == len(activeAgents)-1 && !draft.expanded
-
-			hasRW := false
-			for _, g := range draft.grants {
-				if strings.EqualFold(g.Access, "rw") {
-					hasRW = true
-					break
-				}
-			}
-
-			row := ui.Row(c.Key("ov-row-"+repoKey+"-"+ag.ID)).
-				FillWidth().
-				Padding(12, 20).
-				Gap(12).
-				AlignItems(ui.Center).
-				Justify(ui.SpaceBetween)
-			if !isLast {
-				row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-			}
-
-			row.Children(func() {
-				ui.Row(c).Grow(1).MinWidth(0).Gap(10).AlignItems(ui.Center).Children(func() {
-					if icon, ok := clientIcons[ag.ID]; ok {
-						ui.Image(c, icon).Size(20, 20).TextColor(SailInkStrong)
-					}
-					ui.Text(c, ag.Name).FontSize(13.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-
-					sumTxt := "无服务"
-					if len(draft.grants) > 0 {
-						sumTxt = fmt.Sprintf("%d 个服务", len(draft.grants))
-					}
-					ui.Text(c, sumTxt).FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted).SingleLine()
-					if hasRW {
-						SailBadge(c, "RW", ToneWarning)
-					}
-					if draft.localOnly && !hasSaved {
-						ui.Text(c, "未保存").FontSize(11.5).TextColor(SailAccent).SingleLine()
-					}
-				})
-
-				ui.Row(c).Shrink(0).Gap(8).AlignItems(ui.Center).Children(func() {
-					expLbl := "编辑"
-					if draft.expanded {
-						expLbl = "收起"
-					}
-					if SailSmallButton(c.Key("ov-toggle-"+ag.ID), expLbl).Clicked() {
-						draft.expanded = !draft.expanded
-					}
-
-					if SailSmallButton(c.Key("ov-revert-"+ag.ID), "恢复继承").Disabled(draft.saving).Clicked() {
-						if !hasSaved {
-							delete(st.drafts, draftMapKey(repoKey, ag.ID))
-						} else {
-							u.deleteScopeRuleAsync(st, repoKey, ag.ID, "已恢复 "+ag.Name+" 继承默认规则")
-						}
-					}
-				})
-			})
-
-			if draft.expanded {
-				editorWrap := ui.Column(c.Key("ov-editor-" + repoKey + "-" + ag.ID)).
-					FillWidth().
-					Background(SailBgSubtle)
-				if idx < len(activeAgents)-1 {
-					editorWrap.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-				}
-				editorWrap.Children(func() {
-					ui.Row(c).
-						FillWidth().
-						Padding(10, 20).
-						BorderWidth(0, 0, 1, 0).
-						BorderColor(SailDivider).
-						AlignItems(ui.Center).
-						Justify(ui.SpaceBetween).
-						Children(func() {
-							u.renderAddServiceToDraftMenu(c.Key("ov-add-svc-"+ag.ID), draft, servers)
-							ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-								if draft.dirty && hasSaved {
-									if SailSmallButton(c.Key("ov-reset-"+ag.ID), "重置").Disabled(draft.saving).Clicked() {
-										u.resetDraft(state.Scopes.Rules, draft, repoKey, ag.ID)
-									}
-								}
-								saveLbl := "保存例外"
-								if draft.saving {
-									saveLbl = "保存中…"
-								}
-								if ui.PrimaryButton(c.Key("ov-save-"+ag.ID), saveLbl).
-									Disabled((!draft.dirty && hasSaved) || draft.saving).
-									Clicked() {
-									u.saveDraftRuleAsync(st, draft, repoKey, ag.ID)
-								}
-							})
-						})
-
-					u.renderServiceGrantList(c.Key("ov-grants-"+ag.ID), draft, state, toolsBySrv)
-				})
-			}
-		}
-	})
-}
-
-func (u *DesktopUI) renderRepoSixClientPreviewCard(
-	c *ui.Context,
-	st *reposPageState,
-	state *apitypes.Bootstrap,
-	repoKey string,
-	previewActor string,
-) {
-	var rows []apitypes.ScopeAgentPreview
-	if st.preview != nil && st.preview.RepoKey == repoKey && len(st.preview.Agents) > 0 {
-		rows = st.preview.Agents
-	} else {
-		rows = computeLocalScopePreview(state, repoKey, previewActor)
-	}
-
-	SailFlushCard(c, func() {
-		SailListCardHeader(c, "六端生效预览", "身份 · "+previewActor, nil)
-
-		for idx, item := range rows {
-			p := item
-			isLast := idx == len(rows)-1
-			row := ui.Row(c.Key("preview-row-"+p.Agent)).
-				FillWidth().
-				Padding(12, 20).
-				Gap(12).
-				AlignItems(ui.Center).
-				Justify(ui.SpaceBetween)
-			if !isLast {
-				row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-			}
-
-			row.Children(func() {
-				// Anchor 1: Client Icon + Name
-				ui.Row(c).Width(164).Shrink(0).Gap(10).AlignItems(ui.Center).Children(func() {
-					if icon, ok := clientIcons[p.Agent]; ok {
-						ui.Image(c, icon).Size(20, 20).TextColor(SailInkStrong)
-					}
-					ui.Text(c, agentDisplayName(p.Agent)).FontSize(13.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-				})
-
-				// Anchor 2: Rule Source + Effective Service/Tool Counts
-				srcLabel := formatPreviewSourceLabel(p)
-				ui.Row(c).Grow(1).MinWidth(0).Gap(12).AlignItems(ui.Center).Children(func() {
-					srcCol := SailInkMuted
-					if srcLabel == "客户端例外" {
-						srcCol = SailAccent
-					} else if srcLabel == "无权限" {
-						srcCol = SailInkFaint
-					}
-					ui.Text(c, srcLabel).Width(84).Shrink(0).FontSize(12).FontWeight(500).TextColor(srcCol).SingleLine()
-
-					countCol := SailInkBody
-					if p.ToolCount == 0 {
-						countCol = SailInkFaint
-					}
-					ui.Textf(c, "%d 服务 · %d 工具", p.ServerCount, p.ToolCount).
-						FontSize(12.5).
-						FontFeatures("tnum").
-						TextColor(countCol).
-						SingleLine()
-				})
-
-				// Anchor 3: RO/RW Risk Status + ↗ Jump to Playground
-				ui.Row(c).Shrink(0).Gap(10).AlignItems(ui.Center).Children(func() {
-					if p.HasWrite {
-						SailBadge(c, "RW", ToneWarning)
-					} else if p.ToolCount > 0 {
-						ui.Text(c, "只读").FontSize(12).TextColor(SailInkMuted).SingleLine()
-					} else {
-						ui.Text(c, "无权限").FontSize(12).TextColor(SailInkFaint).SingleLine()
-					}
-
-					jumpBtn := ui.ButtonBase(c.Key("preview-jump-"+p.Agent)).
-						Size(28, 28).
-						Radius(6).
-						Center().
-						Cursor(ui.CursorPointer).
-						Label("在路由沙盒模拟 " + agentDisplayName(p.Agent)).
-						Tooltip("在路由沙盒模拟此作用域")
-					if jumpBtn.Hovered() {
-						jumpBtn.Background(SailBgMuted)
-					}
-					jumpBtn.Children(func() {
-						ui.Icon(c, clientPathArrow).Size(15, 15).TextColor(SailInkMuted)
-					})
-					if jumpBtn.Clicked() {
-						u.OpenPlaygroundScope(repoKey, p.Agent)
-					}
-				})
-			})
-		}
-	})
-}
-
 // --- Async Mutations ---
 
 func (u *DesktopUI) toggleScopeEnforceMode(st *reposPageState, enforce bool) {
@@ -1430,7 +955,6 @@ func (u *DesktopUI) toggleScopeEnforceMode(st *reposPageState, enforce bool) {
 		_ = u.RefreshSync()
 		u.updateUI(func() {
 			st.modeBusy = false
-			st.previewKey = ""
 		})
 		if enforce {
 			u.Notify("已启用仓库隔离拦截")
@@ -1511,7 +1035,6 @@ func (u *DesktopUI) saveRepoInputAsync(st *reposPageState, in apitypes.SaveRepos
 		if saved.ID != "" {
 			st.selectedRepoKey = saved.ID
 		}
-		st.previewKey = ""
 	})
 	u.Notify("已绑定仓库 " + saved.Name)
 	return nil
@@ -1535,20 +1058,15 @@ func (u *DesktopUI) deleteBoundRepository(st *reposPageState, repoID, repoName s
 			if st.selectedRepoKey == repoID {
 				st.selectedRepoKey = "*"
 			}
-			for k := range st.drafts {
-				if strings.HasPrefix(k, repoID+"::") {
-					delete(st.drafts, k)
-				}
-			}
-			st.previewKey = ""
+			delete(st.drafts, repoID)
 		})
 		u.Notify("已移除仓库绑定 " + repoName)
 		return nil
 	})
 }
 
-func (u *DesktopUI) resetDraft(rules []apitypes.ScopeRule, draft *ruleDraft, repoKey, agentKey string) {
-	if saved, ok := findScopeRule(rules, repoKey, agentKey); ok {
+func (u *DesktopUI) resetDraft(rules []apitypes.ScopeRule, draft *ruleDraft, repoKey string) {
+	if saved, ok := findScopeRule(rules, repoKey); ok {
 		draft.grants = cloneGrants(saved.Grants)
 	} else {
 		draft.grants = []apitypes.ServiceGrant{}
@@ -1557,15 +1075,14 @@ func (u *DesktopUI) resetDraft(rules []apitypes.ScopeRule, draft *ruleDraft, rep
 	draft.expandedServerID = ""
 }
 
-func (u *DesktopUI) saveDraftRuleAsync(st *reposPageState, draft *ruleDraft, repoKey, agentKey string) {
+func (u *DesktopUI) saveDraftRuleAsync(st *reposPageState, draft *ruleDraft, repoKey string) {
 	if draft.saving || u.Client == nil {
 		return
 	}
 	draft.saving = true
 	rule := apitypes.ScopeRule{
-		RepoKey:  repoKey,
-		AgentKey: agentKey,
-		Grants:   cloneGrants(draft.grants),
+		RepoKey: repoKey,
+		Grants:  cloneGrants(draft.grants),
 	}
 	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -1579,29 +1096,26 @@ func (u *DesktopUI) saveDraftRuleAsync(st *reposPageState, draft *ruleDraft, rep
 		u.updateUI(func() {
 			draft.saving = false
 			draft.dirty = false
-			draft.localOnly = false
 			draft.grants = cloneGrants(saved.Grants)
-			st.previewKey = ""
 		})
 		u.Notify("作用域规则已保存")
 		return nil
 	})
 }
 
-func (u *DesktopUI) deleteScopeRuleAsync(st *reposPageState, repoKey, agentKey, toastMsg string) {
+func (u *DesktopUI) deleteScopeRuleAsync(st *reposPageState, repoKey, toastMsg string) {
 	if u.Client == nil {
 		return
 	}
-	key := draftMapKey(repoKey, agentKey)
-	if d, ok := st.drafts[key]; ok {
+	if d, ok := st.drafts[repoKey]; ok {
 		d.saving = true
 	}
 	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		if err := u.Client.DeleteScopeRule(ctx, repoKey, agentKey); err != nil {
+		if err := u.Client.DeleteScopeRule(ctx, repoKey); err != nil {
 			u.updateUI(func() {
-				if d, ok := st.drafts[key]; ok {
+				if d, ok := st.drafts[repoKey]; ok {
 					d.saving = false
 				}
 			})
@@ -1609,8 +1123,7 @@ func (u *DesktopUI) deleteScopeRuleAsync(st *reposPageState, repoKey, agentKey, 
 		}
 		_ = u.RefreshSync()
 		u.updateUI(func() {
-			delete(st.drafts, key)
-			st.previewKey = ""
+			delete(st.drafts, repoKey)
 		})
 		u.Notify(toastMsg)
 		return nil

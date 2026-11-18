@@ -128,21 +128,17 @@ type ScopeRuleRepository[T any] struct{ db DBTX }
 
 func ScopeRules[T any](db DBTX) ScopeRuleRepository[T] { return ScopeRuleRepository[T]{db} }
 func (r ScopeRuleRepository[T]) List() ([]T, error) {
-	return listDefinitions[T](r.db, readLabels{query: "query scope_rules", decode: "decode scope_rule"}, "SELECT definition FROM scope_rules ORDER BY repo_key,agent_key")
+	return listDefinitions[T](r.db, readLabels{query: "query scope_rules", decode: "decode scope_rule"}, "SELECT definition FROM scope_rules ORDER BY repo_key")
 }
-func (r ScopeRuleRepository[T]) Put(repo, agent string, value T) error {
+func (r ScopeRuleRepository[T]) Put(repo string, value T) error {
 	raw, err := marshalDefinition(value)
 	if err != nil {
 		return err
 	}
-	_, err = r.db.Exec("INSERT INTO scope_rules(repo_key,agent_key,definition) VALUES(?,?,?) ON CONFLICT(repo_key,agent_key) DO UPDATE SET definition=excluded.definition", repo, agent, raw)
+	_, err = r.db.Exec("INSERT INTO scope_rules(repo_key,definition) VALUES(?,?) ON CONFLICT(repo_key) DO UPDATE SET definition=excluded.definition", repo, raw)
 	return err
 }
-func (r ScopeRuleRepository[T]) Delete(repo, agent string) error {
-	_, err := r.db.Exec("DELETE FROM scope_rules WHERE repo_key=? AND agent_key=?", repo, agent)
-	return err
-}
-func (r ScopeRuleRepository[T]) DeleteRepository(repo string) error {
+func (r ScopeRuleRepository[T]) Delete(repo string) error {
 	_, err := r.db.Exec("DELETE FROM scope_rules WHERE repo_key=?", repo)
 	return err
 }

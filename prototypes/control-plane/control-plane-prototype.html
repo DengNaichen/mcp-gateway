@@ -1908,11 +1908,9 @@
     let selectedScopeRepoKey = "repo-gw";
     let expandedSubsetKey = "";
     let reposViewMode = "matrix"; // matrix | detail
-    let expandedOverrideAgents = { cursor: true };
     let repoDraftDirty = false;
     let confirmRemoveRepoId = null;
     let playgroundSimRepo = "";
-    let playgroundSimAgent = "*";
     let playgroundIntent = "排查 prod-core 下支付服务 Pod 频繁重启的原因";
     let playgroundContextOpen = false;
     let playgroundContext = "";
@@ -1958,26 +1956,16 @@
     ];
 
     let SCOPE_RULES = [
-      { repo_key: "*", agent_key: "*", grants: [] },
+      { repo_key: "*", grants: [] },
       {
         repo_key: "repo-gw",
-        agent_key: "*",
         grants: [
           { server_id: "github", access: "rw", tool_ids: [] },
           { server_id: "k8s", access: "ro", tool_ids: [] }
         ]
       },
       {
-        repo_key: "repo-gw",
-        agent_key: "cursor",
-        grants: [
-          { server_id: "github", access: "ro", tool_ids: ["github.list_pull_requests", "github.get_file_contents"] },
-          { server_id: "k8s", access: "ro", tool_ids: [] }
-        ]
-      },
-      {
         repo_key: "repo-checkout",
-        agent_key: "*",
         grants: [
           { server_id: "k8s", access: "ro", tool_ids: [] }
         ]
@@ -2030,11 +2018,11 @@
     };
 
     const LOGS = [
-      { id: "ev-101", kind: "discover", method: "tools/call", metaTool: "discover_tools", model: "gpt-6-luna", status: "selected", title: "排查 prod-core 下支付服务 Pod 频繁重启原因", actor: "developer", ms: 42, time: "17:14:08", date: "2026-11-17", eligible: 5, tokens: "142 tok", tokensIn: 112, tokensOut: 30, scope: { agent: "codex", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "mcp-gateway · *", status: "matched" }, tools: [{ id: "k8s.describe_pod_events", rw: false, reason: "匹配 Kubernetes Pod 重启与 Warning 事件诊断" }] },
-      { id: "ev-102", kind: "discover", method: "tools/call", metaTool: "discover_tools", model: "gpt-6-luna", status: "no_match", title: "查询 Terraform 状态锁与变更计划", actor: "developer", ms: 8, time: "17:13:20", date: "2026-11-17", eligible: 0, reason: "当前仓库尚未绑定上游服务，命中全局默认 (*, *) -> 0 候选工具。", scope: { agent: "codex", repo_id: "", repo_name: "", root: "/Users/dev/Developer/infra-terraform", matched_rule: "* · *", status: "unconfigured" } },
-      { id: "ev-103", kind: "invoke", method: "tools/call", metaTool: "invoke_tool", model: "—", status: "error", title: "github.create_or_update_file", actor: "developer", ms: 6, time: "17:11:04", date: "2026-11-17", err: "403 scope_denied: Cursor 例外规则仅授予 GitHub MCP 只读 (RO) 权限", scope: { agent: "cursor", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "mcp-gateway · cursor", status: "matched" } },
-      { id: "ev-104", kind: "invoke", method: "tools/call", metaTool: "invoke_tool", model: "—", status: "selected", title: "github.list_pull_requests", actor: "developer", ms: 168, time: "17:08:41", date: "2026-11-17", eligible: 1, tokens: "96 tok", tokensIn: 48, tokensOut: 48, scope: { agent: "claude", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "mcp-gateway · *", status: "matched" }, tools: [{ id: "github.list_pull_requests", rw: false, reason: "直接调用已授权只读工具" }] },
-      { id: "ev-105", kind: "discover", method: "tools/call", metaTool: "discover_tools", model: "gpt-6-luna", status: "selected", title: "查看 checkout 服务最近 50 行错误日志", actor: "developer", ms: 38, time: "17:04:19", date: "2026-11-17", eligible: 4, tokens: "118 tok", tokensIn: 88, tokensOut: 30, scope: { agent: "claude", repo_id: "repo-checkout", repo_name: "checkout-service", root: "/Users/dev/Developer/checkout-service", matched_rule: "checkout-service · *", status: "matched" }, tools: [{ id: "k8s.get_pod_logs", rw: false, reason: "匹配容器日志检索工具" }] }
+      { id: "ev-101", kind: "discover", method: "tools/call", metaTool: "discover_tools", model: "gpt-6-luna", status: "selected", title: "排查 prod-core 下支付服务 Pod 频繁重启原因", actor: "developer", ms: 42, time: "17:14:08", date: "2026-11-17", eligible: 5, tokens: "142 tok", tokensIn: 112, tokensOut: 30, scope: { agent: "codex", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "repo-gw", status: "matched" }, tools: [{ id: "k8s.describe_pod_events", rw: false, reason: "匹配 Kubernetes Pod 重启与 Warning 事件诊断" }] },
+      { id: "ev-102", kind: "discover", method: "tools/call", metaTool: "discover_tools", model: "gpt-6-luna", status: "no_match", title: "查询 Terraform 状态锁与变更计划", actor: "developer", ms: 8, time: "17:13:20", date: "2026-11-17", eligible: 0, reason: "当前仓库尚未绑定上游服务，命中全局默认 * -> 0 候选工具。", scope: { agent: "codex", repo_id: "", repo_name: "", root: "/Users/dev/Developer/infra-terraform", matched_rule: "*", status: "unconfigured" } },
+      { id: "ev-103", kind: "invoke", method: "tools/call", metaTool: "invoke_tool", model: "—", status: "error", title: "k8s.restart_deployment", actor: "developer", ms: 6, time: "17:11:04", date: "2026-11-17", err: "403 scope_denied: 仓库规则仅授予 Kubernetes MCP 只读 (RO) 权限", scope: { agent: "cursor", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "repo-gw", status: "matched" } },
+      { id: "ev-104", kind: "invoke", method: "tools/call", metaTool: "invoke_tool", model: "—", status: "selected", title: "github.list_pull_requests", actor: "developer", ms: 168, time: "17:08:41", date: "2026-11-17", eligible: 1, tokens: "96 tok", tokensIn: 48, tokensOut: 48, scope: { agent: "claude", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "repo-gw", status: "matched" }, tools: [{ id: "github.list_pull_requests", rw: false, reason: "直接调用已授权只读工具" }] },
+      { id: "ev-105", kind: "discover", method: "tools/call", metaTool: "discover_tools", model: "gpt-6-luna", status: "selected", title: "查看 checkout 服务最近 50 行错误日志", actor: "developer", ms: 38, time: "17:04:19", date: "2026-11-17", eligible: 4, tokens: "118 tok", tokensIn: 88, tokensOut: 30, scope: { agent: "claude", repo_id: "repo-checkout", repo_name: "checkout-service", root: "/Users/dev/Developer/checkout-service", matched_rule: "repo-checkout", status: "matched" }, tools: [{ id: "k8s.get_pod_logs", rw: false, reason: "匹配容器日志检索工具" }] }
     ];
 
     function esc(s) {
@@ -3343,34 +3331,29 @@
       render();
     }
 
-    function findScopeRule(repoKey, agentKey) {
-      return SCOPE_RULES.find(r => r.repo_key === repoKey && r.agent_key === agentKey) || null;
+    function findScopeRule(repoKey) {
+      return SCOPE_RULES.find(r => r.repo_key === repoKey) || null;
     }
 
-    function ensureScopeRule(repoKey, agentKey, seedGrants) {
-      let r = findScopeRule(repoKey, agentKey);
+    function ensureScopeRule(repoKey, seedGrants) {
+      let r = findScopeRule(repoKey);
       if (!r) {
-        r = { repo_key: repoKey, agent_key: agentKey, grants: JSON.parse(JSON.stringify(seedGrants || [])) };
+        r = { repo_key: repoKey, grants: JSON.parse(JSON.stringify(seedGrants || [])) };
         SCOPE_RULES.push(r);
       }
       return r;
     }
 
-    function evaluateEffectiveScope(repoKey, agentId) {
+    function evaluateEffectiveScope(repoKey) {
       const candidates = repoKey === "*"
-        ? [
-            { rk: "*", ak: agentId, label: "全局客户端例外" },
-            { rk: "*", ak: "*", label: "全局默认" }
-          ]
+        ? [{ rk: "*", label: "全局默认" }]
         : [
-            { rk: repoKey, ak: agentId, label: "客户端例外" },
-            { rk: repoKey, ak: "*", label: "仓库默认" },
-            { rk: "*", ak: agentId, label: "全局客户端默认" },
-            { rk: "*", ak: "*", label: "全局默认" }
+            { rk: repoKey, label: "仓库默认" },
+            { rk: "*", label: "全局默认" }
           ];
-      let matched = { rk: "*", ak: "*", label: "全局默认", grants: [] };
+      let matched = { rk: "*", label: "全局默认", grants: [] };
       for (const c of candidates) {
-        const rule = findScopeRule(c.rk, c.ak);
+        const rule = findScopeRule(c.rk);
         if (rule) {
           matched = { ...c, grants: rule.grants };
           break;
@@ -3387,7 +3370,6 @@
       }
       return {
         matched_repo_key: matched.rk,
-        matched_agent_key: matched.ak,
         source_label: matched.grants.length === 0 ? `${matched.label} · 无权限` : matched.label,
         server_count: matched.grants.length,
         tool_count: toolCount,
@@ -3395,8 +3377,8 @@
       };
     }
 
-    function selectOnlyReadOnlyTools(repoKey, agentKey, serverId) {
-      const rule = findScopeRule(repoKey, agentKey);
+    function selectOnlyReadOnlyTools(repoKey, serverId) {
+      const rule = findScopeRule(repoKey);
       const g = rule && rule.grants.find(x => x.server_id === serverId);
       if (!g) return;
       const all = SERVICE_TOOLS[serverId] || [];
@@ -3406,16 +3388,16 @@
       render();
     }
 
-    function renderGrantRows(repoKey, agentKey, grants) {
+    function renderGrantRows(repoKey, grants) {
       if (!grants.length) {
-        return `<div style="padding:18px 20px;font-size:12.5px;color:var(--ink-muted);">${repoKey === "*" && agentKey === "*" ? "默认拒绝全部上游服务（未绑定新仓库 0 工具）" : "当前规则未开放任何上游服务（0 工具）"}</div>`;
+        return `<div style="padding:18px 20px;font-size:12.5px;color:var(--ink-muted);">${repoKey === "*" ? "默认拒绝全部上游服务（未绑定新仓库 0 工具）" : "当前规则未开放任何上游服务（0 工具）"}</div>`;
       }
       return grants.map(g => {
         const srv = SERVICES.find(s => s.id === g.server_id) || { id: g.server_id, name: g.server_id, desc: "" };
         const parsed = parseStructuredDescription(srv.desc);
         const allTools = SERVICE_TOOLS[g.server_id] || [];
         const subsetCount = (g.tool_ids && g.tool_ids.length) ? `${g.tool_ids.length}/${allTools.length} 工具` : `全部 (${allTools.length})`;
-        const drawerKey = `${repoKey}:${agentKey}:${g.server_id}`;
+        const drawerKey = `${repoKey}:${g.server_id}`;
         const isOpen = expandedSubsetKey === drawerKey;
         return `
           <div>
@@ -3431,10 +3413,10 @@
               <div class="row-right">
                 <button class="btn btn-sm" type="button" onclick="expandedSubsetKey=(expandedSubsetKey==='${drawerKey}'?'':'${drawerKey}');render();">${subsetCount}</button>
                 <div class="segmented">
-                  <button class="seg-btn ${g.access==="ro"?"active":""}" type="button" onclick="setGrantAccess('${repoKey}','${agentKey}','${g.server_id}','ro')">只读</button>
-                  <button class="seg-btn ${g.access==="rw"?"active":""}" type="button" onclick="setGrantAccess('${repoKey}','${agentKey}','${g.server_id}','rw')">读写</button>
+                  <button class="seg-btn ${g.access==="ro"?"active":""}" type="button" onclick="setGrantAccess('${repoKey}','${g.server_id}','ro')">只读</button>
+                  <button class="seg-btn ${g.access==="rw"?"active":""}" type="button" onclick="setGrantAccess('${repoKey}','${g.server_id}','rw')">读写</button>
                 </div>
-                <button class="btn btn-sm" type="button" onclick="removeGrant('${repoKey}','${agentKey}','${g.server_id}')">移除</button>
+                <button class="btn btn-sm" type="button" onclick="removeGrant('${repoKey}','${g.server_id}')">移除</button>
               </div>
             </div>
             ${isOpen ? `
@@ -3442,8 +3424,8 @@
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
                   <span class="quiet-meta" style="font-size:11.5px;">勾选允许暴露的工具子集（全选即不限子集）</span>
                   <div style="display:flex;gap:10px;align-items:center;">
-                    <button class="raw-toggle" type="button" style="color:var(--accent);" onclick="selectOnlyReadOnlyTools('${repoKey}','${agentKey}','${g.server_id}')">仅选只读工具</button>
-                    ${g.tool_ids && g.tool_ids.length ? `<button class="raw-toggle" type="button" style="color:var(--accent);" onclick="resetGrantTools('${repoKey}','${agentKey}','${g.server_id}')">恢复全部工具</button>` : ""}
+                    <button class="raw-toggle" type="button" style="color:var(--accent);" onclick="selectOnlyReadOnlyTools('${repoKey}','${g.server_id}')">仅选只读工具</button>
+                    ${g.tool_ids && g.tool_ids.length ? `<button class="raw-toggle" type="button" style="color:var(--accent);" onclick="resetGrantTools('${repoKey}','${g.server_id}')">恢复全部工具</button>` : ""}
                   </div>
                 </div>
                 ${allTools.map(t => {
@@ -3452,7 +3434,7 @@
                   return `
                     <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;padding:4px 0;cursor:pointer;">
                       <span style="display:flex;align-items:flex-start;gap:8px;min-width:0;">
-                        <input type="checkbox" style="margin-top:3px;" ${checked ? "checked" : ""} onchange="toggleGrantTool('${repoKey}','${agentKey}','${g.server_id}','${t.id}')" />
+                        <input type="checkbox" style="margin-top:3px;" ${checked ? "checked" : ""} onchange="toggleGrantTool('${repoKey}','${g.server_id}','${t.id}')" />
                         <span style="min-width:0;">
                           <span class="mono" style="font-weight:600;color:${blockedByRo ? "var(--ink-faint)" : "var(--ink-strong)"};">${esc(t.name)}</span>
                           ${t.desc ? `<div style="font-size:11.5px;color:var(--ink-muted);">${esc(t.desc)}</div>` : ""}
@@ -3472,12 +3454,10 @@
     function renderRepos() {
       const selectedRepo = selectedScopeRepoKey === "*" ? null : (REPOS.find(r => r.id === selectedScopeRepoKey) || REPOS[0] || null);
       const repoKey = selectedRepo ? selectedRepo.id : "*";
-      const globalDefaultRule = findScopeRule("*", "*") || { grants: [] };
-      const baseRule = findScopeRule(repoKey, "*");
+      const globalDefaultRule = findScopeRule("*") || { grants: [] };
+      const baseRule = findScopeRule(repoKey);
       const baseGrants = baseRule ? baseRule.grants : [];
       const unboundServices = getRealServices().filter(s => !baseGrants.some(g => g.server_id === s.id));
-      const agentOverrides = SCOPE_RULES.filter(r => r.repo_key === repoKey && r.agent_key !== "*");
-      const availableOverrideAgents = AGENTS.filter(a => !agentOverrides.some(r => r.agent_key === a.id));
 
       return `
         <div class="section-header">
@@ -3518,7 +3498,7 @@
             ${REPOS.length === 0 ? `
               <div style="padding:14px;"><div class="sail-empty"><div style="font-size:12.5px;color:var(--ink-muted);">尚未绑定仓库</div></div></div>
             ` : REPOS.map(r => {
-              const rRule = findScopeRule(r.id, "*");
+              const rRule = findScopeRule(r.id);
               const cnt = rRule ? `${rRule.grants.length} 服务` : `继承 ${globalDefaultRule.grants.length}`;
               const shortRemote = r.remote_hint ? r.remote_hint.replace(/^github\.com\//, "") : "本地仓库";
               const popOpen = openPopoverKey === `repo-${r.id}`;
@@ -3571,7 +3551,7 @@
                     <h2 style="font-size:16px;font-weight:700;color:var(--ink-strong);margin:0;">${selectedRepo ? esc(selectedRepo.name) : "全局默认"}</h2>
                     ${selectedRepo && selectedRepo.remote_hint ? `<span class="quiet-meta mono">${esc(selectedRepo.remote_hint)}</span>` : ""}
                   </div>
-                  ${!selectedRepo ? `<div class="quiet-meta">适用于尚未单独绑定的仓库与客户端兜底规则</div>` : ""}
+                  ${!selectedRepo ? `<div class="quiet-meta">适用于尚未单独绑定规则的仓库兜底</div>` : ""}
                 </div>
                 ${selectedRepo ? `
                   <div style="display:flex;gap:8px;">
@@ -3596,7 +3576,7 @@
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                   ${unboundServices.length ? `
-                    <select class="select-sm" onchange="if(this.value){addGrant('${repoKey}','*',this.value);this.value='';}">
+                    <select class="select-sm" onchange="if(this.value){addGrant('${repoKey}',this.value);this.value='';}">
                       <option value="">+ 添加服务…</option>
                       ${unboundServices.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}
                     </select>
@@ -3608,80 +3588,7 @@
                   ` : `<button class="btn btn-primary btn-sm" type="button" onclick="showToast('已保存作用域配置')">保存</button>`}
                 </div>
               </div>
-              ${renderGrantRows(repoKey, "*", baseGrants)}
-            </div>
-
-            <div class="card-flush">
-              <div class="card-header" style="padding:14px 20px;border-bottom:1px solid var(--divider);">
-                <h2 class="card-title">客户端例外</h2>
-                <div>
-                  ${availableOverrideAgents.length ? `
-                    <select class="select-sm" onchange="if(this.value){addAgentOverride('${repoKey}',this.value);this.value='';}">
-                      <option value="">+ 添加客户端例外…</option>
-                      ${availableOverrideAgents.map(a => `<option value="${a.id}">${esc(a.label)}</option>`).join("")}
-                    </select>
-                  ` : `<span class="quiet-meta">5 端均已单独覆盖</span>`}
-                </div>
-              </div>
-              ${agentOverrides.length === 0
-                ? `<div style="padding:16px 20px;font-size:12.5px;color:var(--ink-muted);">无客户端例外，5 个 Coding Agent 统一继承上方默认服务。</div>`
-                : agentOverrides.map(ov => {
-                    const agMeta = AGENTS.find(a => a.id === ov.agent_key) || { id: ov.agent_key, label: ov.agent_key };
-                    const ovUnbound = getRealServices().filter(s => !ov.grants.some(g => g.server_id === s.id));
-                    const isOpen = !!expandedOverrideAgents[ov.agent_key];
-                    const hasRw = ov.grants.some(g => g.access === "rw");
-                    return `
-                      <div style="border-bottom:1px solid var(--divider);">
-                        <div style="padding:12px 20px;background:var(--bg-subtle);display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer;" onclick="expandedOverrideAgents['${ov.agent_key}']=!expandedOverrideAgents['${ov.agent_key}'];render();">
-                          <div style="display:flex;align-items:center;gap:8px;">
-                            ${clientBrandIcon(ov.agent_key, 20)}
-                            <strong style="font-size:13px;color:var(--ink-strong);">${esc(agMeta.label)}</strong>
-                            <span class="quiet-meta">${ov.grants.length} 服务</span>
-                            ${hasRw ? `<span class="badge badge-rw">RW</span>` : ""}
-                          </div>
-                          <div style="display:flex;gap:8px;align-items:center;" onclick="event.stopPropagation();">
-                            ${isOpen && ovUnbound.length ? `
-                              <select class="select-sm" onchange="if(this.value){addGrant('${repoKey}','${ov.agent_key}',this.value);this.value='';}">
-                                <option value="">+ 服务…</option>
-                                ${ovUnbound.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}
-                              </select>
-                            ` : ""}
-                            <button class="btn btn-sm" type="button" onclick="removeAgentOverride('${repoKey}','${ov.agent_key}')">恢复继承</button>
-                            <button class="btn btn-sm" type="button" onclick="expandedOverrideAgents['${ov.agent_key}']=!expandedOverrideAgents['${ov.agent_key}'];render();">${isOpen ? "收起" : "编辑"}</button>
-                          </div>
-                        </div>
-                        ${isOpen ? `<div style="border-top:1px solid var(--divider);">${renderGrantRows(repoKey, ov.agent_key, ov.grants)}</div>` : ""}
-                      </div>
-                    `;
-                  }).join("")
-              }
-            </div>
-
-            <div class="card-flush">
-              <div class="card-header" style="padding:14px 20px;border-bottom:1px solid var(--divider);">
-                <h2 class="card-title">六端生效预览</h2>
-                <span class="quiet-meta">身份 · developer</span>
-              </div>
-              ${AGENTS.map(ag => {
-                const eff = evaluateEffectiveScope(repoKey, ag.id);
-                const srcColor = eff.matched_agent_key !== "*" ? "color:var(--accent);" : (eff.server_count === 0 ? "color:var(--ink-faint);" : "color:var(--ink-muted);");
-                return `
-                  <div class="hairline-row" style="cursor:default;">
-                    <div class="row-main">
-                      <div class="row-title-line" style="gap:10px;">
-                        ${clientBrandIcon(ag.id, 20)}
-                        <span class="row-name" style="font-family:var(--sans);">${esc(ag.label)}</span>
-                        <span style="font-size:12px;font-weight:500;${srcColor}">${esc(eff.source_label)}</span>
-                      </div>
-                    </div>
-                    <div class="row-right">
-                      <span class="quiet-meta">${eff.server_count} 服务 · ${eff.tool_count} 工具</span>
-                      ${eff.has_write ? `<span class="badge badge-rw">RW</span>` : `<span class="quiet-meta">${eff.tool_count > 0 ? "只读" : "无权限"}</span>`}
-                      <button class="btn-icon" type="button" title="在路由沙盒中测试" onclick="jumpToPlaygroundWithScope('${repoKey}','${ag.id}')">${svgIcon("arrowUpRight", 14)}</button>
-                    </div>
-                  </div>
-                `;
-              }).join("")}
+              ${renderGrantRows(repoKey, baseGrants)}
             </div>
           </div>
         </div>`}
@@ -3706,10 +3613,10 @@
     }
 
     function toggleRepoMatrixGrant(repoKey, serverId) {
-      let rule = findScopeRule(repoKey, "*");
+      let rule = findScopeRule(repoKey);
       if (!rule) {
-        const global = findScopeRule("*", "*");
-        rule = { repo_key: repoKey, agent_key: "*", grants: JSON.parse(JSON.stringify(global ? global.grants : [])) };
+        const global = findScopeRule("*");
+        rule = { repo_key: repoKey, grants: JSON.parse(JSON.stringify(global ? global.grants : [])) };
         SCOPE_RULES.push(rule);
       }
       const has = rule.grants.some(g => g.server_id === serverId);
@@ -3765,7 +3672,7 @@
             </thead>
             <tbody>
               ${rowsData.map(row => {
-                const rule = findScopeRule(row.id, "*");
+                const rule = findScopeRule(row.id);
                 const grants = rule ? rule.grants : globalDefaultRule.grants;
                 return `
                   <tr>
@@ -4303,7 +4210,7 @@
     function renderPlayground() {
       const sample = TOOLS[1];
       const eff = playgroundSimRepo
-        ? evaluateEffectiveScope(playgroundSimRepo, playgroundSimAgent === "*" ? "codex" : playgroundSimAgent)
+        ? evaluateEffectiveScope(playgroundSimRepo)
         : { tool_count: TOOLS.filter(t => t.enabled && (playgroundIncludeDemo || !t.demo) && (!playgroundServiceScope || t.serverId === playgroundServiceScope)).length, source_label: "管理员全量" };
       const activeM = (typeof savedModels !== "undefined" && savedModels.find(m => m.active)) || null;
 
@@ -4354,10 +4261,6 @@
                     <option value="" ${playgroundSimRepo === "" ? "selected" : ""}>仓库：管理员全量</option>
                     <option value="*" ${playgroundSimRepo === "*" ? "selected" : ""}>仓库：未绑定新仓库 (*)</option>
                     ${REPOS.map(r => `<option value="${r.id}" ${playgroundSimRepo === r.id ? "selected" : ""}>仓库：${esc(r.name)}</option>`).join("")}
-                  </select>
-                  <select class="select-sm" onchange="playgroundSimAgent=this.value;if(!playgroundSimRepo&&this.value!=='*')playgroundSimRepo='*';render();">
-                    <option value="*" ${playgroundSimAgent === "*" ? "selected" : ""}>客户端：默认 (*)</option>
-                    ${AGENTS.map(a => `<option value="${a.id}" ${playgroundSimAgent === a.id ? "selected" : ""}>客户端：${esc(a.label)}</option>`).join("")}
                   </select>
                 </div>
                 <div style="display:flex;align-items:center;gap:12px;">
@@ -4826,37 +4729,37 @@
       `;
     }
 
-    function addGrant(repoKey, agentKey, serverId) {
-      const rule = ensureScopeRule(repoKey, agentKey, []);
+    function addGrant(repoKey, serverId) {
+      const rule = ensureScopeRule(repoKey, []);
       if (!rule.grants.some(g => g.server_id === serverId)) rule.grants.push({ server_id: serverId, access: "ro", tool_ids: [] });
       repoDraftDirty = true;
       render();
     }
 
-    function removeGrant(repoKey, agentKey, serverId) {
-      const rule = ensureScopeRule(repoKey, agentKey, []);
+    function removeGrant(repoKey, serverId) {
+      const rule = ensureScopeRule(repoKey, []);
       rule.grants = rule.grants.filter(g => g.server_id !== serverId);
       repoDraftDirty = true;
       render();
     }
 
     function restoreRepoInherit(repoKey) {
-      SCOPE_RULES = SCOPE_RULES.filter(r => !(r.repo_key === repoKey && r.agent_key === "*"));
+      SCOPE_RULES = SCOPE_RULES.filter(r => r.repo_key !== repoKey);
       repoDraftDirty = false;
       showToast("已恢复继承全局默认服务");
       render();
     }
 
-    function setGrantAccess(repoKey, agentKey, serverId, access) {
-      const rule = ensureScopeRule(repoKey, agentKey, []);
+    function setGrantAccess(repoKey, serverId, access) {
+      const rule = ensureScopeRule(repoKey, []);
       const g = rule.grants.find(x => x.server_id === serverId);
       if (g) g.access = access;
       repoDraftDirty = true;
       render();
     }
 
-    function toggleGrantTool(repoKey, agentKey, serverId, toolId) {
-      const rule = ensureScopeRule(repoKey, agentKey, []);
+    function toggleGrantTool(repoKey, serverId, toolId) {
+      const rule = ensureScopeRule(repoKey, []);
       const g = rule.grants.find(x => x.server_id === serverId);
       if (!g) return;
       const allIds = (SERVICE_TOOLS[serverId] || []).map(t => t.id);
@@ -4868,24 +4771,11 @@
       render();
     }
 
-    function resetGrantTools(repoKey, agentKey, serverId) {
-      const rule = findScopeRule(repoKey, agentKey);
+    function resetGrantTools(repoKey, serverId) {
+      const rule = findScopeRule(repoKey);
       const g = rule && rule.grants.find(x => x.server_id === serverId);
       if (g) g.tool_ids = [];
       repoDraftDirty = true;
-      render();
-    }
-
-    function addAgentOverride(repoKey, agentId) {
-      const base = findScopeRule(repoKey, "*");
-      ensureScopeRule(repoKey, agentId, base ? base.grants : []);
-      expandedOverrideAgents[agentId] = true;
-      render();
-    }
-
-    function removeAgentOverride(repoKey, agentId) {
-      SCOPE_RULES = SCOPE_RULES.filter(r => !(r.repo_key === repoKey && r.agent_key === agentId));
-      showToast("已恢复继承仓库默认规则");
       render();
     }
 
@@ -4894,7 +4784,7 @@
       if (!obs) return;
       const newId = "repo-" + obs.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
       REPOS.push({ id: newId, name: obs.name, git_common_dirs: obs.git_common_dir ? [obs.git_common_dir] : [], root_paths: [obs.root], remote_hint: obs.remote_hint || "" });
-      ensureScopeRule(newId, "*", []);
+      ensureScopeRule(newId, []);
       OBSERVED_REPOS = OBSERVED_REPOS.filter(o => o.fingerprint !== fp);
       selectedScopeRepoKey = newId;
       showToast(`已绑定仓库 ${obs.name}`);
@@ -4911,7 +4801,7 @@
       }
       const newId = "repo-" + name.toLowerCase();
       REPOS.push({ id: newId, name, git_common_dirs: [rootPath + "/.git"], root_paths: [rootPath], remote_hint: "" });
-      ensureScopeRule(newId, "*", []);
+      ensureScopeRule(newId, []);
       selectedScopeRepoKey = newId;
       showToast(`已绑定仓库 ${name}`);
       switchPage("repos");
@@ -4927,19 +4817,12 @@
       render();
     }
 
-    function jumpToPlaygroundWithScope(repoKey, agentId) {
-      playgroundSimRepo = repoKey;
-      playgroundSimAgent = agentId;
-      switchPage("playground");
-    }
-
     function replayLogInPlayground(logId) {
       const ev = LOGS.find(l => l.id === logId);
       if (ev) {
         playgroundIntent = ev.title;
         if (ev.scope) {
           playgroundSimRepo = ev.scope.repo_id || (ev.scope.root ? "*" : "");
-          playgroundSimAgent = ev.scope.agent || "*";
         }
       }
       switchPage("playground");
@@ -4957,7 +4840,7 @@
       const dir = (dirEl ? dirEl.value : "").trim() || ("/Users/dev/Developer/" + name + "/.git");
       const id = "repo-" + Date.now();
       REPOS.push({ id, name, git_common_dirs: dir.endsWith(".git") ? [dir] : [], root_paths: [dir.replace(/\/\.git$/, "")], remote_hint: "" });
-      ensureScopeRule(id, "*", []);
+      ensureScopeRule(id, []);
       selectedScopeRepoKey = id;
       showAddRepoModal = false;
       showToast(`已添加仓库 ${name}`);

@@ -25,10 +25,9 @@ type ServiceGrant struct {
 	ToolIDs  []string `json:"tool_ids"`
 }
 
-// ScopeRule binds (repo_key, agent_key) to service grants (PUT /api/scopes/rules).
+// ScopeRule binds repo_key to service grants (PUT /api/scopes/rules).
 type ScopeRule struct {
 	RepoKey   string         `json:"repo_key"`
-	AgentKey  string         `json:"agent_key"`
 	Grants    []ServiceGrant `json:"grants"`
 	UpdatedAt string         `json:"updated_at"`
 }
@@ -45,35 +44,6 @@ type ObservedRepo struct {
 	RequestCount int    `json:"request_count"`
 }
 
-type ScopeServerSummary struct {
-	ServerID  string `json:"server_id"`
-	Access    string `json:"access"`
-	ToolCount int    `json:"tool_count"`
-}
-
-type ScopeAgentPreview struct {
-	Agent           string               `json:"agent"`
-	MatchedRepoKey  string               `json:"matched_repo_key"`
-	MatchedAgentKey string               `json:"matched_agent_key"`
-	SourceLabel     string               `json:"source_label"`
-	ServerCount     int                  `json:"server_count"`
-	ToolCount       int                  `json:"tool_count"`
-	HasWrite        bool                 `json:"has_write"`
-	Servers         []ScopeServerSummary `json:"servers"`
-}
-
-// ScopePreviewRequest is sent to POST /api/scopes/preview.
-type ScopePreviewRequest struct {
-	RepoKey string `json:"repo_key"`
-	Actor   string `json:"actor"`
-}
-
-// ScopePreviewResponse is returned by POST /api/scopes/preview.
-type ScopePreviewResponse struct {
-	RepoKey string              `json:"repo_key"`
-	Agents  []ScopeAgentPreview `json:"agents"`
-}
-
 // ScopeSnippetResponse is returned by GET /api/scopes/snippets.
 type ScopeSnippetResponse struct {
 	Agent        string `json:"agent"`
@@ -84,10 +54,9 @@ type ScopeSnippetResponse struct {
 	Snippet      string `json:"snippet"`
 }
 
-// SimScope simulates a repository/agent scope for control-plane testing.
+// SimScope simulates a repository scope for control-plane testing.
 type SimScope struct {
-	RepoKey  string `json:"repo_key"`
-	AgentKey string `json:"agent_key"`
+	RepoKey string `json:"repo_key"`
 }
 
 // EventScope is the scope decision recorded on a discovery or invocation.

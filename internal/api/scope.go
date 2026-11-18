@@ -58,25 +58,11 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 		respond(w, http.StatusOK, wireRule(rule))
 	})
 	mux.HandleFunc("DELETE /api/scopes/rules", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		if err := g.gw.Scope().DeleteScopeRule(q.Get("repo_key"), q.Get("agent_key")); err != nil {
+		if err := g.gw.Scope().DeleteScopeRule(r.URL.Query().Get("repo_key")); err != nil {
 			fail(w, err)
 			return
 		}
 		respond(w, http.StatusOK, apitypes.Deleted{Deleted: true})
-	})
-	mux.HandleFunc("POST /api/scopes/preview", func(w http.ResponseWriter, r *http.Request) {
-		var in apitypes.ScopePreviewRequest
-		if err := decode(w, r, &in); err != nil {
-			fail(w, err)
-			return
-		}
-		out, err := g.gw.PreviewScope(r.Context(), in.RepoKey, in.Actor)
-		if err != nil {
-			fail(w, err)
-			return
-		}
-		respond(w, http.StatusOK, wireScopePreview(out))
 	})
 	mux.HandleFunc("GET /api/scopes/snippets", func(w http.ResponseWriter, r *http.Request) {
 		out, err := g.gw.Scope().ScopeSnippet(r.URL.Query().Get("agent"))

@@ -3,9 +3,11 @@ package scope
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -62,7 +64,7 @@ func TestVerifiedScopePersistsRulesAndRejectsReplay(t *testing.T) {
 	defer db.Close()
 	key := []byte("01234567890123456789012345678901")
 	reg := registry.Registry{Servers: []Server{{ID: "svc", Enabled: true}}, Tools: []Tool{{ID: "svc.read", ServerID: "svc", ReadOnly: true, Enabled: true}, {ID: "svc.write", ServerID: "svc", Enabled: true}}}
-	options := Options{DB: db.DB, Dir: dir, BaseURL: "http://localhost", Key: key, Snapshot: func() registry.Registry { return reg }, AdminCaller: func(context.Context) bool { return true }, IdentityAllowsTool: func(context.Context, Tool, string) bool { return true }}
+	options := Options{DB: db.DB, Dir: dir, BaseURL: "http://localhost", Key: key, Snapshot: func() registry.Registry { return reg }, AdminCaller: func(context.Context) bool { return true }}
 	s, err := New(options)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +73,7 @@ func TestVerifiedScopePersistsRulesAndRejectsReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SaveScopeRule(ScopeRule{RepoKey: repo.ID, AgentKey: "codex", Grants: []ServiceGrant{{ServerID: "svc", Access: "ro", ToolIDs: []string{}}}}); err != nil {
+	if _, err := s.SaveScopeRule(ScopeRule{RepoKey: repo.ID, Grants: []ServiceGrant{{ServerID: "svc", Access: "ro", ToolIDs: []string{}}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetScopeMode(true); err != nil {
@@ -81,24 +83,8 @@ func TestVerifiedScopePersistsRulesAndRejectsReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !s.IsEnforced() || len(s.ScopeOverview().Repositories) != 1 {
-		t.Fatal("scope state did not persist")
-	}
-	preview, err := s.PreviewScope(context.Background(), repo.ID, "developer")
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, agent := range preview.Agents {
-		if agent.Agent == "codex" {
-			found = true
-			if agent.ToolCount != 1 || agent.HasWrite {
-				t.Fatalf("preview: %+v", agent)
-			}
-		}
-	}
-	if !found {
-		t.Fatal("missing codex preview")
+	if !s.IsEnforced() || len(s.ScopeOverview().Repositories) != 1 || len(s.ScopeOverview().Rules) != 2 {
+		t.Fatalf("scope state did not persist: %+v", s.ScopeOverview())
 	}
 	args := map[string]any{"intent": "inspect"}
 	hash, err := workspace.CanonicalArgsHash(args, workspace.CurrentContextField())
@@ -122,6 +108,10 @@ func TestVerifiedScopePersistsRulesAndRejectsReplay(t *testing.T) {
 	if !s.AllowsTool(ctx, reg.Tools[0]) || s.AllowsTool(ctx, reg.Tools[1]) {
 		t.Fatal("verified read-only policy not enforced")
 	}
+	ev := EventForContext(ctx)
+	if ev.Agent != "codex" || ev.MatchedRule != repo.ID {
+		t.Fatalf("expected event to retain agent=codex and matched_rule=%s, got %+v", repo.ID, ev)
+	}
 	var stripped map[string]any
 	if err := json.Unmarshal(clean, &stripped); err != nil {
 		t.Fatal(err)
@@ -131,6 +121,131 @@ func TestVerifiedScopePersistsRulesAndRejectsReplay(t *testing.T) {
 	}
 	if _, _, err := s.ResolveMCPToolCallScope(context.Background(), "codex", "discover_tools", raw); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("replay error: %v", err)
+	}
+}
+
+func TestLegacyAgentRulesDoNotTakeEffectAsGhostRules(t *testing.T) {
+	dir := t.TempDir()
+	repoRODir, _ := filepath.EvalSymlinks(t.TempDir())
+	repoGhostDir, _ := filepath.EvalSymlinks(t.TempDir())
+	unboundDir, _ := filepath.EvalSymlinks(t.TempDir())
+
+	// Seed a v7 database containing legacy agent_key != "*" rules.
+	rawDB, err := sql.Open("sqlite", filepath.Join(dir, "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoRODef, _ := json.Marshal(Repository{ID: "repo-ro", Name: "repo-ro", RootPaths: []string{repoRODir}})
+	repoGhostDef, _ := json.Marshal(Repository{ID: "repo-ghost", Name: "repo-ghost", RootPaths: []string{repoGhostDir}})
+	if _, err := rawDB.Exec(`
+CREATE TABLE servers(id TEXT PRIMARY KEY,definition TEXT NOT NULL CHECK(json_valid(definition)),position INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE tools(id TEXT PRIMARY KEY,server_id TEXT NOT NULL REFERENCES servers(id),definition TEXT NOT NULL CHECK(json_valid(definition)),position INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE scope_state(id INTEGER PRIMARY KEY CHECK(id=1),definition TEXT NOT NULL CHECK(json_valid(definition)));
+CREATE TABLE repositories(id TEXT PRIMARY KEY,definition TEXT NOT NULL CHECK(json_valid(definition)));
+CREATE TABLE scope_rules(repo_key TEXT NOT NULL,agent_key TEXT NOT NULL,definition TEXT NOT NULL CHECK(json_valid(definition)),PRIMARY KEY(repo_key,agent_key));
+CREATE TABLE scope_observations(fingerprint TEXT PRIMARY KEY,last_seen TEXT NOT NULL,definition TEXT NOT NULL CHECK(json_valid(definition)));
+INSERT INTO scope_state(id,definition) VALUES(1,'{"enforce":true}');
+INSERT INTO repositories(id,definition) VALUES('repo-ro',?),('repo-ghost',?);
+INSERT INTO scope_rules(repo_key,agent_key,definition) VALUES
+  ('*','*','{"repo_key":"*","agent_key":"*","grants":[]}'),
+  ('*','codex','{"repo_key":"*","agent_key":"codex","grants":[{"server_id":"svc","access":"rw"}]}'),
+  ('repo-ro','*','{"repo_key":"repo-ro","agent_key":"*","grants":[{"server_id":"svc","access":"ro"}]}'),
+  ('repo-ro','codex','{"repo_key":"repo-ro","agent_key":"codex","grants":[{"server_id":"svc","access":"rw"}]}'),
+  ('repo-ghost','claude','{"repo_key":"repo-ghost","agent_key":"claude","grants":[{"server_id":"svc","access":"rw"}]}');
+PRAGMA user_version=7;`, string(repoRODef), string(repoGhostDef)); err != nil {
+		t.Fatal(err)
+	}
+	_ = rawDB.Close()
+
+	db, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	key := []byte("01234567890123456789012345678901")
+	reg := registry.Registry{
+		Servers: []Server{{ID: "svc", Enabled: true}},
+		Tools: []Tool{
+			{ID: "svc.read", ServerID: "svc", ReadOnly: true, Enabled: true},
+			{ID: "svc.write", ServerID: "svc", ReadOnly: false, Enabled: true},
+		},
+	}
+	options := Options{DB: db.DB, Dir: dir, BaseURL: "http://localhost", Key: key, Snapshot: func() registry.Registry { return reg }, AdminCaller: func(context.Context) bool { return true }}
+	s, err := New(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ov := s.ScopeOverview()
+	if len(ov.Rules) != 2 {
+		t.Fatalf("expected only '*' and 'repo-ro' after legacy cleanup, got %+v", ov.Rules)
+	}
+
+	callFor := func(agent, cwd, jti string) context.Context {
+		t.Helper()
+		args := map[string]any{"intent": "inspect"}
+		hash, err := workspace.CanonicalArgsHash(args, workspace.CurrentContextField())
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now()
+		tok, err := workspace.SignToken(key, workspace.Claims{
+			Channel: buildinfo.Current().Channel, Agent: agent, Cwd: cwd, Op: "discover_tools",
+			ArgsHash: hash, JTI: jti, IAT: now.Unix(), EXP: now.Add(time.Minute).Unix(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		args[workspace.CurrentContextField()] = tok
+		raw, _ := json.Marshal(args)
+		ctx, _, err := s.ResolveMCPToolCallScope(context.Background(), agent, "discover_tools", raw)
+		if err != nil {
+			t.Fatalf("ResolveMCPToolCallScope(%s, %s): %v", agent, cwd, err)
+		}
+		return ctx
+	}
+
+	// 1. Legacy (repo-ro, codex)->rw must NOT override repo-ro's ro rule.
+	ctxRO := callFor("codex", repoRODir, "jti-1")
+	if !s.AllowsTool(ctxRO, reg.Tools[0]) {
+		t.Fatalf("expected repo-ro read tool to be allowed, event=%+v", EventForContext(ctxRO))
+	}
+	if s.AllowsTool(ctxRO, reg.Tools[1]) {
+		t.Fatal("legacy (repo-ro, codex) rw rule took ghost effect")
+	}
+
+	// 2. Legacy (*, codex)->rw must NOT grant tools to unconfigured workspaces.
+	ctxUnbound := callFor("codex", unboundDir, "jti-2")
+	if s.AllowsTool(ctxUnbound, reg.Tools[0]) || s.AllowsTool(ctxUnbound, reg.Tools[1]) {
+		t.Fatal("legacy (*, codex) rw rule took ghost effect in unbound repo")
+	}
+
+	// 3. Legacy (repo-ghost, claude)->rw must NOT grant tools to repo-ghost.
+	ctxGhost := callFor("claude", repoGhostDir, "jti-3")
+	if s.AllowsTool(ctxGhost, reg.Tools[0]) || s.AllowsTool(ctxGhost, reg.Tools[1]) {
+		t.Fatal("legacy (repo-ghost, claude) rw rule took ghost effect")
+	}
+
+	// 4. Even if a stale JSON definition containing agent_key != "*" exists in scope_rules,
+	// loadScopes() ignores and cleans it instead of letting it become a repo rule.
+	if err := store.ScopeRules[map[string]any](db.DB).Put("repo-ghost", map[string]any{
+		"repo_key":  "repo-ghost",
+		"agent_key": "claude",
+		"grants":    []map[string]any{{"server_id": "svc", "access": "rw"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := New(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s2.ScopeOverview().Rules) != 2 {
+		t.Fatalf("expected loadScopes to ignore/clean stale agent_key != '*' rule, got %+v", s2.ScopeOverview().Rules)
+	}
+	ctxGhost2 := callFor("claude", repoGhostDir, "jti-4")
+	if s2.AllowsTool(ctxGhost2, reg.Tools[0]) || s2.AllowsTool(ctxGhost2, reg.Tools[1]) {
+		t.Fatal("stale JSON rule with agent_key != '*' took ghost effect after reload")
 	}
 }
 
@@ -146,7 +261,7 @@ func FuzzResolveMCPToolCallScope(f *testing.F) {
 	f.Cleanup(func() { db.Close() })
 	key := []byte("01234567890123456789012345678901")
 	reg := registry.Registry{}
-	s, err := New(Options{DB: db.DB, Dir: dir, BaseURL: "http://localhost", Key: key, Snapshot: func() registry.Registry { return reg }, AdminCaller: func(context.Context) bool { return true }, IdentityAllowsTool: func(context.Context, Tool, string) bool { return true }})
+	s, err := New(Options{DB: db.DB, Dir: dir, BaseURL: "http://localhost", Key: key, Snapshot: func() registry.Registry { return reg }, AdminCaller: func(context.Context) bool { return true }})
 	if err != nil {
 		f.Fatal(err)
 	}

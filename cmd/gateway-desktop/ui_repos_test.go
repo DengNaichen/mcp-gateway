@@ -62,8 +62,8 @@ func TestScopeAPIClientContract(t *testing.T) {
 						}
 					],
 					"rules": [
-						{"repo_key": "*", "agent_key": "*", "grants": []},
-						{"repo_key": "repo-1", "agent_key": "*", "grants": [{"server_id": "github", "access": "ro"}]}
+						{"repo_key": "*", "grants": []},
+						{"repo_key": "repo-1", "grants": [{"server_id": "github", "access": "ro"}]}
 					],
 					"observed": [
 						{
@@ -92,22 +92,6 @@ func TestScopeAPIClientContract(t *testing.T) {
 			_, _ = w.Write(raw)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/scopes/rules":
 			_, _ = w.Write([]byte(`{"deleted":true}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/scopes/preview":
-			_, _ = w.Write([]byte(`{
-				"repo_key": "repo-1",
-				"agents": [
-					{
-						"agent": "codex",
-						"matched_repo_key": "repo-1",
-						"matched_agent_key": "codex",
-						"source_label": "客户端例外",
-						"server_count": 1,
-						"tool_count": 2,
-						"has_write": true,
-						"servers": [{"server_id": "github", "access": "rw", "tool_count": 2}]
-					}
-				]
-			}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/scopes/snippets":
 			_, _ = w.Write([]byte(`{
 				"agent": "opencode",
@@ -156,17 +140,12 @@ func TestScopeAPIClientContract(t *testing.T) {
 	}
 
 	// Nil Grants must marshal as `"grants":[]` rather than null.
-	emptyRule, err := c.SaveScopeRule(ctx, apitypes.ScopeRule{RepoKey: "*", AgentKey: "*"})
+	emptyRule, err := c.SaveScopeRule(ctx, apitypes.ScopeRule{RepoKey: "*"})
 	if err != nil || emptyRule.Grants == nil {
 		t.Fatalf("SaveScopeRule empty: rule=%+v err=%v", emptyRule, err)
 	}
-	if err := c.DeleteScopeRule(ctx, "repo-1", "claude"); err != nil {
+	if err := c.DeleteScopeRule(ctx, "repo-1"); err != nil {
 		t.Fatalf("DeleteScopeRule: %v", err)
-	}
-
-	prev, err := c.PreviewScope(ctx, "repo-1", "developer")
-	if err != nil || len(prev.Agents) != 1 || !prev.Agents[0].HasWrite {
-		t.Fatalf("PreviewScope: prev=%+v err=%v", prev, err)
 	}
 
 	snip, err := c.GetHookSnippet(ctx, "opencode")
@@ -178,10 +157,10 @@ func TestScopeAPIClientContract(t *testing.T) {
 	if _, err := c.Discover(ctx, apitypes.DiscoverRequest{Intent: "check prs"}); err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	if _, err := c.DiscoverScoped(ctx, apitypes.DiscoverRequest{Intent: "check prs"}, &apitypes.SimScope{RepoKey: "repo-1", AgentKey: "codex"}); err != nil {
+	if _, err := c.DiscoverScoped(ctx, apitypes.DiscoverRequest{Intent: "check prs"}, &apitypes.SimScope{RepoKey: "repo-1"}); err != nil {
 		t.Fatalf("DiscoverScoped: %v", err)
 	}
-	if _, err := c.InvokeScoped(ctx, apitypes.InvokeRequest{ToolID: "github.list_prs", Arguments: map[string]any{}}, &apitypes.SimScope{RepoKey: "*", AgentKey: "claude"}); err != nil {
+	if _, err := c.InvokeScoped(ctx, apitypes.InvokeRequest{ToolID: "github.list_prs", Arguments: map[string]any{}}, &apitypes.SimScope{RepoKey: "*"}); err != nil {
 		t.Fatalf("InvokeScoped: %v", err)
 	}
 
@@ -198,16 +177,16 @@ func TestScopeAPIClientContract(t *testing.T) {
 		if rec.Method == http.MethodPut && rec.URI == "/api/scopes/rules" && strings.Contains(rec.Body, `"grants":[]`) {
 			sawEmptyGrants = true
 		}
-		if rec.Method == http.MethodDelete && rec.URI == "/api/scopes/rules?agent_key=claude&repo_key=repo-1" {
+		if rec.Method == http.MethodDelete && rec.URI == "/api/scopes/rules?repo_key=repo-1" {
 			sawDeleteRuleURI = true
 		}
 		if rec.Method == http.MethodPost && rec.URI == "/api/discover" && !strings.Contains(rec.Body, `"sim_scope"`) {
 			sawNoSimScope = true
 		}
-		if rec.Method == http.MethodPost && rec.URI == "/api/discover" && strings.Contains(rec.Body, `"sim_scope":{"repo_key":"repo-1","agent_key":"codex"}`) {
+		if rec.Method == http.MethodPost && rec.URI == "/api/discover" && strings.Contains(rec.Body, `"sim_scope":{"repo_key":"repo-1"}`) {
 			sawDiscoverScope = true
 		}
-		if rec.Method == http.MethodPost && rec.URI == "/api/invoke" && strings.Contains(rec.Body, `"sim_scope":{"repo_key":"*","agent_key":"claude"}`) {
+		if rec.Method == http.MethodPost && rec.URI == "/api/invoke" && strings.Contains(rec.Body, `"sim_scope":{"repo_key":"*"}`) {
 			sawInvokeScope = true
 		}
 	}
@@ -229,7 +208,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 			"root":           "/tmp/wt-unconfigured-svc",
 			"git_common_dir": "/work/unconfigured-svc/.git",
 			"remote_hint":    "github.com/DengNaichen/unconfigured-svc",
-			"matched_rule":   "*:*",
+			"matched_rule":   "*",
 			"status":         "verified_unconfigured",
 		},
 		"tools": []map[string]any{
@@ -321,20 +300,11 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 			},
 			Rules: []apitypes.ScopeRule{
 				{
-					RepoKey:  "*",
-					AgentKey: "*",
-					Grants:   []apitypes.ServiceGrant{},
+					RepoKey: "*",
+					Grants:  []apitypes.ServiceGrant{},
 				},
 				{
-					RepoKey:  "repo-gw",
-					AgentKey: "*",
-					Grants: []apitypes.ServiceGrant{
-						{ServerID: "github", Access: "ro"},
-					},
-				},
-				{
-					RepoKey:  "repo-gw",
-					AgentKey: "codex",
+					RepoKey: "repo-gw",
 					Grants: []apitypes.ServiceGrant{
 						{ServerID: "github", Access: "rw"},
 						{ServerID: "roster", Access: "ro"},
@@ -415,7 +385,7 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 			_ = json.Unmarshal(raw, &rule)
 			replaced := false
 			for i := range boot.Scopes.Rules {
-				if boot.Scopes.Rules[i].RepoKey == rule.RepoKey && boot.Scopes.Rules[i].AgentKey == rule.AgentKey {
+				if boot.Scopes.Rules[i].RepoKey == rule.RepoKey {
 					boot.Scopes.Rules[i] = rule
 					replaced = true
 					break
@@ -428,28 +398,15 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/scopes/rules":
 			rk := r.URL.Query().Get("repo_key")
-			ak := r.URL.Query().Get("agent_key")
 			var kept []apitypes.ScopeRule
 			for _, item := range boot.Scopes.Rules {
-				if item.RepoKey == rk && item.AgentKey == ak {
+				if item.RepoKey == rk {
 					continue
 				}
 				kept = append(kept, item)
 			}
 			boot.Scopes.Rules = kept
 			_, _ = w.Write([]byte(`{"deleted":true}`))
-
-		case r.Method == http.MethodPost && r.URL.Path == "/api/scopes/preview":
-			var in struct {
-				RepoKey string `json:"repo_key"`
-				Actor   string `json:"actor"`
-			}
-			_ = json.Unmarshal(raw, &in)
-			agents := computeLocalScopePreview(&boot, in.RepoKey, in.Actor)
-			_ = json.NewEncoder(w).Encode(apitypes.ScopePreviewResponse{
-				RepoKey: in.RepoKey,
-				Agents:  agents,
-			})
 
 		case r.Method == http.MethodGet && r.URL.Path == "/api/scopes/snippets":
 			ag := r.URL.Query().Get("agent")
@@ -518,15 +475,18 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 	}
 	tester.Frame()
 
-	// Verify Global Default initial state (`(*,*)` empty -> 默认无服务, 6-client preview -> 无权限).
-	if !tester.HasText("全局默认") || !tester.HasText("默认无服务") || !tester.HasText("六端生效预览") {
-		t.Fatal("expected global default and 6-client preview to render")
+	// Verify Global Default initial state (`*` empty -> 默认无服务, and no legacy client overrides or 6-client preview).
+	if !tester.HasText("全局默认") || !tester.HasText("默认无服务") {
+		t.Fatal("expected global default card to render")
+	}
+	if tester.HasText("客户端例外") || tester.HasText("六端生效预览") {
+		t.Fatal("did not expect removed 客户端例外 or 六端生效预览 cards")
 	}
 	if !tester.HasText("最近请求 · 未绑定") || !tester.HasText("new-service") {
 		t.Fatal("expected observed unbound repo section to render")
 	}
 
-	// 2. Select configured repo `mcp-gateway` and inspect default services, codex override, and 5-client preview.
+	// 2. Select configured repo `mcp-gateway` and inspect default services only.
 	if err := tester.Click("mcp-gateway"); err != nil {
 		t.Fatalf("select repo mcp-gateway: %v", err)
 	}
@@ -535,12 +495,11 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 	if !tester.HasText("/work/mcp-gateway/.git") {
 		t.Fatal("expected CommonDir in repo detail header")
 	}
-	if !tester.HasText("仓库默认服务") || !tester.HasText("客户端例外") {
-		t.Fatal("expected default services and client overrides cards")
+	if !tester.HasText("仓库默认服务") {
+		t.Fatal("expected default services card")
 	}
-	// Only Codex has an explicit override; other 4 clients inherit repo default.
-	if !tester.HasText("仓库默认") || !tester.HasText("客户端例外") {
-		t.Fatal("expected preview source labels 仓库默认 and 客户端例外")
+	if tester.HasText("客户端例外") || tester.HasText("六端生效预览") {
+		t.Fatal("did not expect removed 客户端例外 or 六端生效预览 cards on repo detail")
 	}
 
 	// Expand tool subset drawer on repo default service (`全部工具 (2)`).
@@ -591,23 +550,27 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 		t.Fatalf("expected primaryRepoPath to resolve to canonical repo dir /work/new-service, got %q", gotPrimary)
 	}
 
-	// Switch back to mcp-gateway and jump to Playground from Codex preview row `↗`.
+	// Navigate to Playground, select repository `mcp-gateway`, and verify repo-only sim_scope.
+	if err := tester.Click("路由沙盒"); err != nil {
+		t.Fatalf("nav playground: %v", err)
+	}
+	tester.Frame()
+	if tester.HasText("不限") {
+		t.Fatal("did not expect removed simulated client selector in Playground")
+	}
+	if err := tester.Click("管理员全量"); err != nil {
+		t.Fatalf("open sim repo selector: %v", err)
+	}
 	if err := tester.Click("mcp-gateway"); err != nil {
-		t.Fatalf("reselect mcp-gateway: %v", err)
+		t.Fatalf("choose mcp-gateway in sim repo selector: %v", err)
 	}
-	waitAsyncIdle(t, tester, uiApp)
-	if err := tester.Click("在路由沙盒模拟 Codex CLI"); err != nil {
-		t.Fatalf("jump to playground from preview: %v", err)
-	}
-	if uiApp.CurrentView() != ViewPlayground {
-		t.Fatalf("expected ViewPlayground after preview jump, got %s", uiApp.CurrentView())
-	}
-	// For (repo-gw, codex): github (rw: 2 tools) + roster (ro: 1 tool) = 3 eligible tools!
+	tester.Frame()
+	// For repo-gw: github (rw: 2 tools) + roster (ro: 1 tool) = 3 eligible tools!
 	if !tester.HasText("候选 3") {
-		t.Fatal("expected Playground candidate count to align with (repo-gw, codex) scope (候选 3)")
+		t.Fatal("expected Playground candidate count to align with repo-gw scope (候选 3)")
 	}
 
-	// Run discovery in Playground and verify sim_scope is transmitted.
+	// Run discovery in Playground and verify repo-only sim_scope is transmitted.
 	pgSt := uiApp.playgroundState()
 	pgSt.intent = "查看待合并 PR"
 	tester.Frame()
@@ -618,8 +581,8 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 	stateMu.Lock()
 	gotDiscBody := lastDiscoverBody
 	stateMu.Unlock()
-	if !strings.Contains(gotDiscBody, `"sim_scope":{"repo_key":"repo-gw","agent_key":"codex"}`) {
-		t.Fatalf("expected sim_scope in /api/discover request, got: %s", gotDiscBody)
+	if !strings.Contains(gotDiscBody, `"sim_scope":{"repo_key":"repo-gw"}`) {
+		t.Fatalf("expected repo-only sim_scope in /api/discover request, got: %s", gotDiscBody)
 	}
 
 	// 5. Verify ViewClients Hook snippet entry.
@@ -641,13 +604,13 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 		t.Fatalf("close client hook modal: %v", err)
 	}
 
-	// 6. Verify ViewLogs detail.scope rendering, one-click 绑定此仓库, and 沙盒重放 scope handoff.
+	// 6. Verify ViewLogs detail.scope rendering (retains agent for audit), one-click 绑定此仓库, and repo-only 沙盒重放 handoff.
 	if err := tester.Click("请求日志"); err != nil {
 		t.Fatalf("nav 请求日志: %v", err)
 	}
 	tester.Frame()
-	if !tester.HasText("仓库作用域") || !tester.HasText("/tmp/wt-unconfigured-svc") || !tester.HasText("*:*") {
-		t.Fatal("expected Logs inspector to display detail.scope fields")
+	if !tester.HasText("仓库作用域") || !tester.HasText("/tmp/wt-unconfigured-svc") || !tester.HasText("Claude Code (claude)") || !tester.HasText("命中规则") {
+		t.Fatal("expected Logs inspector to display detail.scope fields including client agent")
 	}
 	if !tester.HasText("绑定此仓库") {
 		t.Fatal("expected 绑定此仓库 action on unconfigured repo log event")
@@ -672,19 +635,19 @@ func TestReposPageMasterDetailAndCrossViewIntegration(t *testing.T) {
 		t.Fatal("expected Logs scope card to switch from 绑定此仓库 to 仓库规则 after binding via git_common_dirs")
 	}
 
-	// Replay from logs should carry the newly bound repo ID (`repo-unconfigured-svc`) and agent (`claude`) into Playground!
+	// Replay from logs should carry ONLY the newly bound repo ID (`repo-unconfigured-svc`) into Playground!
 	if err := tester.Click("沙盒重放"); err != nil {
 		t.Fatalf("click 沙盒重放 in logs: %v", err)
 	}
 	if uiApp.CurrentView() != ViewPlayground {
 		t.Fatalf("expected ViewPlayground after logs replay, got %s", uiApp.CurrentView())
 	}
-	if pgSt.simRepoKey != "repo-unconfigured-svc" || pgSt.simAgentKey != "claude" {
-		t.Fatalf("expected Playground replay scope (repo-unconfigured-svc, claude), got (%q, %q)", pgSt.simRepoKey, pgSt.simAgentKey)
+	if pgSt.simRepoKey != "repo-unconfigured-svc" {
+		t.Fatalf("expected Playground replay scope repo-unconfigured-svc, got %q", pgSt.simRepoKey)
 	}
 }
 
-func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
+func TestReposRuleEditingAndEnforceToggle(t *testing.T) {
 	var (
 		mu          sync.Mutex
 		savedRules  []apitypes.ScopeRule
@@ -716,9 +679,8 @@ func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 				},
 			},
 			Rules: []apitypes.ScopeRule{
-				{RepoKey: "*", AgentKey: "*", Grants: []apitypes.ServiceGrant{}},
-				{RepoKey: "repo-1", AgentKey: "*", Grants: []apitypes.ServiceGrant{{ServerID: "github", Access: "ro"}}},
-				{RepoKey: "repo-1", AgentKey: "cursor", Grants: []apitypes.ServiceGrant{{ServerID: "github", Access: "rw"}}},
+				{RepoKey: "*", Grants: []apitypes.ServiceGrant{}},
+				{RepoKey: "repo-1", Grants: []apitypes.ServiceGrant{{ServerID: "github", Access: "ro"}}},
 			},
 		},
 	}
@@ -745,7 +707,7 @@ func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 			savedRules = append(savedRules, rule)
 			replaced := false
 			for i := range boot.Scopes.Rules {
-				if boot.Scopes.Rules[i].RepoKey == rule.RepoKey && boot.Scopes.Rules[i].AgentKey == rule.AgentKey {
+				if boot.Scopes.Rules[i].RepoKey == rule.RepoKey {
 					boot.Scopes.Rules[i] = rule
 					replaced = true
 					break
@@ -756,10 +718,10 @@ func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 			}
 			_ = json.NewEncoder(w).Encode(rule)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/scopes/rules":
-			deletedRule = r.URL.Query().Get("repo_key") + ":" + r.URL.Query().Get("agent_key")
+			deletedRule = r.URL.Query().Get("repo_key")
 			var kept []apitypes.ScopeRule
 			for _, item := range boot.Scopes.Rules {
-				if item.RepoKey == r.URL.Query().Get("repo_key") && item.AgentKey == r.URL.Query().Get("agent_key") {
+				if item.RepoKey == deletedRule {
 					continue
 				}
 				kept = append(kept, item)
@@ -770,16 +732,6 @@ func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 			deletedRepo = strings.TrimPrefix(r.URL.Path, "/api/scopes/repositories/")
 			boot.Scopes.Repositories = nil
 			_, _ = w.Write([]byte(`{"deleted":true}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/scopes/preview":
-			var in struct {
-				RepoKey string `json:"repo_key"`
-				Actor   string `json:"actor"`
-			}
-			_ = json.Unmarshal(raw, &in)
-			_ = json.NewEncoder(w).Encode(apitypes.ScopePreviewResponse{
-				RepoKey: in.RepoKey,
-				Agents:  computeLocalScopePreview(&boot, in.RepoKey, in.Actor),
-			})
 		default:
 			_, _ = w.Write([]byte(`{}`))
 		}
@@ -842,16 +794,16 @@ func TestReposRuleEditingOverridesAndEnforceToggle(t *testing.T) {
 		t.Fatalf("expected tool_ids subset [github.list_prs] to be saved, got %+v", savedRules)
 	}
 
-	// Revert Cursor override (`恢复继承` -> DELETE /api/scopes/rules?repo_key=repo-1&agent_key=cursor).
-	if err := tester.Click("恢复继承"); err != nil {
-		t.Fatalf("click 恢复继承: %v", err)
+	// Restore inheritance (`恢复继承全局` -> DELETE /api/scopes/rules?repo_key=repo-1).
+	if err := tester.Click("恢复继承全局"); err != nil {
+		t.Fatalf("click 恢复继承全局: %v", err)
 	}
 	waitAsyncIdle(t, tester, uiApp)
 	mu.Lock()
 	gotDeletedRule := deletedRule
 	mu.Unlock()
-	if gotDeletedRule != "repo-1:cursor" {
-		t.Fatalf("expected deletedRule repo-1:cursor, got %q", gotDeletedRule)
+	if gotDeletedRule != "repo-1" {
+		t.Fatalf("expected deletedRule repo-1, got %q", gotDeletedRule)
 	}
 
 	// Delete repository via confirmation dialog (`移除绑定`).
@@ -880,7 +832,7 @@ func waitAsyncIdle(t *testing.T, tester *ui.Tester, uiApp *DesktopUI) {
 		done := func() bool {
 			leave := uiApp.enterHeadlessFrame()
 			defer leave()
-			return uiApp.BusyCount == 0 && !uiApp.reposState().previewLoading
+			return uiApp.BusyCount == 0
 		}()
 		if done {
 			tester.Frame()

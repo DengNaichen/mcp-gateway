@@ -88,7 +88,7 @@ func (g docGenerator) operation(r route) (map[string]any, error) {
 	}
 	if r.Invocation {
 		params = append(params,
-			map[string]any{"name": "agent", "in": "query", "description": "Agent key used to resolve repository scope", "schema": map[string]any{"type": "string"}},
+			map[string]any{"name": "agent", "in": "query", "description": "Agent key identifying the calling client", "schema": map[string]any{"type": "string"}},
 			map[string]any{"name": "X-Gateway-Scope", "in": "header", "description": "Signed repository scope token issued by the scope hook", "schema": map[string]any{"type": "string"}},
 		)
 	}

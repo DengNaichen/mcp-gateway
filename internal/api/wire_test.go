@@ -104,7 +104,6 @@ func TestWireTypesMirrorDomain(t *testing.T) {
 		{model.PingModelResult{}, apitypes.PingModelResult{}, nil},
 		{scope.ScopeOverview{}, apitypes.ScopeOverview{}, nil},
 		{scope.ScopeRule{}, apitypes.ScopeRule{}, nil},
-		{scope.ScopePreviewResponse{}, apitypes.ScopePreviewResponse{}, nil},
 		{scope.ScopeSnippetResponse{}, apitypes.ScopeSnippetResponse{}, nil},
 		{scope.SaveRepositoryRequest{}, apitypes.SaveRepositoryRequest{}, nil},
 		{market.MarketSearchResult{}, apitypes.MarketSearchResult{}, nil},

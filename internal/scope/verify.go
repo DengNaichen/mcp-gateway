@@ -289,7 +289,7 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 
 	matchedRepo := matchConfiguredRepoByAnchors(repos, string(info.Kind), info.CommonDir, info.Root)
 	if matchedRepo != nil {
-		rule := resolvePrecedenceRule(rules, true, matchedRepo.ID, claims.Agent)
+		rule := resolvePrecedenceRule(rules, true, matchedRepo.ID)
 		mode := ModeCompatUnscoped
 		status := "observed"
 		if enforce {
@@ -307,7 +307,7 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 				Root:         info.Root,
 				GitCommonDir: info.CommonDir,
 				RemoteHint:   info.RemoteHint,
-				MatchedRule:  rule.RepoKey + ":" + rule.AgentKey,
+				MatchedRule:  rule.RepoKey,
 				Status:       status,
 			},
 		}, nil
@@ -316,7 +316,7 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 	// Verified hook evidence for an unconfigured workspace: record observation (<=100).
 	g.recordObservation(info, claims.Agent, now)
 
-	rule := resolvePrecedenceRule(rules, false, "*", claims.Agent)
+	rule := resolvePrecedenceRule(rules, false, "*")
 	mode := ModeCompatUnscoped
 	if enforce {
 		mode = ModeEnforced
@@ -332,7 +332,7 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 			Root:         info.Root,
 			GitCommonDir: info.CommonDir,
 			RemoteHint:   info.RemoteHint,
-			MatchedRule:  rule.RepoKey + ":" + rule.AgentKey,
+			MatchedRule:  rule.RepoKey,
 			Status:       "unconfigured",
 		},
 	}, nil
@@ -340,16 +340,11 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 
 func (g *Service) EvaluateSimulatedScope(sim SimScope) (ResolvedRequestScope, error) {
 	repoKey := strings.TrimSpace(sim.RepoKey)
-	agentKey := strings.ToLower(strings.TrimSpace(sim.AgentKey))
-	if agentKey != "" && agentKey != "*" && !workspace.IsKnownAgent(agentKey) {
-		return ResolvedRequestScope{}, invalid("sim_scope.agent_key 无效")
-	}
 	if repoKey == "" {
 		// Admin full view in Playground.
 		return ResolvedRequestScope{
 			Mode: ModeBypass,
 			Event: EventScope{
-				Agent:  agentKey,
 				Status: "bypass",
 			},
 		}, nil
@@ -360,21 +355,15 @@ func (g *Service) EvaluateSimulatedScope(sim SimScope) (ResolvedRequestScope, er
 	rules := slices.Clone(g.scope.Rules)
 	g.mu.RUnlock()
 
-	evalAgent := agentKey
-	if evalAgent == "" {
-		evalAgent = "*"
-	}
-
 	if repoKey == "*" {
-		rule := resolvePrecedenceRule(rules, false, "*", evalAgent)
+		rule := resolvePrecedenceRule(rules, false, "*")
 		return ResolvedRequestScope{
 			Mode: ModeEnforced,
 			Rule: rule,
 			Event: EventScope{
-				Agent:       agentKey,
 				RepoID:      "*",
 				RepoName:    "未绑定新仓库",
-				MatchedRule: rule.RepoKey + ":" + rule.AgentKey,
+				MatchedRule: rule.RepoKey,
 				Status:      "simulated",
 			},
 		}, nil
@@ -385,7 +374,7 @@ func (g *Service) EvaluateSimulatedScope(sim SimScope) (ResolvedRequestScope, er
 		return ResolvedRequestScope{}, invalid("模拟的仓库不存在: " + repoKey)
 	}
 	repo := repos[idx]
-	rule := resolvePrecedenceRule(rules, true, repo.ID, evalAgent)
+	rule := resolvePrecedenceRule(rules, true, repo.ID)
 	root := ""
 	if len(repo.RootPaths) > 0 {
 		root = repo.RootPaths[0]
@@ -396,11 +385,10 @@ func (g *Service) EvaluateSimulatedScope(sim SimScope) (ResolvedRequestScope, er
 		Mode: ModeEnforced,
 		Rule: rule,
 		Event: EventScope{
-			Agent:       agentKey,
 			RepoID:      repo.ID,
 			RepoName:    repo.Name,
 			Root:        root,
-			MatchedRule: rule.RepoKey + ":" + rule.AgentKey,
+			MatchedRule: rule.RepoKey,
 			Status:      "simulated",
 		},
 	}, nil

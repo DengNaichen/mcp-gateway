@@ -152,8 +152,8 @@ func TestActorCannotEscalateAuthenticatedPrincipal(t *testing.T) {
 		t.Errorf("observer reached developer-only upstream endpoints %d times", n)
 	}
 	// Management routes stay admin-only whatever actor is claimed.
-	if got := f.call(t, "POST", "/api/scopes/preview", observerTestToken, `{"repo_key":"","actor":"developer"}`); got.Code != 403 {
-		t.Errorf("scope preview as observer: %d %s", got.Code, got.Body)
+	if got := f.call(t, "PUT", "/api/scopes/rules", observerTestToken, `{"repo_key":"*","grants":[]}`); got.Code != 403 {
+		t.Errorf("scope rule update as observer: %d %s", got.Code, got.Body)
 	}
 
 	// The observer can still do what its group allows, and the audit log

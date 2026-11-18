@@ -165,8 +165,8 @@ func TestScopeRulesSurviveRegistryReconciliation(t *testing.T) {
 	if overview.Enforce {
 		t.Fatal("default enforce must be false")
 	}
-	if len(overview.Rules) != 1 || overview.Rules[0].RepoKey != "*" || overview.Rules[0].AgentKey != "*" || len(overview.Rules[0].Grants) != 0 {
-		t.Fatalf("expected out-of-the-box (*,*) -> [] rule, got %+v", overview.Rules)
+	if len(overview.Rules) != 1 || overview.Rules[0].RepoKey != "*" || len(overview.Rules[0].Grants) != 0 {
+		t.Fatalf("expected out-of-the-box * -> [] rule, got %+v", overview.Rules)
 	}
 
 	// Bind a repo + rule referencing 'svc', then reconcile servers/tools via SaveServer/SaveTool
@@ -177,9 +177,8 @@ func TestScopeRulesSurviveRegistryReconciliation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := g.Scope().SaveScopeRule(scope.ScopeRule{
-		RepoKey:  repo.ID,
-		AgentKey: "*",
-		Grants:   []scope.ServiceGrant{{ServerID: "svc", Access: "rw"}},
+		RepoKey: repo.ID,
+		Grants:  []scope.ServiceGrant{{ServerID: "svc", Access: "rw"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -362,22 +361,18 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Configure precedence rules:
-	// - (*, *) remains default [] (0 tools for unconfigured repos!)
-	// - (*, claude) -> gitlab RO (global default for claude in unconfigured repos)
-	// - (mcp-gateway, *) -> roster RO (repo default: whole-rule replaces (*, claude), so claude in mcp-gateway gets roster RO, NOT gitlab!)
-	// - (mcp-gateway, codex) -> roster RW + github subset [github.list] (agent override in mcp-gateway)
-	// - (fresh-empty, *) -> github RO
-	// - (proj, *) -> gitlab RW
+	// Configure repository-level precedence rules:
+	// - "*" remains default [] (0 tools for unconfigured repos, regardless of client agent)
+	// - mcp-gateway -> roster RW + github subset [github.list]
+	// - fresh-empty -> github RO
+	// - proj -> gitlab RW
 	for _, r := range []scope.ScopeRule{
-		{RepoKey: "*", AgentKey: "claude", Grants: []scope.ServiceGrant{{ServerID: "gitlab", Access: "ro"}}},
-		{RepoKey: boundMain.ID, AgentKey: "*", Grants: []scope.ServiceGrant{{ServerID: "roster", Access: "ro"}}},
-		{RepoKey: boundMain.ID, AgentKey: "codex", Grants: []scope.ServiceGrant{
+		{RepoKey: boundMain.ID, Grants: []scope.ServiceGrant{
 			{ServerID: "roster", Access: "rw"},
 			{ServerID: "github", Access: "rw", ToolIDs: []string{"github.list"}},
 		}},
-		{RepoKey: boundEmpty.ID, AgentKey: "*", Grants: []scope.ServiceGrant{{ServerID: "github", Access: "ro"}}},
-		{RepoKey: boundDir.ID, AgentKey: "*", Grants: []scope.ServiceGrant{{ServerID: "gitlab", Access: "rw"}}},
+		{RepoKey: boundEmpty.ID, Grants: []scope.ServiceGrant{{ServerID: "github", Access: "ro"}}},
+		{RepoKey: boundDir.ID, Grants: []scope.ServiceGrant{{ServerID: "gitlab", Access: "rw"}}},
 	} {
 		if _, err := g.Scope().SaveScopeRule(r); err != nil {
 			t.Fatal(err)
@@ -405,7 +400,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 		t.Fatalf("ambiguous workspace did not return ambiguous_workspace: %v", err)
 	}
 
-	// --- Invariant 4: Worktree subdir automatically hits boundMain via shared CommonDir! ---
+	// --- Invariant 4: Worktree subdir automatically hits boundMain via shared CommonDir; all agents share the repo rule! ---
 	// Codex in repoWTSub: gets roster RW (roster.mutate allowed!) + github.list ONLY (github.get & gitlab.list denied!).
 	wtInvokeOK := signMCPArgs(t, g, "codex", repoWTSub, false, "invoke_tool", map[string]any{"tool_id": "roster.mutate", "arguments": map[string]any{}})
 	if res, err := codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: wtInvokeOK}); err != nil || res.IsError {
@@ -420,23 +415,18 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 		t.Fatalf("codex denied github.list included in ToolIDs subset: %v", err)
 	}
 
-	// Claude in repoMain: matches (mcp-gateway, *) -> roster RO (whole-rule replacement over (*, claude)!).
-	// So gitlab.list is DENIED, roster.mutate (write) is DENIED, and roster.list (read-only) is ALLOWED!
+	// Claude in repoMain shares the same repo rule as Codex: roster.mutate allowed, gitlab.list denied.
 	claudeGitlab := signMCPArgs(t, g, "claude", repoMain, false, "invoke_tool", map[string]any{"tool_id": "gitlab.list", "arguments": map[string]any{}})
 	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeGitlab})); err == nil {
-		t.Fatal("whole-rule replacement failed: claude inherited (*, claude) gitlab inside mcp-gateway")
+		t.Fatal("claude accessed ungranted gitlab.list inside mcp-gateway")
 	}
 	claudeWrite := signMCPArgs(t, g, "claude", repoMain, false, "invoke_tool", map[string]any{"tool_id": "roster.mutate", "arguments": map[string]any{}})
-	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeWrite})); err == nil {
-		t.Fatal("RO grant allowed write tool roster.mutate")
-	}
-	claudeRead := signMCPArgs(t, g, "claude", repoMain, false, "invoke_tool", map[string]any{"tool_id": "roster.list", "arguments": map[string]any{}})
-	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeRead})); err != nil {
-		t.Fatalf("claude denied authorized RO tool roster.list: %v", err)
+	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeWrite})); err != nil {
+		t.Fatalf("claude denied authorized repo tool roster.mutate: %v", err)
 	}
 
 	// --- Invariant 5: Evil clone with identical RemoteHint at different path MUST NOT match mcp-gateway! ---
-	// For codex, unconfigured repoEvilClone falls through to (*, *) = [] -> 0 tools, and records in Observed!
+	// Unconfigured repoEvilClone falls through to "*" = [] -> 0 tools for any agent, and records in Observed!
 	evilDiscover := signMCPArgs(t, g, "codex", repoEvilClone, false, "discover_tools", map[string]any{"intent": "roster list"})
 	evilRes, err := codexSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "discover_tools", Arguments: evilDiscover})
 	if err != nil {
@@ -451,17 +441,19 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 	if !slices.ContainsFunc(ov.Observed, func(o scope.ObservedRepo) bool { return o.Root == repoEvilClone && o.LastAgent == "codex" }) {
 		t.Fatalf("expected evil-clone in Observed, got %+v", ov.Observed)
 	}
-
-	// Meanwhile for claude in unconfigured repoEvilClone, (*, claude) -> gitlab RO applies!
 	claudeUnconf := signMCPArgs(t, g, "claude", repoEvilClone, false, "invoke_tool", map[string]any{"tool_id": "gitlab.list", "arguments": map[string]any{}})
-	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeUnconf})); err != nil {
-		t.Fatalf("claude in unconfigured repo should match (*, claude) gitlab.list: %v", err)
+	if err := toolCallErr(claudeSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: claudeUnconf})); err == nil {
+		t.Fatal("claude in unconfigured repo bypassed empty global default")
 	}
 
 	// --- Invariant 6: Empty `git init` repo without origin & Dir segment-boundary (/proj != /proj-old) ---
 	emptyRead := signMCPArgs(t, g, "cursor", repoEmpty, false, "invoke_tool", map[string]any{"tool_id": "github.list", "arguments": map[string]any{}})
 	if err := toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: emptyRead})); err != nil {
 		t.Fatalf("empty git init repo failed to match CommonDir: %v", err)
+	}
+	emptyWrite := signMCPArgs(t, g, "cursor", repoEmpty, false, "invoke_tool", map[string]any{"tool_id": "github.mutate", "arguments": map[string]any{}})
+	if err := toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: emptyWrite})); err == nil {
+		t.Fatal("RO repo grant allowed write tool github.mutate")
 	}
 	projOK := signMCPArgs(t, g, "cursor", dirProj, false, "invoke_tool", map[string]any{"tool_id": "gitlab.mutate", "arguments": map[string]any{}})
 	if err := toolCallErr(cursorSess.CallTool(context.Background(), &mcp.CallToolParams{Name: "invoke_tool", Arguments: projOK})); err != nil {
@@ -480,7 +472,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 		t.Fatal("unbound Git repo nested inside bound KindDir RootPaths inherited parent dir grants!")
 	}
 
-	// --- Verify Activity Logs contain detail.scope ---
+	// --- Verify Activity Logs contain detail.scope (including agent for audit) ---
 	events := g.Activity().Recent()
 	foundDiscoverScope := false
 	foundInvokeScope := false
@@ -496,7 +488,7 @@ func TestMCPScopeSecurityInvariantsWorktreesAndPrecedence(t *testing.T) {
 		if ev.Kind == "discover" && sc["status"] != "" {
 			foundDiscoverScope = true
 		}
-		if ev.Kind == "invoke" && sc["repo_id"] == boundMain.ID && sc["agent"] == "codex" && sc["matched_rule"] == boundMain.ID+":codex" {
+		if ev.Kind == "invoke" && sc["repo_id"] == boundMain.ID && sc["agent"] == "codex" && sc["matched_rule"] == boundMain.ID {
 			foundInvokeScope = true
 		}
 	}
@@ -561,9 +553,8 @@ func TestSingleServiceScopeSkipsHierarchicalSelectServices(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := g.Scope().SaveScopeRule(scope.ScopeRule{
-		RepoKey:  repo.ID,
-		AgentKey: "*",
-		Grants:   []scope.ServiceGrant{{ServerID: "roster", Access: "ro"}},
+		RepoKey: repo.ID,
+		Grants:  []scope.ServiceGrant{{ServerID: "roster", Access: "ro"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -574,7 +565,7 @@ func TestSingleServiceScopeSkipsHierarchicalSelectServices(t *testing.T) {
 	serviceStageCalls.Store(0)
 	toolStageCalls.Store(0)
 
-	simCtx, err := g.Scope().EvaluateSimulatedScope(scope.SimScope{RepoKey: repo.ID, AgentKey: "codex"})
+	simCtx, err := g.Scope().EvaluateSimulatedScope(scope.SimScope{RepoKey: repo.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -674,26 +665,19 @@ func TestSharedModeRESTNonAdminGuardSimScopeAndHTTPAPIs(t *testing.T) {
 	_ = json.Unmarshal(recRepo.Body.Bytes(), &createdRepo)
 
 	recRule := doReq("PUT", "/api/scopes/rules", adminTestToken, "", scope.ScopeRule{
-		RepoKey:  createdRepo.ID,
-		AgentKey: "*",
+		RepoKey: createdRepo.ID,
 		Grants: []scope.ServiceGrant{
 			{ServerID: "service", Access: "ro"},
-			{ServerID: "catalog", Access: "ro"}, // built-in demo server must be excluded from preview counts
+			{ServerID: "catalog", Access: "ro"},
 		},
 	})
 	if recRule.Code != 200 {
 		t.Fatalf("PUT /api/scopes/rules failed: %d %s", recRule.Code, recRule.Body.String())
 	}
 
-	// Verify POST /api/scopes/preview (excludes demo servers!) & GET /api/scopes/snippets & GET /api/bootstrap.
-	recPreview := doReq("POST", "/api/scopes/preview", adminTestToken, "", map[string]any{"repo_key": createdRepo.ID, "actor": "owner"})
-	if recPreview.Code != 200 {
-		t.Fatalf("preview failed: %d %s", recPreview.Code, recPreview.Body.String())
-	}
-	var preview scope.ScopePreviewResponse
-	_ = json.Unmarshal(recPreview.Body.Bytes(), &preview)
-	if len(preview.Agents) != 6 || preview.Agents[0].Agent != "codex" || preview.Agents[0].ServerCount != 1 || preview.Agents[0].ToolCount != 1 || preview.Agents[0].HasWrite {
-		t.Fatalf("unexpected preview response (demo server should be excluded): %+v", preview)
+	// Verify deprecated POST /api/scopes/preview is removed, while GET /api/scopes/snippets & GET /api/bootstrap work.
+	if recPreview := doReq("POST", "/api/scopes/preview", adminTestToken, "", map[string]any{"repo_key": createdRepo.ID, "actor": "owner"}); recPreview.Code != http.StatusNotFound && recPreview.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected removed /api/scopes/preview to return 404/405, got %d %s", recPreview.Code, recPreview.Body.String())
 	}
 
 	recSnip := doReq("GET", "/api/scopes/snippets?agent=opencode", adminTestToken, "", nil)
@@ -771,18 +755,18 @@ func TestSharedModeRESTNonAdminGuardSimScopeAndHTTPAPIs(t *testing.T) {
 	//    - repo_key == "*" (unconfigured) -> 403 on service.read
 	//    - repo_key == createdRepo.ID (RO) -> 200 on service.read, 403 on service.write
 	//    - repo_key == "" (admin full view) -> 200 on service.write
-	if rec := doReq("POST", "/api/invoke", adminTestToken, "", map[string]any{"tool_id": "service.read", "arguments": map[string]any{}, "sim_scope": map[string]string{"repo_key": "*", "agent_key": "codex"}}); rec.Code != 403 {
+	if rec := doReq("POST", "/api/invoke", adminTestToken, "", map[string]any{"tool_id": "service.read", "arguments": map[string]any{}, "sim_scope": map[string]string{"repo_key": "*"}}); rec.Code != 403 {
 		t.Fatalf("admin sim_scope * should have 0 tools: %d", rec.Code)
 	}
-	if rec := doReq("POST", "/api/invoke", adminTestToken, "", map[string]any{"tool_id": "service.write", "arguments": map[string]any{}, "sim_scope": map[string]string{"repo_key": createdRepo.ID, "agent_key": "codex"}}); rec.Code != 403 {
+	if rec := doReq("POST", "/api/invoke", adminTestToken, "", map[string]any{"tool_id": "service.write", "arguments": map[string]any{}, "sim_scope": map[string]string{"repo_key": createdRepo.ID}}); rec.Code != 403 {
 		t.Fatalf("admin sim_scope RO should block write: %d", rec.Code)
 	}
-	if rec := doReq("POST", "/api/invoke", adminTestToken, "", map[string]any{"tool_id": "service.write", "arguments": map[string]any{}, "sim_scope": map[string]string{"repo_key": "", "agent_key": ""}}); rec.Code != 200 {
+	if rec := doReq("POST", "/api/invoke", adminTestToken, "", map[string]any{"tool_id": "service.write", "arguments": map[string]any{}, "sim_scope": map[string]string{"repo_key": ""}}); rec.Code != 200 {
 		t.Fatalf("admin sim_scope full view failed: %d %s", rec.Code, rec.Body.String())
 	}
 
 	// 8. Delete rule and repository via HTTP API.
-	if rec := doReq("DELETE", fmt.Sprintf("/api/scopes/rules?repo_key=%s&agent_key=*", url.QueryEscape(createdRepo.ID)), adminTestToken, "", nil); rec.Code != 200 {
+	if rec := doReq("DELETE", fmt.Sprintf("/api/scopes/rules?repo_key=%s", url.QueryEscape(createdRepo.ID)), adminTestToken, "", nil); rec.Code != 200 {
 		t.Fatalf("DELETE rule failed: %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := doReq("DELETE", "/api/scopes/repositories/"+url.PathEscape(createdRepo.ID), adminTestToken, "", nil); rec.Code != 200 {
@@ -802,9 +786,8 @@ func TestEndToEndGatewayHookBinaryToGatewayMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := g.Scope().SaveScopeRule(scope.ScopeRule{
-		RepoKey:  repo.ID,
-		AgentKey: "claude",
-		Grants:   []scope.ServiceGrant{{ServerID: "github", Access: "ro"}},
+		RepoKey: repo.ID,
+		Grants:  []scope.ServiceGrant{{ServerID: "github", Access: "ro"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
