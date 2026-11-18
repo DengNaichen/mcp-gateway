@@ -292,7 +292,7 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 			if SailSmallButton(c.Key("svc-btn-openapi"), "OpenAPI 导入").Clicked() {
 				st.openAddModal(2)
 			}
-			if ui.PrimaryButton(c.Key("svc-btn-add"), "添加上游服务").Padding(6, 13).FontSize(12.5).Clicked() {
+			if SailPrimaryButton(c.Key("svc-btn-add"), "添加上游服务").Padding(6, 13).FontSize(12.5).Clicked() {
 				st.openAddModal(0)
 			}
 		},
@@ -636,7 +636,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 			}
 
 			if server.Kind == "http" && !server.Demo {
-				if ui.PrimaryButton(c.Key("detail-add-http-tool"), "添加 HTTP 工具").
+				if SailPrimaryButton(c.Key("detail-add-http-tool"), "添加 HTTP 工具").
 					Padding(5, 11).
 					FontSize(12.5).
 					Clicked() {
@@ -1183,7 +1183,7 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 				st.hydrateConnForm(server)
 			}
 			if st.connMode == 1 {
-				if ui.PrimaryButton(c.Key("conn-save-json-"+server.ID), "保存 JSON").
+				if SailPrimaryButton(c.Key("conn-save-json-"+server.ID), "保存 JSON").
 					Disabled(st.connBusy).
 					Clicked() {
 					u.saveConnJSON(st, server)
@@ -1198,7 +1198,7 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 				if st.connBusy {
 					btnLabel = "测试连接中…"
 				}
-				if ui.PrimaryButton(c.Key("conn-save-test-"+server.ID), btnLabel).
+				if SailPrimaryButton(c.Key("conn-save-test-"+server.ID), btnLabel).
 					Disabled(st.connBusy).
 					Clicked() {
 					u.saveConnForm(st, server, true)
@@ -1430,7 +1430,7 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 				Clicked() {
 				u.saveMaintenanceConfig(st, server, true, true)
 			}
-			if ui.PrimaryButton(c.Key("maint-save-run-"+server.ID), "保存并立即检查").
+			if SailPrimaryButton(c.Key("maint-save-run-"+server.ID), "保存并立即检查").
 				Disabled(st.maintBusy).
 				Clicked() {
 				u.saveMaintenanceConfig(st, server, true, false)
@@ -1498,7 +1498,7 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 				ui.Row(c).Gap(10).AlignItems(ui.Center).Shrink(0).Children(func() {
 					ui.Text(c, FormatTime(r.CreatedAt)).FontSize(11.5).TextColor(SailInkFaint).FontFeatures("tnum")
 					if r.Status == "ready" && r.Acceptance.Passed {
-						if ui.PrimaryButton(c.Key("run-pub-"+r.ID), "发布版本").
+						if SailPrimaryButton(c.Key("run-pub-"+r.ID), "发布版本").
 							Padding(4, 10).
 							FontSize(12).
 							Disabled(st.maintBusy).
@@ -1614,7 +1614,7 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 			Radius(10).
 			Background(SailBgCanvas).
 			Border(1, SailBorder).
-			Shadow(0, 12, 36, 0, ui.RGBA(10, 37, 64, 0.25))
+			Shadow(0, 12, 36, 0, SailModalShadow)
 
 		// Header
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
@@ -1784,7 +1784,7 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 					if st.addBusy {
 						lbl = "正在连接…"
 					}
-					if ui.PrimaryButton(c.Key("add-submit-mcp"), lbl).Disabled(st.addBusy).Clicked() {
+					if SailPrimaryButton(c.Key("add-submit-mcp"), lbl).Disabled(st.addBusy).Clicked() {
 						u.submitAddMCPService(st)
 					}
 				case 2:
@@ -1792,11 +1792,11 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 					if st.addBusy {
 						lbl = "正在导入…"
 					}
-					if ui.PrimaryButton(c.Key("add-submit-oapi"), lbl).Disabled(st.addBusy).Clicked() {
+					if SailPrimaryButton(c.Key("add-submit-oapi"), lbl).Disabled(st.addBusy).Clicked() {
 						u.submitAddOpenAPIService(st)
 					}
 				case 3:
-					if ui.PrimaryButton(c.Key("add-parse-paste"), "解析并填入表单").
+					if SailPrimaryButton(c.Key("add-parse-paste"), "解析并填入表单").
 						Disabled(strings.TrimSpace(st.addPasteText) == "").
 						Clicked() {
 						st.parsePasteJSON()
@@ -1935,7 +1935,7 @@ func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 			Radius(10).
 			Background(SailBgCanvas).
 			Border(1, SailBorder).
-			Shadow(0, 12, 36, 0, ui.RGBA(10, 37, 64, 0.25))
+			Shadow(0, 12, 36, 0, SailModalShadow)
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Column(c).Gap(2).Children(func() {
@@ -2029,7 +2029,7 @@ func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 			if st.toolEditBusy {
 				lbl = "保存中…"
 			}
-			if ui.PrimaryButton(c.Key("tool-edit-save"), lbl).Disabled(st.toolEditBusy).Clicked() {
+			if SailPrimaryButton(c.Key("tool-edit-save"), lbl).Disabled(st.toolEditBusy).Clicked() {
 				u.saveEditedTool(st, t)
 			}
 		})
@@ -2058,7 +2058,7 @@ func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState,
 			Radius(10).
 			Background(SailBgCanvas).
 			Border(1, SailBorder).
-			Shadow(0, 12, 36, 0, ui.RGBA(10, 37, 64, 0.25))
+			Shadow(0, 12, 36, 0, SailModalShadow)
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Text(c, "添加 HTTP 工具").FontSize(17).Bold().TextColor(SailInkStrong)
@@ -2124,7 +2124,7 @@ func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState,
 			if st.httpToolBusy {
 				lbl = "保存中…"
 			}
-			if ui.PrimaryButton(c.Key("http-tool-submit"), lbl).Disabled(st.httpToolBusy).Clicked() {
+			if SailPrimaryButton(c.Key("http-tool-submit"), lbl).Disabled(st.httpToolBusy).Clicked() {
 				u.submitAddHTTPTool(st, server.ID)
 			}
 		})

@@ -61,7 +61,11 @@ var (
 	SailNeutralBorder = ui.Hex("#e2e8f0")
 	SailNeutralInk    = ui.Hex("#475569")
 
-	SailCardShadow = ui.RGBA(15, 23, 42, 0.035)
+	SailSurfaceBorder  = ui.RGBA(15, 23, 42, 0.065)
+	SailControlShadow  = ui.RGBA(15, 23, 42, 0.07)
+	SailCardShadow     = ui.RGBA(15, 23, 42, 0.04)
+	SailFloatingShadow = ui.RGBA(15, 23, 42, 0.12)
+	SailModalShadow    = ui.RGBA(10, 37, 64, 0.25)
 )
 
 // setSailPalette swaps the Sail tokens for the light or dark palette.
@@ -104,7 +108,11 @@ func setSailPalette(dark bool) {
 		SailNeutralBg = ui.Hex("#f1f5f9")
 		SailNeutralBorder = ui.Hex("#e2e8f0")
 		SailNeutralInk = ui.Hex("#475569")
-		SailCardShadow = ui.RGBA(15, 23, 42, 0.035)
+		SailSurfaceBorder = ui.RGBA(15, 23, 42, 0.065)
+		SailControlShadow = ui.RGBA(15, 23, 42, 0.07)
+		SailCardShadow = ui.RGBA(15, 23, 42, 0.04)
+		SailFloatingShadow = ui.RGBA(15, 23, 42, 0.12)
+		SailModalShadow = ui.RGBA(10, 37, 64, 0.25)
 		return
 	}
 	SailDivider = ui.Hex("#1d293c")
@@ -120,7 +128,11 @@ func setSailPalette(dark bool) {
 	SailDangerBg, SailDangerBorder, SailDangerInk = ui.Hex("#381416"), ui.Hex("#661f24"), ui.Hex("#f87171")
 	SailInfoBg, SailInfoBorder, SailInfoInk = ui.Hex("#1a2150"), ui.Hex("#2f3a8a"), ui.Hex("#a5b4fc")
 	SailNeutralBg, SailNeutralBorder, SailNeutralInk = ui.Hex("#1b263b"), ui.Hex("#2b3750"), ui.Hex("#a3b1c6")
-	SailCardShadow = ui.RGBA(0, 0, 0, 0.35)
+	SailSurfaceBorder = ui.RGBA(255, 255, 255, 0.08)
+	SailControlShadow = ui.RGBA(0, 0, 0, 0.32)
+	SailCardShadow = ui.RGBA(0, 0, 0, 0.20)
+	SailFloatingShadow = ui.RGBA(0, 0, 0, 0.40)
+	SailModalShadow = ui.RGBA(0, 0, 0, 0.55)
 }
 
 // BadgeTone identifies semantic status styling for high-signal pills and alerts.
@@ -226,8 +238,8 @@ func SailCard(c *ui.Context, fn func()) ui.Element {
 		Gap(16).
 		Radius(10).
 		Background(SailBgCanvas).
-		Border(1, SailBorder).
-		Shadow(0, 1, 2, 0, SailCardShadow).
+		Border(1, SailSurfaceBorder).
+		Shadow(0, 3, 10, 0, SailCardShadow).
 		Children(fn)
 }
 
@@ -237,8 +249,8 @@ func SailFlushCard(c *ui.Context, fn func()) ui.Element {
 		FillWidth().
 		Radius(10).
 		Background(SailBgCanvas).
-		Border(1, SailBorder).
-		Shadow(0, 1, 2, 0, SailCardShadow).
+		Border(1, SailSurfaceBorder).
+		Shadow(0, 3, 10, 0, SailCardShadow).
 		Clip().
 		Children(fn)
 }
@@ -361,8 +373,8 @@ func SailKPICard(c *ui.Context, label, value, hint string, tone BadgeTone, onCli
 		Gap(6).
 		Radius(10).
 		Background(SailBgCanvas).
-		Border(1, SailBorder).
-		Shadow(0, 1, 2, 0, SailCardShadow)
+		Border(1, SailSurfaceBorder).
+		Shadow(0, 3, 10, 0, SailCardShadow)
 	if onClick != nil {
 		card.Cursor(ui.CursorPointer)
 		if card.Hovered() {
@@ -399,7 +411,7 @@ func SailEmptyState(c *ui.Context, title, description, actionLabel string, onAct
 				ui.Text(c, description).FontSize(12.5).LineHeight(1.5).TextColor(SailInkMuted).TextAlign(ui.Center).MaxWidth(440)
 			}
 			if actionLabel != "" && onAction != nil {
-				if ui.PrimaryButton(c, actionLabel).Margin(6, 0, 0, 0).Clicked() {
+				if SailPrimaryButton(c, actionLabel).Margin(6, 0, 0, 0).Clicked() {
 					onAction()
 				}
 			}
@@ -496,9 +508,32 @@ func SailAlertBox(c *ui.Context, tone BadgeTone, title, detail string) {
 		})
 }
 
-// SailSmallButton renders a compact secondary button styled with subtle keyline borders.
+// SailButton keeps secondary actions lightly raised, with a flat pressed face.
+func SailButton(c *ui.Context, label string) ui.Element {
+	btn := ui.Button(c, label).Background(SailBgCanvas).Border(1, SailSurfaceBorder)
+	if btn.Pressed() {
+		btn.Background(SailBgMuted)
+	} else {
+		btn.Shadow(0, 2, 6, 0, SailControlShadow)
+		if btn.Hovered() {
+			btn.Background(SailBgHover)
+		}
+	}
+	return btn
+}
+
+// SailPrimaryButton preserves the native primary face and its interaction states.
+func SailPrimaryButton(c *ui.Context, label string) ui.Element {
+	btn := ui.PrimaryButton(c, label)
+	if !btn.Pressed() {
+		btn.Shadow(0, 2, 6, 0, SailControlShadow)
+	}
+	return btn
+}
+
+// SailSmallButton renders a compact secondary action using the shared control surface.
 func SailSmallButton(c *ui.Context, label string) ui.Element {
-	return ui.Button(c, label).Padding(5, 11).FontSize(12.5)
+	return SailButton(c, label).Padding(5, 11).FontSize(12.5)
 }
 
 // SailDangerButton renders a compact red-tinted action button for destructive or warning actions.

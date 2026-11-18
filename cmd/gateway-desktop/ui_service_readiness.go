@@ -690,7 +690,7 @@ func renderReadinessActionBanner(c *ui.Context, keyPrefix string, r serviceReadi
 			})
 			if r.AlertAction != readinessActionNone && r.AlertActionLabel != "" && onAction != nil {
 				if r.AlertTone == ToneDanger {
-					if ui.PrimaryButton(c.Key(keyPrefix+"-act"), r.AlertActionLabel).
+					if SailPrimaryButton(c.Key(keyPrefix+"-act"), r.AlertActionLabel).
 						Padding(5, 11).
 						FontSize(12).
 						Disabled(busy).

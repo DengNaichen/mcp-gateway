@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>控件阴影对比 · MCP Gateway</title>
+<style>
+  :root { color-scheme:light; --page:#fff; --ink:#111827; --body:#374151; --muted:#6b7280; --faint:#9ca3af; --stage:#f8fafc; --surface:#fff; --line:#edf1f6; --border:#e5e9f0; --hover:#eef2f6; --accent:#635bff; --accent-soft:#f5f6ff; --old-shadow:0 1px 2px rgba(15,23,42,.035); --lift-border:rgba(15,23,42,.065); --lift-shadow:0 2px 6px rgba(15,23,42,.07); --card-shadow:0 3px 10px rgba(15,23,42,.04); }
+  :root[data-theme="dark"] { color-scheme:dark; --page:#0f1626; --ink:#eef2f7; --body:#cbd5e1; --muted:#94a3b8; --faint:#64748b; --stage:#0b1120; --surface:#0f1626; --line:#202c40; --border:#29364d; --hover:#202c40; --accent:#918aff; --accent-soft:#22213d; --old-shadow:0 1px 2px rgba(0,0,0,.35); --lift-border:rgba(255,255,255,.08); --lift-shadow:0 2px 6px rgba(0,0,0,.32); --card-shadow:0 3px 10px rgba(0,0,0,.20); }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--page); color:var(--ink); font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; -webkit-font-smoothing:antialiased; }
+  button { font:inherit; color:inherit; cursor:pointer; }
+  button:focus-visible, summary:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+  svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+  .symbols { position:absolute; width:0; height:0; overflow:hidden; }
+  main { max-width:1120px; margin:auto; padding:48px 32px 32px; }
+  .top { display:flex; justify-content:space-between; gap:24px; align-items:center; margin-bottom:30px; }
+  .eyebrow { color:var(--muted); font-size:11px; letter-spacing:.08em; margin-bottom:8px; }
+  h1 { font-size:26px; letter-spacing:-.6px; margin:0; font-weight:650; }
+  .intro { margin:8px 0 0; color:var(--muted); }
+  .theme { display:flex; gap:3px; padding:3px; background:var(--stage); border:1px solid var(--line); border-radius:8px; flex:none; }
+  .theme button { border:0; background:transparent; color:var(--muted); padding:6px 12px; border-radius:5px; }
+  .theme button[aria-pressed="true"] { background:var(--surface); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .comparison { display:grid; grid-template-columns:1fr 1fr; gap:28px; }
+  .column-head { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px; }
+  h2 { font-size:15px; font-weight:600; margin:0; }
+  .descriptor { color:var(--muted); font-size:12px; }
+  .stage { border:1px solid var(--line); background:var(--stage); border-radius:12px; padding:26px; }
+  .sample-label { display:block; color:var(--muted); font-size:11px; margin-bottom:12px; }
+  nav { display:flex; flex-direction:column; gap:3px; }
+  .nav-item { display:flex; align-items:center; gap:10px; width:100%; padding:8px 11px; border:1px solid transparent; border-radius:6px; color:var(--body); background:transparent; text-align:left; transition:background .12s,box-shadow .12s; }
+  .nav-item svg { color:var(--muted); }
+  .nav-item .count { margin-left:auto; color:var(--faint); font-size:12px; font-variant-numeric:tabular-nums; }
+  .nav-item:hover { background:var(--hover); }
+  .nav-item[aria-current="page"] { background:var(--surface); border-color:var(--border); box-shadow:var(--old-shadow); font-weight:600; color:var(--ink); }
+  .nav-item[aria-current="page"] svg,.nav-item[aria-current="page"] .count { color:var(--accent); }
+  .raised .nav-item[aria-current="page"] { border-color:var(--lift-border); box-shadow:var(--lift-shadow); }
+  .separator { height:1px; background:var(--line); margin:24px 0; }
+  .actions { display:flex; align-items:center; gap:10px; min-height:38px; }
+  .control { display:inline-flex; align-items:center; justify-content:center; gap:6px; border:1px solid var(--border); border-radius:6px; padding:7px 12px; background:var(--surface); color:var(--body); box-shadow:var(--old-shadow); transition:box-shadow .12s,background .12s,transform .1s; }
+  .raised .control { border-color:var(--lift-border); box-shadow:var(--lift-shadow); }
+  .control:hover { background:var(--page); border-color:var(--faint); }
+  .control:active { box-shadow:none; background:var(--hover); }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:var(--old-shadow); padding:18px 20px; }
+  .raised .card { border-color:var(--lift-border); box-shadow:var(--card-shadow); }
+  .card-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; font-weight:600; font-size:14px; }
+  .status { display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); font-weight:400; }
+  .dot { background:#16a34a; width:5px; height:5px; border-radius:50%; }
+  .service { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 0; border-top:1px solid var(--line); }
+  .service:last-child { padding-bottom:0; }
+  .service small { color:var(--muted); font-size:11px; }
+  .caption { padding-top:13px; color:var(--muted); font-size:12px; }
+  footer { margin-top:24px; display:flex; flex-wrap:wrap; justify-content:space-between; gap:16px; color:var(--muted); font-size:12px; }
+  details { margin-top:28px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); }
+  summary { cursor:pointer; width:fit-content; font-size:12px; }
+  .spec { display:grid; grid-template-columns:1fr 1fr; gap:28px; margin-top:14px; font-size:12px; }
+  code { font:11px/1.8 ui-monospace,SFMono-Regular,monospace; }
+  .feedback { min-height:18px; color:var(--accent); }
+  @media(max-width:720px) { main { padding:28px 18px; } .comparison { grid-template-columns:1fr; gap:24px; } .top { align-items:flex-start; } h1 { font-size:22px; } .theme button { padding:5px 8px; } .stage { padding:22px; } .spec { grid-template-columns:1fr; } }
+  @media(prefers-reduced-motion:reduce) { * { transition:none!important; } }
+</style>
+</head>
+<body>
+<svg class="symbols" aria-hidden="true"><defs>
+  <symbol id="repo" viewBox="0 0 24 24"><path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h2M9 4l2 3h8a2 2 0 0 1 2 2v4M9 4H7"/><circle cx="12" cy="12" r="2"/><path d="M12 14v6m0-3h6m0 0v3m0-3v-3"/></symbol>
+  <symbol id="clients" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></symbol>
+  <symbol id="route" viewBox="0 0 24 24"><circle cx="5" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><path d="m7 5 8 0m-10 2v10m2 2h6a6 6 0 0 0 0-12h-1"/></symbol>
+  <symbol id="refresh" viewBox="0 0 24 24"><path d="M20 7a9 9 0 1 0 0 10M20 3v5h-5"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+</defs></svg>
+<main>
+  <header class="top">
+    <div><div class="eyebrow">MCP GATEWAY / PROTOTYPE</div><h1>控件阴影对比</h1><p class="intro">弱化边框，把阴影留在表面的下方。</p></div>
+    <div class="theme" role="group" aria-label="外观"><button type="button" data-theme="light" aria-pressed="true">浅色</button><button type="button" data-theme="dark" aria-pressed="false">深色</button></div>
+  </header>
+  <div class="comparison" id="comparison"></div>
+  <footer><span>点击导航，或悬停、按住按钮查看状态。</span><span class="feedback" role="status" id="feedback"></span></footer>
+  <details><summary>查看阴影参数</summary><div class="spec"><div>当前<br><code>border: #e5e9f0<br>shadow: 0 1px 2px rgba(15,23,42,.035)</code></div><div>轻微浮起 · 浅色<br><code>border: rgba(15,23,42,.065)<br>shadow: 0 2px 6px rgba(15,23,42,.07)<br>card: 0 3px 10px rgba(15,23,42,.04)</code></div></div></details>
+</main>
+<script>
+  const icon = name => `<svg aria-hidden="true"><use href="#${name}"></use></svg>`;
+  const items = [{id:'repos',label:'仓库绑定',icon:'repo',count:'5'},{id:'clients',label:'连接客户端',icon:'clients',count:'6'},{id:'settings',label:'访问与路由',icon:'route',count:''}];
+  document.getElementById('comparison').innerHTML = [
+    {className:'current',title:'当前',descriptor:'边框更明显',caption:'均匀的描边，投影较紧、较淡。'},
+    {className:'raised',title:'轻微浮起',descriptor:'调整后',caption:'边缘更轻，下方有一层柔和的承托。'}
+  ].map(variant => `<section class="${variant.className}" aria-label="${variant.title}">
+    <div class="column-head"><h2>${variant.title}</h2><span class="descriptor">${variant.descriptor}</span></div>
+    <div class="stage">
+      <span class="sample-label">导航选中项</span>
+      <nav aria-label="${variant.title}导航">${items.map(item => `<button type="button" class="nav-item" data-nav="${item.id}" ${item.id==='clients'?'aria-current="page"':''}>${icon(item.icon)}<span>${item.label}</span><span class="count">${item.count}</span></button>`).join('')}</nav>
+      <div class="separator"></div><span class="sample-label">操作按钮</span>
+      <div class="actions"><button class="control" type="button" data-action="refresh">${icon('refresh')}刷新</button><button class="control" type="button" data-action="add">${icon('plus')}添加服务</button></div>
+      <div class="separator"></div><span class="sample-label">内容卡片</span>
+      <div class="card"><div class="card-title">上游服务<span class="status"><span class="dot"></span>运行正常</span></div><div class="service"><span>GitHub</span><small>12 个工具</small></div><div class="service"><span>Linear</span><small>8 个工具</small></div></div>
+    </div><p class="caption">${variant.caption}</p>
+  </section>`).join('');
+  document.querySelectorAll('[data-nav]').forEach(button => button.addEventListener('click', () => {
+    document.querySelectorAll('[data-nav]').forEach(item => {
+      if(item.dataset.nav===button.dataset.nav) item.setAttribute('aria-current','page');
+      else item.removeAttribute('aria-current');
+    });
+  }));
+  document.querySelectorAll('[data-theme]').forEach(button => button.addEventListener('click', () => {
+    document.documentElement.dataset.theme=button.dataset.theme;
+    document.querySelectorAll('button[data-theme]').forEach(item => item.setAttribute('aria-pressed',String(item===button)));
+  }));
+  let feedbackTimer;
+  document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => {
+    clearTimeout(feedbackTimer);
+    document.getElementById('feedback').textContent=button.dataset.action==='refresh'?'已刷新 · 原型演示':'添加服务 · 原型演示';
+    feedbackTimer=setTimeout(() => document.getElementById('feedback').textContent='',1800);
+  }));
+</script>
+</body>
+</html>

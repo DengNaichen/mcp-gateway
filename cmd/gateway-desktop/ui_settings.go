@@ -479,7 +479,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 					if st.busyMode == "test" {
 						testLabel = "校验中…"
 					}
-					if ui.Button(c.Key("set-save-test"), testLabel).
+					if SailButton(c.Key("set-save-test"), testLabel).
 						Disabled(st.busyMode != "" || !state.Setup.ToolsReady).
 						Clicked() {
 						u.submitSettings(st, true)
@@ -516,7 +516,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 				if st.pingBusy {
 					pingLabel = "测试中…"
 				}
-				if ui.Button(c.Key("set-ping-model"), pingLabel).Disabled(st.pingBusy || st.busyMode != "").Clicked() {
+				if SailButton(c.Key("set-ping-model"), pingLabel).Disabled(st.pingBusy || st.busyMode != "").Clicked() {
 					u.pingSettingsModel(st)
 				}
 
@@ -524,7 +524,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 				if st.busyMode == "save" {
 					saveLabel = "保存中…"
 				}
-				if ui.PrimaryButton(c.Key("set-save-only"), saveLabel).Disabled(!settingsCanSave(st, state)).Clicked() {
+				if SailPrimaryButton(c.Key("set-save-only"), saveLabel).Disabled(!settingsCanSave(st, state)).Clicked() {
 					u.submitSettings(st, false)
 				}
 			})

@@ -28,6 +28,10 @@
 
 ---
 
+### 1.1 表面与阴影层级
+
+采用已确认的[控件阴影规范](../control-elevation/elevation_design.md)：选中导航和操作按钮弱化边框，用轻微向下的外阴影表达浮起；普通内容卡片更淡，列表行继续使用分割线；下拉浮层、弹窗和悬浮抽屉有独立的阴影层级。浅深色分别设置阴影透明度，按钮按住时撤去投影。对比见[阴影原型](../control-elevation/elevation.html)。
+
 ## 2. 上游 MCP `Description` 解析清洗与排版标准
 
 真实上游 MCP / OpenAPI 工具的 `description` 常包含大量换行符、`###` 标题、`**粗体**`、`` `code` ``、`- ` / `* ` / `1.` 列表以及 `Args:` / `Parameters:` / `Returns:` 文档段，直接纯文本输出会糊成一团。
