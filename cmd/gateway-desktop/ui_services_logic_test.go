@@ -240,3 +240,67 @@ func TestFilterPaginateAndBuildToolPayloads(t *testing.T) {
 		t.Fatal("expected error for missing required HTTP tool fields")
 	}
 }
+
+func TestAddServiceFormParseAndPayloads(t *testing.T) {
+	// 1. Standard mcpServers stdio JSON
+	add := defaultServiceAddFormState()
+	add.show = true
+	add.tab = 3
+	add.pasteText = `{"mcpServers":{"GitHub Tools":{"command":"npx","cwd":"/tmp","args":["-y","@modelcontextprotocol/server-github"],"env":{"GITHUB_TOKEN":"${GITHUB_TOKEN}"}}}}`
+	add.parsePasteJSON()
+	if add.errMsg != "" || add.tab != 0 || add.id != "github-tools" || add.command != "npx" || add.workDir != "/tmp" {
+		t.Fatalf("unexpected stdio paste result: %+v", add)
+	}
+	mcpSrv, err := add.buildMCPServerPayload()
+	if err != nil {
+		t.Fatalf("buildMCPServerPayload stdio error: %v", err)
+	}
+	if mcpSrv.Transport != "stdio" || mcpSrv.Env["GITHUB_TOKEN"] != "${GITHUB_TOKEN}" || len(mcpSrv.Args) != 2 {
+		t.Fatalf("unexpected stdio payload: %+v", mcpSrv)
+	}
+
+	// 2. Standard mcpServers SSE + OAuth JSON
+	add.pasteText = `{"mcpServers":{"Linear":{"type":"sse","url":"https://mcp.linear.app/sse","oauth":true,"headers":{"Authorization":"Bearer ${LIN_TOKEN}"}}}}`
+	add.parsePasteJSON()
+	if add.errMsg != "" || add.tab != 1 || !add.remoteOAuth || add.remoteProto != i18n.T("services.add.proto_sse") || add.endpoint != "https://mcp.linear.app/sse" {
+		t.Fatalf("unexpected SSE paste result: %+v", add)
+	}
+	remoteSrv, err := add.buildMCPServerPayload()
+	if err != nil {
+		t.Fatalf("buildMCPServerPayload remote error: %v", err)
+	}
+	if remoteSrv.Transport != "http" || !remoteSrv.OAuth || remoteSrv.Headers["Authorization"] != "Bearer ${LIN_TOKEN}" {
+		t.Fatalf("unexpected remote payload: %+v", remoteSrv)
+	}
+
+	// 3. Multi-entry mcpServers error
+	add.pasteText = `{"mcpServers":{"a":{},"b":{}}}`
+	add.parsePasteJSON()
+	if add.errMsg == "" {
+		t.Fatal("expected error when pasting multiple mcpServers entries")
+	}
+
+	// 4. Gateway Server HTTP format -> OpenAPI tab
+	add.pasteText = `{"id":"billing","name":"Billing","kind":"http","endpoint":"https://api.acme.dev","headers":{"X-Key":"${K}"}}`
+	add.parsePasteJSON()
+	if add.errMsg != "" || add.tab != 2 || add.openAPIBaseURL != "https://api.acme.dev" {
+		t.Fatalf("unexpected gateway http paste result: %+v", add)
+	}
+	add.openAPISpecURL = "https://api.acme.dev/openapi.json"
+	add.openAPIOpsText = "listInvoices, createInvoice"
+	req, err := add.buildOpenAPIServerPayload()
+	if err != nil {
+		t.Fatalf("buildOpenAPIServerPayload error: %v", err)
+	}
+	if req.server.Kind != "http" || !reflect.DeepEqual(req.opIDs, []string{"listInvoices", "createInvoice"}) {
+		t.Fatalf("unexpected openapi payload: %+v", req)
+	}
+
+	// 5. Reset preserves show/tab while restoring defaults
+	add.show = true
+	add.tab = 2
+	add.reset()
+	if !add.show || add.tab != 2 || add.argsText != "[]" || add.envText != "{}" || add.openAPIBaseURL != "" {
+		t.Fatalf("unexpected reset state: %+v", add)
+	}
+}
