@@ -854,37 +854,6 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 				})
 			})
 
-			// Footer minimal MCP endpoint bar.
-			ui.Column(c).
-				FillWidth().
-				Padding(12, 14).
-				Gap(4).
-				BorderWidth(1, 0, 0, 0).
-				BorderColor(SailBorder).
-				Children(func() {
-					ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-						SailQuietStatus(c, "MCP 端点", SailSuccessInk, SailInkMuted)
-						copyBtn := ui.ButtonBase(c.Key("sidebar-copy-mcp")).
-							Padding(2, 6).
-							Radius(4).
-							Cursor(ui.CursorPointer)
-						if copyBtn.Hovered() {
-							copyBtn.Background(SailBgMuted)
-						}
-						copyBtn.Children(func() {
-							ui.Text(c, "复制").FontSize(11).FontWeight(500).TextColor(SailAccent).SingleLine()
-						})
-						if copyBtn.Clicked() {
-							c.WriteClipboard(state.MCPURL)
-							u.Notify("已复制 MCP 接入端点")
-						}
-					})
-					ui.Text(c, state.MCPURL).TruncateMiddle().Tooltip(state.MCPURL).
-						Font("monospace").
-						FontSize(11).
-						TextColor(SailInkFaint).
-						SingleLine()
-				})
 		})
 }
 

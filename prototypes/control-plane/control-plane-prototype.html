@@ -220,19 +220,7 @@
     }
     .nav-item.active .nav-count { color: var(--accent); }
 
-    /* Native Sidebar Footer (top-bordered, flat, no nested card) */
-    .sidebar-footer {
-      padding: 12px 14px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .endpoint-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
+    /* Compact copy actions used by code panels. */
     .endpoint-copy {
       border: none;
       background: transparent;
@@ -245,14 +233,6 @@
       font-family: inherit;
     }
     .endpoint-copy:hover { background: var(--bg-muted); }
-    .endpoint-url {
-      font-family: var(--mono);
-      font-size: 11px;
-      color: var(--ink-faint);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
 
     /* Main Workspace */
     .main {
@@ -1318,13 +1298,6 @@
         </div>
       </div>
 
-      <div class="sidebar-footer">
-        <div class="endpoint-top">
-          <span class="quiet-meta"><span class="dot dot-ok"></span>MCP 端点</span>
-          <button class="endpoint-copy" type="button" onclick="copyText('http://127.0.0.1:8788/mcp', '已复制 MCP 接入端点')">复制</button>
-        </div>
-        <div class="endpoint-url" title="http://127.0.0.1:8788/mcp">http://127.0.0.1:8788/mcp</div>
-      </div>
     </aside>
 
     <div class="main">
