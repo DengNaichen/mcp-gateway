@@ -167,3 +167,76 @@ func TestCollectServerToolsAndConnFormRoundTrip(t *testing.T) {
 		t.Fatalf("expected OAuth=true preserved for mcp remote: %+v", builtMCP)
 	}
 }
+
+func TestFilterPaginateAndBuildToolPayloads(t *testing.T) {
+	tools := []apitypes.Tool{
+		{ID: "s.read_a", Name: "read_a", Description: "Read alpha", Enabled: true, ReadOnly: true},
+		{ID: "s.write_b", Name: "write_b", Description: "Write beta", Enabled: true, ReadOnly: false},
+		{ID: "s.read_c", Name: "read_c", Description: "Read gamma", Enabled: false, ReadOnly: true},
+	}
+
+	if ids := allToolIDs(tools); !reflect.DeepEqual(ids, []string{"s.read_a", "s.write_b", "s.read_c"}) {
+		t.Fatalf("allToolIDs() = %v", ids)
+	}
+	if got := filterServiceTools(tools, 1, ""); len(got) != 2 {
+		t.Fatalf("enabled filter count = %d, want 2", len(got))
+	}
+	if got := filterServiceTools(tools, 2, ""); len(got) != 1 || got[0].ID != "s.read_c" {
+		t.Fatalf("disabled filter = %+v", got)
+	}
+	if got := filterServiceTools(tools, 3, "gamma"); len(got) != 1 || got[0].ID != "s.read_c" {
+		t.Fatalf("readonly+query filter = %+v", got)
+	}
+
+	pg := paginateServiceTools(tools, 99, 2)
+	if pg.page != 2 || pg.totalPages != 2 || pg.start != 2 || pg.end != 3 || !pg.hasFooter || len(pg.items) != 1 {
+		t.Fatalf("unexpected pagination: %+v", pg)
+	}
+	pgMin := paginateServiceTools(tools, 0, 2)
+	if pgMin.page != 1 || pgMin.start != 0 || pgMin.end != 2 {
+		t.Fatalf("unexpected clamped low page: %+v", pgMin)
+	}
+
+	toggled := buildWhitelistWithToolToggled(tools, "s.read_c", true)
+	if !reflect.DeepEqual(toggled, []string{"s.read_a", "s.write_b", "s.read_c"}) {
+		t.Fatalf("buildWhitelistWithToolToggled(enable) = %v", toggled)
+	}
+	toggledOff := buildWhitelistWithToolToggled(tools, "s.write_b", false)
+	if !reflect.DeepEqual(toggledOff, []string{"s.read_a"}) {
+		t.Fatalf("buildWhitelistWithToolToggled(disable) = %v", toggledOff)
+	}
+
+	var edit serviceToolEditState
+	edit.open(tools[0])
+	edit.desc = " Updated description "
+	edit.actors = "developer, observer"
+	edit.readOnly = false
+	builtEdit, err := edit.buildPayload(tools[0])
+	if err != nil {
+		t.Fatalf("edit.buildPayload error: %v", err)
+	}
+	if builtEdit.Description != "Updated description" || builtEdit.ReadOnly || !reflect.DeepEqual(builtEdit.Actors, []string{"developer", "observer"}) {
+		t.Fatalf("unexpected edited tool payload: %+v", builtEdit)
+	}
+	edit.tab = 1
+	edit.rawJSON = "{bad json"
+	if _, err := edit.buildPayload(tools[0]); err == nil {
+		t.Fatal("expected error for invalid tool JSON")
+	}
+
+	httpSt := defaultServiceHTTPToolState()
+	httpSt.name = "get_invoice"
+	httpSt.path = "/invoices/{id}"
+	httpSt.desc = "Get invoice"
+	httpTool, err := httpSt.buildPayload("billing")
+	if err != nil {
+		t.Fatalf("httpSt.buildPayload error: %v", err)
+	}
+	if httpTool.ID != "billing.get_invoice" || httpTool.Method != "GET" || !httpTool.Enabled || !httpTool.ReadOnly {
+		t.Fatalf("unexpected HTTP tool payload: %+v", httpTool)
+	}
+	httpSt.name = ""
+	if _, err := httpSt.buildPayload("billing"); err == nil {
+		t.Fatal("expected error for missing required HTTP tool fields")
+	}
+}
