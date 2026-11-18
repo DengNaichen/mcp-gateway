@@ -10,7 +10,7 @@ import (
 
 func (g *server) registerScopes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/scopes", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, http.StatusOK, wireScopeOverview(g.gw.Scope().ScopeOverview()))
+		respond(w, http.StatusOK, wireScopeOverview(g.scope.ScopeOverview()))
 	})
 	mux.HandleFunc("PUT /api/scopes/mode", func(w http.ResponseWriter, r *http.Request) {
 		var in apitypes.ScopeModeRequest
@@ -18,7 +18,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		if err := g.gw.Scope().SetScopeMode(in.Enforce); err != nil {
+		if err := g.scope.SetScopeMode(in.Enforce); err != nil {
 			fail(w, err)
 			return
 		}
@@ -30,7 +30,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		repo, err := g.gw.Scope().SaveRepository(r.Context(), domainSaveRepository(in))
+		repo, err := g.scope.SaveRepository(r.Context(), domainSaveRepository(in))
 		if err != nil {
 			fail(w, err)
 			return
@@ -38,7 +38,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 		respond(w, http.StatusOK, wireRepository(repo))
 	})
 	mux.HandleFunc("DELETE /api/scopes/repositories/{id}", func(w http.ResponseWriter, r *http.Request) {
-		if err := g.gw.Scope().DeleteRepository(r.PathValue("id")); err != nil {
+		if err := g.scope.DeleteRepository(r.PathValue("id")); err != nil {
 			fail(w, err)
 			return
 		}
@@ -50,7 +50,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		rule, err := g.gw.Scope().SaveScopeRule(domainRule(in))
+		rule, err := g.scope.SaveScopeRule(domainRule(in))
 		if err != nil {
 			fail(w, err)
 			return
@@ -58,14 +58,14 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 		respond(w, http.StatusOK, wireRule(rule))
 	})
 	mux.HandleFunc("DELETE /api/scopes/rules", func(w http.ResponseWriter, r *http.Request) {
-		if err := g.gw.Scope().DeleteScopeRule(r.URL.Query().Get("repo_key")); err != nil {
+		if err := g.scope.DeleteScopeRule(r.URL.Query().Get("repo_key")); err != nil {
 			fail(w, err)
 			return
 		}
 		respond(w, http.StatusOK, apitypes.Deleted{Deleted: true})
 	})
 	mux.HandleFunc("GET /api/scopes/snippets", func(w http.ResponseWriter, r *http.Request) {
-		out, err := g.gw.Scope().ScopeSnippet(r.URL.Query().Get("agent"))
+		out, err := g.scope.ScopeSnippet(r.URL.Query().Get("agent"))
 		if err != nil {
 			fail(w, err)
 			return
@@ -75,6 +75,6 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 }
 
 func (g *server) resolveRESTScope(ctx context.Context, r *http.Request, op string, rawBody []byte, sim *scope.SimScope) (context.Context, error) {
-	next, err := g.gw.Scope().ResolveRESTScope(ctx, scope.RESTRequest{Token: r.Header.Get("X-Gateway-Scope"), Agent: r.URL.Query().Get("agent"), ToolID: r.PathValue("id")}, op, rawBody, sim)
+	next, err := g.scope.ResolveRESTScope(ctx, scope.RESTRequest{Token: r.Header.Get("X-Gateway-Scope"), Agent: r.URL.Query().Get("agent"), ToolID: r.PathValue("id")}, op, rawBody, sim)
 	return next, err
 }

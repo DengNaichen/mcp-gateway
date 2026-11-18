@@ -21,7 +21,7 @@ import (
 // useRateLimitedModel points the gateway at a provider that always answers 429
 // with a delay longer than the gateway's retry cap, so the gateway must give up
 // at once and pass the delay on instead of waiting.
-func useRateLimitedModel(t *testing.T, g *gateway.Gateway) *atomic.Int32 {
+func useRateLimitedModel(t *testing.T, g *gateway.Gateway, svcs gateway.Services) *atomic.Int32 {
 	t.Helper()
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +32,7 @@ func useRateLimitedModel(t *testing.T, g *gateway.Gateway) *atomic.Int32 {
 		}})
 	}))
 	t.Cleanup(server.Close)
-	settings, _ := g.Model().Config()
+	settings, _ := svcs.Model.Config()
 	settings.BaseURL, settings.Model = server.URL, "fixture"
 	if err := g.SaveSettings(settings, "live-model-key", false); err != nil {
 		t.Fatal(err)
@@ -41,10 +41,10 @@ func useRateLimitedModel(t *testing.T, g *gateway.Gateway) *atomic.Int32 {
 }
 
 func TestUpstreamRateLimitSurfacesAs429(t *testing.T) {
-	g, _ := testGateway(t)
-	registerMultiServiceUpstream(t, g)
-	calls := useRateLimitedModel(t, g)
-	host := httptest.NewServer(Handler(g))
+	g, svcs, _ := testGateway(t)
+	registerMultiServiceUpstream(t, svcs.Registry)
+	calls := useRateLimitedModel(t, g, svcs)
+	host := httptest.NewServer(Handler(g, svcs))
 	defer host.Close()
 
 	body, _ := json.Marshal(map[string]any{"intent": "list github issues"})
@@ -115,7 +115,7 @@ func TestModelErrorStatusMapping(t *testing.T) {
 }
 
 func TestModelProfileSaveRequiresReachableModel(t *testing.T) {
-	g, _ := testGateway(t)
+	g, svcs, _ := testGateway(t)
 	var pingCalls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pingCalls.Add(1)
@@ -140,7 +140,7 @@ func TestModelProfileSaveRequiresReachableModel(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := Handler(g)
+	handler := Handler(g, svcs)
 	doReq := func(method, path string, body any) *httptest.ResponseRecorder {
 		raw, _ := json.Marshal(body)
 		w := httptest.NewRecorder()
@@ -159,7 +159,7 @@ func TestModelProfileSaveRequiresReachableModel(t *testing.T) {
 	if badRes.Code != 502 || !strings.Contains(badRes.Body.String(), "HTML") {
 		t.Fatalf("expected 502 HTML error, got %d %s", badRes.Code, badRes.Body.String())
 	}
-	if cfg, _ := g.Model().Config(); cfg.Model == "jev" {
+	if cfg, _ := svcs.Model.Config(); cfg.Model == "jev" {
 		t.Fatalf("broken profile must not be saved: %+v", cfg)
 	}
 
@@ -174,7 +174,7 @@ func TestModelProfileSaveRequiresReachableModel(t *testing.T) {
 	if setupBad.Code != 502 {
 		t.Fatalf("expected 502 when ping fails, got %d %s", setupBad.Code, setupBad.Body.String())
 	}
-	if cfg, _ := g.Model().Config(); cfg.Model == "jev" {
+	if cfg, _ := svcs.Model.Config(); cfg.Model == "jev" {
 		t.Fatalf("failed setup/model must not overwrite settings: %+v", cfg)
 	}
 
@@ -203,7 +203,7 @@ func TestModelProfileSaveRequiresReachableModel(t *testing.T) {
 	if pingCalls.Load() != callsBeforePing+1 {
 		t.Fatalf("expected cached ping to avoid second upstream call: before=%d after=%d", callsBeforePing, pingCalls.Load())
 	}
-	if cfg, hasKey := g.Model().Config(); cfg.Model != "jev" || cfg.MaxTools != 6 || !hasKey {
+	if cfg, hasKey := svcs.Model.Config(); cfg.Model != "jev" || cfg.MaxTools != 6 || !hasKey {
 		t.Fatalf("expected saved jev config, got %+v hasKey=%v", cfg, hasKey)
 	}
 }
@@ -230,8 +230,8 @@ func TestModelEndpointsPreserveUpstreamStatusAndRetryAfter(t *testing.T) {
 	}))
 	defer slow.Close()
 
-	g, _ := testGateway(t)
-	handler := Handler(g)
+	g, svcs, _ := testGateway(t)
+	handler := Handler(g, svcs)
 
 	call := func(ctx context.Context, method, path, baseURL string) *httptest.ResponseRecorder {
 		raw, _ := json.Marshal(map[string]any{

@@ -32,7 +32,7 @@ func (g *server) registerServers(mux *http.ServeMux) {
 			return
 		}
 		var out apitypes.ServerCredentials
-		out.Persistent = g.gw.CredentialsPersistent()
+		out.Persistent = g.credentialsPersistent
 		out.Credentials = []apitypes.CredentialStatus{}
 		for _, status := range statuses {
 			out.Credentials = append(out.Credentials, apitypes.CredentialStatus{Name: status.Name, Configured: status.Configured, Saved: status.Saved, Environment: status.Environment})
@@ -100,7 +100,7 @@ func (g *server) registerServers(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		if err := g.gw.Registry().SaveTool(domainTool(in)); err != nil {
+		if err := g.registry.SaveTool(domainTool(in)); err != nil {
 			fail(w, err)
 			return
 		}

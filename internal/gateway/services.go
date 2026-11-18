@@ -10,21 +10,41 @@ import (
 	"gatewaylab/internal/scope"
 )
 
-func (g *Gateway) Access() *access.Policy               { return g.access }
-func (g *Gateway) Activity() *activity.Service          { return g.activity }
-func (g *Gateway) Maintenance() *maintenance.Maintainer { return g.maintenance }
-func (g *Gateway) Scope() *scope.Service                { return g.scope }
-func (g *Gateway) Market() *market.Service              { return g.market }
-func (g *Gateway) DataDir() string                      { return g.dir }
-func (g *Gateway) BaseURL() string                      { return g.baseURL }
-func (g *Gateway) InstanceID() string                   { return g.instanceID }
-
-func (g *Gateway) Registry() *registry.Service { return g.registry }
-
 // ModelQueries excludes mutations: those must share publicationConfigMu with maintenance.
 type ModelQueries interface {
 	Config() (model.Settings, bool)
 	ModelProfiles() []model.ModelProfile
 }
 
-func (g *Gateway) Model() ModelQueries { return g.model }
+// Services exposes the single-domain services and immutable runtime metadata
+// assembled alongside a Gateway so callers inject them directly rather than
+// routing single-service calls through Gateway as a service locator.
+type Services struct {
+	Access                *access.Policy
+	Activity              *activity.Service
+	Maintenance           *maintenance.Maintainer
+	Scope                 *scope.Service
+	Market                *market.Service
+	Registry              *registry.Service
+	Model                 ModelQueries
+	CredentialsPersistent bool
+	DataDir               string
+	BaseURL               string
+	InstanceID            string
+}
+
+func (g *Gateway) services() Services {
+	return Services{
+		Access:                g.access,
+		Activity:              g.activity,
+		Maintenance:           g.maintenance,
+		Scope:                 g.scope,
+		Market:                g.market,
+		Registry:              g.registry,
+		Model:                 g.model,
+		CredentialsPersistent: g.credentials.Persistent(),
+		DataDir:               g.dir,
+		BaseURL:               g.baseURL,
+		InstanceID:            g.instanceID,
+	}
+}

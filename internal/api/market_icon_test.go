@@ -18,14 +18,14 @@ import (
 // gateway origin.
 func TestMarketIconServedWithSandboxCSP(t *testing.T) {
 	dir := t.TempDir()
-	g, err := gateway.NewWithOptions(dir, "http://127.0.0.1:0", gateway.Options{})
+	g, svcs, err := gateway.NewWithOptions(dir, "http://127.0.0.1:0", gateway.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = g.Close() })
 
 	id, icon := "", ""
-	for _, s := range g.Market().MarketServers(context.Background(), "").Items {
+	for _, s := range svcs.Market.MarketServers(context.Background(), "").Items {
 		if s.Icon != "" {
 			id, icon = s.ID, s.Icon
 			break
@@ -51,7 +51,7 @@ func TestMarketIconServedWithSandboxCSP(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/market/icon?id="+url.QueryEscape(id), nil)
 	req.Host = "127.0.0.1"
 	rec := httptest.NewRecorder()
-	Handler(g).ServeHTTP(rec, req)
+	Handler(g, svcs).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}

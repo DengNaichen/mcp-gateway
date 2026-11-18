@@ -72,7 +72,7 @@ func (g *server) trackMCP(next http.Handler) http.Handler {
 		}
 		start := time.Now()
 		if input.Method == "tools/call" && workspace.IsMetaTool(input.Params.Name) {
-			scopedCtx, cleanArgs, scopeErr := g.gw.Scope().ResolveMCPToolCallScope(r.Context(), agent, input.Params.Name, input.Params.Arguments)
+			scopedCtx, cleanArgs, scopeErr := g.scope.ResolveMCPToolCallScope(r.Context(), agent, input.Params.Name, input.Params.Arguments)
 			if scopeErr != nil {
 				g.recordRejectedMCPScope(r.Context(), agent, input.Params.Name, input.Params.Arguments, start, scopeErr)
 				writeJSONRPCScopeError(w, input.ID, scopeErr)
@@ -107,7 +107,7 @@ func (g *server) trackMCP(next http.Handler) http.Handler {
 			if client == "" {
 				client = "MCP client"
 			}
-			g.gw.Activity().Record("agent", access.RequestActor(r.Context(), "developer"), "observed", input.Method, start, map[string]any{"client": client, "agent": agent, "method": input.Method})
+			g.activity.Record("agent", access.RequestActor(r.Context(), "developer"), "observed", input.Method, start, map[string]any{"client": client, "agent": agent, "method": input.Method})
 		}
 	})
 }
@@ -135,7 +135,7 @@ func (g *server) recordRejectedMCPScope(ctx context.Context, agent, toolName str
 		if title == "" {
 			title = "discover_tools"
 		}
-		g.gw.Activity().Record("discover", actor, "error", title, start, map[string]any{"error": g.gw.ErrorDetail(scopeErr), "scope": evScope})
+		g.activity.Record("discover", actor, "error", title, start, map[string]any{"error": g.gw.ErrorDetail(scopeErr), "scope": evScope})
 	case "invoke_tool":
 		var in struct {
 			ToolID string `json:"tool_id"`
@@ -145,7 +145,7 @@ func (g *server) recordRejectedMCPScope(ctx context.Context, agent, toolName str
 		if title == "" {
 			title = "invoke_tool"
 		}
-		g.gw.Activity().Record("invoke", actor, "error", title, start, map[string]any{"tool_id": in.ToolID, "error": g.gw.ErrorDetail(scopeErr), "scope": evScope})
+		g.activity.Record("invoke", actor, "error", title, start, map[string]any{"tool_id": in.ToolID, "error": g.gw.ErrorDetail(scopeErr), "scope": evScope})
 	}
 	g.gw.RecordAgentTool(toolName, actor, start, scopeErr)
 }

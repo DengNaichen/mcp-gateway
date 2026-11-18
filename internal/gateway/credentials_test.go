@@ -34,7 +34,7 @@ func TestCredentialsSurviveRestartAndRemainIsolated(t *testing.T) {
 	dir := t.TempDir()
 	b := &credentialBackend{}
 	open := func() *Gateway {
-		g, err := NewWithOptions(dir, "http://127.0.0.1:8789", Options{CredentialBackend: b})
+		g, _, err := NewWithOptions(dir, "http://127.0.0.1:8789", Options{CredentialBackend: b})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -64,7 +64,7 @@ func TestCredentialsSurviveRestartAndRemainIsolated(t *testing.T) {
 		if err := g.SetServerCredentials(id, map[string]string{"SHARED_TOKEN": "upstream-secret-" + id}); err != nil {
 			t.Fatal(err)
 		}
-		if err := g.Registry().SaveTool(registry.Tool{ID: id + ".read", ServerID: id, Name: "read", Description: "read test", Enabled: true, ReadOnly: true, Actors: []string{"developer"}, InputSchema: map[string]any{"type": "object"}, Method: "GET", Path: "/"}); err != nil {
+		if err := g.registry.SaveTool(registry.Tool{ID: id + ".read", ServerID: id, Name: "read", Description: "read test", Enabled: true, ReadOnly: true, Actors: []string{"developer"}, InputSchema: map[string]any{"type": "object"}, Method: "GET", Path: "/"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -156,7 +156,7 @@ func TestModelEnvironmentOverrideIsNotPersisted(t *testing.T) {
 	dir := t.TempDir()
 	backend := &credentialBackend{}
 	open := func() *Gateway {
-		g, err := NewWithOptions(dir, "http://127.0.0.1:0", Options{CredentialBackend: backend})
+		g, _, err := NewWithOptions(dir, "http://127.0.0.1:0", Options{CredentialBackend: backend})
 		if err != nil {
 			t.Fatal(err)
 		}

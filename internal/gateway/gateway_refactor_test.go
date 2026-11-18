@@ -13,18 +13,18 @@ import (
 )
 
 func TestInvokePreservesUpstreamValidationError(t *testing.T) {
-	g, err := New(t.TempDir(), "http://127.0.0.1:0")
+	g, _, err := New(t.TempDir(), "http://127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = g.Close() }()
 
-	if err := g.Registry().SaveServer(registry.Server{
+	if err := g.registry.SaveServer(registry.Server{
 		ID: "svc", Name: "Svc", Kind: "http", Endpoint: "http://127.0.0.1:1", Enabled: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.Registry().SaveTool(registry.Tool{
+	if err := g.registry.SaveTool(registry.Tool{
 		ID:          "svc.item",
 		ServerID:    "svc",
 		Name:        "item",
@@ -55,7 +55,7 @@ func TestInvokePreservesUpstreamValidationError(t *testing.T) {
 }
 
 func TestImportOpenAPIAtomicOnServerOrToolValidationFailure(t *testing.T) {
-	g, err := New(t.TempDir(), "http://127.0.0.1:0")
+	g, _, err := New(t.TempDir(), "http://127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ paths:
 	if !errors.Is(err, registry.ErrInvalid) {
 		t.Fatalf("expected registry.ErrInvalid, got %v", err)
 	}
-	snap := g.Snapshot()
+	snap := g.registry.Snapshot()
 	for _, s := range snap.Servers {
 		if s.ID == "atomic" {
 			t.Fatalf("failed ImportOpenAPI persisted server: %+v", s)
@@ -98,7 +98,7 @@ paths:
 }
 
 func TestMaintenanceAdapterHonorsRuntimeSecrets(t *testing.T) {
-	g, err := New(t.TempDir(), "http://127.0.0.1:0")
+	g, _, err := New(t.TempDir(), "http://127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}

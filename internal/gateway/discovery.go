@@ -14,7 +14,7 @@ import (
 )
 
 func (g *Gateway) Discover(ctx context.Context, req DiscoverRequest) (DiscoverResult, error) {
-	return g.discoverRegistry(ctx, req, g.Snapshot(), true)
+	return g.discoverRegistry(ctx, req, g.registry.Snapshot(), true)
 }
 
 func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, catalog registry.Registry, record bool) (result DiscoverResult, retErr error) {
@@ -27,10 +27,10 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, cat
 			return
 		}
 		if retErr != nil {
-			g.record("discover", req.Actor, "error", req.Intent, started, map[string]any{"error": g.ErrorDetail(retErr), "scope": scopeEv})
+			g.activity.Record("discover", req.Actor, "error", req.Intent, started, map[string]any{"error": g.ErrorDetail(retErr), "scope": scopeEv})
 		} else {
 			result.Scope = &scopeEv
-			g.record("discover", req.Actor, result.Status, req.Intent, started, result)
+			g.activity.Record("discover", req.Actor, result.Status, req.Intent, started, result)
 		}
 	}()
 	if err := g.scope.CheckExecutionScope(ctx); err != nil {

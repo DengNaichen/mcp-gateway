@@ -13,12 +13,12 @@ import (
 )
 
 func TestCredentialAPIIsWriteOnlyAndAdminOnly(t *testing.T) {
-	g := sharedGateway(t)
+	g, svcs := sharedGateway(t)
 	s := registry.Server{ID: "credential-test", Name: "Credentials", Kind: "http", Enabled: true, Endpoint: "https://example.com", Headers: map[string]string{"Authorization": "Bearer ${TEST_CRED_TOKEN}"}}
 	if err := g.SaveServer(s); err != nil {
 		t.Fatal(err)
 	}
-	handler := Handler(g)
+	handler := Handler(g, svcs)
 	request := func(method, path, token, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -67,7 +67,7 @@ func TestCredentialAPIIsWriteOnlyAndAdminOnly(t *testing.T) {
 }
 
 func TestServerCredentialsReportsOAuthUpgradeAndClearsOAuth(t *testing.T) {
-	g := sharedGateway(t)
+	g, svcs := sharedGateway(t)
 	stdioNotion := registry.Server{
 		ID:        "notion",
 		Name:      "Notion",
@@ -81,7 +81,7 @@ func TestServerCredentialsReportsOAuthUpgradeAndClearsOAuth(t *testing.T) {
 	if err := g.SaveServer(stdioNotion); err != nil {
 		t.Fatal(err)
 	}
-	handler := Handler(g)
+	handler := Handler(g, svcs)
 	request := func(method, path, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "http://localhost"+path, nil)
 		req.Header.Set("Authorization", "Bearer "+token)

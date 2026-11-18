@@ -72,7 +72,6 @@ func newMaintainer(g *Gateway) (*maintenance.Maintainer, error) {
 		ImportOpenAPI: openapi.ImportOpenAPI,
 	})
 }
-func (g *Gateway) StartMaintenance(ctx context.Context) { g.maintenance.Start(ctx) }
 func (c maintenanceCatalog) UpdateCatalog(serverID, fingerprint string, update func(registry.Registry) (registry.Registry, error), commit func(registry.Registry) error) error {
 	c.g.publicationConfigMu.Lock()
 	defer c.g.publicationConfigMu.Unlock()

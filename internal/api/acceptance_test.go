@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"gatewaylab/internal/gateway"
 	"gatewaylab/internal/maintenance"
 )
 
@@ -42,9 +41,9 @@ func logsAcceptance(version, mode string) maintenance.AcceptanceSuite {
 	suite.Contracts = []maintenance.ContractCase{{Name: "logs-contract", ToolID: "service.logs", Arguments: args, Exchanges: []maintenance.HTTPExchange{exchange}, Expected: response}}
 	return suite
 }
-func setLogsAcceptance(t *testing.T, g *gateway.Gateway, version, mode string) {
+func setLogsAcceptance(t *testing.T, m *maintenance.Maintainer, version, mode string) {
 	t.Helper()
-	if err := g.Maintenance().SaveAcceptance(logsAcceptance(version, mode)); err != nil {
+	if err := m.SaveAcceptance(logsAcceptance(version, mode)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -63,8 +62,8 @@ func approveRun(t *testing.T, m *maintenance.Maintainer, id string) maintenance.
 	return waitRun(t, m, id, "published")
 }
 func TestIndependentAcceptanceBlocksPublish(t *testing.T) {
-	g, reference := testGateway(t)
-	m := g.Maintenance()
+	_, svcs, reference := testGateway(t)
+	m := svcs.Maintenance
 	// The coding agent's own verify script succeeds, but the owner's expected
 	// request deliberately disagrees. Publication must still be blocked.
 	putSource(t, reference, "v1", "adapter")
@@ -73,7 +72,7 @@ func TestIndependentAcceptanceBlocksPublish(t *testing.T) {
 	if err := m.SaveAcceptance(suite); err != nil {
 		t.Fatal(err)
 	}
-	g.StartMaintenance(context.Background())
+	m.Start(context.Background())
 	run := waitRun(t, m, enqueueTest(t, m, false).ID, "ready")
 	if run.Acceptance.Passed || !run.Acceptance.Configured {
 		t.Fatal("bad request passed owner acceptance")
@@ -81,11 +80,11 @@ func TestIndependentAcceptanceBlocksPublish(t *testing.T) {
 	if err := m.Publish(run.ID, false); err == nil {
 		t.Fatal("failed independent tests published")
 	}
-	if len(serverTools(g.Snapshot(), "service")) != 0 {
+	if len(serverTools(svcs.Registry.Snapshot(), "service")) != 0 {
 		t.Fatal("failed draft exposed tools")
 	}
 	// Prove fixtures did not enter the generation input.
-	input, err := os.ReadFile(filepath.Join(filepath.Join(g.DataDir(), "maintenance", run.ID), "input.json"))
+	input, err := os.ReadFile(filepath.Join(filepath.Join(svcs.DataDir, "maintenance", run.ID), "input.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,9 +93,9 @@ func TestIndependentAcceptanceBlocksPublish(t *testing.T) {
 	}
 }
 func TestPublicationRequiresApprovalAndAcceptsCompatibleChanges(t *testing.T) {
-	g, reference := testGateway(t)
-	m := g.Maintenance()
-	g.StartMaintenance(context.Background())
+	_, svcs, reference := testGateway(t)
+	m := svcs.Maintenance
+	m.Start(context.Background())
 	first := waitRun(t, m, enqueueTest(t, m, false).ID, "ready")
 	if !first.Review.Required || first.Tools[0].Enabled {
 		t.Fatal("new capability was enabled automatically")
@@ -117,9 +116,9 @@ func TestPublicationRequiresApprovalAndAcceptsCompatibleChanges(t *testing.T) {
 }
 
 func TestAcceptanceChangeInvalidatesDraft(t *testing.T) {
-	g, _ := testGateway(t)
-	m := g.Maintenance()
-	g.StartMaintenance(context.Background())
+	_, svcs, _ := testGateway(t)
+	m := svcs.Maintenance
+	m.Start(context.Background())
 	r := waitRun(t, m, enqueueTest(t, m, false).ID, "ready")
 	suite := logsAcceptance("v1", "")
 	suite.Routing[0].Intent = "error logs"
@@ -132,22 +131,22 @@ func TestAcceptanceChangeInvalidatesDraft(t *testing.T) {
 }
 
 func TestMaintenancePublicationRejectsChangedModelConfiguration(t *testing.T) {
-	g, _ := testGateway(t)
-	g.StartMaintenance(context.Background())
-	run := waitRun(t, g.Maintenance(), enqueueTest(t, g.Maintenance(), false).ID, "ready")
-	settings, _ := g.Model().Config()
+	g, svcs, _ := testGateway(t)
+	svcs.Maintenance.Start(context.Background())
+	run := waitRun(t, svcs.Maintenance, enqueueTest(t, svcs.Maintenance, false).ID, "ready")
+	settings, _ := svcs.Model.Config()
 	settings.Model = "changed-after-acceptance"
 	if err := g.SaveSettings(settings, "", false); err != nil {
 		t.Fatal(err)
 	}
-	err := g.Maintenance().Publish(run.ID, false)
+	err := svcs.Maintenance.Publish(run.ID, false)
 	if !errors.Is(err, maintenance.ErrConflict) || err.Error() != "路由配置已变化，请重新验收" {
 		t.Fatalf("draft accepted stale model evidence: %v", err)
 	}
-	if len(serverTools(g.Snapshot(), "service")) != 0 {
+	if len(serverTools(svcs.Registry.Snapshot(), "service")) != 0 {
 		t.Fatal("stale acceptance changed active tools")
 	}
-	persisted, err := g.Maintenance().GetRun(run.ID)
+	persisted, err := svcs.Maintenance.GetRun(run.ID)
 	if err != nil || persisted.Status != "ready" {
 		t.Fatalf("rejected publication changed draft: %+v %v", persisted, err)
 	}

@@ -23,6 +23,7 @@ const observerTestToken = "observer-test-token-0123456789012345678"
 // the upstream service.
 type actorFixture struct {
 	g              *gateway.Gateway
+	svcs           gateway.Services
 	handler        http.Handler
 	developerCalls atomic.Int32
 }
@@ -46,15 +47,15 @@ func newActorFixture(t *testing.T, shared bool) *actorFixture {
 	} else {
 		t.Setenv("GATEWAY_AUTH_FILE", "")
 	}
-	g, err := gateway.New(t.TempDir(), "http://localhost")
+	g, svcs, err := gateway.New(t.TempDir(), "http://localhost")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = g.Close() })
-	if (g.Access() != nil) != shared {
-		t.Fatalf("shared mode = %v, want %v", g.Access() != nil, shared)
+	if (svcs.Access != nil) != shared {
+		t.Fatalf("shared mode = %v, want %v", svcs.Access != nil, shared)
 	}
-	f := &actorFixture{g: g, handler: Handler(g)}
+	f := &actorFixture{g: g, svcs: svcs, handler: Handler(g, svcs)}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/observe" {
 			f.developerCalls.Add(1)
@@ -62,7 +63,7 @@ func newActorFixture(t *testing.T, shared bool) *actorFixture {
 		respond(w, 200, map[string]string{"status": "ok"})
 	}))
 	t.Cleanup(upstream.Close)
-	if err := g.Registry().SaveServer(registry.Server{ID: "svc", Name: "Service", Kind: "http", Endpoint: upstream.URL, Enabled: true}); err != nil {
+	if err := svcs.Registry.SaveServer(registry.Server{ID: "svc", Name: "Service", Kind: "http", Endpoint: upstream.URL, Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	for _, tool := range []registry.Tool{
@@ -71,11 +72,11 @@ func newActorFixture(t *testing.T, shared bool) *actorFixture {
 		{ID: "svc.deploy", Name: "deploy", Description: "change status for developers", Actors: []string{"developer"}, Method: "POST", Path: "/deploy"},
 	} {
 		tool.ServerID, tool.Enabled, tool.InputSchema = "svc", true, objectSchema(map[string]any{})
-		if err := g.Registry().SaveTool(tool); err != nil {
+		if err := svcs.Registry.SaveTool(tool); err != nil {
 			t.Fatal(err)
 		}
 	}
-	useKeywordModel(t, g)
+	useKeywordModel(t, g, svcs)
 	return f
 }
 
@@ -161,7 +162,7 @@ func TestActorCannotEscalateAuthenticatedPrincipal(t *testing.T) {
 	if got := f.call(t, "POST", "/api/invoke", observerTestToken, `{"tool_id":"svc.observe","actor":"developer","arguments":{}}`); got.Code != 200 {
 		t.Fatalf("observer invoke of its own tool: %d %s", got.Code, got.Body)
 	}
-	for _, event := range f.g.Activity().Recent() {
+	for _, event := range f.svcs.Activity.Recent() {
 		if event.Actor != "watcher" {
 			t.Errorf("activity %s %q recorded actor %q, want the principal watcher", event.Kind, event.Title, event.Actor)
 		}

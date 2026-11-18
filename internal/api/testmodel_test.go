@@ -15,7 +15,7 @@ import (
 // tool relevant when any word of the intent appears in its ID, name,
 // description or tags. It stands in for a real routing model in tests whose
 // subject is not routing quality.
-func useKeywordModel(t *testing.T, g *gateway.Gateway) {
+func useKeywordModel(t *testing.T, g *gateway.Gateway, svcs gateway.Services) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {
@@ -84,7 +84,7 @@ func useKeywordModel(t *testing.T, g *gateway.Gateway) {
 		respond(w, 200, decisionFixture(status, probabilities...))
 	}))
 	t.Cleanup(server.Close)
-	settings, _ := g.Model().Config()
+	settings, _ := svcs.Model.Config()
 	settings.BaseURL, settings.Model = server.URL, "fixture"
 	if err := g.SaveSettings(settings, "", false); err != nil {
 		t.Fatal(err)

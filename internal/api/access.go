@@ -39,7 +39,7 @@ func (m apiRouteMatcher) lookup(r *http.Request) (route, bool) {
 
 func (g *server) protectAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if g.gw.Access() == nil {
+		if g.access == nil {
 			host := r.Host
 			if h, _, err := net.SplitHostPort(host); err == nil {
 				host = h
@@ -66,10 +66,10 @@ func (g *server) protectAccess(next http.Handler) http.Handler {
 		authenticated := false
 		authorization := r.Header.Get("Authorization")
 		if strings.HasPrefix(authorization, "Bearer ") {
-			principal, authenticated = g.gw.Access().Authenticate(strings.TrimPrefix(authorization, "Bearer "))
+			principal, authenticated = g.access.Authenticate(strings.TrimPrefix(authorization, "Bearer "))
 		} else if authorization == "" {
 			if cookie, err := r.Cookie("gateway_session"); err == nil {
-				principal, authenticated = g.gw.Access().Session(cookie.Value)
+				principal, authenticated = g.access.Session(cookie.Value)
 			}
 		}
 		if !authenticated {
@@ -89,10 +89,10 @@ func (g *server) protectAccess(next http.Handler) http.Handler {
 func (g *server) registerAccess(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := access.PrincipalFrom(r.Context())
-		respond(w, 200, apitypes.AuthMe{Authenticated: ok, Shared: g.gw.Access() != nil, Principal: wirePrincipal(principal)})
+		respond(w, 200, apitypes.AuthMe{Authenticated: ok, Shared: g.access != nil, Principal: wirePrincipal(principal)})
 	})
 	mux.HandleFunc("POST /api/auth/login", func(w http.ResponseWriter, r *http.Request) {
-		if g.gw.Access() == nil {
+		if g.access == nil {
 			fail(w, problem(409, "本机模式没有启用身份认证", nil))
 			return
 		}
@@ -101,20 +101,20 @@ func (g *server) registerAccess(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		principal, id, expires, err := g.gw.Access().Login(input.Token)
+		principal, id, expires, err := g.access.Login(input.Token)
 		if err != nil {
 			fail(w, err)
 			return
 		}
 
-		http.SetCookie(w, &http.Cookie{Name: "gateway_session", Value: id, Path: "/", HttpOnly: true, Secure: r.TLS != nil || strings.HasPrefix(g.gw.BaseURL(), "https://"), SameSite: http.SameSiteStrictMode, Expires: expires}) //nolint:gosec // G124: Secure is set conditionally on TLS/https base URL so loopback http still works; logout cookie only clears the session
+		http.SetCookie(w, &http.Cookie{Name: "gateway_session", Value: id, Path: "/", HttpOnly: true, Secure: r.TLS != nil || strings.HasPrefix(g.baseURL, "https://"), SameSite: http.SameSiteStrictMode, Expires: expires}) //nolint:gosec // G124: Secure is set conditionally on TLS/https base URL so loopback http still works; logout cookie only clears the session
 		w.Header().Set("Cache-Control", "no-store")
 		respond(w, 200, apitypes.LoginResult{Principal: wirePrincipal(principal)})
 	})
 	mux.HandleFunc("POST /api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
-		if g.gw.Access() != nil {
+		if g.access != nil {
 			if cookie, err := r.Cookie("gateway_session"); err == nil {
-				g.gw.Access().Logout(cookie.Value)
+				g.access.Logout(cookie.Value)
 			}
 		}
 		http.SetCookie(w, &http.Cookie{Name: "gateway_session", Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1}) //nolint:gosec // G124: Secure is set conditionally on TLS/https base URL so loopback http still works; logout cookie only clears the session

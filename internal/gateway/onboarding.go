@@ -88,7 +88,7 @@ func (g *Gateway) recordModelCheck(fingerprint string, check ConnectionCheck) er
 }
 
 func (g *Gateway) realTools() []registry.Tool {
-	r := g.Snapshot()
+	r := g.registry.Snapshot()
 	out := []registry.Tool{}
 	for _, tool := range r.Tools {
 		if access.Allowed(tool, "developer") && slices.ContainsFunc(r.Servers, func(s registry.Server) bool { return s.ID == tool.ServerID && s.Enabled && !s.Demo }) {
@@ -128,7 +128,7 @@ func (g *Gateway) loadCheck(id, fingerprint string) (*ConnectionCheck, error) {
 func (g *Gateway) Setup() (SetupStatus, error) {
 	out := SetupStatus{SourceChecks: map[string]ConnectionCheck{}, EnabledTools: len(g.realTools())}
 	out.ToolsReady = out.EnabledTools > 0
-	for _, s := range g.Snapshot().Servers {
+	for _, s := range g.registry.Snapshot().Servers {
 		if s.Demo {
 			continue
 		}
@@ -145,7 +145,7 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 			out.SourceChecks[s.ID] = *check
 		}
 	}
-	settings, _ := g.Model().Config()
+	settings, _ := g.model.Config()
 	out.ModelConfigured = strings.TrimSpace(settings.Model) != ""
 	fingerprint, err := g.modelFingerprint()
 	if err != nil {
@@ -351,7 +351,7 @@ func (g *Gateway) ErrorDetail(err error) string {
 	message := err.Error()
 	_, key := g.model.RuntimeConfig()
 	secrets := append([]string{key}, g.upstream.TokenSecrets()...)
-	for _, s := range g.Snapshot().Servers {
+	for _, s := range g.registry.Snapshot().Servers {
 		for _, v := range s.Headers {
 			expanded := os.Expand(v, g.serverLookup(s))
 			secrets = append(secrets, expanded, strings.TrimPrefix(expanded, "Bearer "))
@@ -378,5 +378,5 @@ func (g *Gateway) RecordAgentTool(name, actor string, start time.Time, err error
 		status = "error"
 		detail["error"] = g.ErrorDetail(err)
 	}
-	g.record("agent", actor, status, name, start, detail)
+	g.activity.Record("agent", actor, status, name, start, detail)
 }
