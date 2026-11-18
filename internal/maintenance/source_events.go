@@ -54,99 +54,19 @@ func parseSourceSignalWithLookup(provider string, headers http.Header, body []by
 	if secret == "" {
 		return trigger, false, domainError(ErrUnavailable, "仓库事件密钥尚未配置", nil)
 	}
-	valid := false
-	switch provider {
-	case "github":
-		valid = verifyHMAC(body, headers.Get("X-Hub-Signature-256"), secret)
-		trigger.DeliveryID = headers.Get("X-GitHub-Delivery")
-	case "gitlab":
-		valid = subtle.ConstantTimeCompare([]byte(headers.Get("X-Gitlab-Token")), []byte(secret)) == 1
-		trigger.DeliveryID = headers.Get("X-Gitlab-Event-UUID")
-	case "generic":
-		valid = verifyHMAC(body, headers.Get("X-Gateway-Signature"), secret)
-		trigger.DeliveryID = headers.Get("X-Gateway-Delivery")
-	default:
-		return trigger, false, invalid("支持 github、gitlab 或 generic 来源事件")
+	deliveryID, err := verifySignalAuth(provider, headers, body, secret)
+	if err != nil {
+		return trigger, false, err
 	}
-	if !valid {
-		return trigger, false, domainError(ErrUnauthorized, "事件签名或密钥无效", nil)
-	}
+	trigger.DeliveryID = deliveryID
 	if !deliveryName.MatchString(trigger.DeliveryID) {
 		return trigger, false, invalid("事件需要有效的唯一 delivery ID")
 	}
-	var payload struct {
-		Ref        string `json:"ref"`
-		After      string `json:"after"`
-		Commit     string `json:"commit"`
-		Event      string `json:"event"`
-		ProjectID  string `json:"project_id"`
-		Action     string `json:"action"`
-		Repository struct {
-			FullName string `json:"full_name"`
-		} `json:"repository"`
-		Project struct {
-			Path string `json:"path_with_namespace"`
-		} `json:"project"`
-		Attributes struct {
-			Ref    string `json:"ref"`
-			SHA    string `json:"sha"`
-			Status string `json:"status"`
-		} `json:"object_attributes"`
-		Workflow struct {
-			Branch string `json:"head_branch"`
-			SHA    string `json:"head_sha"`
-		} `json:"workflow_run"`
+	project, kind, ref, commit, matched, err := extractSignalEvent(provider, headers, body)
+	if err != nil || !matched {
+		return trigger, false, err
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return trigger, false, invalid("事件不是有效的 JSON")
-	}
-	project := ""
-	switch provider {
-	case "github":
-		project = payload.Repository.FullName
-		switch headers.Get("X-GitHub-Event") {
-		case "push":
-			trigger.Kind = "push"
-			trigger.Ref = payload.Ref
-			trigger.Commit = payload.After
-		case "workflow_run":
-			if payload.Action != "completed" {
-				return trigger, false, nil
-			}
-			trigger.Kind = "ci_completed"
-			trigger.Ref = payload.Workflow.Branch
-			trigger.Commit = payload.Workflow.SHA
-		case "ping":
-			return trigger, false, nil
-		default:
-			return trigger, false, nil
-		}
-	case "gitlab":
-		project = payload.Project.Path
-		switch headers.Get("X-Gitlab-Event") {
-		case "Push Hook":
-			trigger.Kind = "push"
-			trigger.Ref = payload.Ref
-			trigger.Commit = payload.After
-		case "Pipeline Hook":
-			if !slices.Contains([]string{"success", "failed", "canceled", "skipped"}, payload.Attributes.Status) {
-				return trigger, false, nil
-			}
-			trigger.Kind = "ci_completed"
-			trigger.Ref = payload.Attributes.Ref
-			trigger.Commit = payload.Attributes.SHA
-		default:
-			return trigger, false, nil
-		}
-	case "generic":
-		project = payload.ProjectID
-		if !slices.Contains([]string{"push", "ci_completed", "release", "deploy"}, payload.Event) {
-			return trigger, false, invalid("不支持的事件类型")
-		}
-		trigger.Kind = payload.Event
-		trigger.Ref = payload.Ref
-		trigger.Commit = payload.Commit
-	}
+	trigger.Kind, trigger.Ref, trigger.Commit = kind, ref, commit
 	if project != repo.Project {
 		return trigger, false, domainError(ErrForbidden, "事件仓库与配置不匹配", nil)
 	}
@@ -157,6 +77,93 @@ func parseSourceSignalWithLookup(provider string, headers http.Header, body []by
 		return trigger, false, invalid("事件缺少有效 commit SHA")
 	}
 	return trigger, true, nil
+}
+
+func verifySignalAuth(provider string, headers http.Header, body []byte, secret string) (string, error) {
+	var valid bool
+	var deliveryID string
+	switch provider {
+	case "github":
+		valid = verifyHMAC(body, headers.Get("X-Hub-Signature-256"), secret)
+		deliveryID = headers.Get("X-GitHub-Delivery")
+	case "gitlab":
+		valid = subtle.ConstantTimeCompare([]byte(headers.Get("X-Gitlab-Token")), []byte(secret)) == 1
+		deliveryID = headers.Get("X-Gitlab-Event-UUID")
+	case "generic":
+		valid = verifyHMAC(body, headers.Get("X-Gateway-Signature"), secret)
+		deliveryID = headers.Get("X-Gateway-Delivery")
+	default:
+		return "", invalid("支持 github、gitlab 或 generic 来源事件")
+	}
+	if !valid {
+		return "", domainError(ErrUnauthorized, "事件签名或密钥无效", nil)
+	}
+	return deliveryID, nil
+}
+
+type signalWebhookPayload struct {
+	Ref        string `json:"ref"`
+	After      string `json:"after"`
+	Commit     string `json:"commit"`
+	Event      string `json:"event"`
+	ProjectID  string `json:"project_id"`
+	Action     string `json:"action"`
+	Repository struct {
+		FullName string `json:"full_name"`
+	} `json:"repository"`
+	Project struct {
+		Path string `json:"path_with_namespace"`
+	} `json:"project"`
+	Attributes struct {
+		Ref    string `json:"ref"`
+		SHA    string `json:"sha"`
+		Status string `json:"status"`
+	} `json:"object_attributes"`
+	Workflow struct {
+		Branch string `json:"head_branch"`
+		SHA    string `json:"head_sha"`
+	} `json:"workflow_run"`
+}
+
+func extractSignalEvent(provider string, headers http.Header, body []byte) (project, kind, ref, commit string, matched bool, err error) {
+	var payload signalWebhookPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", "", "", "", false, invalid("事件不是有效的 JSON")
+	}
+	switch provider {
+	case "github":
+		project = payload.Repository.FullName
+		switch headers.Get("X-GitHub-Event") {
+		case "push":
+			return project, "push", payload.Ref, payload.After, true, nil
+		case "workflow_run":
+			if payload.Action != "completed" {
+				return "", "", "", "", false, nil
+			}
+			return project, "ci_completed", payload.Workflow.Branch, payload.Workflow.SHA, true, nil
+		default:
+			return "", "", "", "", false, nil
+		}
+	case "gitlab":
+		project = payload.Project.Path
+		switch headers.Get("X-Gitlab-Event") {
+		case "Push Hook":
+			return project, "push", payload.Ref, payload.After, true, nil
+		case "Pipeline Hook":
+			if !slices.Contains([]string{"success", "failed", "canceled", "skipped"}, payload.Attributes.Status) {
+				return "", "", "", "", false, nil
+			}
+			return project, "ci_completed", payload.Attributes.Ref, payload.Attributes.SHA, true, nil
+		default:
+			return "", "", "", "", false, nil
+		}
+	case "generic":
+		if !slices.Contains([]string{"push", "ci_completed", "release", "deploy"}, payload.Event) {
+			return "", "", "", "", false, invalid("不支持的事件类型")
+		}
+		return payload.ProjectID, payload.Event, payload.Ref, payload.Commit, true, nil
+	}
+	return "", "", "", "", false, nil
 }
 
 // Called under m.mu. Deliveries persist before acknowledgement. A single follow-up
