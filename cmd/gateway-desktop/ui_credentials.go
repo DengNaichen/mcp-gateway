@@ -49,6 +49,31 @@ func (u *DesktopUI) loadServerCredentials(st *servicesPageState, id string) {
 	})
 }
 
+func credentialEntryStatus(entry apitypes.CredentialStatus, persistent bool) (label string, dotCol, txtCol ui.Color) {
+	switch {
+	case entry.Environment:
+		return i18n.T("ops.credential-from-env"), SailSuccessInk, SailInkMuted
+	case entry.Saved && !persistent:
+		return i18n.T("ops.credential-session-only"), SailWarningInk, SailInkMuted
+	case entry.Saved:
+		return i18n.T("ops.credential-saved"), SailSuccessInk, SailInkMuted
+	case entry.Configured:
+		return i18n.T("ops.credential-from-env"), SailSuccessInk, SailInkMuted
+	default:
+		return i18n.T("client.state.not-configured"), SailDangerInk, SailDangerInk
+	}
+}
+
+func collectPendingCredentialValues(values map[string]string) map[string]string {
+	out := map[string]string{}
+	for name, value := range values {
+		if value != "" {
+			out[name] = value
+		}
+	}
+	return out
+}
+
 func (u *DesktopUI) renderServerCredentials(c *ui.Context, st *servicesPageState, server apitypes.Server) {
 	if u.Client == nil {
 		return
@@ -141,64 +166,85 @@ func (u *DesktopUI) renderServerCredentials(c *ui.Context, st *servicesPageState
 			ui.Text(c, i18n.T("ops.credentials-not-referenced")).FontSize(12).TextColor(SailInkMuted)
 		}
 		for _, entry := range st.credentialState.Credentials {
-			status := i18n.T("client.state.not-configured")
-			dotCol := SailDangerInk
-			txtCol := SailDangerInk
-			if entry.Saved {
-				status = i18n.T("ops.credential-saved")
-				dotCol = SailSuccessInk
-				txtCol = SailInkMuted
-			} else if entry.Configured {
-				status = i18n.T("ops.credential-from-env")
-				dotCol = SailSuccessInk
-				txtCol = SailInkMuted
-			}
-			if entry.Environment {
-				status = i18n.T("ops.credential-from-env")
-				dotCol = SailSuccessInk
-				txtCol = SailInkMuted
-			}
-			if entry.Saved && !st.credentialState.Persistent && !entry.Environment {
-				status = i18n.T("ops.credential-session-only")
-				dotCol = SailWarningInk
-				txtCol = SailInkMuted
-			}
-			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, entry.Name).Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).Width(220).SingleLine()
-				value := st.credentialValues[entry.Name]
-				if SailTextInput(c.Key("credential-"+server.ID+"-"+entry.Name), &value).Password().Disabled(st.credentialBusy).Placeholder(i18n.T("ops.credential-placeholder")).Grow(1).Changed() {
-					st.credentialValues[entry.Name] = value
-				}
-				SailQuietStatus(c, status, dotCol, txtCol)
-				if SailButton(c.Key("credential-clear-"+server.ID+"-"+entry.Name), i18n.T("ops.clear")).Disabled(st.credentialBusy || !entry.Saved).Clicked() {
-					u.saveServerCredentialValues(st, server, map[string]string{entry.Name: ""}, false)
-				}
-			})
+			u.renderCredentialRow(c, st, server, entry)
 		}
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailButton(c.Key("credential-refresh-"+server.ID), i18n.T("ops.refresh")).Disabled(st.credentialBusy).Clicked() {
-				u.loadServerCredentials(st, server.ID)
-			}
-			values := map[string]string{}
-			for name, value := range st.credentialValues {
-				if value != "" {
-					values[name] = value
-				}
-			}
-			if len(st.credentialState.Credentials) > 0 {
-				if SailButton(c.Key("credential-save-"+server.ID), i18n.T("ops.save-credentials")).Disabled(st.credentialBusy || len(values) == 0).Clicked() {
-					u.saveServerCredentialValues(st, server, values, false)
-				}
-				testBtnLabel := i18n.T("ops.save-and-test")
-				if st.credentialBusy && st.connBusy {
-					testBtnLabel = i18n.T("ops.verifying-connection")
-				}
-				if SailPrimaryButton(c.Key("credential-save-test-"+server.ID), testBtnLabel).Disabled(st.credentialBusy || st.connBusy || len(values) == 0).Clicked() {
-					u.saveServerCredentialValues(st, server, values, true)
-				}
-			}
-		})
+		u.renderCredentialActions(c, st, server)
 	})
+}
+
+func (u *DesktopUI) renderCredentialRow(c *ui.Context, st *servicesPageState, server apitypes.Server, entry apitypes.CredentialStatus) {
+	status, dotCol, txtCol := credentialEntryStatus(entry, st.credentialState.Persistent)
+	ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, entry.Name).Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).Width(220).SingleLine()
+		value := st.credentialValues[entry.Name]
+		if SailTextInput(c.Key("credential-"+server.ID+"-"+entry.Name), &value).Password().Disabled(st.credentialBusy).Placeholder(i18n.T("ops.credential-placeholder")).Grow(1).Changed() {
+			st.credentialValues[entry.Name] = value
+		}
+		SailQuietStatus(c, status, dotCol, txtCol)
+		if SailButton(c.Key("credential-clear-"+server.ID+"-"+entry.Name), i18n.T("ops.clear")).Disabled(st.credentialBusy || !entry.Saved).Clicked() {
+			u.saveServerCredentialValues(st, server, map[string]string{entry.Name: ""}, false)
+		}
+	})
+}
+
+func (u *DesktopUI) renderCredentialActions(c *ui.Context, st *servicesPageState, server apitypes.Server) {
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
+		if SailButton(c.Key("credential-refresh-"+server.ID), i18n.T("ops.refresh")).Disabled(st.credentialBusy).Clicked() {
+			u.loadServerCredentials(st, server.ID)
+		}
+		if len(st.credentialState.Credentials) == 0 {
+			return
+		}
+		values := collectPendingCredentialValues(st.credentialValues)
+		if SailButton(c.Key("credential-save-"+server.ID), i18n.T("ops.save-credentials")).Disabled(st.credentialBusy || len(values) == 0).Clicked() {
+			u.saveServerCredentialValues(st, server, values, false)
+		}
+		testBtnLabel := i18n.T("ops.save-and-test")
+		if st.credentialBusy && st.connBusy {
+			testBtnLabel = i18n.T("ops.verifying-connection")
+		}
+		if SailPrimaryButton(c.Key("credential-save-test-"+server.ID), testBtnLabel).Disabled(st.credentialBusy || st.connBusy || len(values) == 0).Clicked() {
+			u.saveServerCredentialValues(st, server, values, true)
+		}
+	})
+}
+
+func (u *DesktopUI) latestServerSnapshot(server apitypes.Server) apitypes.Server {
+	if u.State == nil {
+		return server
+	}
+	for _, latest := range u.State.Registry.Servers {
+		if latest.ID == server.ID {
+			return latest
+		}
+	}
+	return server
+}
+
+func (u *DesktopUI) notifyCredentialSaveResult(values map[string]string, testAfter bool, probeCheck apitypes.ConnectionCheck, probeErr error) {
+	if testAfter {
+		if probeErr != nil {
+			return
+		}
+		msg := probeCheck.Message
+		if msg == "" {
+			msg = i18n.T("ops.credentials-saved-probe-passed")
+		}
+		u.Notify(msg)
+		return
+	}
+	isClear := len(values) == 1
+	for _, v := range values {
+		if v != "" {
+			isClear = false
+			break
+		}
+	}
+	if isClear {
+		u.Notify(i18n.T("ops.credentials-cleared"))
+	} else {
+		u.Notify(i18n.T("ops.service-credentials-saved"))
+	}
 }
 
 func (u *DesktopUI) saveServerCredentialValues(st *servicesPageState, server apitypes.Server, values map[string]string, testAfter bool) {
@@ -219,16 +265,7 @@ func (u *DesktopUI) saveServerCredentialValues(st *servicesPageState, server api
 		var probeCheck apitypes.ConnectionCheck
 		var probeErr error
 		if err == nil && testAfter {
-			target := server
-			if u.State != nil {
-				for _, latest := range u.State.Registry.Servers {
-					if latest.ID == id {
-						target = latest
-						break
-					}
-				}
-			}
-			probeCheck, probeErr = u.Client.TestSource(ctx, target)
+			probeCheck, probeErr = u.Client.TestSource(ctx, u.latestServerSnapshot(server))
 			if probeErr != nil && apiclient.IsUnauthorized(probeErr) {
 				u.updateUI(func() {
 					st.credentialBusy = false
@@ -263,24 +300,8 @@ func (u *DesktopUI) saveServerCredentialValues(st *servicesPageState, server api
 				st.credentialError = i18n.T("ops.credentials-saved-probe-failed", formatAPIError(probeErr))
 			}
 		})
-		if err == nil && testAfter && probeErr == nil {
-			msg := probeCheck.Message
-			if msg == "" {
-				msg = i18n.T("ops.credentials-saved-probe-passed")
-			}
-			u.Notify(msg)
-		} else if err == nil && !testAfter {
-			isClear := len(values) == 1
-			for _, v := range values {
-				if v != "" {
-					isClear = false
-				}
-			}
-			if isClear {
-				u.Notify(i18n.T("ops.credentials-cleared"))
-			} else {
-				u.Notify(i18n.T("ops.service-credentials-saved"))
-			}
+		if err == nil {
+			u.notifyCredentialSaveResult(values, testAfter, probeCheck, probeErr)
 		}
 		return nil
 	})

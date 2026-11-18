@@ -589,27 +589,28 @@ func (u *DesktopUI) renderBootView(c *ui.Context) {
 	})
 }
 
+func countRealRegistryStats(reg apitypes.Registry) (activeServers, totalTools int) {
+	realServerSet := make(map[string]bool)
+	for _, s := range reg.Servers {
+		if s.Demo {
+			continue
+		}
+		realServerSet[s.ID] = true
+		if s.Enabled {
+			activeServers++
+		}
+	}
+	for _, t := range reg.Tools {
+		if realServerSet[t.ServerID] {
+			totalTools++
+		}
+	}
+	return activeServers, totalTools
+}
+
 func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 	state := u.State
-	realServers := 0
-	activeRealServers := 0
-	realServerSet := make(map[string]bool)
-	for _, s := range state.Registry.Servers {
-		if !s.Demo {
-			realServers++
-			realServerSet[s.ID] = true
-			if s.Enabled {
-				activeRealServers++
-			}
-		}
-	}
-	_ = realServers
-	realToolCount := 0
-	for _, t := range state.Registry.Tools {
-		if realServerSet[t.ServerID] {
-			realToolCount++
-		}
-	}
+	activeRealServers, realToolCount := countRealRegistryStats(state.Registry)
 
 	topPad := bar.Bottom + 10
 	if topPad < 16 {
@@ -703,174 +704,77 @@ func (u *DesktopUI) renderNavGroup(c *ui.Context, heading string, items []navIte
 			FontWeight(600).
 			TextColor(SailInkFaint)
 		for _, item := range items {
-			active := u.ViewMode == item.id
-			btn := ui.ButtonBase(c.Key("nav-"+string(item.id))).
-				FillWidth().
-				Padding(7, 10).
-				Radius(6).
-				Gap(9).
-				AlignItems(ui.Center).
-				Cursor(ui.CursorPointer)
-			if active {
-				applyControlElevation(
-					btn.Background(SailBgSurface).
-						Border(SailElevationBorderWidth, SailSurfaceBorder),
-					true,
-				)
-			} else if btn.Hovered() {
-				btn.Background(SailBgMuted)
-			}
-
-			iconColor := SailInkMuted
-			textColor := SailInkBody
-			if active {
-				iconColor = SailAccent
-				textColor = SailInkStrong
-			}
-
-			btn.Children(func() {
-				ui.Icon(c, item.icon).Size(15, 15).TextColor(iconColor).Shrink(0)
-				lbl := ui.Text(c, item.label).Grow(1).FontSize(13).TextColor(textColor).SingleLine()
-				if active {
-					lbl.FontWeight(600)
-				} else {
-					lbl.FontWeight(500)
-				}
-				if item.badge != "" {
-					badgeInk := SailInkFaint
-					if active {
-						badgeInk = SailAccent
-					}
-					badgeWeight := 500
-					if item.badgeDanger {
-						badgeInk, badgeWeight = SailDangerInk, 600
-					}
-					ui.Text(c, item.badge).
-						FontSize(11.5).
-						FontWeight(badgeWeight).
-						FontFeatures("tnum").
-						TextColor(badgeInk).
-						SingleLine()
-				}
-			})
-
-			if btn.Clicked() {
-				u.Navigate(item.id)
-			}
+			u.renderNavItem(c, item)
 		}
 	})
 }
 
-func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
-	state := u.State
-	topH := bar.Height
-	if topH < 50 {
-		topH = 50
+func (u *DesktopUI) renderNavItem(c *ui.Context, item navItem) {
+	active := u.ViewMode == item.id
+	btn := ui.ButtonBase(c.Key("nav-"+string(item.id))).
+		FillWidth().
+		Padding(7, 10).
+		Radius(6).
+		Gap(9).
+		AlignItems(ui.Center).
+		Cursor(ui.CursorPointer)
+	if active {
+		applyControlElevation(
+			btn.Background(SailBgSurface).
+				Border(SailElevationBorderWidth, SailSurfaceBorder),
+			true,
+		)
+	} else if btn.Hovered() {
+		btn.Background(SailBgMuted)
 	}
 
-	var activeServerName string
-	if u.ViewMode == ViewServices && u.nav.serviceID != "" {
-		for _, s := range state.Registry.Servers {
-			if s.ID == u.nav.serviceID {
-				activeServerName = s.Name
-				break
+	iconColor, textColor := SailInkMuted, SailInkBody
+	lblWeight := 500
+	if active {
+		iconColor, textColor = SailAccent, SailInkStrong
+		lblWeight = 600
+	}
+
+	btn.Children(func() {
+		ui.Icon(c, item.icon).Size(15, 15).TextColor(iconColor).Shrink(0)
+		ui.Text(c, item.label).Grow(1).FontSize(13).FontWeight(lblWeight).TextColor(textColor).SingleLine()
+		if item.badge != "" {
+			badgeInk, badgeWeight := SailInkFaint, 500
+			if active {
+				badgeInk = SailAccent
 			}
+			if item.badgeDanger {
+				badgeInk, badgeWeight = SailDangerInk, 600
+			}
+			ui.Text(c, item.badge).
+				FontSize(11.5).
+				FontWeight(badgeWeight).
+				FontFeatures("tnum").
+				TextColor(badgeInk).
+				SingleLine()
+		}
+	})
+
+	if btn.Clicked() {
+		u.Navigate(item.id)
+	}
+}
+
+func (u *DesktopUI) activeBreadcrumbServerName(state *apitypes.Bootstrap) string {
+	if u.ViewMode != ViewServices || u.nav.serviceID == "" {
+		return ""
+	}
+	for _, s := range state.Registry.Servers {
+		if s.ID == u.nav.serviceID {
+			return s.Name
 		}
 	}
+	return ""
+}
 
-	modelReady := state.Setup.ModelReady && (state.Setup.ModelCheck == nil || !state.Setup.ModelCheck.Stale)
-
+func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 	ui.Column(c).Grow(1).MinWidth(0).FillHeight().Background(SailBgCanvas).Children(func() {
-		// Top Breadcrumb & Status Bar (draggable in empty spaces).
-		ui.Row(c).
-			FillWidth().
-			Height(topH).
-			Padding(0, 32).
-			Gap(12).
-			AlignItems(ui.Center).
-			Justify(ui.SpaceBetween).
-			Background(SailBgCanvas).
-			BorderWidth(0, 0, 1, 0).
-			BorderColor(SailDivider).
-			DragWindow().
-			Children(func() {
-				// Breadcrumbs.
-				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					if activeServerName != "" {
-						svcLink := ui.ButtonBase(c.Key("bc-services")).Padding(2, 4).Radius(4).Cursor(ui.CursorPointer)
-						if svcLink.Hovered() {
-							svcLink.Background(SailBgHover)
-						}
-						svcLink.Children(func() {
-							ui.Text(c, i18n.T("app.topbar.services")).FontSize(13).TextColor(SailInkMuted).SingleLine()
-						})
-						if svcLink.Clicked() {
-							u.Navigate(ViewServices)
-						}
-						ui.Text(c, "/").FontSize(13).TextColor(SailInkFaint)
-						ui.Text(c, activeServerName).FontSize(13).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-					} else {
-						ui.Text(c, viewTitle(u.ViewMode)).FontSize(13).FontWeight(500).TextColor(SailInkMuted).SingleLine()
-					}
-				})
-
-				// Right status & refresh controls.
-				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-					modelChip := ui.ButtonBase(c.Key("top-model-chip")).
-						Height(SailControlHeightSm).
-						Padding(0, 10).
-						Radius(6).
-						Gap(6).
-						AlignItems(ui.Center).
-						Cursor(ui.CursorPointer).
-						Tooltip(i18n.T("app.topbar.routing_tooltip"))
-					if modelChip.Hovered() {
-						modelChip.Background(SailBgHover)
-					}
-					modelChip.Children(func() {
-						dotColor := SailWarningInk
-						if modelReady {
-							dotColor = SailSuccessInk
-						}
-						SailStatusDot(c, dotColor)
-						modelName := state.Settings.Model
-						if modelName == "" {
-							modelName = i18n.T("app.topbar.no_model")
-						}
-						ui.Text(c, modelName).Font("monospace").FontSize(12).TextColor(SailInkBody).SingleLine()
-					})
-					if modelChip.Clicked() {
-						u.Navigate(ViewSettings)
-					}
-
-					refreshBtn := SailButton(c.Key("top-refresh-btn"), "").
-						Height(SailControlHeightSm).
-						Padding(0, 10).
-						Radius(6).
-						Gap(5).
-						AlignItems(ui.Center).
-						Disabled(u.Refreshing).
-						Cursor(ui.CursorPointer)
-					refreshBtn.Children(func() {
-						ui.Icon(c, IconRefresh).Size(12.5, 12.5).TextColor(SailInkMuted)
-						lbl := i18n.T("app.topbar.refresh")
-						if u.Refreshing {
-							lbl = i18n.T("app.topbar.syncing")
-						}
-						ui.Text(c, lbl).FontSize(12).TextColor(SailInkBody).SingleLine()
-					})
-					if refreshBtn.Clicked() {
-						u.Refresh()
-					}
-
-					if state.Access.Shared {
-						ui.Text(c, state.Access.Actor).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
-						if SailSmallButton(c.Key("top-logout-btn"), i18n.T("app.topbar.logout")).Clicked() {
-							u.logout()
-						}
-					}
-				})
-			})
+		u.renderTopBar(c, bar)
 
 		// Main scrollable page viewport with generous breathing room.
 		ui.Scroll(c.Key("main-scroll-"+string(u.ViewMode))).
@@ -880,27 +784,137 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 			Padding(28, 32).
 			Children(func() {
 				ui.Column(c).FillWidth().MaxWidth(1200).Gap(24).Children(func() {
-					switch u.ViewMode {
-					case ViewOverview:
-						u.renderOverview(c)
-					case ViewServices:
-						u.renderServices(c)
-					case ViewCatalog:
-						u.renderCatalog(c)
-					case ViewRepos:
-						u.renderRepos(c)
-					case ViewPlayground:
-						u.renderPlayground(c)
-					case ViewLogs:
-						u.renderLogs(c)
-					case ViewClients:
-						u.renderClients(c)
-					case ViewSettings:
-						u.renderSettings(c)
-					default:
-						u.renderOverview(c)
-					}
+					u.renderActivePage(c)
 				})
 			})
 	})
+}
+
+func (u *DesktopUI) renderTopBar(c *ui.Context, bar ui.TitleBar) {
+	state := u.State
+	topH := bar.Height
+	if topH < 50 {
+		topH = 50
+	}
+	activeServerName := u.activeBreadcrumbServerName(state)
+
+	// Top Breadcrumb & Status Bar (draggable in empty spaces).
+	ui.Row(c).
+		FillWidth().
+		Height(topH).
+		Padding(0, 32).
+		Gap(12).
+		AlignItems(ui.Center).
+		Justify(ui.SpaceBetween).
+		Background(SailBgCanvas).
+		BorderWidth(0, 0, 1, 0).
+		BorderColor(SailDivider).
+		DragWindow().
+		Children(func() {
+			u.renderBreadcrumbs(c, activeServerName)
+			u.renderTopControls(c, state)
+		})
+}
+
+func (u *DesktopUI) renderBreadcrumbs(c *ui.Context, activeServerName string) {
+	ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+		if activeServerName == "" {
+			ui.Text(c, viewTitle(u.ViewMode)).FontSize(13).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+			return
+		}
+		svcLink := ui.ButtonBase(c.Key("bc-services")).Padding(2, 4).Radius(4).Cursor(ui.CursorPointer)
+		if svcLink.Hovered() {
+			svcLink.Background(SailBgHover)
+		}
+		svcLink.Children(func() {
+			ui.Text(c, i18n.T("app.topbar.services")).FontSize(13).TextColor(SailInkMuted).SingleLine()
+		})
+		if svcLink.Clicked() {
+			u.Navigate(ViewServices)
+		}
+		ui.Text(c, "/").FontSize(13).TextColor(SailInkFaint)
+		ui.Text(c, activeServerName).FontSize(13).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+	})
+}
+
+func (u *DesktopUI) renderTopControls(c *ui.Context, state *apitypes.Bootstrap) {
+	modelReady := state.Setup.ModelReady && (state.Setup.ModelCheck == nil || !state.Setup.ModelCheck.Stale)
+	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+		modelChip := ui.ButtonBase(c.Key("top-model-chip")).
+			Height(SailControlHeightSm).
+			Padding(0, 10).
+			Radius(6).
+			Gap(6).
+			AlignItems(ui.Center).
+			Cursor(ui.CursorPointer).
+			Tooltip(i18n.T("app.topbar.routing_tooltip"))
+		if modelChip.Hovered() {
+			modelChip.Background(SailBgHover)
+		}
+		modelChip.Children(func() {
+			dotColor := SailWarningInk
+			if modelReady {
+				dotColor = SailSuccessInk
+			}
+			SailStatusDot(c, dotColor)
+			modelName := state.Settings.Model
+			if modelName == "" {
+				modelName = i18n.T("app.topbar.no_model")
+			}
+			ui.Text(c, modelName).Font("monospace").FontSize(12).TextColor(SailInkBody).SingleLine()
+		})
+		if modelChip.Clicked() {
+			u.Navigate(ViewSettings)
+		}
+
+		refreshBtn := SailButton(c.Key("top-refresh-btn"), "").
+			Height(SailControlHeightSm).
+			Padding(0, 10).
+			Radius(6).
+			Gap(5).
+			AlignItems(ui.Center).
+			Disabled(u.Refreshing).
+			Cursor(ui.CursorPointer)
+		refreshBtn.Children(func() {
+			ui.Icon(c, IconRefresh).Size(12.5, 12.5).TextColor(SailInkMuted)
+			lbl := i18n.T("app.topbar.refresh")
+			if u.Refreshing {
+				lbl = i18n.T("app.topbar.syncing")
+			}
+			ui.Text(c, lbl).FontSize(12).TextColor(SailInkBody).SingleLine()
+		})
+		if refreshBtn.Clicked() {
+			u.Refresh()
+		}
+
+		if state.Access.Shared {
+			ui.Text(c, state.Access.Actor).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
+			if SailSmallButton(c.Key("top-logout-btn"), i18n.T("app.topbar.logout")).Clicked() {
+				u.logout()
+			}
+		}
+	})
+}
+
+func (u *DesktopUI) renderActivePage(c *ui.Context) {
+	switch u.ViewMode {
+	case ViewOverview:
+		u.renderOverview(c)
+	case ViewServices:
+		u.renderServices(c)
+	case ViewCatalog:
+		u.renderCatalog(c)
+	case ViewRepos:
+		u.renderRepos(c)
+	case ViewPlayground:
+		u.renderPlayground(c)
+	case ViewLogs:
+		u.renderLogs(c)
+	case ViewClients:
+		u.renderClients(c)
+	case ViewSettings:
+		u.renderSettings(c)
+	default:
+		u.renderOverview(c)
+	}
 }
