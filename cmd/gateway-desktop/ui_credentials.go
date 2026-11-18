@@ -99,68 +99,10 @@ func (u *DesktopUI) renderServerCredentials(c *ui.Context, st *servicesPageState
 		}
 		isOAuthServer := server.Kind == "mcp" && server.Transport != "stdio" && server.OAuth
 		if upg := st.credentialState.OAuthUpgrade; upg != nil {
-			ui.Row(c).
-				FillWidth().
-				Padding(10, 12).
-				Gap(12).
-				Radius(7).
-				Background(SailBgSubtle).
-				Border(1, SailBorder).
-				AlignItems(ui.Center).
-				Justify(ui.SpaceBetween).
-				Children(func() {
-					ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-						ui.Text(c, i18n.T("ops.oauth-switch-title", upg.Title)).FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
-						ui.Text(c, i18n.T("ops.oauth-switch-desc", upg.Endpoint)).FontSize(11.5).TextColor(SailInkMuted)
-					})
-					btnLabel := i18n.T("ops.oauth-switch-btn")
-					if st.connBusy {
-						btnLabel = i18n.T("ops.oauth-switch-busy")
-					}
-					if SailPrimaryButton(c.Key("credential-oauth-upgrade-"+server.ID), btnLabel).
-						Padding(5, 11).
-						FontSize(12).
-						Disabled(st.credentialBusy || st.connBusy).
-						Shrink(0).
-						Clicked() {
-						u.switchServerToOAuth(st, server, *upg)
-					}
-				})
+			u.renderOAuthUpgradeBanner(c, st, server, *upg)
 		}
 		if isOAuthServer {
-			hasAuthHeader := strings.TrimSpace(server.Headers["Authorization"]) != ""
-			oauthAuthorized := st.credentialState.OAuth != nil && st.credentialState.OAuth.Authorized
-			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "OAuth 2.0").Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).Width(220).SingleLine()
-				ui.Row(c).Grow(1).MinWidth(0).AlignItems(ui.Center).Children(func() {
-					switch {
-					case hasAuthHeader:
-						SailQuietStatus(c, i18n.T("ops.oauth-header-override"), SailWarningInk, SailInkMuted)
-					case oauthAuthorized:
-						SailQuietStatus(c, i18n.T("ops.oauth-authorized"), SailSuccessInk, SailInkMuted)
-					default:
-						SailQuietStatus(c, i18n.T("ops.oauth-unauthorized"), SailDangerInk, SailDangerInk)
-					}
-				})
-				if !hasAuthHeader {
-					if oauthAuthorized {
-						if SailButton(c.Key("oauth-reauth-"+server.ID), i18n.T("ops.oauth-reauth")).Disabled(st.credentialBusy || st.connBusy).Clicked() {
-							u.clearServerOAuth(st, server, true)
-						}
-						if SailButton(c.Key("oauth-clear-"+server.ID), i18n.T("ops.oauth-clear")).Disabled(st.credentialBusy || st.connBusy).Clicked() {
-							u.clearServerOAuth(st, server, false)
-						}
-					} else {
-						loginLabel := i18n.T("ops.oauth-login")
-						if st.connBusy {
-							loginLabel = i18n.T("ops.oauth-waiting")
-						}
-						if SailPrimaryButton(c.Key("oauth-login-"+server.ID), loginLabel).Disabled(st.credentialBusy || st.connBusy).Clicked() {
-							u.probeServerConnection(st, server)
-						}
-					}
-				}
-			})
+			u.renderOAuthCredentialRow(c, st, server)
 		}
 		if len(st.credentialState.Credentials) == 0 && !st.credentialBusy && !isOAuthServer && st.credentialState.OAuthUpgrade == nil {
 			ui.Text(c, i18n.T("ops.credentials-not-referenced")).FontSize(12).TextColor(SailInkMuted)
@@ -169,6 +111,73 @@ func (u *DesktopUI) renderServerCredentials(c *ui.Context, st *servicesPageState
 			u.renderCredentialRow(c, st, server, entry)
 		}
 		u.renderCredentialActions(c, st, server)
+	})
+}
+
+func (u *DesktopUI) renderOAuthUpgradeBanner(c *ui.Context, st *servicesPageState, server apitypes.Server, upg apitypes.OAuthUpgradeInfo) {
+	ui.Row(c).
+		FillWidth().
+		Padding(10, 12).
+		Gap(12).
+		Radius(7).
+		Background(SailBgSubtle).
+		Border(1, SailBorder).
+		AlignItems(ui.Center).
+		Justify(ui.SpaceBetween).
+		Children(func() {
+			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+				ui.Text(c, i18n.T("ops.oauth-switch-title", upg.Title)).FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
+				ui.Text(c, i18n.T("ops.oauth-switch-desc", upg.Endpoint)).FontSize(11.5).TextColor(SailInkMuted)
+			})
+			btnLabel := i18n.T("ops.oauth-switch-btn")
+			if st.connBusy {
+				btnLabel = i18n.T("ops.oauth-switch-busy")
+			}
+			if SailPrimaryButton(c.Key("credential-oauth-upgrade-"+server.ID), btnLabel).
+				Padding(5, 11).
+				FontSize(12).
+				Disabled(st.credentialBusy || st.connBusy).
+				Shrink(0).
+				Clicked() {
+				u.switchServerToOAuth(st, server, upg)
+			}
+		})
+}
+
+func (u *DesktopUI) renderOAuthCredentialRow(c *ui.Context, st *servicesPageState, server apitypes.Server) {
+	hasAuthHeader := strings.TrimSpace(server.Headers["Authorization"]) != ""
+	oauthAuthorized := st.credentialState.OAuth != nil && st.credentialState.OAuth.Authorized
+	ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "OAuth 2.0").Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).Width(220).SingleLine()
+		ui.Row(c).Grow(1).MinWidth(0).AlignItems(ui.Center).Children(func() {
+			switch {
+			case hasAuthHeader:
+				SailQuietStatus(c, i18n.T("ops.oauth-header-override"), SailWarningInk, SailInkMuted)
+			case oauthAuthorized:
+				SailQuietStatus(c, i18n.T("ops.oauth-authorized"), SailSuccessInk, SailInkMuted)
+			default:
+				SailQuietStatus(c, i18n.T("ops.oauth-unauthorized"), SailDangerInk, SailDangerInk)
+			}
+		})
+		if hasAuthHeader {
+			return
+		}
+		if oauthAuthorized {
+			if SailButton(c.Key("oauth-reauth-"+server.ID), i18n.T("ops.oauth-reauth")).Disabled(st.credentialBusy || st.connBusy).Clicked() {
+				u.clearServerOAuth(st, server, true)
+			}
+			if SailButton(c.Key("oauth-clear-"+server.ID), i18n.T("ops.oauth-clear")).Disabled(st.credentialBusy || st.connBusy).Clicked() {
+				u.clearServerOAuth(st, server, false)
+			}
+			return
+		}
+		loginLabel := i18n.T("ops.oauth-login")
+		if st.connBusy {
+			loginLabel = i18n.T("ops.oauth-waiting")
+		}
+		if SailPrimaryButton(c.Key("oauth-login-"+server.ID), loginLabel).Disabled(st.credentialBusy || st.connBusy).Clicked() {
+			u.probeServerConnection(st, server)
+		}
 	})
 }
 
