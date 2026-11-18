@@ -685,10 +685,9 @@
       transition: transform 0.14s ease;
     }
     .switch.on::after { transform: translateX(13px); }
-    /* 列表内的启用开关：弱化为中性色，避免抢占状态与动作的注意力 */
+    /* 列表内的启用开关：小号尺寸，颜色沿用全局 accent 与其他页面保持一致 */
     .switch-quiet { width: 26px; height: 15px; }
     .switch-quiet::after { width: 11px; height: 11px; }
-    .switch-quiet.on { background: var(--ink-muted); }
     .switch-quiet.on::after { transform: translateX(11px); }
 
     /* 上游服务分诊列表 */
