@@ -51,7 +51,7 @@ func (g *server) registerSetup(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		result, err := g.gw.Model().PingModel(r.Context(), domainSettings(input.Settings), input.ProfileID, input.APIKey, input.ClearKey)
+		result, err := g.gw.PingModel(r.Context(), domainSettings(input.Settings), input.ProfileID, input.APIKey, input.ClearKey)
 		if err != nil {
 			failWithDetail(w, "模型连接测试失败", g.gw.ErrorDetail(err), err)
 			return

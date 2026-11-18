@@ -437,6 +437,12 @@ func persistModelProfilesTx(tx store.DBTX, profiles []ModelProfile) error {
 
 const verifiedPingTTL = 15 * time.Minute
 
+// ResolveEffectiveKey returns the API key that will be used for a profile or
+// unsaved connection draft, accounting for explicit input, clearKey, and env overrides.
+func (g *Service) ResolveEffectiveKey(profileID, apiKey string, clearKey bool) string {
+	return g.resolveEffectiveKey(profileID, apiKey, clearKey)
+}
+
 func (g *Service) resolveEffectiveKey(profileID, apiKey string, clearKey bool) string {
 	effectiveKey := strings.TrimSpace(apiKey)
 	if clearKey {
@@ -511,20 +517,27 @@ func (g *Service) VerifyModelConnection(ctx context.Context, p ModelProfile, api
 	return err
 }
 
-func (g *Service) PingModel(ctx context.Context, s Settings, profileID, apiKey string, clearKey bool) (PingModelResult, error) {
+// NormalizePingTarget validates and normalizes ping settings and resolves the effective API key.
+func (g *Service) NormalizePingTarget(s Settings, profileID, apiKey string, clearKey bool) (Settings, string, error) {
 	s.BaseURL = strings.TrimSpace(s.BaseURL)
 	s.Model = strings.TrimSpace(s.Model)
 	if err := validateURL(s.BaseURL); err != nil {
-		return PingModelResult{}, err
+		return Settings{}, "", err
 	}
 	if s.Model == "" {
-		return PingModelResult{}, invalid("请填写路由模型名称")
+		return Settings{}, "", invalid("请填写路由模型名称")
 	}
 	if s.TimeoutSeconds < 5 || s.TimeoutSeconds > 180 {
 		s.TimeoutSeconds = 30
 	}
+	return s, g.resolveEffectiveKey(profileID, apiKey, clearKey), nil
+}
 
-	effectiveKey := g.resolveEffectiveKey(profileID, apiKey, clearKey)
+func (g *Service) PingModel(ctx context.Context, s Settings, profileID, apiKey string, clearKey bool) (PingModelResult, error) {
+	s, effectiveKey, err := g.NormalizePingTarget(s, profileID, apiKey, clearKey)
+	if err != nil {
+		return PingModelResult{}, err
+	}
 
 	started := time.Now()
 	if _, err := AskDecisions(ctx, s, effectiveKey, "ping", []string{"Connectivity check."}); err != nil {
