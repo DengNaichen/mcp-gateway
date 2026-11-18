@@ -75,7 +75,15 @@ func ImportOpenAPI(serverID string, data []byte, operationIDs []string) ([]Tool,
 			if method == "trace" {
 				return nil, invalid("TRACE 不支持暴露为工具：" + operationID)
 			}
-			t, err := importer.operation(serverID, id, operationID, strings.ToUpper(method), path, item, op)
+			t, err := importer.operation(operationSpec{
+				ServerID: serverID,
+				ID:       id,
+				Name:     operationID,
+				Method:   strings.ToUpper(method),
+				Path:     path,
+				Item:     item,
+				Op:       op,
+			})
 			if err != nil {
 				return nil, fmt.Errorf("operation %s: %w", operationID, err)
 			}
@@ -154,117 +162,203 @@ func (p openAPIImporter) convertSchema(v any, defs map[string]any, depth int) (a
 	if depth > 80 {
 		return nil, invalid("schema 嵌套过深")
 	}
-	switch value := v.(type) {
-	case map[string]any:
-		out := map[string]any{}
-		for key, x := range value {
-			if key == "$ref" {
-				ref, ok := x.(string)
-				if !ok || !strings.HasPrefix(ref, "#/components/schemas/") {
-					return nil, invalid("schema 只支持本地 components/schemas 引用")
-				}
-				encodedName := strings.TrimPrefix(ref, "#/components/schemas/")
-				name := decodePointer(encodedName)
-				if strings.Contains(encodedName, "/") {
-					return nil, invalid("不支持 schema 子路径引用")
-				}
-				if _, exists := defs[name]; !exists {
-					defs[name] = map[string]any{} // Reserve recursive definitions before descent.
-					target, err := p.object(map[string]any{"$ref": ref})
-					if err != nil {
-						return nil, err
-					}
-					converted, err := p.convertSchema(target, defs, depth+1)
-					if err != nil {
-						return nil, err
-					}
-					defs[name] = converted
-				}
-				out[key] = "#/$defs/" + encodePointer(name)
-				continue
-			}
-			if key == "nullable" || key == "discriminator" || key == "xml" || key == "example" {
-				continue
-			}
-			if key == "exclusiveMinimum" || key == "exclusiveMaximum" {
-				if flag, ok := x.(bool); ok {
-					bound := strings.TrimPrefix(key, "exclusive")
-					bound = strings.ToLower(bound[:1]) + bound[1:]
-					if flag {
-						if number, ok := value[bound].(float64); ok {
-							out[key] = number
-						}
-					}
-					continue
-				}
-			}
-			// Only descend through schema-valued keywords. Enum/default/example values
-			// may themselves contain a literal "$ref" and must remain ordinary data.
-			switch key {
-			case "properties", "patternProperties", "$defs", "definitions", "dependentSchemas":
-				m, ok := x.(map[string]any)
-				if !ok {
-					return nil, invalid("schema map 无效：" + key)
-				}
-				mapped := map[string]any{}
-				for name, item := range m {
-					next, err := p.convertSchema(item, defs, depth+1)
-					if err != nil {
-						return nil, err
-					}
-					mapped[name] = next
-				}
-				out[key] = mapped
-			case "items", "additionalProperties", "contains", "not", "if", "then", "else", "propertyNames", "unevaluatedProperties":
-				next, err := p.convertSchema(x, defs, depth+1)
-				if err != nil {
-					return nil, err
-				}
-				out[key] = next
-			case "allOf", "anyOf", "oneOf", "prefixItems":
-				arr, ok := x.([]any)
-				if !ok {
-					return nil, invalid("schema array 无效：" + key)
-				}
-				mapped := []any{}
-				for _, item := range arr {
-					next, err := p.convertSchema(item, defs, depth+1)
-					if err != nil {
-						return nil, err
-					}
-					mapped = append(mapped, next)
-				}
-				out[key] = mapped
-			default:
-				out[key] = x
-			}
-		}
-		if nullable, _ := value["nullable"].(bool); nullable {
-			out = map[string]any{"anyOf": []any{out, map[string]any{"type": "null"}}}
-		}
-		return out, nil
-	default:
-		return value, nil
+	value, ok := v.(map[string]any)
+	if !ok {
+		return v, nil
 	}
+	out := map[string]any{}
+	for key, x := range value {
+		if key == "$ref" {
+			targetRef, err := p.convertSchemaRef(x, defs, depth)
+			if err != nil {
+				return nil, err
+			}
+			out[key] = targetRef
+			continue
+		}
+		if key == "nullable" || key == "discriminator" || key == "xml" || key == "example" {
+			continue
+		}
+		if key == "exclusiveMinimum" || key == "exclusiveMaximum" {
+			if applyExclusiveBound(key, x, value, out) {
+				continue
+			}
+		}
+		// Only descend through schema-valued keywords. Enum/default/example values
+		// may themselves contain a literal "$ref" and must remain ordinary data.
+		switch key {
+		case "properties", "patternProperties", "$defs", "definitions", "dependentSchemas":
+			mapped, err := p.convertSchemaMap(x, key, defs, depth)
+			if err != nil {
+				return nil, err
+			}
+			out[key] = mapped
+		case "items", "additionalProperties", "contains", "not", "if", "then", "else", "propertyNames", "unevaluatedProperties":
+			next, err := p.convertSchema(x, defs, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			out[key] = next
+		case "allOf", "anyOf", "oneOf", "prefixItems":
+			mapped, err := p.convertSchemaArray(x, key, defs, depth)
+			if err != nil {
+				return nil, err
+			}
+			out[key] = mapped
+		default:
+			out[key] = x
+		}
+	}
+	if nullable, _ := value["nullable"].(bool); nullable {
+		out = map[string]any{"anyOf": []any{out, map[string]any{"type": "null"}}}
+	}
+	return out, nil
 }
-func (p openAPIImporter) operation(serverID, id, name, method, path string, item, op map[string]any) (Tool, error) {
-	t := Tool{ID: id, ServerID: serverID, Name: name, Method: method, Path: path, Actors: []string{"developer"}, Tags: []string{}, ReadOnly: method == "GET" || method == "HEAD" || method == "OPTIONS", HTTP: &HTTPMapping{Parameters: []HTTPParameter{}, Responses: map[string]HTTPResponse{}}}
-	summary, _ := op["summary"].(string)
-	description, _ := op["description"].(string)
+
+func (p openAPIImporter) convertSchemaRef(raw any, defs map[string]any, depth int) (string, error) {
+	ref, ok := raw.(string)
+	if !ok || !strings.HasPrefix(ref, "#/components/schemas/") {
+		return "", invalid("schema 只支持本地 components/schemas 引用")
+	}
+	encodedName := strings.TrimPrefix(ref, "#/components/schemas/")
+	name := decodePointer(encodedName)
+	if strings.Contains(encodedName, "/") {
+		return "", invalid("不支持 schema 子路径引用")
+	}
+	if _, exists := defs[name]; !exists {
+		defs[name] = map[string]any{} // Reserve recursive definitions before descent.
+		target, err := p.object(map[string]any{"$ref": ref})
+		if err != nil {
+			return "", err
+		}
+		converted, err := p.convertSchema(target, defs, depth+1)
+		if err != nil {
+			return "", err
+		}
+		defs[name] = converted
+	}
+	return "#/$defs/" + encodePointer(name), nil
+}
+
+func applyExclusiveBound(key string, raw any, value, out map[string]any) bool {
+	flag, ok := raw.(bool)
+	if !ok {
+		return false
+	}
+	bound := strings.TrimPrefix(key, "exclusive")
+	bound = strings.ToLower(bound[:1]) + bound[1:]
+	if flag {
+		if number, ok := value[bound].(float64); ok {
+			out[key] = number
+		}
+	}
+	return true
+}
+
+func (p openAPIImporter) convertSchemaMap(raw any, keyword string, defs map[string]any, depth int) (map[string]any, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return nil, invalid("schema map 无效：" + keyword)
+	}
+	mapped := make(map[string]any, len(m))
+	for name, item := range m {
+		next, err := p.convertSchema(item, defs, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		mapped[name] = next
+	}
+	return mapped, nil
+}
+
+func (p openAPIImporter) convertSchemaArray(raw any, keyword string, defs map[string]any, depth int) ([]any, error) {
+	arr, ok := raw.([]any)
+	if !ok {
+		return nil, invalid("schema array 无效：" + keyword)
+	}
+	mapped := make([]any, 0, len(arr))
+	for _, item := range arr {
+		next, err := p.convertSchema(item, defs, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		mapped = append(mapped, next)
+	}
+	return mapped, nil
+}
+
+type operationSpec struct {
+	ServerID string
+	ID       string
+	Name     string
+	Method   string
+	Path     string
+	Item     map[string]any
+	Op       map[string]any
+}
+
+func (p openAPIImporter) operation(spec operationSpec) (Tool, error) {
+	t, err := initOperationTool(spec)
+	if err != nil {
+		return t, err
+	}
+	params, err := p.collectOperationParameters(spec.Item, spec.Op)
+	if err != nil {
+		return t, err
+	}
+	properties, requiredGroups, err := p.applyOperationParameters(&t, spec.Path, params)
+	if err != nil {
+		return t, err
+	}
+	requiredGroups, err = p.applyRequestBody(&t, spec.Op, properties, requiredGroups)
+	if err != nil {
+		return t, err
+	}
+	t.InputSchema = objectSchema(properties, requiredGroups...)
+	// Nested schema documents need their own $id so their local $defs references
+	// resolve at the group property rather than at the combined argument root.
+	rebaseDefinitions(t.InputSchema)
+	if err := p.applyOperationResponses(&t, spec.Op); err != nil {
+		return t, err
+	}
+	if _, err := registry.CompileSchema(t.InputSchema); err != nil {
+		return t, err
+	}
+	return t, nil
+}
+
+func initOperationTool(spec operationSpec) (Tool, error) {
+	t := Tool{
+		ID:       spec.ID,
+		ServerID: spec.ServerID,
+		Name:     spec.Name,
+		Method:   spec.Method,
+		Path:     spec.Path,
+		Actors:   []string{"developer"},
+		Tags:     []string{},
+		ReadOnly: spec.Method == "GET" || spec.Method == "HEAD" || spec.Method == "OPTIONS",
+		HTTP:     &HTTPMapping{Parameters: []HTTPParameter{}, Responses: map[string]HTTPResponse{}},
+	}
+	summary, _ := spec.Op["summary"].(string)
+	description, _ := spec.Op["description"].(string)
 	t.Description = strings.TrimSpace(summary + "\n" + description)
 	if t.Description == "" {
-		t.Description = method + " " + path
+		t.Description = spec.Method + " " + spec.Path
 	}
-	if tags, ok := op["tags"].([]any); ok {
+	if tags, ok := spec.Op["tags"].([]any); ok {
 		for _, tag := range tags {
 			if s, ok := tag.(string); ok {
 				t.Tags = append(t.Tags, s)
 			}
 		}
 	}
-	if callbacks, ok := op["callbacks"].(map[string]any); ok && len(callbacks) > 0 {
+	if callbacks, ok := spec.Op["callbacks"].(map[string]any); ok && len(callbacks) > 0 {
 		return t, invalid("callbacks 需要自定义适配器")
 	}
+	return t, nil
+}
+
+func (p openAPIImporter) collectOperationParameters(item, op map[string]any) (map[string]map[string]any, error) {
 	params := map[string]map[string]any{}
 	for _, owner := range []map[string]any{item, op} {
 		if owner["parameters"] == nil {
@@ -272,115 +366,145 @@ func (p openAPIImporter) operation(serverID, id, name, method, path string, item
 		}
 		list, ok := owner["parameters"].([]any)
 		if !ok {
-			return t, invalid("parameters 必须是数组")
+			return nil, invalid("parameters 必须是数组")
 		}
 		for _, raw := range list {
 			param, err := p.object(raw)
 			if err != nil {
-				return t, err
+				return nil, err
 			}
 			in, _ := param["in"].(string)
 			name, _ := param["name"].(string)
 			params[in+":"+name] = param
 		}
 	}
+	return params, nil
+}
+
+func (p openAPIImporter) applyOperationParameters(t *Tool, path string, params map[string]map[string]any) (map[string]any, []string, error) {
 	groups := map[string]map[string]any{}
-	requiredGroups := []string{}
+	var requiredGroups []string
 	for _, key := range slices.Sorted(maps.Keys(params)) {
 		param := params[key]
-		in, _ := param["in"].(string)
-		name, _ := param["name"].(string)
-		if name == "" || !slices.Contains([]string{"path", "query", "header", "cookie"}, in) {
-			return t, invalid("参数位置或名称无效")
-		}
-		if in == "header" && isForbiddenHeader(name) {
-			return t, invalid("认证和协议请求头请通过服务配置设置：" + name)
-		}
-		if param["content"] != nil || param["allowReserved"] == true {
-			return t, invalid("parameter content / allowReserved 需要自定义适配器")
-		}
-		schema, err := p.schema(param["schema"])
+		httpParam, schema, required, err := p.parseOperationParameter(param)
 		if err != nil {
-			return t, err
+			return nil, nil, err
 		}
-		if desc, ok := param["description"].(string); ok {
-			schema["description"] = desc
-		}
-		style, _ := param["style"].(string)
-		if style == "" {
-			style = "form"
-			if in == "path" || in == "header" {
-				style = "simple"
-			}
-		}
-		explode := style == "form"
-		if b, ok := param["explode"].(bool); ok {
-			explode = b
-		}
-		if !registry.SupportedParameterStyle(in, style, explode) {
-			return t, invalid("不支持的参数序列化：" + in + "/" + style)
-		}
-		group := argumentGroup(in)
+		group := registry.ArgumentGroup(httpParam.In)
 		if groups[group] == nil {
 			groups[group] = objectSchema(map[string]any{})
 		}
-		groups[group]["properties"].(map[string]any)[name] = schema
-		required, _ := param["required"].(bool)
-		if in == "path" && !required {
-			return t, invalid("path 参数必须 required")
-		}
+		groups[group]["properties"].(map[string]any)[httpParam.Name] = schema
 		if required {
-			groups[group]["required"] = append(groups[group]["required"].([]string), name)
+			groups[group]["required"] = append(groups[group]["required"].([]string), httpParam.Name)
 			if !slices.Contains(requiredGroups, group) {
 				requiredGroups = append(requiredGroups, group)
 			}
 		}
-		t.HTTP.Parameters = append(t.HTTP.Parameters, HTTPParameter{Name: name, In: in, Style: style, Explode: explode})
+		t.HTTP.Parameters = append(t.HTTP.Parameters, httpParam)
 	}
-	for _, match := range registry.PathVariable.FindAllStringSubmatch(path, -1) {
-		if _, ok := params["path:"+match[1]]; !ok {
-			return t, invalid("路径模板缺少参数定义：" + match[1])
-		}
+	if err := validatePathParameters(path, params, t.HTTP.Parameters); err != nil {
+		return nil, nil, err
 	}
-	for _, param := range t.HTTP.Parameters {
-		if param.In == "path" && !strings.Contains(path, "{"+param.Name+"}") {
-			return t, invalid("多余的 path 参数：" + param.Name)
-		}
-	}
-	properties := map[string]any{}
+	properties := make(map[string]any, len(groups))
 	for key, group := range groups {
 		properties[key] = group
 	}
-	if raw := op["requestBody"]; raw != nil {
-		body, err := p.object(raw)
-		if err != nil {
-			return t, err
-		}
-		content, ok := body["content"].(map[string]any)
-		if !ok {
-			return t, invalid("requestBody 缺少 content")
-		}
-		media, ok := content["application/json"].(map[string]any)
-		if !ok {
-			return t, invalid("目前支持 application/json 请求体；其他格式请使用适配器")
-		}
-		schema, err := p.schema(media["schema"])
-		if err != nil {
-			return t, err
-		}
-		properties["body"] = schema
-		t.HTTP.Body = true
-		if required, _ := body["required"].(bool); required {
-			requiredGroups = append(requiredGroups, "body")
+	return properties, requiredGroups, nil
+}
+
+func (p openAPIImporter) parseOperationParameter(param map[string]any) (HTTPParameter, map[string]any, bool, error) {
+	in, _ := param["in"].(string)
+	name, _ := param["name"].(string)
+	if name == "" || !slices.Contains([]string{"path", "query", "header", "cookie"}, in) {
+		return HTTPParameter{}, nil, false, invalid("参数位置或名称无效")
+	}
+	if in == "header" && isForbiddenHeader(name) {
+		return HTTPParameter{}, nil, false, invalid("认证和协议请求头请通过服务配置设置：" + name)
+	}
+	if param["content"] != nil || param["allowReserved"] == true {
+		return HTTPParameter{}, nil, false, invalid("parameter content / allowReserved 需要自定义适配器")
+	}
+	schema, err := p.schema(param["schema"])
+	if err != nil {
+		return HTTPParameter{}, nil, false, err
+	}
+	if desc, ok := param["description"].(string); ok {
+		schema["description"] = desc
+	}
+	style, explode := resolveParameterStyle(in, param)
+	if !registry.SupportedParameterStyle(in, style, explode) {
+		return HTTPParameter{}, nil, false, invalid("不支持的参数序列化：" + in + "/" + style)
+	}
+	required, _ := param["required"].(bool)
+	if in == "path" && !required {
+		return HTTPParameter{}, nil, false, invalid("path 参数必须 required")
+	}
+	return HTTPParameter{Name: name, In: in, Style: style, Explode: explode}, schema, required, nil
+}
+
+func resolveParameterStyle(in string, param map[string]any) (string, bool) {
+	style, _ := param["style"].(string)
+	if style == "" {
+		style = "form"
+		if in == "path" || in == "header" {
+			style = "simple"
 		}
 	}
-	t.InputSchema = objectSchema(properties, requiredGroups...)
-	// Nested schema documents need their own $id so their local $defs references
-	// resolve at the group property rather than at the combined argument root.
-	rebaseDefinitions(t.InputSchema)
+	explode := style == "form"
+	if b, ok := param["explode"].(bool); ok {
+		explode = b
+	}
+	return style, explode
+}
+
+func validatePathParameters(path string, params map[string]map[string]any, httpParams []HTTPParameter) error {
+	for _, match := range registry.PathVariable.FindAllStringSubmatch(path, -1) {
+		if _, ok := params["path:"+match[1]]; !ok {
+			return invalid("路径模板缺少参数定义：" + match[1])
+		}
+	}
+	for _, param := range httpParams {
+		if param.In == "path" && !strings.Contains(path, "{"+param.Name+"}") {
+			return invalid("多余的 path 参数：" + param.Name)
+		}
+	}
+	return nil
+}
+
+func (p openAPIImporter) applyRequestBody(t *Tool, op, properties map[string]any, requiredGroups []string) ([]string, error) {
+	raw := op["requestBody"]
+	if raw == nil {
+		return requiredGroups, nil
+	}
+	body, err := p.object(raw)
+	if err != nil {
+		return nil, err
+	}
+	content, ok := body["content"].(map[string]any)
+	if !ok {
+		return nil, invalid("requestBody 缺少 content")
+	}
+	media, ok := content["application/json"].(map[string]any)
+	if !ok {
+		return nil, invalid("目前支持 application/json 请求体；其他格式请使用适配器")
+	}
+	schema, err := p.schema(media["schema"])
+	if err != nil {
+		return nil, err
+	}
+	properties["body"] = schema
+	t.HTTP.Body = true
+	if required, _ := body["required"].(bool); required {
+		requiredGroups = append(requiredGroups, "body")
+	}
+	return requiredGroups, nil
+}
+
+func (p openAPIImporter) applyOperationResponses(t *Tool, op map[string]any) error {
 	responses, ok := op["responses"].(map[string]any)
 	if !ok {
-		return t, invalid("operation 缺少 responses")
+		return invalid("operation 缺少 responses")
 	}
 	for _, status := range slices.Sorted(maps.Keys(responses)) {
 		if !strings.HasPrefix(status, "2") && status != "default" {
@@ -388,27 +512,22 @@ func (p openAPIImporter) operation(serverID, id, name, method, path string, item
 		}
 		response, err := p.object(responses[status])
 		if err != nil {
-			return t, err
+			return err
 		}
 		content, _ := response["content"].(map[string]any)
 		if len(content) == 0 {
 			t.HTTP.Responses[status] = HTTPResponse{MediaType: "empty"}
 			continue
 		}
-		mediaType := "application/json"
-		media, ok := content[mediaType].(map[string]any)
+		mediaType, media, ok := selectResponseMedia(content)
 		if !ok {
-			mediaType = "text/plain"
-			media, ok = content[mediaType].(map[string]any)
-		}
-		if !ok {
-			return t, invalid("响应只支持 application/json 或 text/plain")
+			return invalid("响应只支持 application/json 或 text/plain")
 		}
 		var schema map[string]any
 		if raw, exists := media["schema"]; exists {
 			schema, err = p.schema(raw)
 			if err != nil {
-				return t, err
+				return err
 			}
 		}
 		t.HTTP.Responses[status] = HTTPResponse{MediaType: mediaType, Schema: schema}
@@ -420,10 +539,16 @@ func (p openAPIImporter) operation(serverID, id, name, method, path string, item
 			}
 		}
 	}
-	if _, err := registry.CompileSchema(t.InputSchema); err != nil {
-		return t, err
+	return nil
+}
+
+func selectResponseMedia(content map[string]any) (string, map[string]any, bool) {
+	for _, mediaType := range []string{"application/json", "text/plain"} {
+		if media, ok := content[mediaType].(map[string]any); ok {
+			return mediaType, media, true
+		}
 	}
-	return t, nil
+	return "", nil, false
 }
 
 // Hoist each independently resolved schema's definitions to unique root names.
@@ -522,15 +647,4 @@ var forbiddenHeaders = []string{
 
 func isForbiddenHeader(name string) bool {
 	return slices.Contains(forbiddenHeaders, strings.ToLower(name))
-}
-
-func argumentGroup(in string) string {
-	switch in {
-	case "header":
-		return "headers"
-	case "cookie":
-		return "cookies"
-	default:
-		return in
-	}
 }

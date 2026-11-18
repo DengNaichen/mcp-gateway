@@ -197,6 +197,31 @@ func (m *Maintainer) saveRun(r MaintenanceRun) error {
 	return nil
 }
 func (m *Maintainer) SaveSource(s MaintenanceSource) error {
+	if err := validateMaintenanceSource(&s); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	reg := m.catalog.Snapshot()
+	i := slices.IndexFunc(reg.Servers, func(v Server) bool { return v.ID == s.ServerID })
+	if i < 0 || reg.Servers[i].Demo {
+		return invalid("请选择已接入的非演示服务")
+	}
+	if (s.Format == "openapi" && reg.Servers[i].Kind != "http") || (s.Format == "native" && reg.Servers[i].Kind != "mcp") {
+		return invalid("OpenAPI 对应 HTTP 服务，native 对应原生 MCP 服务")
+	}
+	if reg.Servers[i].Kind != "mcp" && len(s.Files)+len(s.URLs) == 0 && s.Repository == nil {
+		return invalid("请指定至少一个参考文件或文档 URL")
+	}
+	s.NextRunAt = time.Now().Add(time.Duration(s.IntervalMinutes) * time.Minute)
+	if err := m.saveSource(s); err != nil {
+		return err
+	}
+	m.signal()
+	return nil
+}
+
+func validateMaintenanceSource(s *MaintenanceSource) error {
 	if s.Repository != nil {
 		if err := validateRepository(*s.Repository); err != nil {
 			return err
@@ -232,24 +257,6 @@ func (m *Maintainer) SaveSource(s MaintenanceSource) error {
 			return err
 		}
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	reg := m.catalog.Snapshot()
-	i := slices.IndexFunc(reg.Servers, func(v Server) bool { return v.ID == s.ServerID })
-	if i < 0 || reg.Servers[i].Demo {
-		return invalid("请选择已接入的非演示服务")
-	}
-	if (s.Format == "openapi" && reg.Servers[i].Kind != "http") || (s.Format == "native" && reg.Servers[i].Kind != "mcp") {
-		return invalid("OpenAPI 对应 HTTP 服务，native 对应原生 MCP 服务")
-	}
-	if reg.Servers[i].Kind != "mcp" && len(s.Files)+len(s.URLs) == 0 && s.Repository == nil {
-		return invalid("请指定至少一个参考文件或文档 URL")
-	}
-	s.NextRunAt = time.Now().Add(time.Duration(s.IntervalMinutes) * time.Minute)
-	if err := m.saveSource(s); err != nil {
-		return err
-	}
-	m.signal()
 	return nil
 }
 
@@ -447,7 +454,7 @@ func (m *Maintainer) execute(r MaintenanceRun) {
 	autoPublish := m.sources[r.ServerID].AutoPublish
 	m.mu.Unlock()
 	if r.Status == "ready" && r.Source.AutoPublish && autoPublish && r.Acceptance.Passed && !r.Review.Required {
-		if err := m.publish(r.ID, false, false); err != nil {
+		if err := m.publish(publishOptions{ID: r.ID, Actor: "scheduler"}); err != nil {
 			m.mu.Lock()
 			r = m.runs[r.ID]
 			if r.Status != "ready" {

@@ -109,6 +109,20 @@ func ValidateMapping(t Tool) error {
 	}
 	return nil
 }
+
+// ArgumentGroup maps a parameter location to the plural argument group used to
+// keep identically named path/query/body parameters distinct.
+func ArgumentGroup(in string) string {
+	switch in {
+	case "header":
+		return "headers"
+	case "cookie":
+		return "cookies"
+	default:
+		return in
+	}
+}
+
 func SupportedParameterStyle(in, style string, explode bool) bool {
 	switch in {
 	case "path", "header":

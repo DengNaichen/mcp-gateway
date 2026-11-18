@@ -22,30 +22,52 @@ func validateRepository(r RepositorySource) error {
 	if r.URL == "" || len(r.Files) == 0 || len(r.Files) > 32 {
 		return invalid("仓库来源需要 URL 或绝对本地路径，以及至少一个文件（最多 32 个）")
 	}
-	if !filepath.IsAbs(r.URL) {
-		u, err := url.Parse(r.URL)
-		if err != nil || !strings.HasPrefix(r.URL, "ssh://") && (!strings.HasPrefix(r.URL, "https://") && !strings.HasPrefix(r.URL, "http://")) {
-			return invalid("仓库地址必须是绝对本地路径或 HTTP(S)/SSH URL")
-		}
-		if u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
-			return invalid("仓库地址无效")
-		}
-		if u.User != nil {
-			if _, set := u.User.Password(); set || u.Scheme != "ssh" {
-				return invalid("Git 凭据请通过本机 credential helper / SSH 配置提供")
-			}
-		}
+	if err := validateRepositoryURL(r.URL); err != nil {
+		return err
 	}
-	if !branchName.MatchString(r.Ref) || strings.Contains(r.Ref, "..") || strings.Contains(r.Ref, "//") || strings.HasSuffix(r.Ref, ".") || strings.HasSuffix(r.Ref, "/") || strings.Contains(r.Ref, ".lock") {
-		return invalid("仓库 ref 必须是有效分支名或 commit SHA")
+	if err := validateRepositoryRef(r.Ref); err != nil {
+		return err
 	}
-	for _, file := range r.Files {
-		if file == "" || filepath.IsAbs(file) || filepath.ToSlash(filepath.Clean(file)) != file || file == ".." || strings.HasPrefix(file, "../") || strings.ContainsAny(file, "\x00\n\r") {
-			return invalid("仓库文件必须是不含 .. 的相对路径")
-		}
+	if err := validateRepositoryFiles(r.Files); err != nil {
+		return err
 	}
 	if r.EventsEnabled && (r.Project == "" || !secrets.ValidEnvName(r.WebhookSecretEnv)) {
 		return invalid("开启仓库事件需要 project 和 webhook 密钥环境变量名称")
+	}
+	return nil
+}
+
+func validateRepositoryURL(rawURL string) error {
+	if filepath.IsAbs(rawURL) {
+		return nil
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || (!strings.HasPrefix(rawURL, "ssh://") && !strings.HasPrefix(rawURL, "https://") && !strings.HasPrefix(rawURL, "http://")) {
+		return invalid("仓库地址必须是绝对本地路径或 HTTP(S)/SSH URL")
+	}
+	if u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+		return invalid("仓库地址无效")
+	}
+	if u.User != nil {
+		if _, set := u.User.Password(); set || u.Scheme != "ssh" {
+			return invalid("Git 凭据请通过本机 credential helper / SSH 配置提供")
+		}
+	}
+	return nil
+}
+
+func validateRepositoryRef(ref string) error {
+	if !branchName.MatchString(ref) || strings.Contains(ref, "..") || strings.Contains(ref, "//") || strings.HasSuffix(ref, ".") || strings.HasSuffix(ref, "/") || strings.Contains(ref, ".lock") {
+		return invalid("仓库 ref 必须是有效分支名或 commit SHA")
+	}
+	return nil
+}
+
+func validateRepositoryFiles(files []string) error {
+	for _, file := range files {
+		if file == "" || filepath.IsAbs(file) || filepath.ToSlash(filepath.Clean(file)) != file || file == ".." || strings.HasPrefix(file, "../") || strings.ContainsAny(file, "\x00\n\r") {
+			return invalid("仓库文件必须是不含 .. 的相对路径")
+		}
 	}
 	return nil
 }
@@ -63,7 +85,13 @@ func (m *Maintainer) repositoryDocuments(ctx context.Context, r *MaintenanceRun)
 	}
 	base := []string{"-c", "core.hooksPath=/dev/null", "-c", "protocol.ext.allow=never", "-c", "protocol.file.allow=always"}
 	git := func(args ...string) ([]byte, error) {
-		return sandbox.RunCommand(ctx, "git", append(append([]string{}, base...), args...), dir, nil, map[string]string{"GIT_TERMINAL_PROMPT": "0"}, 2<<20)
+		return sandbox.RunCommand(ctx, sandbox.CommandOptions{
+			Name:  "git",
+			Args:  append(append([]string{}, base...), args...),
+			Dir:   dir,
+			Env:   map[string]string{"GIT_TERMINAL_PROMPT": "0"},
+			Limit: 2 << 20,
+		})
 	}
 	if _, err := os.Stat(filepath.Join(dir, "HEAD")); os.IsNotExist(err) {
 		if _, err := git("init", "--bare", "--template=", dir); err != nil {

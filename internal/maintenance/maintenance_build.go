@@ -118,115 +118,26 @@ func (m *Maintainer) build(ctx context.Context, r *MaintenanceRun) error {
 		Server Server
 		Source string
 	}{docs, r.Server, sourceIdentity(r.Source) + jsonutil.MustDigest(r.AcceptanceInput)})
-	m.mu.Lock()
-	var latest MaintenanceRun
-	for _, old := range m.runs {
-		if old.ID != r.ID && old.ServerID == r.ServerID && (old.Status == "published" || old.Status == "ready" || old.Status == "rolled_back") && (latest.ID == "" || old.CreatedAt.After(latest.CreatedAt)) {
-			latest = old
-		}
-	}
-	unchanged := latest.ID != "" && latest.Status != "rolled_back" && latest.Fingerprint == r.Fingerprint && (latest.Status != "ready" || latest.Baseline == r.Baseline)
-	m.mu.Unlock()
-	if latest.Acceptance.Configured && (!latest.Acceptance.Passed || latest.Acceptance.RoutingFingerprint != m.router.RoutingFingerprint(r.ServerID)) {
-		unchanged = false
-	}
-	if unchanged && !r.Force {
+	if m.isUnchangedSinceLatest(r) && !r.Force {
 		r.Status = "no_change"
 		r.Stage = "来源未变化"
 		r.Summary = "来源内容与最近已验证版本一致，未调用 pi"
 		return nil
 	}
-	dir, err := filepath.Abs(m.directory(r.ID))
+	dir, err := m.prepareRunWorkspace(r, docs)
 	if err != nil {
-		return fmt.Errorf("resolve job directory: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Join(dir, "output"), 0700); err != nil {
-		return fmt.Errorf("create job workspace: %w", err)
-	}
-	input := map[string]any{"server": r.Server, "current_tools": r.Before, "instructions": r.Source.Instructions, "references": docs}
-	if err := writeJSON(filepath.Join(dir, "input.json"), input); err != nil {
 		return err
 	}
-	// Give the coding agent the previous adapter implementations for incremental repair.
-	previous := filepath.Join(dir, "previous")
-	for _, t := range r.Before {
-		if t.Adapter == "" {
-			continue
-		}
-		p, err := m.AdapterPath(t)
-		if err != nil {
-			return err
-		}
-		b, err := inpututil.ReadFileBounded(p, 1<<20)
-		if err != nil {
-			return err
-		}
-		if err := os.MkdirAll(previous, 0700); err != nil {
-			return fmt.Errorf("create previous artifacts: %w", err)
-		}
-		if err := os.WriteFile(filepath.Join(previous, t.Adapter), b, 0600); err != nil {
-			return fmt.Errorf("copy previous adapter: %w", err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(dir, "CONTRACT.md"), []byte(maintenanceContract), 0600); err != nil {
-		return fmt.Errorf("write artifact contract: %w", err)
-	}
-	if maintenanceFormat(r.Source, r.Server) == "pi" {
-		if err := m.update(r.ID, "Pi 正在维护工具与适配代码"); err != nil {
-			return err
-		}
-		if err := sandbox.RunPi(ctx, m.execution, m.command, dir, sandbox.PiOptions{Provider: r.Source.Provider, Model: r.Source.Model}, func(stage string) error { return m.update(r.ID, stage) }); err != nil {
-			return err
-		}
-	} else {
-		if err := m.update(r.ID, "解析接口定义（无需模型）"); err != nil {
-			return err
-		}
-		if err := m.generateDefinitions(*r, docs, dir); err != nil {
-			return err
-		}
+	if err := m.generateRunOutput(ctx, r, docs, dir); err != nil {
+		return err
 	}
 	if err := m.update(r.ID, "校验工具定义与适配代码"); err != nil {
 		return err
 	}
 	// Publish from a separate snapshot, never from the agent's mutable work folder.
-	revision := filepath.Join(dir, "revision")
-	if err := os.Mkdir(revision, 0700); err != nil {
-		return fmt.Errorf("create revision: %w", err)
-	}
-	output := filepath.Join(dir, "output")
-	info, err := os.Lstat(output)
+	revision, err := snapshotOutputRevision(dir, r)
 	if err != nil {
-		return fmt.Errorf("inspect output directory: %w", err)
-	}
-	if !info.IsDir() {
-		return invalid("产物目录不能是符号链接")
-	}
-	entries, err := os.ReadDir(output)
-	if err != nil {
-		return fmt.Errorf("read output directory: %w", err)
-	}
-	if len(entries) > 64 {
-		return invalid("产物不能超过 64 个文件")
-	}
-	totalBytes := 0
-	r.Artifacts = map[string]string{}
-	for _, e := range entries {
-		if e.IsDir() || e.Type()&os.ModeSymlink != 0 {
-			return invalid("产物只允许顶层普通文件")
-		}
-		b, err := regularArtifact(filepath.Join(dir, "output"), e.Name())
-		if err != nil {
-			return err
-		}
-		totalBytes += len(b)
-		if totalBytes > 8<<20 {
-			return invalid("产物合计不能超过 8 MB")
-		}
-		r.Artifacts[e.Name()] = jsonutil.MustDigest(string(b))
-		if err := os.WriteFile(filepath.Join(revision, e.Name()), b, 0400); err != nil {
-			return fmt.Errorf("snapshot artifact: %w", err)
-		}
+		return err
 	}
 	bundle, err := m.validateBundle(ctx, *r, revision)
 	if err != nil {
@@ -247,6 +158,127 @@ func (m *Maintainer) build(ctx context.Context, r *MaintenanceRun) error {
 	if err := checkArtifacts(revision, r.Artifacts); err != nil {
 		return err
 	}
+	finalizeBuildStage(r)
+	return nil
+}
+
+func (m *Maintainer) isUnchangedSinceLatest(r *MaintenanceRun) bool {
+	m.mu.Lock()
+	var latest MaintenanceRun
+	for _, old := range m.runs {
+		if old.ID != r.ID && old.ServerID == r.ServerID && (old.Status == "published" || old.Status == "ready" || old.Status == "rolled_back") && (latest.ID == "" || old.CreatedAt.After(latest.CreatedAt)) {
+			latest = old
+		}
+	}
+	unchanged := latest.ID != "" && latest.Status != "rolled_back" && latest.Fingerprint == r.Fingerprint && (latest.Status != "ready" || latest.Baseline == r.Baseline)
+	m.mu.Unlock()
+	if latest.Acceptance.Configured && (!latest.Acceptance.Passed || latest.Acceptance.RoutingFingerprint != m.router.RoutingFingerprint(r.ServerID)) {
+		unchanged = false
+	}
+	return unchanged
+}
+
+func (m *Maintainer) prepareRunWorkspace(r *MaintenanceRun, docs []sourceDocument) (string, error) {
+	dir, err := filepath.Abs(m.directory(r.ID))
+	if err != nil {
+		return "", fmt.Errorf("resolve job directory: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "output"), 0700); err != nil {
+		return "", fmt.Errorf("create job workspace: %w", err)
+	}
+	input := map[string]any{"server": r.Server, "current_tools": r.Before, "instructions": r.Source.Instructions, "references": docs}
+	if err := writeJSON(filepath.Join(dir, "input.json"), input); err != nil {
+		return "", err
+	}
+	// Give the coding agent the previous adapter implementations for incremental repair.
+	previous := filepath.Join(dir, "previous")
+	for _, t := range r.Before {
+		if t.Adapter == "" {
+			continue
+		}
+		p, err := m.AdapterPath(t)
+		if err != nil {
+			return "", err
+		}
+		b, err := inpututil.ReadFileBounded(p, 1<<20)
+		if err != nil {
+			return "", err
+		}
+		if err := os.MkdirAll(previous, 0700); err != nil {
+			return "", fmt.Errorf("create previous artifacts: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(previous, t.Adapter), b, 0600); err != nil {
+			return "", fmt.Errorf("copy previous adapter: %w", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "CONTRACT.md"), []byte(maintenanceContract), 0600); err != nil {
+		return "", fmt.Errorf("write artifact contract: %w", err)
+	}
+	return dir, nil
+}
+
+func (m *Maintainer) generateRunOutput(ctx context.Context, r *MaintenanceRun, docs []sourceDocument, dir string) error {
+	if maintenanceFormat(r.Source, r.Server) == "pi" {
+		if err := m.update(r.ID, "Pi 正在维护工具与适配代码"); err != nil {
+			return err
+		}
+		return sandbox.RunPi(ctx, sandbox.PiRunOptions{
+			Policy:   m.execution,
+			Command:  m.command,
+			Dir:      dir,
+			Model:    sandbox.PiOptions{Provider: r.Source.Provider, Model: r.Source.Model},
+			Progress: func(stage string) error { return m.update(r.ID, stage) },
+		})
+	}
+	if err := m.update(r.ID, "解析接口定义（无需模型）"); err != nil {
+		return err
+	}
+	return m.generateDefinitions(*r, docs, dir)
+}
+
+func snapshotOutputRevision(dir string, r *MaintenanceRun) (string, error) {
+	revision := filepath.Join(dir, "revision")
+	if err := os.Mkdir(revision, 0700); err != nil {
+		return "", fmt.Errorf("create revision: %w", err)
+	}
+	output := filepath.Join(dir, "output")
+	info, err := os.Lstat(output)
+	if err != nil {
+		return "", fmt.Errorf("inspect output directory: %w", err)
+	}
+	if !info.IsDir() {
+		return "", invalid("产物目录不能是符号链接")
+	}
+	entries, err := os.ReadDir(output)
+	if err != nil {
+		return "", fmt.Errorf("read output directory: %w", err)
+	}
+	if len(entries) > 64 {
+		return "", invalid("产物不能超过 64 个文件")
+	}
+	totalBytes := 0
+	r.Artifacts = map[string]string{}
+	for _, e := range entries {
+		if e.IsDir() || e.Type()&os.ModeSymlink != 0 {
+			return "", invalid("产物只允许顶层普通文件")
+		}
+		b, err := regularArtifact(filepath.Join(dir, "output"), e.Name())
+		if err != nil {
+			return "", err
+		}
+		totalBytes += len(b)
+		if totalBytes > 8<<20 {
+			return "", invalid("产物合计不能超过 8 MB")
+		}
+		r.Artifacts[e.Name()] = jsonutil.MustDigest(string(b))
+		if err := os.WriteFile(filepath.Join(revision, e.Name()), b, 0400); err != nil {
+			return "", fmt.Errorf("snapshot artifact: %w", err)
+		}
+	}
+	return revision, nil
+}
+
+func finalizeBuildStage(r *MaintenanceRun) {
 	r.Status = "ready"
 	switch {
 	case !r.Acceptance.Configured:
@@ -258,9 +290,38 @@ func (m *Maintainer) build(ctx context.Context, r *MaintenanceRun) error {
 	default:
 		r.Stage = "验收通过，可发布兼容更新"
 	}
-	return nil
 }
+
 func (m *Maintainer) validateBundle(ctx context.Context, r MaintenanceRun, dir string) (maintenanceBundle, error) {
+	bundle, err := decodeManifestBundle(dir)
+	if err != nil {
+		return bundle, err
+	}
+	seen := map[string]bool{}
+	hasAdapter := false
+	for i := range bundle.Tools {
+		usedAdapter, err := m.validateBundleTool(ctx, r, dir, &bundle.Tools[i], seen)
+		if err != nil {
+			return bundle, err
+		}
+		if usedAdapter {
+			hasAdapter = true
+		}
+	}
+	if hasAdapter {
+		if err := m.verifyBundleAdapters(ctx, dir); err != nil {
+			return bundle, err
+		}
+	}
+	if r.Server.Kind == "mcp" {
+		if err := m.verifyNativeMCPTools(ctx, r, bundle.Tools); err != nil {
+			return bundle, err
+		}
+	}
+	return bundle, nil
+}
+
+func decodeManifestBundle(dir string) (maintenanceBundle, error) {
 	var bundle maintenanceBundle
 	b, err := regularArtifact(dir, "manifest.json")
 	if err != nil {
@@ -277,95 +338,106 @@ func (m *Maintainer) validateBundle(ctx context.Context, r MaintenanceRun, dir s
 	if strings.TrimSpace(bundle.Summary) == "" || len(bundle.Summary) > 4000 || bundle.Tools == nil || len(bundle.Tools) > 200 {
 		return bundle, invalid("manifest 需要 summary 和 tools 数组（最多 200 个）")
 	}
-	seen := map[string]bool{}
-	hasAdapter := false
-	for i := range bundle.Tools {
-		t := &bundle.Tools[i]
-		if !validID(t.ID) || !strings.HasPrefix(t.ID, r.ServerID+".") || t.ServerID != r.ServerID || t.Name == "" || t.Description == "" || seen[t.ID] {
-			return bundle, invalid("工具 ID、所属服务、名称或描述无效 / 重复")
-		}
-		seen[t.ID] = true
-		schema, err := compileSchema(t.InputSchema)
-		if err != nil {
-			return bundle, err
-		}
-		if err := validateMapping(*t); err != nil {
-			return bundle, err
-		}
-		if t.OutputSchema != nil {
-			if _, err := compileSchema(t.OutputSchema); err != nil {
-				return bundle, err
-			}
-		}
-		if t.Example != nil {
-			if err := schema.Validate(t.Example); err != nil {
-				return bundle, fmt.Errorf("invalid example for %s: %w", t.ID, err)
-			}
-		}
-		// Permissions and existing owner enablement cannot be enlarged by generated text.
-		t.Actors = []string{"developer"}
-		t.Enabled = false
-		t.Revision = ""
-		if j := slices.IndexFunc(r.Before, func(old Tool) bool { return old.ID == t.ID }); j >= 0 {
-			t.Actors = r.Before[j].Actors
-			t.Enabled = r.Before[j].Enabled
-		}
-		if t.Adapter != "" {
-			if r.Server.Kind != "http" {
-				return bundle, invalid("原生 MCP 工具不能使用 HTTP 适配脚本")
-			}
-			if !strings.HasSuffix(t.Adapter, ".mjs") {
-				return bundle, invalid("适配脚本需要 .mjs 扩展名")
-			}
-			if _, err := regularArtifact(dir, t.Adapter); err != nil {
-				return bundle, err
-			}
-			if _, err := m.execution.RunNode(ctx, dir, []string{"--check", t.Adapter}, nil, false, 64<<10); err != nil {
-				return bundle, fmt.Errorf("check adapter syntax: %w", err)
-			}
-			t.Revision = r.ID
-			hasAdapter = true
-		} else if r.Server.Kind == "http" {
-			if !slices.Contains([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}, t.Method) || !strings.HasPrefix(t.Path, "/") || strings.ContainsAny(t.Path, "?#") || (t.HTTP == nil && strings.ContainsAny(t.Path, "{}")) || strings.Contains(t.Path, "..") || strings.HasPrefix(t.Path, "//") {
-				return bundle, invalid("HTTP 工具需要支持的方法和固定相对路径；动态路径请生成适配脚本")
-			}
-		}
-	}
-	if hasAdapter {
-		if _, err := regularArtifact(dir, "verify.mjs"); err != nil {
-			return bundle, fmt.Errorf("adapter verification required: %w", err)
-		}
-		verifyCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-		defer cancel()
-		if _, err := m.execution.RunNode(verifyCtx, dir, []string{"verify.mjs"}, nil, false, 64<<10); err != nil {
-			return bundle, fmt.Errorf("adapter verification failed: %w", err)
-		}
-	}
-	if r.Server.Kind == "mcp" {
-		definitions, release, err := m.upstream.NativeTools(ctx, r.Server)
-		if err != nil {
-			return bundle, err
-		}
-		defer release()
-		live := map[string]string{}
-		readOnly := map[string]bool{}
-		for t, err := range definitions {
-			if err != nil {
-				return bundle, fmt.Errorf("validate native tools: %w", err)
-			}
-			live[t.Name] = jsonutil.MustDigest(t.InputSchema)
-			if t.Annotations != nil {
-				readOnly[t.Name] = t.Annotations.ReadOnlyHint
-			}
-		}
-		for i, t := range bundle.Tools {
-			bundle.Tools[i].ReadOnly = readOnly[t.Name]
-			if schema, ok := live[t.Name]; !ok || schema != jsonutil.MustDigest(t.InputSchema) {
-				return bundle, invalid("MCP 工具名和 schema 必须匹配下游实际定义")
-			}
-		}
-	}
 	return bundle, nil
+}
+
+func (m *Maintainer) validateBundleTool(ctx context.Context, r MaintenanceRun, dir string, t *Tool, seen map[string]bool) (bool, error) {
+	if !validID(t.ID) || !strings.HasPrefix(t.ID, r.ServerID+".") || t.ServerID != r.ServerID || t.Name == "" || t.Description == "" || seen[t.ID] {
+		return false, invalid("工具 ID、所属服务、名称或描述无效 / 重复")
+	}
+	seen[t.ID] = true
+	schema, err := compileSchema(t.InputSchema)
+	if err != nil {
+		return false, err
+	}
+	if err := validateMapping(*t); err != nil {
+		return false, err
+	}
+	if t.OutputSchema != nil {
+		if _, err := compileSchema(t.OutputSchema); err != nil {
+			return false, err
+		}
+	}
+	if t.Example != nil {
+		if err := schema.Validate(t.Example); err != nil {
+			return false, fmt.Errorf("invalid example for %s: %w", t.ID, err)
+		}
+	}
+	// Permissions and existing owner enablement cannot be enlarged by generated text.
+	t.Actors = []string{"developer"}
+	t.Enabled = false
+	t.Revision = ""
+	if j := slices.IndexFunc(r.Before, func(old Tool) bool { return old.ID == t.ID }); j >= 0 {
+		t.Actors = r.Before[j].Actors
+		t.Enabled = r.Before[j].Enabled
+	}
+	if t.Adapter != "" {
+		if err := m.validateToolAdapter(ctx, r, dir, t); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	if r.Server.Kind == "http" {
+		if !slices.Contains([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}, t.Method) || !strings.HasPrefix(t.Path, "/") || strings.ContainsAny(t.Path, "?#") || (t.HTTP == nil && strings.ContainsAny(t.Path, "{}")) || strings.Contains(t.Path, "..") || strings.HasPrefix(t.Path, "//") {
+			return false, invalid("HTTP 工具需要支持的方法和固定相对路径；动态路径请生成适配脚本")
+		}
+	}
+	return false, nil
+}
+
+func (m *Maintainer) validateToolAdapter(ctx context.Context, r MaintenanceRun, dir string, t *Tool) error {
+	if r.Server.Kind != "http" {
+		return invalid("原生 MCP 工具不能使用 HTTP 适配脚本")
+	}
+	if !strings.HasSuffix(t.Adapter, ".mjs") {
+		return invalid("适配脚本需要 .mjs 扩展名")
+	}
+	if _, err := regularArtifact(dir, t.Adapter); err != nil {
+		return err
+	}
+	if _, err := m.execution.RunNode(ctx, sandbox.NodeRunOptions{Dir: dir, Args: []string{"--check", t.Adapter}, Limit: 64 << 10}); err != nil {
+		return fmt.Errorf("check adapter syntax: %w", err)
+	}
+	t.Revision = r.ID
+	return nil
+}
+
+func (m *Maintainer) verifyBundleAdapters(ctx context.Context, dir string) error {
+	if _, err := regularArtifact(dir, "verify.mjs"); err != nil {
+		return fmt.Errorf("adapter verification required: %w", err)
+	}
+	verifyCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	if _, err := m.execution.RunNode(verifyCtx, sandbox.NodeRunOptions{Dir: dir, Args: []string{"verify.mjs"}, Limit: 64 << 10}); err != nil {
+		return fmt.Errorf("adapter verification failed: %w", err)
+	}
+	return nil
+}
+
+func (m *Maintainer) verifyNativeMCPTools(ctx context.Context, r MaintenanceRun, tools []Tool) error {
+	definitions, release, err := m.upstream.NativeTools(ctx, r.Server)
+	if err != nil {
+		return err
+	}
+	defer release()
+	live := map[string]string{}
+	readOnly := map[string]bool{}
+	for t, err := range definitions {
+		if err != nil {
+			return fmt.Errorf("validate native tools: %w", err)
+		}
+		live[t.Name] = jsonutil.MustDigest(t.InputSchema)
+		if t.Annotations != nil {
+			readOnly[t.Name] = t.Annotations.ReadOnlyHint
+		}
+	}
+	for i, t := range tools {
+		tools[i].ReadOnly = readOnly[t.Name]
+		if schema, ok := live[t.Name]; !ok || schema != jsonutil.MustDigest(t.InputSchema) {
+			return invalid("MCP 工具名和 schema 必须匹配下游实际定义")
+		}
+	}
+	return nil
 }
 
 func regularArtifact(dir, name string) ([]byte, error) {

@@ -309,7 +309,12 @@ func TestChoiceIsRetried(t *testing.T) {
 		respond(w, 200, map[string]any{"answers": []map[string]any{{"type": "choice", "name": ChoiceQuestionName, "choice": "a", "probabilities": map[string]float64{"a": 1}}}})
 	}))
 	defer server.Close()
-	answer, _, err := fastClient().askChoice(context.Background(), Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5}, "", "input", "pick", []Choice{{Value: "a"}, {Value: "b"}})
+	answer, _, err := fastClient().askChoice(context.Background(), choiceRequest{
+		Settings:     Settings{BaseURL: server.URL, MaxTools: 1, TimeoutSeconds: 5},
+		Input:        "input",
+		Instructions: "pick",
+		Choices:      []Choice{{Value: "a"}, {Value: "b"}},
+	})
 	if err != nil || answer.Choice != "a" || calls.Load() != 2 {
 		t.Fatalf("answer=%+v err=%v calls=%d", answer, err, calls.Load())
 	}

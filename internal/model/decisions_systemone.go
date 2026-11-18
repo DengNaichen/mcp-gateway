@@ -39,7 +39,9 @@ func systemOneCalls(endpoint, model, input string, instructions []string) ([]dec
 			keyHeader: "Authorization",
 			keyPrefix: "Bearer ",
 			body:      body,
-			parse:     func(b []byte) (Answers, error) { return parseMapAnswersRange(b, s, e, inc, false) },
+			parse: func(b []byte) (Answers, error) {
+				return parseMapAnswersRange(b, mapAnswersSpec{Start: s, End: e, IncludeStatus: inc})
+			},
 		})
 		start = end
 	}

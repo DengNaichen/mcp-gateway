@@ -43,11 +43,29 @@ func runWithArgs(rawArgs []string, stdout io.Writer) error {
 	if cmdArgs[0] == "plugin" {
 		return runPluginCommand(cmdArgs[1:], *endpoint, stdout)
 	}
-	return runGatewayCommand(cmdArgs, *endpoint, *actor, *args, *fields, *contextText, *summary, *includeDemo, stdout)
+	return runGatewayCommand(cmdArgs, gatewayCommandOptions{
+		Endpoint:    *endpoint,
+		Actor:       *actor,
+		RawJSONArgs: *args,
+		Fields:      *fields,
+		ContextText: *contextText,
+		Summary:     *summary,
+		IncludeDemo: *includeDemo,
+	}, stdout)
 }
 
-func runGatewayCommand(cmdArgs []string, endpoint, actor, rawJSONArgs, fields, contextText string, summary, includeDemo bool, stdout io.Writer) error {
-	method, path := http.MethodGet, "/api/catalog?actor="+url.QueryEscape(actor)+"&include_demo="+fmt.Sprint(includeDemo)
+type gatewayCommandOptions struct {
+	Endpoint    string
+	Actor       string
+	RawJSONArgs string
+	Fields      string
+	ContextText string
+	Summary     bool
+	IncludeDemo bool
+}
+
+func runGatewayCommand(cmdArgs []string, opts gatewayCommandOptions, stdout io.Writer) error {
+	method, path := http.MethodGet, "/api/catalog?actor="+url.QueryEscape(opts.Actor)+"&include_demo="+fmt.Sprint(opts.IncludeDemo)
 	var payload any
 	switch cmdArgs[0] {
 	case "list":
@@ -56,26 +74,26 @@ func runGatewayCommand(cmdArgs []string, endpoint, actor, rawJSONArgs, fields, c
 			return fmt.Errorf("search requires an intent")
 		}
 		method, path = http.MethodPost, "/api/discover"
-		payload = map[string]any{"intent": strings.Join(cmdArgs[1:], " "), "actor": actor, "context": contextText, "include_demo": includeDemo, "summary_only": summary}
+		payload = map[string]any{"intent": strings.Join(cmdArgs[1:], " "), "actor": opts.Actor, "context": opts.ContextText, "include_demo": opts.IncludeDemo, "summary_only": opts.Summary}
 	case "schema":
 		if len(cmdArgs) != 2 {
 			return fmt.Errorf("schema requires one tool id")
 		}
-		path = "/api/tools/" + url.PathEscape(cmdArgs[1]) + "/schema?actor=" + url.QueryEscape(actor)
+		path = "/api/tools/" + url.PathEscape(cmdArgs[1]) + "/schema?actor=" + url.QueryEscape(opts.Actor)
 	case "call":
 		if len(cmdArgs) != 2 {
 			return fmt.Errorf("call requires one tool id")
 		}
 		var parsed map[string]any
-		if err := json.Unmarshal([]byte(rawJSONArgs), &parsed); err != nil {
+		if err := json.Unmarshal([]byte(opts.RawJSONArgs), &parsed); err != nil {
 			return fmt.Errorf("parse arguments: %w", err)
 		}
 		var projection []string
-		if fields != "" {
-			projection = strings.Split(fields, ",")
+		if opts.Fields != "" {
+			projection = strings.Split(opts.Fields, ",")
 		}
 		method, path = http.MethodPost, "/api/invoke"
-		payload = map[string]any{"tool_id": cmdArgs[1], "arguments": parsed, "actor": actor, "fields": projection}
+		payload = map[string]any{"tool_id": cmdArgs[1], "arguments": parsed, "actor": opts.Actor, "fields": projection}
 	default:
 		return fmt.Errorf("unknown command %q", cmdArgs[0])
 	}
@@ -87,7 +105,7 @@ func runGatewayCommand(cmdArgs []string, endpoint, actor, rawJSONArgs, fields, c
 		}
 		body = bytes.NewReader(b)
 	}
-	req, err := http.NewRequest(method, strings.TrimRight(endpoint, "/")+path, body)
+	req, err := http.NewRequest(method, strings.TrimRight(opts.Endpoint, "/")+path, body)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
@@ -182,7 +200,7 @@ func runPluginCommand(args []string, defaultURL string, stdout io.Writer) error 
 	case "verify-prompt":
 		return printVerifyPrompts(stdout, mgr, mcpURL, targets, isAll)
 	case "install":
-		return applyPluginAction(stdout, mgr, mcpURL, targets, isAll, false)
+		return applyPluginAction(stdout, pluginActionOptions{Mgr: mgr, MCPURL: mcpURL, Targets: targets, AllTargets: isAll})
 	case "update":
 		return updatePluginTargets(stdout, mgr, mcpURL, targets, isAll)
 	case "remove":
@@ -222,14 +240,22 @@ func resolveMCPEndpoint(raw string) string {
 	return clientconfig.ClientEndpoint(raw, "")
 }
 
-func applyPluginAction(stdout io.Writer, mgr *clientplugin.Manager, mcpURL string, targets []string, isAll, update bool) error {
+type pluginActionOptions struct {
+	Mgr        *clientplugin.Manager
+	MCPURL     string
+	Targets    []string
+	AllTargets bool
+	Update     bool
+}
+
+func applyPluginAction(stdout io.Writer, opts pluginActionOptions) error {
 	var errs []error
-	for _, id := range targets {
+	for _, id := range opts.Targets {
 		var err error
-		if update {
-			err = mgr.Update(id, mcpURL)
+		if opts.Update {
+			err = opts.Mgr.Update(id, opts.MCPURL)
 		} else {
-			err = mgr.Install(id, mcpURL)
+			err = opts.Mgr.Install(id, opts.MCPURL)
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", id, err))
@@ -238,12 +264,12 @@ func applyPluginAction(stdout io.Writer, mgr *clientplugin.Manager, mcpURL strin
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-	return printPluginStatuses(stdout, mgr.Statuses(mcpURL), targets, isAll)
+	return printPluginStatuses(stdout, opts.Mgr.Statuses(opts.MCPURL), opts.Targets, opts.AllTargets)
 }
 
 func updatePluginTargets(stdout io.Writer, mgr *clientplugin.Manager, mcpURL string, targets []string, isAll bool) error {
 	if !isAll {
-		return applyPluginAction(stdout, mgr, mcpURL, targets, false, true)
+		return applyPluginAction(stdout, pluginActionOptions{Mgr: mgr, MCPURL: mcpURL, Targets: targets, Update: true})
 	}
 	installed := installedMap(mgr.Statuses(mcpURL))
 	var selected []string
@@ -256,7 +282,7 @@ func updatePluginTargets(stdout io.Writer, mgr *clientplugin.Manager, mcpURL str
 	if len(selected) == 0 {
 		return printPluginStatuses(stdout, mgr.Statuses(mcpURL), targets, true)
 	}
-	return applyPluginAction(stdout, mgr, mcpURL, selected, true, true)
+	return applyPluginAction(stdout, pluginActionOptions{Mgr: mgr, MCPURL: mcpURL, Targets: selected, AllTargets: true, Update: true})
 }
 
 func removePluginTargets(stdout io.Writer, mgr *clientplugin.Manager, mcpURL string, targets []string, isAll bool) error {

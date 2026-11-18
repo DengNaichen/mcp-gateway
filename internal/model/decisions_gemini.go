@@ -71,11 +71,20 @@ func geminiCall(endpoint, model, input string, instructions []string) (decisions
 		endpoint:  endpoint,
 		keyHeader: "x-goog-api-key",
 		body:      body,
-		parse:     func(b []byte) (Answers, error) { return parseMapAnswersRange(b, 0, len(instructions), true, true) },
+		parse: func(b []byte) (Answers, error) {
+			return parseMapAnswersRange(b, mapAnswersSpec{End: len(instructions), IncludeStatus: true, GeminiUsage: true})
+		},
 	}, nil
 }
 
-func parseMapAnswersRange(b []byte, start, end int, includeStatus, geminiUsage bool) (Answers, error) {
+type mapAnswersSpec struct {
+	Start         int
+	End           int
+	IncludeStatus bool
+	GeminiUsage   bool
+}
+
+func parseMapAnswersRange(b []byte, spec mapAnswersSpec) (Answers, error) {
 	var out Answers
 	var response struct {
 		Answers map[string]mapAnswer `json:"answers"`
@@ -84,27 +93,27 @@ func parseMapAnswersRange(b []byte, start, end int, includeStatus, geminiUsage b
 	if err := json.Unmarshal(b, &response); err != nil {
 		return out, badResponse("Decisions 响应格式无效", err)
 	}
-	out.Usage = response.Usage.toModelUsage(geminiUsage)
+	out.Usage = response.Usage.toModelUsage(spec.GeminiUsage)
 	for _, answer := range response.Answers {
 		if answer.Type == "refusal" {
 			return out, refused()
 		}
 	}
-	wantCount := end - start
-	if includeStatus {
+	wantCount := spec.End - spec.Start
+	if spec.IncludeStatus {
 		wantCount++
 	}
 	if len(response.Answers) != wantCount {
 		return out, badResponse("Decisions 回答数量与问题不一致", nil)
 	}
-	if includeStatus {
+	if spec.IncludeStatus {
 		status, ok := response.Answers["route_status"]
 		if !ok || status.Type != "choice" {
 			return out, badResponse("Decisions 回答名称、顺序或类型不匹配", nil)
 		}
 		out.Status = status.Choice
 	}
-	for i := start; i < end; i++ {
+	for i := spec.Start; i < spec.End; i++ {
 		answer, ok := response.Answers[toolQuestionName(i)]
 		if !ok || answer.Type != "noul" {
 			return out, badResponse("Decisions 回答名称、顺序或类型不匹配", nil)

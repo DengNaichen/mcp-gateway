@@ -200,7 +200,7 @@ func SyncHookBinary(homeDir string) (string, error) {
 	if src == "" {
 		return target, nil
 	}
-	if sameFilePath(src, target) || filesHaveSameSHA256(src, target) {
+	if SameFilePath(src, target) || filesHaveSameSHA256(src, target) {
 		_ = os.Chmod(target, 0755) //nolint:gosec // G302: installed hook binary must stay executable (0755)
 		return target, nil
 	}
@@ -264,7 +264,9 @@ func isExecutableFile(p string) bool {
 	return info.Mode()&0111 != 0
 }
 
-func sameFilePath(a, b string) bool {
+// SameFilePath reports whether a and b refer to the same file path, resolving
+// symlinks when both resolve cleanly and falling back to a lexical comparison.
+func SameFilePath(a, b string) bool {
 	ra, ea := filepath.EvalSymlinks(a)
 	rb, eb := filepath.EvalSymlinks(b)
 	if ea == nil && eb == nil {
@@ -367,7 +369,7 @@ func BuildSnippet(opts SnippetOptions) (SnippetSpec, error) {
 	if trimmedData := strings.TrimSpace(opts.DataDir); trimmedData != "" {
 		if absData, err := filepath.Abs(trimmedData); err == nil {
 			defData, defErr := DefaultDataDir()
-			if defErr != nil || !sameFilePath(absData, defData) {
+			if defErr != nil || !SameFilePath(absData, defData) {
 				extraArgs = []string{"--data", absData}
 			}
 		}

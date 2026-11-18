@@ -46,7 +46,13 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		// Host hooks fail open on internal/missing-key errors so the host never hangs;
 		// when Gateway enforce==true, missing _gw_ctx is deterministically rejected with 403 scope_required.
-		if err := handleHostHook(context.Background(), sub, *dataDir, *installation, stdin, stdout); err != nil {
+		if err := handleHostHook(context.Background(), hostHookOptions{
+			Platform:        sub,
+			ExplicitDataDir: *dataDir,
+			InstallationID:  *installation,
+			Stdin:           stdin,
+			Stdout:          stdout,
+		}); err != nil {
 			_ = emitHostNoop(sub, stdout)
 		}
 		return 0
@@ -62,7 +68,15 @@ func runCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if err := fs.Parse(rest); err != nil {
 			return 2
 		}
-		if err := handleSign(*agent, *cwd, *op, *sid, *dataDir, stdin, stdout); err != nil {
+		if err := handleSign(signCommandOptions{
+			Agent:           *agent,
+			Cwd:             *cwd,
+			Op:              *op,
+			SID:             *sid,
+			ExplicitDataDir: *dataDir,
+			Stdin:           stdin,
+			Stdout:          stdout,
+		}); err != nil {
 			_, _ = fmt.Fprintln(stderr, err)
 			return 1
 		}
@@ -171,8 +185,18 @@ func extractHostToolCall(platform string, event map[string]any) (string, map[str
 	return name, inputObj, hasInput
 }
 
-func handleHostHook(ctx context.Context, platform, explicitDataDir, installationID string, stdin io.Reader, stdout io.Writer) error {
-	event, _, err := readBoundedJSONObject(stdin)
+type hostHookOptions struct {
+	Platform        string
+	ExplicitDataDir string
+	InstallationID  string
+	Stdin           io.Reader
+	Stdout          io.Writer
+}
+
+func handleHostHook(ctx context.Context, opts hostHookOptions) error {
+	platform := opts.Platform
+	stdout := opts.Stdout
+	event, _, err := readBoundedJSONObject(opts.Stdin)
 	if err != nil {
 		return emitHostNoop(platform, stdout)
 	}
@@ -237,13 +261,22 @@ func handleHostHook(ctx context.Context, platform, explicitDataDir, installation
 		return emitHostNoop(platform, stdout)
 	}
 
-	key, err := workspace.LoadScopeKey(explicitDataDir)
+	key, err := workspace.LoadScopeKey(opts.ExplicitDataDir)
 	if err != nil {
 		// Key not yet initialized: exit 0 with noop output so host is never blocked.
 		return emitHostNoop(platform, stdout)
 	}
 
-	updated, err := injectSignedToken(key, platform, cwd, ambiguous, op, sid, installationID, inputObj)
+	updated, err := injectSignedToken(tokenInjection{
+		Key:            key,
+		Agent:          platform,
+		Cwd:            cwd,
+		Ambiguous:      ambiguous,
+		Op:             op,
+		SID:            sid,
+		InstallationID: opts.InstallationID,
+		Input:          inputObj,
+	})
 	if err != nil {
 		return emitHostNoop(platform, stdout)
 	}
@@ -273,47 +306,75 @@ func handleHostHook(ctx context.Context, platform, explicitDataDir, installation
 	}
 }
 
-func handleSign(agent, cwd, opFlag, sid, explicitDataDir string, stdin io.Reader, stdout io.Writer) error {
-	agent = strings.ToLower(strings.TrimSpace(agent))
+type signCommandOptions struct {
+	Agent           string
+	Cwd             string
+	Op              string
+	SID             string
+	ExplicitDataDir string
+	Stdin           io.Reader
+	Stdout          io.Writer
+}
+
+func handleSign(opts signCommandOptions) error {
+	agent := strings.ToLower(strings.TrimSpace(opts.Agent))
 	if !workspace.IsKnownAgent(agent) {
 		return fmt.Errorf("invalid --agent %q (expected opencode or pi)", agent)
 	}
-	cwd = strings.TrimSpace(cwd)
+	cwd := strings.TrimSpace(opts.Cwd)
 	if cwd == "" || !filepath.IsAbs(cwd) {
 		return errors.New("--cwd must be a non-empty absolute path")
 	}
-	op, ok := normalizeMetaToolOp(opFlag)
-	inputObj, rawBytes, err := readBoundedJSONObject(stdin)
+	op, ok := normalizeMetaToolOp(opts.Op)
+	inputObj, rawBytes, err := readBoundedJSONObject(opts.Stdin)
 	if err != nil {
 		return fmt.Errorf("invalid tool_input JSON on stdin: %w", err)
 	}
 	if !ok {
 		// Unrelated tool: pass input through untouched.
-		return writeCompactJSONLine(stdout, inputObj)
+		return writeCompactJSONLine(opts.Stdout, inputObj)
 	}
 
-	key, err := workspace.LoadScopeKey(explicitDataDir)
+	key, err := workspace.LoadScopeKey(opts.ExplicitDataDir)
 	if err != nil {
 		// Key not yet initialized: fail open without mutating input so host never breaks.
 		trimmed := bytes.TrimSpace(rawBytes)
 		if len(trimmed) > 0 {
-			_, werr := stdout.Write(append(trimmed, '\n'))
+			_, werr := opts.Stdout.Write(append(trimmed, '\n'))
 			return werr
 		}
-		return writeCompactJSONLine(stdout, inputObj)
+		return writeCompactJSONLine(opts.Stdout, inputObj)
 	}
 
-	updated, err := injectSignedToken(key, agent, cwd, false, op, sanitizeSID(sid), "", inputObj)
+	updated, err := injectSignedToken(tokenInjection{
+		Key:   key,
+		Agent: agent,
+		Cwd:   cwd,
+		Op:    op,
+		SID:   sanitizeSID(opts.SID),
+		Input: inputObj,
+	})
 	if err != nil {
 		return err
 	}
-	return writeCompactJSONLine(stdout, updated)
+	return writeCompactJSONLine(opts.Stdout, updated)
 }
 
-func injectSignedToken(key []byte, agent, cwd string, ambiguous bool, op, sid, installationID string, input map[string]any) (map[string]any, error) {
+type tokenInjection struct {
+	Key            []byte
+	Agent          string
+	Cwd            string
+	Ambiguous      bool
+	Op             string
+	SID            string
+	InstallationID string
+	Input          map[string]any
+}
+
+func injectSignedToken(req tokenInjection) (map[string]any, error) {
 	ctxField := workspace.CurrentContextField()
-	updated := make(map[string]any, len(input)+1)
-	for k, v := range input {
+	updated := make(map[string]any, len(req.Input)+1)
+	for k, v := range req.Input {
 		if k == ctxField {
 			continue // Strip ONLY the current channel's _gw_ctx* field.
 		}
@@ -325,16 +386,16 @@ func injectSignedToken(key []byte, agent, cwd string, ambiguous bool, op, sid, i
 		return nil, err
 	}
 	now := time.Now().Unix()
-	tok, err := workspace.SignToken(key, workspace.Claims{
-		InstallationID: installationID,
+	tok, err := workspace.SignToken(req.Key, workspace.Claims{
+		InstallationID: req.InstallationID,
 		V:              workspace.TokenVersion,
 		Channel:        buildinfo.Current().Channel,
-		Agent:          agent,
-		Cwd:            cwd,
-		Ambiguous:      ambiguous,
-		Op:             op,
+		Agent:          req.Agent,
+		Cwd:            req.Cwd,
+		Ambiguous:      req.Ambiguous,
+		Op:             req.Op,
 		ArgsHash:       argsHash,
-		SID:            sid,
+		SID:            req.SID,
 		IAT:            now,
 		EXP:            now + int64(workspace.TokenTTL/time.Second),
 	})

@@ -70,6 +70,33 @@ type AcceptanceReport struct {
 }
 
 func (m *Maintainer) SaveAcceptance(s AcceptanceSuite) error {
+	if err := validateAcceptanceSuite(s); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !slices.ContainsFunc(m.catalog.Snapshot().Servers, func(server Server) bool { return server.ID == s.ServerID }) {
+		return invalid("服务不存在")
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		return fmt.Errorf("encode acceptance suite: %w", err)
+	}
+	if len(b) > 1<<20 {
+		return invalid("验收用例合计不能超过 1 MB")
+	}
+	// Normalize map/slice/number types and sever caller-owned mutable references.
+	if err := json.Unmarshal(b, &s); err != nil {
+		return fmt.Errorf("normalize acceptance suite: %w", err)
+	}
+	if err := store.MaintenanceAcceptance[json.RawMessage](m.db).Put(s.ServerID, b); err != nil {
+		return fmt.Errorf("save acceptance suite: %w", err)
+	}
+	m.suites[s.ServerID] = s
+	return nil
+}
+
+func validateAcceptanceSuite(s AcceptanceSuite) error {
 	if len(s.Contracts) > 200 || len(s.Routing) > 200 || len(s.Routing) == 0 {
 		return invalid("验收需要至少一条路由用例，每类最多 200 条")
 	}
@@ -100,28 +127,9 @@ func (m *Maintainer) SaveAcceptance(s AcceptanceSuite) error {
 			return invalid("路由用例需要 expected 工具或 no_match")
 		}
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if !slices.ContainsFunc(m.catalog.Snapshot().Servers, func(server Server) bool { return server.ID == s.ServerID }) {
-		return invalid("服务不存在")
-	}
-	b, err := json.Marshal(s)
-	if err != nil {
-		return fmt.Errorf("encode acceptance suite: %w", err)
-	}
-	if len(b) > 1<<20 {
-		return invalid("验收用例合计不能超过 1 MB")
-	}
-	// Normalize map/slice/number types and sever caller-owned mutable references.
-	if err := json.Unmarshal(b, &s); err != nil {
-		return fmt.Errorf("normalize acceptance suite: %w", err)
-	}
-	if err := store.MaintenanceAcceptance[json.RawMessage](m.db).Put(s.ServerID, b); err != nil {
-		return fmt.Errorf("save acceptance suite: %w", err)
-	}
-	m.suites[s.ServerID] = s
 	return nil
 }
+
 func (m *Maintainer) EvaluateAcceptance(ctx context.Context, r MaintenanceRun, dir string) AcceptanceReport {
 	report := AcceptanceReport{Results: []AcceptanceResult{}, MissingCoverage: []string{}, RoutingFingerprint: m.router.RoutingFingerprint(r.ServerID)}
 	if r.AcceptanceInput == nil {
@@ -145,9 +153,33 @@ func (m *Maintainer) EvaluateAcceptance(ctx context.Context, r MaintenanceRun, d
 		}
 		report.Results = append(report.Results, result)
 	}
-	registry := m.catalog.Snapshot()
-	candidate := Registry{Servers: registry.Servers, Tools: []Tool{}}
-	for _, tool := range registry.Tools {
+	candidate := m.buildCandidateRegistry(r)
+	for _, c := range suite.Routing {
+		outcome := m.evaluateRoutingCase(ctx, c, candidate)
+		if !outcome.Passed {
+			report.Passed = false
+		} else {
+			for _, id := range c.Expected {
+				routed[id] = true
+			}
+		}
+		report.Results = append(report.Results, outcome)
+	}
+	report.MissingCoverage = collectMissingCoverage(r, covered, routed)
+	if len(report.MissingCoverage) > 0 {
+		report.Passed = false
+	}
+	if report.RoutingFingerprint != m.router.RoutingFingerprint(r.ServerID) {
+		report.Passed = false
+		report.Results = append(report.Results, AcceptanceResult{Name: "routing-snapshot", Kind: "routing", Error: "路由配置或其他工具在验收期间变化，需要重新运行"})
+	}
+	return report
+}
+
+func (m *Maintainer) buildCandidateRegistry(r MaintenanceRun) Registry {
+	reg := m.catalog.Snapshot()
+	candidate := Registry{Servers: reg.Servers, Tools: []Tool{}}
+	for _, tool := range reg.Tools {
 		if tool.ServerID != r.ServerID {
 			candidate.Tools = append(candidate.Tools, tool)
 		}
@@ -160,54 +192,49 @@ func (m *Maintainer) EvaluateAcceptance(ctx context.Context, r MaintenanceRun, d
 		}
 		candidate.Tools = append(candidate.Tools, tool)
 	}
-	for _, c := range suite.Routing {
-		start := time.Now()
-		result, err := m.router.Discover(ctx, c, candidate)
-		if err == nil {
-			if c.NoMatch && result.Status != "no_match" {
-				err = fmt.Errorf("expected no_match, got %s", result.Status)
-			}
-			for _, id := range c.Expected {
-				if !slices.ContainsFunc(result.Tools, func(t string) bool { return t == id }) {
-					err = fmt.Errorf("expected tool %s was not selected", id)
-				}
-			}
-			for _, id := range c.Forbidden {
-				if slices.ContainsFunc(result.Tools, func(t string) bool { return t == id }) {
-					err = fmt.Errorf("forbidden tool %s was selected", id)
-				}
+	return candidate
+}
+
+func (m *Maintainer) evaluateRoutingCase(ctx context.Context, c RoutingCase, candidate Registry) AcceptanceResult {
+	start := time.Now()
+	result, err := m.router.Discover(ctx, c, candidate)
+	if err == nil {
+		if c.NoMatch && result.Status != "no_match" {
+			err = fmt.Errorf("expected no_match, got %s", result.Status)
+		}
+		for _, id := range c.Expected {
+			if !slices.ContainsFunc(result.Tools, func(t string) bool { return t == id }) {
+				err = fmt.Errorf("expected tool %s was not selected", id)
 			}
 		}
-		outcome := AcceptanceResult{Name: c.Name, Kind: "routing", Passed: err == nil, DurationMS: time.Since(start).Milliseconds()}
-		if err != nil {
-			outcome.Error = m.recorder.ErrorDetail(err)
-			report.Passed = false
-		} else {
-			for _, id := range c.Expected {
-				routed[id] = true
+		for _, id := range c.Forbidden {
+			if slices.ContainsFunc(result.Tools, func(t string) bool { return t == id }) {
+				err = fmt.Errorf("forbidden tool %s was selected", id)
 			}
 		}
-		report.Results = append(report.Results, outcome)
 	}
+	outcome := AcceptanceResult{Name: c.Name, Kind: "routing", Passed: err == nil, DurationMS: time.Since(start).Milliseconds()}
+	if err != nil {
+		outcome.Error = m.recorder.ErrorDetail(err)
+	}
+	return outcome
+}
+
+func collectMissingCoverage(r MaintenanceRun, covered, routed map[string]bool) []string {
+	missing := []string{}
 	for _, tool := range r.Tools {
 		if !covered[tool.ID] {
-			report.MissingCoverage = append(report.MissingCoverage, tool.ID+":contract")
+			missing = append(missing, tool.ID+":contract")
 		}
 		if tool.Enabled || !slices.ContainsFunc(r.Before, func(old Tool) bool { return old.ID == tool.ID }) {
 			if !routed[tool.ID] {
-				report.MissingCoverage = append(report.MissingCoverage, tool.ID+":routing")
+				missing = append(missing, tool.ID+":routing")
 			}
 		}
 	}
-	if len(report.MissingCoverage) > 0 {
-		report.Passed = false
-	}
-	if report.RoutingFingerprint != m.router.RoutingFingerprint(r.ServerID) {
-		report.Passed = false
-		report.Results = append(report.Results, AcceptanceResult{Name: "routing-snapshot", Kind: "routing", Error: "路由配置或其他工具在验收期间变化，需要重新运行"})
-	}
-	return report
+	return missing
 }
+
 func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir string, c ContractCase) error {
 	i := slices.IndexFunc(r.Tools, func(t Tool) bool { return t.ID == c.ToolID })
 	if i < 0 {
@@ -230,87 +257,18 @@ func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir
 	}
 	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	defer cancel()
-	server := r.Server
-	// Fixtures use synthetic credentials. Live provider secrets never enter mocks.
-	server.Headers = map[string]string{}
-	server.Env = map[string]string{}
-	for key := range r.Server.Headers {
-		server.Headers[key] = "acceptance-test"
-	}
-	for key := range r.Server.Env {
-		server.Env[key] = "acceptance-test"
-	}
+	server := syntheticAcceptanceServer(r.Server)
+
 	var result any
 	var callErr error
+	target := contractInvocation{Server: server, Tool: tool, Dir: dir, Arguments: arguments, Case: c}
 	if server.Kind == "mcp" {
-		mock, calls, err := contracttest.MCP(tool.Name, tool.InputSchema, c.MCPResult, c.MCPError)
-		if err != nil {
-			return err
-		}
-
-		defer mock.Close()
-		server.Endpoint = mock.URL
-		server.Transport = "http"
-		result, callErr = m.upstream.CallMCP(ctx, server, tool, arguments)
-		if calls() != 1 {
-			return fmt.Errorf("expected one native tool invocation, got %d", calls())
-		}
+		result, callErr, err = m.runMCPContract(ctx, target)
 	} else {
-		var mu sync.Mutex
-		index := 0
-		failures := []string{}
-		mock := contracttest.HTTP(&mu, func(req contracttest.Request) contracttest.Response {
-			if index >= len(c.Exchanges) {
-				failures = append(failures, "unexpected extra upstream request")
-				return contracttest.Response{Status: 500}
-			}
-			expected := c.Exchanges[index]
-			index++
-			if req.Method != expected.Method || req.Path != expected.Path {
-				failures = append(failures, fmt.Sprintf("request %d: expected %s %s, got %s %s", index, expected.Method, expected.Path, req.Method, req.Path))
-			}
-			query := expected.Query
-			if query == nil {
-				query = map[string][]string{}
-			}
-			if jsonutil.MustDigest(req.Query) != jsonutil.MustDigest(query) {
-				failures = append(failures, fmt.Sprintf("request %d: query mismatch", index))
-			}
-			for key, value := range expected.Headers {
-				if req.Header(key) != value {
-					failures = append(failures, "request header mismatch: "+key)
-				}
-			}
-			b, err := req.Body()
-			if err != nil {
-				failures = append(failures, "request body too large")
-			} else if len(expected.Body) > 0 {
-				if !equalJSON(b, expected.Body) {
-					failures = append(failures, "request body mismatch")
-				}
-			} else if len(b) > 0 {
-				failures = append(failures, "unexpected request body")
-			}
-			return contracttest.Response{Status: expected.Status, Headers: expected.ResponseHeaders, Body: expected.Response, Text: expected.Text}
-		}, func() { failures = append(failures, "write fixture response failed") })
-
-		defer mock.Close()
-		server.Endpoint = mock.URL
-		if tool.Adapter != "" {
-			result, callErr = sandbox.CallAdapterFileWithLookup(ctx, m.execution, server, tool, arguments, filepath.Join(dir, tool.Adapter), m.lookupEnv)
-		} else {
-			result, callErr = m.upstream.CallHTTP(ctx, server, tool, arguments)
-		}
-		mu.Lock()
-		count := index
-		problems := slices.Clone(failures)
-		mu.Unlock()
-		if count != len(c.Exchanges) {
-			return fmt.Errorf("expected %d upstream requests, got %d", len(c.Exchanges), count)
-		}
-		if len(problems) > 0 {
-			return fmt.Errorf("contract mismatch: %s", strings.Join(problems, "; "))
-		}
+		result, callErr, err = m.runHTTPContract(ctx, target)
+	}
+	if err != nil {
+		return err
 	}
 	if c.ExpectError {
 		if callErr == nil {
@@ -330,6 +288,110 @@ func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir
 		return fmt.Errorf("tool result does not match owner-approved expected response")
 	}
 	return nil
+}
+
+func syntheticAcceptanceServer(base Server) Server {
+	server := base
+	// Fixtures use synthetic credentials. Live provider secrets never enter mocks.
+	server.Headers = make(map[string]string, len(base.Headers))
+	server.Env = make(map[string]string, len(base.Env))
+	for key := range base.Headers {
+		server.Headers[key] = "acceptance-test"
+	}
+	for key := range base.Env {
+		server.Env[key] = "acceptance-test"
+	}
+	return server
+}
+
+type contractInvocation struct {
+	Server    Server
+	Tool      Tool
+	Dir       string
+	Arguments map[string]any
+	Case      ContractCase
+}
+
+func (m *Maintainer) runMCPContract(ctx context.Context, target contractInvocation) (any, error, error) {
+	mock, calls, err := contracttest.MCP(target.Tool.Name, target.Tool.InputSchema, target.Case.MCPResult, target.Case.MCPError)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer mock.Close()
+	target.Server.Endpoint = mock.URL
+	target.Server.Transport = "http"
+	result, callErr := m.upstream.CallMCP(ctx, target.Server, target.Tool, target.Arguments)
+	if calls() != 1 {
+		return nil, nil, fmt.Errorf("expected one native tool invocation, got %d", calls())
+	}
+	return result, callErr, nil
+}
+
+func (m *Maintainer) runHTTPContract(ctx context.Context, target contractInvocation) (any, error, error) {
+	var mu sync.Mutex
+	index := 0
+	failures := []string{}
+	mock := contracttest.HTTP(&mu, func(req contracttest.Request) contracttest.Response {
+		if index >= len(target.Case.Exchanges) {
+			failures = append(failures, "unexpected extra upstream request")
+			return contracttest.Response{Status: 500}
+		}
+		expected := target.Case.Exchanges[index]
+		index++
+		failures = append(failures, matchHTTPExchange(index, expected, req)...)
+		return contracttest.Response{Status: expected.Status, Headers: expected.ResponseHeaders, Body: expected.Response, Text: expected.Text}
+	}, func() { failures = append(failures, "write fixture response failed") })
+	defer mock.Close()
+
+	target.Server.Endpoint = mock.URL
+	var result any
+	var callErr error
+	if target.Tool.Adapter != "" {
+		result, callErr = sandbox.CallAdapterFileWithLookup(ctx, m.execution, target.Server, target.Tool, target.Arguments, filepath.Join(target.Dir, target.Tool.Adapter), m.lookupEnv)
+	} else {
+		result, callErr = m.upstream.CallHTTP(ctx, target.Server, target.Tool, target.Arguments)
+	}
+	mu.Lock()
+	count := index
+	problems := slices.Clone(failures)
+	mu.Unlock()
+	if count != len(target.Case.Exchanges) {
+		return nil, nil, fmt.Errorf("expected %d upstream requests, got %d", len(target.Case.Exchanges), count)
+	}
+	if len(problems) > 0 {
+		return nil, nil, fmt.Errorf("contract mismatch: %s", strings.Join(problems, "; "))
+	}
+	return result, callErr, nil
+}
+
+func matchHTTPExchange(index int, expected HTTPExchange, req contracttest.Request) []string {
+	var failures []string
+	if req.Method != expected.Method || req.Path != expected.Path {
+		failures = append(failures, fmt.Sprintf("request %d: expected %s %s, got %s %s", index, expected.Method, expected.Path, req.Method, req.Path))
+	}
+	query := expected.Query
+	if query == nil {
+		query = map[string][]string{}
+	}
+	if jsonutil.MustDigest(req.Query) != jsonutil.MustDigest(query) {
+		failures = append(failures, fmt.Sprintf("request %d: query mismatch", index))
+	}
+	for key, value := range expected.Headers {
+		if req.Header(key) != value {
+			failures = append(failures, "request header mismatch: "+key)
+		}
+	}
+	b, err := req.Body()
+	if err != nil {
+		failures = append(failures, "request body too large")
+	} else if len(expected.Body) > 0 {
+		if !equalJSON(b, expected.Body) {
+			failures = append(failures, "request body mismatch")
+		}
+	} else if len(b) > 0 {
+		failures = append(failures, "unexpected request body")
+	}
+	return failures
 }
 func equalJSON(a, b []byte) bool {
 	var x, y any

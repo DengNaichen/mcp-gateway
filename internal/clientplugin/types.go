@@ -76,7 +76,6 @@ type Manager struct {
 	runner        CommandRunner
 	clientConfigs *clientconfig.Manager
 	slug          string
-	channel       string
 	version       string
 	appName       string
 	mu            sync.Mutex
@@ -116,7 +115,6 @@ func New(opts Options) *Manager {
 		runner:        runner,
 		clientConfigs: cc,
 		slug:          info.Slug,
-		channel:       info.Channel,
 		version:       info.Version,
 		appName:       info.Name,
 	}
