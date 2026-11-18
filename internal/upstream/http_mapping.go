@@ -72,12 +72,18 @@ func parameterParts(v any) (parts []string, object bool, err error) {
 		return []string{part}, false, err
 	}
 }
-func simpleParameter(v any, explode bool, escape bool) (string, error) {
+
+type simpleParamOptions struct {
+	Explode    bool
+	EscapePath bool
+}
+
+func simpleParameter(v any, opts simpleParamOptions) (string, error) {
 	parts, obj, err := parameterParts(v)
 	if err != nil {
 		return "", err
 	}
-	if escape {
+	if opts.EscapePath {
 		for i := range parts {
 			if parts[i] == "." || parts[i] == ".." {
 				return "", invalid("路径参数不能是相对路径片段")
@@ -85,7 +91,7 @@ func simpleParameter(v any, explode bool, escape bool) (string, error) {
 			parts[i] = url.PathEscape(parts[i])
 		}
 	}
-	if obj && explode {
+	if obj && opts.Explode {
 		pairs := []string{}
 		for i := 0; i < len(parts); i += 2 {
 			pairs = append(pairs, parts[i]+"="+parts[i+1])
@@ -144,62 +150,9 @@ func BuildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args ma
 	if !strings.HasPrefix(t.Path, "/") || strings.HasPrefix(t.Path, "//") || strings.ContainsAny(t.Path, "?#") {
 		return nil, invalid("HTTP 映射路径无效")
 	}
-	path := t.Path
-	query := url.Values{}
-	headers := http.Header{}
-	cookies := []*http.Cookie{}
-	for _, p := range t.HTTP.Parameters {
-		if !registry.SupportedParameterStyle(p.In, p.Style, p.Explode) {
-			return nil, invalid("HTTP 参数序列化无效")
-		}
-		group, _ := args[registry.ArgumentGroup(p.In)].(map[string]any)
-		v, exists := group[p.Name]
-		if !exists {
-			continue
-		}
-		switch p.In {
-		case "path":
-			encoded, err := simpleParameter(v, p.Explode, true)
-			if err != nil {
-				return nil, err
-			}
-			path = strings.ReplaceAll(path, "{"+p.Name+"}", encoded)
-		case "query":
-			if err := addQuery(query, p, v); err != nil {
-				return nil, err
-			}
-		case "header":
-			if isForbiddenHeader(p.Name) {
-				return nil, invalid("参数不能覆盖认证或协议请求头")
-			}
-			value, err := simpleParameter(v, p.Explode, false)
-			if err != nil {
-				return nil, err
-			}
-			headers.Set(p.Name, value)
-		case "cookie":
-			parts, obj, err := parameterParts(v)
-			if err != nil {
-				return nil, err
-			}
-			if obj && p.Explode {
-				for i := 0; i < len(parts); i += 2 {
-					cookies = append(cookies, &http.Cookie{Name: parts[i], Value: url.QueryEscape(parts[i+1])}) //nolint:gosec // G124: outbound request Cookie header for the upstream API, not a Set-Cookie response; Secure/SameSite do not apply
-				}
-			} else {
-				if arr, ok := v.([]any); ok && p.Explode {
-					for _, element := range arr {
-						value, err := scalar(element)
-						if err != nil {
-							return nil, err
-						}
-						cookies = append(cookies, &http.Cookie{Name: p.Name, Value: url.QueryEscape(value)}) //nolint:gosec // G124: outbound request Cookie header for the upstream API, not a Set-Cookie response; Secure/SameSite do not apply
-					}
-				} else {
-					cookies = append(cookies, &http.Cookie{Name: p.Name, Value: url.QueryEscape(strings.Join(parts, ","))}) //nolint:gosec // G124: outbound request Cookie header for the upstream API, not a Set-Cookie response; Secure/SameSite do not apply
-				}
-			}
-		}
+	path, query, headers, cookies, err := applyMappedParameters(t, args)
+	if err != nil {
+		return nil, err
 	}
 	if registry.PathVariable.MatchString(path) {
 		return nil, invalid("缺少路径参数")
@@ -213,15 +166,9 @@ func BuildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args ma
 		return nil, invalid("服务基地址不能包含 query")
 	}
 	u.RawQuery = query.Encode()
-	var body io.Reader
-	if t.HTTP.Body {
-		if value, exists := args["body"]; exists {
-			b, err := json.Marshal(value)
-			if err != nil {
-				return nil, fmt.Errorf("encode mapped body: %w", err)
-			}
-			body = bytes.NewReader(b)
-		}
+	body, err := encodeMappedBody(t, args)
+	if err != nil {
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, t.Method, u.String(), body)
 	if err != nil {
@@ -242,6 +189,91 @@ func BuildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args ma
 		req.Header.Set(key, os.Expand(value, lookup))
 	}
 	return req, nil
+}
+
+func applyMappedParameters(t Tool, args map[string]any) (string, url.Values, http.Header, []*http.Cookie, error) {
+	path := t.Path
+	query := url.Values{}
+	headers := http.Header{}
+	var cookies []*http.Cookie
+	for _, p := range t.HTTP.Parameters {
+		if !registry.SupportedParameterStyle(p.In, p.Style, p.Explode) {
+			return "", nil, nil, nil, invalid("HTTP 参数序列化无效")
+		}
+		group, _ := args[registry.ArgumentGroup(p.In)].(map[string]any)
+		v, exists := group[p.Name]
+		if !exists {
+			continue
+		}
+		switch p.In {
+		case "path":
+			encoded, err := simpleParameter(v, simpleParamOptions{Explode: p.Explode, EscapePath: true})
+			if err != nil {
+				return "", nil, nil, nil, err
+			}
+			path = strings.ReplaceAll(path, "{"+p.Name+"}", encoded)
+		case "query":
+			if err := addQuery(query, p, v); err != nil {
+				return "", nil, nil, nil, err
+			}
+		case "header":
+			if isForbiddenHeader(p.Name) {
+				return "", nil, nil, nil, invalid("参数不能覆盖认证或协议请求头")
+			}
+			value, err := simpleParameter(v, simpleParamOptions{Explode: p.Explode})
+			if err != nil {
+				return "", nil, nil, nil, err
+			}
+			headers.Set(p.Name, value)
+		case "cookie":
+			var err error
+			cookies, err = appendCookieParameter(cookies, p, v)
+			if err != nil {
+				return "", nil, nil, nil, err
+			}
+		}
+	}
+	return path, query, headers, cookies, nil
+}
+
+func appendCookieParameter(cookies []*http.Cookie, p HTTPParameter, v any) ([]*http.Cookie, error) {
+	parts, obj, err := parameterParts(v)
+	if err != nil {
+		return nil, err
+	}
+	if obj && p.Explode {
+		for i := 0; i < len(parts); i += 2 {
+			cookies = append(cookies, &http.Cookie{Name: parts[i], Value: url.QueryEscape(parts[i+1])}) //nolint:gosec // G124: outbound request Cookie header for the upstream API, not a Set-Cookie response; Secure/SameSite do not apply
+		}
+		return cookies, nil
+	}
+	if arr, ok := v.([]any); ok && p.Explode {
+		for _, element := range arr {
+			value, err := scalar(element)
+			if err != nil {
+				return nil, err
+			}
+			cookies = append(cookies, &http.Cookie{Name: p.Name, Value: url.QueryEscape(value)}) //nolint:gosec // G124: outbound request Cookie header for the upstream API, not a Set-Cookie response; Secure/SameSite do not apply
+		}
+		return cookies, nil
+	}
+	cookies = append(cookies, &http.Cookie{Name: p.Name, Value: url.QueryEscape(strings.Join(parts, ","))}) //nolint:gosec // G124: outbound request Cookie header for the upstream API, not a Set-Cookie response; Secure/SameSite do not apply
+	return cookies, nil
+}
+
+func encodeMappedBody(t Tool, args map[string]any) (io.Reader, error) {
+	if !t.HTTP.Body {
+		return nil, nil
+	}
+	value, exists := args["body"]
+	if !exists {
+		return nil, nil
+	}
+	b, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode mapped body: %w", err)
+	}
+	return bytes.NewReader(b), nil
 }
 func MappedResponse(t Tool, status int, b []byte) (any, error) {
 	binding, known := t.HTTP.Responses[strconv.Itoa(status)]

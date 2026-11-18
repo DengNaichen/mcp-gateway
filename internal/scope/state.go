@@ -233,36 +233,16 @@ func (g *Service) SetScopeMode(enforce bool) error {
 }
 
 func (g *Service) SaveRepository(ctx context.Context, in SaveRepositoryRequest) (Repository, error) {
-	trimmedPath := strings.TrimSpace(in.Path)
-	if trimmedPath != "" {
-		if g.shared {
-			return Repository{}, domainError(ErrForbidden, "共享模式不支持服务端探测本地路径，请使用已观测仓库或显式提交锚点路径", nil)
-		}
-		info, err := workspace.Identify(ctx, trimmedPath)
-		if err != nil {
-			return Repository{}, domainError(ErrInvalid, "无法识别该本地目录", err)
-		}
-		if info.Kind == workspace.KindGit {
-			in.GitCommonDirs = append(in.GitCommonDirs, info.CommonDir)
-			if strings.TrimSpace(in.RemoteHint) == "" && info.RemoteHint != "" {
-				in.RemoteHint = info.RemoteHint
-			}
-		} else {
-			if err := workspace.ValidateDirAnchor(info.Root); err != nil {
-				return Repository{}, invalid(err.Error())
-			}
-			in.RootPaths = append(in.RootPaths, info.Root)
-		}
-		if strings.TrimSpace(in.Name) == "" {
-			in.Name = info.Name
-		}
+	in, err := g.enrichSaveRepositoryFromPath(ctx, in)
+	if err != nil {
+		return Repository{}, err
 	}
 
-	commonDirs, err := cleanAndValidateAnchors(in.GitCommonDirs, !g.shared, true)
+	commonDirs, err := cleanAndValidateAnchors(in.GitCommonDirs, anchorCleanOptions{ResolveLocalSymlinks: !g.shared, GitCommonDir: true})
 	if err != nil {
 		return Repository{}, invalid(err.Error())
 	}
-	rootPaths, err := cleanAndValidateAnchors(in.RootPaths, !g.shared, false)
+	rootPaths, err := cleanAndValidateAnchors(in.RootPaths, anchorCleanOptions{ResolveLocalSymlinks: !g.shared})
 	if err != nil {
 		return Repository{}, invalid(err.Error())
 	}
@@ -270,18 +250,7 @@ func (g *Service) SaveRepository(ctx context.Context, in SaveRepositoryRequest) 
 		return Repository{}, invalid("仓库绑定至少需要一个 Git CommonDir 或目录根路径")
 	}
 
-	name := strings.TrimSpace(in.Name)
-	if name == "" {
-		if len(commonDirs) > 0 {
-			if filepath.Base(commonDirs[0]) == ".git" {
-				name = filepath.Base(filepath.Dir(commonDirs[0]))
-			} else {
-				name = strings.TrimSuffix(filepath.Base(commonDirs[0]), ".git")
-			}
-		} else if len(rootPaths) > 0 {
-			name = filepath.Base(rootPaths[0])
-		}
-	}
+	name := resolveRepositoryName(in.Name, commonDirs, rootPaths)
 	if name == "" || len(name) > 128 {
 		return Repository{}, invalid("请提供 1–128 字符的仓库名称")
 	}
@@ -306,20 +275,8 @@ func (g *Service) SaveRepository(ctx context.Context, in SaveRepositoryRequest) 
 		id = generateRepositoryID(name, commonDirs, rootPaths, g.scope.Repositories)
 	}
 
-	for _, existing := range g.scope.Repositories {
-		if existing.ID == id {
-			continue
-		}
-		for _, cd := range commonDirs {
-			if slices.Contains(existing.GitCommonDirs, cd) {
-				return Repository{}, domainError(ErrConflict, fmt.Sprintf("该 Git 仓库已绑定为 %q (%s)", existing.Name, existing.ID), nil)
-			}
-		}
-		for _, rp := range rootPaths {
-			if slices.Contains(existing.RootPaths, rp) {
-				return Repository{}, domainError(ErrConflict, fmt.Sprintf("该目录已绑定为 %q (%s)", existing.Name, existing.ID), nil)
-			}
-		}
+	if err := checkRepositoryAnchorConflicts(g.scope.Repositories, id, commonDirs, rootPaths); err != nil {
+		return Repository{}, err
 	}
 
 	createdAt := g.now().UTC().Format(time.RFC3339)
@@ -359,7 +316,76 @@ func (g *Service) SaveRepository(ctx context.Context, in SaveRepositoryRequest) 
 	return repo, nil
 }
 
-func cleanAndValidateAnchors(paths []string, resolveLocalSymlinks bool, isGitCommonDir bool) ([]string, error) {
+func (g *Service) enrichSaveRepositoryFromPath(ctx context.Context, in SaveRepositoryRequest) (SaveRepositoryRequest, error) {
+	trimmedPath := strings.TrimSpace(in.Path)
+	if trimmedPath == "" {
+		return in, nil
+	}
+	if g.shared {
+		return in, domainError(ErrForbidden, "共享模式不支持服务端探测本地路径，请使用已观测仓库或显式提交锚点路径", nil)
+	}
+	info, err := workspace.Identify(ctx, trimmedPath)
+	if err != nil {
+		return in, domainError(ErrInvalid, "无法识别该本地目录", err)
+	}
+	if info.Kind == workspace.KindGit {
+		in.GitCommonDirs = append(in.GitCommonDirs, info.CommonDir)
+		if strings.TrimSpace(in.RemoteHint) == "" && info.RemoteHint != "" {
+			in.RemoteHint = info.RemoteHint
+		}
+	} else {
+		if err := workspace.ValidateDirAnchor(info.Root); err != nil {
+			return in, invalid(err.Error())
+		}
+		in.RootPaths = append(in.RootPaths, info.Root)
+	}
+	if strings.TrimSpace(in.Name) == "" {
+		in.Name = info.Name
+	}
+	return in, nil
+}
+
+func resolveRepositoryName(rawName string, commonDirs, rootPaths []string) string {
+	if name := strings.TrimSpace(rawName); name != "" {
+		return name
+	}
+	if len(commonDirs) > 0 {
+		if filepath.Base(commonDirs[0]) == ".git" {
+			return filepath.Base(filepath.Dir(commonDirs[0]))
+		}
+		return strings.TrimSuffix(filepath.Base(commonDirs[0]), ".git")
+	}
+	if len(rootPaths) > 0 {
+		return filepath.Base(rootPaths[0])
+	}
+	return ""
+}
+
+func checkRepositoryAnchorConflicts(existingRepos []Repository, targetID string, commonDirs, rootPaths []string) error {
+	for _, existing := range existingRepos {
+		if existing.ID == targetID {
+			continue
+		}
+		for _, cd := range commonDirs {
+			if slices.Contains(existing.GitCommonDirs, cd) {
+				return domainError(ErrConflict, fmt.Sprintf("该 Git 仓库已绑定为 %q (%s)", existing.Name, existing.ID), nil)
+			}
+		}
+		for _, rp := range rootPaths {
+			if slices.Contains(existing.RootPaths, rp) {
+				return domainError(ErrConflict, fmt.Sprintf("该目录已绑定为 %q (%s)", existing.Name, existing.ID), nil)
+			}
+		}
+	}
+	return nil
+}
+
+type anchorCleanOptions struct {
+	ResolveLocalSymlinks bool
+	GitCommonDir         bool
+}
+
+func cleanAndValidateAnchors(paths []string, opts anchorCleanOptions) ([]string, error) {
 	out := []string{}
 	for _, raw := range paths {
 		p := strings.TrimSpace(raw)
@@ -370,7 +396,7 @@ func cleanAndValidateAnchors(paths []string, resolveLocalSymlinks bool, isGitCom
 			return nil, errors.New("仓库锚点必须是绝对路径")
 		}
 		cleaned := filepath.Clean(p)
-		if resolveLocalSymlinks {
+		if opts.ResolveLocalSymlinks {
 			if eval, err := filepath.EvalSymlinks(cleaned); err == nil {
 				cleaned = filepath.Clean(eval)
 			}
@@ -378,7 +404,7 @@ func cleanAndValidateAnchors(paths []string, resolveLocalSymlinks bool, isGitCom
 		if err := workspace.ValidateDirAnchor(cleaned); err != nil {
 			return nil, err
 		}
-		if isGitCommonDir && filepath.Base(cleaned) == ".git" {
+		if opts.GitCommonDir && filepath.Base(cleaned) == ".git" {
 			if err := workspace.ValidateDirAnchor(filepath.Dir(cleaned)); err != nil {
 				return nil, err
 			}
