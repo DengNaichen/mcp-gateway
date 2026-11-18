@@ -306,7 +306,7 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 			}
 		})
 
-		if SailSmallButton(c.Key("repos-hook-btn"), "手动配置 Hook").Clicked() {
+		if SailButton(c.Key("repos-hook-btn"), "手动配置 Hook").Clicked() {
 			u.OpenHookSnippetModal("claude")
 		}
 
@@ -657,7 +657,7 @@ func (u *DesktopUI) renderRepoDefaultServicesCard(
 				saveLbl = "保存中…"
 			}
 			canSave := draft.dirty || (repoKey != "*" && !hasSavedRule)
-			if SailPrimaryButton(c.Key("def-save-"+repoKey), saveLbl).Disabled(!canSave || draft.saving).Clicked() {
+			if SailSmallPrimaryButton(c.Key("def-save-"+repoKey), saveLbl).Disabled(!canSave || draft.saving).Clicked() {
 				u.saveDraftRuleAsync(st, draft, repoKey)
 			}
 		})
@@ -776,7 +776,7 @@ func (u *DesktopUI) renderServiceGrantList(
 				if strings.EqualFold(g.Access, "rw") {
 					accIdx = 1
 				}
-				if ui.Segmented(c.Key("acc-seg-"+g.ServerID), &accIdx, "只读", "读写").
+				if SailSmallSegmented(c.Key("acc-seg-"+g.ServerID), &accIdx, "只读", "读写").
 					Label(srvName + " 读写权限").
 					Changed() {
 					if accIdx == 1 {

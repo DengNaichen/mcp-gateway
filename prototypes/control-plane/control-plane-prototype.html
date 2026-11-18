@@ -51,6 +51,8 @@
       --backdrop-modal: rgba(10, 37, 64, 0.42);
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+      --ctrl-h-md: 32px;
+      --ctrl-h-sm: 28px;
     }
 
     html[data-theme="dark"] {
@@ -509,26 +511,30 @@
 
     /* Controls */
     .btn {
+      box-sizing: border-box;
+      height: var(--ctrl-h-md);
       border: 1px solid var(--surface-border);
       box-shadow: var(--shadow-control);
       background: var(--bg-canvas);
       color: var(--ink-body);
       border-radius: 6px;
-      padding: 5px 11px;
+      padding: 0 12px;
       font-size: 12.5px;
       font-weight: 500;
       font-family: inherit;
+      line-height: 1;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
+      white-space: nowrap;
       transition: background 0.1s ease, border-color 0.1s ease;
     }
     .btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--ink-strong); }
     .btn:active:not(:disabled) { box-shadow: none; background: var(--bg-muted); }
     .btn:disabled { opacity: 0.55; cursor: default; }
-    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .btn-sm { height: var(--ctrl-h-sm); padding: 0 10px; font-size: 12px; }
     .btn-primary {
       background: var(--accent);
       border-color: var(--accent);
@@ -560,8 +566,8 @@
     }
     .btn-ghost-link:hover { background: var(--accent-soft); color: var(--accent); }
     .btn-icon {
-      width: 28px;
-      height: 28px;
+      width: var(--ctrl-h-sm);
+      height: var(--ctrl-h-sm);
       padding: 0;
       border: none;
       background: transparent;
@@ -622,18 +628,22 @@
     .popover-item.danger:hover { background: var(--danger-bg); }
 
     .segmented {
+      box-sizing: border-box;
       display: inline-flex;
+      align-items: stretch;
+      height: var(--ctrl-h-md);
       background: var(--bg-muted);
       padding: 2px;
       border-radius: 6px;
       gap: 2px;
     }
+    .segmented.segmented-sm { height: var(--ctrl-h-sm); }
     .segmented.fill-eq { width: 100%; }
     .segmented.fill-eq .seg-btn { flex: 1; text-align: center; }
     .seg-btn {
       border: none;
       background: transparent;
-      padding: 4px 10px;
+      padding: 0 10px;
       font-size: 12px;
       color: var(--ink-muted);
       border-radius: 5px;
@@ -641,6 +651,9 @@
       font-family: inherit;
       font-weight: 500;
       white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
     .seg-btn.active {
       background: var(--bg-canvas);
@@ -650,9 +663,11 @@
     }
 
     .search {
+      box-sizing: border-box;
+      height: var(--ctrl-h-md);
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 6px 10px;
+      padding: 0 10px;
       font-size: 12.5px;
       color: var(--ink-strong);
       background: var(--bg-canvas);
@@ -926,14 +941,15 @@
     .list-group-hdr.pad-20 { padding-left: 20px; padding-right: 20px; }
     .hairline-row:has(+ .list-group-hdr) { border-bottom-color: transparent; }
     .select-sm {
+      box-sizing: border-box;
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 4px 8px;
+      padding: 0 8px;
       font-size: 12px;
       color: var(--ink-strong);
       background: var(--bg-canvas);
       font-family: inherit;
-      height: 28px;
+      height: var(--ctrl-h-sm);
     }
     .subset-drawer {
       background: var(--bg-subtle);
@@ -1180,15 +1196,20 @@
     .metric-tile-sub { font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 
     textarea.input-area, input.input-line {
+      box-sizing: border-box;
       width: 100%;
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 8px 10px;
       font-family: inherit;
-      font-size: 13px;
+      font-size: 12.5px;
       color: var(--ink-strong);
       background: var(--bg-canvas);
       transition: border-color 0.15s ease;
+    }
+    input.input-line {
+      height: var(--ctrl-h-md);
+      padding: 0 10px;
     }
     textarea.input-area:focus, input.input-line:focus {
       outline: none;
@@ -3250,9 +3271,9 @@
               ${segBtn("disabled", "已停用", counts.disabled)}
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
-              ${probeTargets.length > 1 ? `<button class="btn btn-sm" type="button" onclick="probeServicesBulk()">全部测试连接 (${probeTargets.length})</button>` : ""}
+              ${probeTargets.length > 1 ? `<button class="btn" type="button" onclick="probeServicesBulk()">全部测试连接 (${probeTargets.length})</button>` : ""}
               <input class="search" placeholder="搜索名称、凭据变量或地址…" value="${esc(serviceSearch)}" oninput="serviceSearch=this.value;render();" />
-              ${hasFilter ? `<button class="btn btn-sm" type="button" onclick="serviceSearch='';serviceStatusFilter='all';render();">重置</button>` : ""}
+              ${hasFilter ? `<button class="btn" type="button" onclick="serviceSearch='';serviceStatusFilter='all';render();">重置</button>` : ""}
             </div>
           </div>
 
@@ -3380,8 +3401,8 @@
                 <input type="checkbox" ${catalogShowDemo ? "checked" : ""} onchange="catalogShowDemo=this.checked;render();" />
                 <span>演示工具</span>
               </label>
-              ${hasFilter ? `<button class="btn btn-sm" type="button" onclick="catalogServiceFilter='all';catalogStatusFilter='all';catalogAccessFilter='all';catalogActorFilter='all';catalogSearch='';render();">重置</button>` : ""}
-              ${!catalogInspectorOpen ? `<button class="btn btn-sm" type="button" onclick="catalogInspectorOpen=true;render();">展开详情</button>` : ""}
+              ${hasFilter ? `<button class="btn" type="button" onclick="catalogServiceFilter='all';catalogStatusFilter='all';catalogAccessFilter='all';catalogActorFilter='all';catalogSearch='';render();">重置</button>` : ""}
+              ${!catalogInspectorOpen ? `<button class="btn" type="button" onclick="catalogInspectorOpen=true;render();">展开详情</button>` : ""}
             </div>
           </div>
         </div>

@@ -355,7 +355,7 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 	if rwEnabledCount > 0 {
 		rwTone = ToneWarning
 	}
-	ui.Row(c).FillWidth().Wrap().Gap(16).Children(func() {
+	ui.Row(c).FillWidth().Wrap().Gap(16).AlignItems(ui.Stretch).Children(func() {
 		SailKPICard(
 			c.Key("cat-kpi-open"),
 			"已开放 / 总数",
@@ -414,17 +414,17 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 	SailCard(c.Key("cat-filter-card"), func() {
 		ui.Row(c).FillWidth().Wrap().Gap(10).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Row(c).Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
-				ui.SearchField(c.Key("cat-search"), &st.query).
+				SailSearchField(c.Key("cat-search"), &st.query).
 					Placeholder("搜索名称、ID 或描述…").
 					Label("搜索工具目录").
 					Width(230)
 
 				catalogRenderSelect(c, "cat-srv-select", &st.serverFilter, srvOptions, 156)
 
-				ui.Segmented(c.Key("cat-status-seg"), &st.statusIdx, "全部", "已开放", "已关闭").
+				SailSegmented(c.Key("cat-status-seg"), &st.statusIdx, "全部", "已开放", "已关闭").
 					Label("开放状态筛选")
 
-				ui.Segmented(c.Key("cat-access-seg"), &st.accessIdx, "全部", "只读", "写操作").
+				SailSegmented(c.Key("cat-access-seg"), &st.accessIdx, "全部", "只读", "写操作").
 					Label("读写属性筛选")
 			})
 
@@ -433,7 +433,7 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 					catalogRenderSelect(c, "cat-actor-select", &st.actorFilter, actorOptions, 124)
 				}
 
-				ui.Segmented(c.Key("cat-sort-seg"), &st.sortIdx, "按命中", "名称 A–Z").
+				SailSegmented(c.Key("cat-sort-seg"), &st.sortIdx, "按命中", "名称 A–Z").
 					Label("排序方式")
 
 				if len(demoServers) > 0 {
@@ -441,12 +441,12 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 				}
 
 				if st.hasActiveFilters() {
-					if SailSmallButton(c.Key("cat-reset-filters"), "重置").Clicked() {
+					if SailButton(c.Key("cat-reset-filters"), "重置").Clicked() {
 						st.resetFilters()
 					}
 				}
 				if st.panelCollapsed && len(filtered) > 0 {
-					if SailSmallButton(c.Key("cat-reopen-panel"), "展开详情").Clicked() {
+					if SailButton(c.Key("cat-reopen-panel"), "展开详情").Clicked() {
 						st.panelCollapsed = false
 					}
 				}
@@ -747,7 +747,7 @@ func (u *DesktopUI) renderCatalogDetailPanel(
 				})
 
 				ui.Row(c).FillWidth().Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
-					if SailPrimaryButton(c.Key("cat-sandbox-jump-"+tool.ID), "沙盒测试").Grow(1).Clicked() {
+					if SailSmallPrimaryButton(c.Key("cat-sandbox-jump-"+tool.ID), "沙盒测试").Grow(1).Clicked() {
 						intent := catalogBuildTestIntent(tool)
 						actor := catalogPickTestActor(tool)
 						u.OpenPlaygroundReplay(intent, actor)
@@ -876,8 +876,8 @@ func (u *DesktopUI) renderCatalogEditTab(c *ui.Context, st *catalogPageState, to
 				FillWidth()
 		})
 
-		ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Children(func() {
-			if SailSmallButton(c.Key("cat-edit-reset-"+tool.ID), "重置").Disabled(st.savingContract).Clicked() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
+			if SailButton(c.Key("cat-edit-reset-"+tool.ID), "重置").Disabled(st.savingContract).Clicked() {
 				st.editLoadedID = ""
 				st.syncEditForm(tool)
 			}
@@ -1017,7 +1017,8 @@ func catalogRenderSelect(c *ui.Context, key string, selected *string, options []
 	sel := ui.SelectBase(c.Key(key), selected)
 	sel.Trigger.
 		Width(width).
-		Padding(6, 10).
+		Height(SailControlHeightMd).
+		Padding(0, 10).
 		Gap(6).
 		Radius(6).
 		AlignItems(ui.Center).

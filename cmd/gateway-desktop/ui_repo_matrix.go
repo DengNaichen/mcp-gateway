@@ -74,7 +74,7 @@ func (u *DesktopUI) renderReposMatrix(c *ui.Context, st *reposPageState, state *
 						})
 						for _, s := range servers {
 							checked := slices.ContainsFunc(grants, func(g apitypes.ServiceGrant) bool { return g.ServerID == s.ID })
-							ui.Row(c.Key("cell-" + s.ID)).Width(serviceWidth).Shrink(0).Justify(ui.Center).Children(func() {
+							ui.Row(c.Key("cell-" + s.ID)).Width(serviceWidth).Shrink(0).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
 								checkbox := ui.Checkbox(c, &checked, "").Label(name + " · " + s.Name).
 									Disabled(u.Client == nil || draft.saving || draft.dirty)
 								if draft.dirty {
@@ -85,7 +85,7 @@ func (u *DesktopUI) renderReposMatrix(c *ui.Context, st *reposPageState, state *
 								}
 							})
 						}
-						ui.Row(c).Grow(1).MinWidth(actionWidth).Shrink(0).Padding(0, 12).Justify(ui.End).Children(func() {
+						ui.Row(c).Grow(1).MinWidth(actionWidth).Shrink(0).Padding(0, 12).AlignItems(ui.Center).Justify(ui.End).Children(func() {
 							if SailSmallButton(c, "详情").Label(name + " 详情").Clicked() {
 								st.selectedRepoKey = repoKey
 								st.viewMode = 1

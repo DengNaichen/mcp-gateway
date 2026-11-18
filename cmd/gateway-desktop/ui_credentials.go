@@ -99,17 +99,17 @@ func (u *DesktopUI) renderServerCredentials(c *ui.Context, st *servicesPageState
 			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, entry.Name).Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).Width(220).SingleLine()
 				value := st.credentialValues[entry.Name]
-				if ui.TextInput(c.Key("credential-"+server.ID+"-"+entry.Name), &value).Password().Disabled(st.credentialBusy).Placeholder("输入新凭据，留空保留").Grow(1).Changed() {
+				if SailTextInput(c.Key("credential-"+server.ID+"-"+entry.Name), &value).Password().Disabled(st.credentialBusy).Placeholder("输入新凭据，留空保留").Grow(1).Changed() {
 					st.credentialValues[entry.Name] = value
 				}
 				SailQuietStatus(c, status, dotCol, txtCol)
-				if SailSmallButton(c.Key("credential-clear-"+server.ID+"-"+entry.Name), "清除").Disabled(st.credentialBusy || !entry.Saved).Clicked() {
+				if SailButton(c.Key("credential-clear-"+server.ID+"-"+entry.Name), "清除").Disabled(st.credentialBusy || !entry.Saved).Clicked() {
 					u.saveServerCredentialValues(st, server, map[string]string{entry.Name: ""}, false)
 				}
 			})
 		}
-		ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Children(func() {
-			if SailSmallButton(c.Key("credential-refresh-"+server.ID), "刷新").Disabled(st.credentialBusy).Clicked() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
+			if SailButton(c.Key("credential-refresh-"+server.ID), "刷新").Disabled(st.credentialBusy).Clicked() {
 				u.loadServerCredentials(st, server.ID)
 			}
 			values := map[string]string{}
@@ -119,7 +119,7 @@ func (u *DesktopUI) renderServerCredentials(c *ui.Context, st *servicesPageState
 				}
 			}
 			if len(st.credentialState.Credentials) > 0 {
-				if SailSmallButton(c.Key("credential-save-"+server.ID), "保存凭据").Disabled(st.credentialBusy || len(values) == 0).Clicked() {
+				if SailButton(c.Key("credential-save-"+server.ID), "保存凭据").Disabled(st.credentialBusy || len(values) == 0).Clicked() {
 					u.saveServerCredentialValues(st, server, values, false)
 				}
 				testBtnLabel := "保存凭据并测试连接"
