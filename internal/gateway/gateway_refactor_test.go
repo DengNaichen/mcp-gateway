@@ -130,7 +130,7 @@ func TestMaintenanceAdapterHonorsRuntimeSecrets(t *testing.T) {
 		Method: "GET",
 		Path:   "/ping",
 	}
-	if _, err := (maintenanceAdapter{g}).CallHTTP(context.Background(), server, tool, nil); err != nil {
+	if _, err := (maintenanceUpstream{Service: g.upstream, g: g}).CallHTTP(context.Background(), server, tool, nil); err != nil {
 		t.Fatalf("maintenance CallHTTP failed: %v", err)
 	}
 	if gotAuth != "Bearer runtime-token-value" {
