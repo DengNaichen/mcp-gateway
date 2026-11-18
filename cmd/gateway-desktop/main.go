@@ -17,6 +17,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"gatewaylab/internal/buildinfo"
+	"gatewaylab/internal/i18n"
 )
 
 //go:embed assets/tray.png
@@ -57,11 +58,11 @@ func (d *desktopApp) setupMenus() {
 			mygo.Separator(),
 			{Role: mygo.RoleQuit},
 		}},
-		{Label: "文件", Submenu: []*mygo.MenuItem{
-			{Label: "打开控制面窗口", Accelerator: "CmdOrCtrl+1", Click: func(*mygo.MenuItem, *mygo.Window) {
+		{Label: i18n.T("menu.file"), Submenu: []*mygo.MenuItem{
+			{Label: i18n.T("menu.open_window"), Accelerator: "CmdOrCtrl+1", Click: func(*mygo.MenuItem, *mygo.Window) {
 				d.showMainWindow()
 			}},
-			{Label: "刷新控制面数据", Accelerator: "CmdOrCtrl+R", Click: func(*mygo.MenuItem, *mygo.Window) {
+			{Label: i18n.T("menu.refresh_data"), Accelerator: "CmdOrCtrl+R", Click: func(*mygo.MenuItem, *mygo.Window) {
 				d.mu.Lock()
 				uiApp := d.ui
 				d.mu.Unlock()
@@ -69,14 +70,14 @@ func (d *desktopApp) setupMenus() {
 					uiApp.Refresh()
 				}
 			}},
-			{Label: "复制 MCP 接入地址", Accelerator: "CmdOrCtrl+Shift+C", Click: func(*mygo.MenuItem, *mygo.Window) {
+			{Label: i18n.T("menu.copy_mcp_url"), Accelerator: "CmdOrCtrl+Shift+C", Click: func(*mygo.MenuItem, *mygo.Window) {
 				d.copyMCPURL()
 			}},
 			mygo.Separator(),
 			{Role: mygo.RoleClose},
 		}},
 		{Role: mygo.RoleEditMenu},
-		{Label: "视图", Submenu: []*mygo.MenuItem{
+		{Label: i18n.T("menu.view"), Submenu: []*mygo.MenuItem{
 			{Role: mygo.RoleToggleFullScreen},
 		}},
 		{Role: mygo.RoleWindowMenu},
@@ -84,25 +85,25 @@ func (d *desktopApp) setupMenus() {
 	mygo.App.SetMenu(appMenu)
 
 	mygo.App.Dock.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-		{Label: "打开控制面窗口", Click: func(*mygo.MenuItem, *mygo.Window) { d.showMainWindow() }},
-		{Label: "复制 MCP 接入地址", Click: func(*mygo.MenuItem, *mygo.Window) { d.copyMCPURL() }},
+		{Label: i18n.T("menu.open_window"), Click: func(*mygo.MenuItem, *mygo.Window) { d.showMainWindow() }},
+		{Label: i18n.T("menu.copy_mcp_url"), Click: func(*mygo.MenuItem, *mygo.Window) { d.copyMCPURL() }},
 	}))
 }
 
 func (d *desktopApp) setupTray() {
 	menu := mygo.NewMenu([]*mygo.MenuItem{
-		{ID: "open", Label: "打开控制面窗口", Click: func(*mygo.MenuItem, *mygo.Window) {
+		{ID: "open", Label: i18n.T("menu.open_window"), Click: func(*mygo.MenuItem, *mygo.Window) {
 			d.showMainWindow()
 		}},
-		{ID: "status", Label: "状态：正在启动网关…", Disabled: true},
+		{ID: "status", Label: i18n.T("tray.status.starting"), Disabled: true},
 		mygo.Separator(),
-		{ID: "copy-mcp", Label: "复制 MCP 接入地址", Disabled: true, Click: func(*mygo.MenuItem, *mygo.Window) {
+		{ID: "copy-mcp", Label: i18n.T("menu.copy_mcp_url"), Disabled: true, Click: func(*mygo.MenuItem, *mygo.Window) {
 			d.copyMCPURL()
 		}},
 		mygo.Separator(),
 		channelUpdateMenuItem(),
 		mygo.Separator(),
-		{ID: "quit", Label: "退出 " + buildinfo.Current().Name, Accelerator: "CmdOrCtrl+Q", Click: func(*mygo.MenuItem, *mygo.Window) {
+		{ID: "quit", Label: i18n.T("menu.quit", buildinfo.Current().Name), Accelerator: "CmdOrCtrl+Q", Click: func(*mygo.MenuItem, *mygo.Window) {
 			d.requestQuit()
 		}},
 	})
@@ -123,6 +124,32 @@ func (d *desktopApp) setupTray() {
 	d.tray = tray
 	d.trayMenu = menu
 	d.mu.Unlock()
+}
+
+func (d *desktopApp) refreshLocalizedMenus() {
+	d.setupMenus()
+
+	d.mu.Lock()
+	menu := d.trayMenu
+	rt := d.runtime
+	d.mu.Unlock()
+	if menu == nil {
+		return
+	}
+	if item := menu.ItemByID("open"); item != nil {
+		item.SetLabel(i18n.T("menu.open_window"))
+	}
+	if item := menu.ItemByID("copy-mcp"); item != nil {
+		item.SetLabel(i18n.T("menu.copy_mcp_url"))
+	}
+	if item := menu.ItemByID("quit"); item != nil {
+		item.SetLabel(i18n.T("menu.quit", buildinfo.Current().Name))
+	}
+	if rt != nil {
+		d.updateTrayReady(rt)
+	} else if item := menu.ItemByID("status"); item != nil {
+		item.SetLabel(i18n.T("tray.status.starting"))
+	}
 }
 
 func (d *desktopApp) updateTrayReady(rt *gatewayRuntime) {
@@ -171,6 +198,11 @@ func (d *desktopApp) showMainWindow() {
 		uiApp := d.ui
 		if rt != nil && uiApp == nil {
 			uiApp = NewDesktopUI(rt)
+			uiApp.OnLanguageChanged = func(i18n.Lang) {
+				mygo.RunOnMain(func() {
+					d.refreshLocalizedMenus()
+				})
+			}
 			d.ui = uiApp
 		}
 		d.mu.Unlock()
@@ -331,6 +363,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	applyDesktopPrefs(dataDir)
 
 	if mygo.App.IsPackaged() && mygo.App.Name() != buildinfo.Current().Name {
 		return fmt.Errorf("package identity %q does not match compiled channel %q; rebuild using scripts/build-channel.mjs", mygo.App.Name(), buildinfo.Current().Channel)

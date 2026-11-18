@@ -18,6 +18,7 @@ import (
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
 	"gatewaylab/internal/clientplugin"
+	"gatewaylab/internal/i18n"
 )
 
 // ViewID identifies a top-level control plane page.
@@ -37,23 +38,23 @@ const (
 func viewTitle(v ViewID) string {
 	switch v {
 	case ViewOverview:
-		return "概览"
+		return i18n.T("nav.overview")
 	case ViewServices:
-		return "服务"
+		return i18n.T("nav.services")
 	case ViewCatalog:
-		return "工具目录"
+		return i18n.T("nav.catalog")
 	case ViewRepos:
-		return "仓库绑定"
+		return i18n.T("nav.repos")
 	case ViewPlayground:
-		return "路由沙盒"
+		return i18n.T("nav.playground")
 	case ViewLogs:
-		return "请求日志"
+		return i18n.T("nav.logs")
 	case ViewClients:
-		return "连接客户端"
+		return i18n.T("nav.clients")
 	case ViewSettings:
-		return "访问与路由"
+		return i18n.T("nav.settings")
 	default:
-		return "概览"
+		return i18n.T("nav.overview")
 	}
 }
 
@@ -87,6 +88,7 @@ type DesktopUI struct {
 	PluginsBusy       bool
 	Runtime           *gatewayRuntime
 	Client            *apiclient.Client
+	OnLanguageChanged func(i18n.Lang)
 
 	// Current window reference (guarded by mu for background goroutines).
 	mu        sync.Mutex
@@ -836,19 +838,22 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 
 			// Scrollable navigation sections.
 			ui.Scroll(c).Grow(1).FillWidth().Padding(4, 10, 10, 10).Gap(18).Children(func() {
-				u.renderNavGroup(c, "工作台", []navItem{
-					{id: ViewOverview, label: "概览", icon: IconHome},
+				u.renderNavGroup(c, i18n.T("nav.group.workspace"), []navItem{
+					{id: ViewOverview, label: i18n.T("nav.overview"), icon: IconHome},
 					servicesNavItem(activeRealServers, u.servicesNeedingAttention()),
-					{id: ViewCatalog, label: "工具目录", icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
-					{id: ViewRepos, label: "仓库绑定", icon: IconFolderGit, badge: reposNavBadge(state.Scopes)},
-					{id: ViewClients, label: "连接客户端", icon: IconServer, badge: clientsNavBadge(u)},
-					{id: ViewSettings, label: "访问与路由", icon: IconShield},
+					{id: ViewCatalog, label: i18n.T("nav.catalog"), icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
+					{id: ViewRepos, label: i18n.T("nav.repos"), icon: IconFolderGit, badge: reposNavBadge(state.Scopes)},
+					{id: ViewClients, label: i18n.T("nav.clients"), icon: IconServer, badge: clientsNavBadge(u)},
+					{id: ViewSettings, label: i18n.T("nav.settings"), icon: IconShield},
 				})
-				u.renderNavGroup(c, "观测与调试", []navItem{
-					{id: ViewLogs, label: "请求日志", icon: IconActivity, badge: countBadge(len(state.Events))},
-					{id: ViewPlayground, label: "路由沙盒", icon: IconWaypoints},
+				u.renderNavGroup(c, i18n.T("nav.group.observability"), []navItem{
+					{id: ViewLogs, label: i18n.T("nav.logs"), icon: IconActivity, badge: countBadge(len(state.Events))},
+					{id: ViewPlayground, label: i18n.T("nav.playground"), icon: IconWaypoints},
 				})
 			})
+
+			ui.Box(c).FillWidth().Height(1).Background(SailDivider)
+			u.renderSidebarLanguageSwitcher(c)
 
 		})
 }
@@ -865,7 +870,7 @@ type navItem struct {
 // servicesNavItem shows how many services need action when any do, otherwise
 // how many are enabled, so the sidebar count never reads as "all healthy".
 func servicesNavItem(enabled, attention int) navItem {
-	item := navItem{id: ViewServices, label: "服务", icon: IconServer, badge: countBadge(enabled)}
+	item := navItem{id: ViewServices, label: i18n.T("nav.services"), icon: IconServer, badge: countBadge(enabled)}
 	if attention > 0 {
 		item.badge = countBadge(attention)
 		item.badgeDanger = true

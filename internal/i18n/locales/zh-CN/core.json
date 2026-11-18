@@ -1,0 +1,22 @@
+{
+  "app.lang.label": "语言",
+  "app.lang.zh": "中文",
+  "app.lang.en": "EN",
+  "nav.group.workspace": "工作台",
+  "nav.group.observability": "观测与调试",
+  "nav.overview": "概览",
+  "nav.services": "服务",
+  "nav.catalog": "工具目录",
+  "nav.repos": "仓库绑定",
+  "nav.clients": "连接客户端",
+  "nav.settings": "访问与路由",
+  "nav.logs": "请求日志",
+  "nav.playground": "路由沙盒",
+  "menu.file": "文件",
+  "menu.view": "视图",
+  "menu.open_window": "打开控制面窗口",
+  "menu.refresh_data": "刷新控制面数据",
+  "menu.copy_mcp_url": "复制 MCP 接入地址",
+  "menu.quit": "退出 %s",
+  "tray.status.starting": "状态：正在启动网关…"
+}

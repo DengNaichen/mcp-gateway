@@ -1,0 +1,22 @@
+{
+  "app.lang.label": "Language",
+  "app.lang.zh": "中文",
+  "app.lang.en": "EN",
+  "nav.group.workspace": "Workspace",
+  "nav.group.observability": "Observe & Debug",
+  "nav.overview": "Overview",
+  "nav.services": "Services",
+  "nav.catalog": "Tool Catalog",
+  "nav.repos": "Repositories",
+  "nav.clients": "Clients",
+  "nav.settings": "Access & Routing",
+  "nav.logs": "Request Logs",
+  "nav.playground": "Routing Sandbox",
+  "menu.file": "File",
+  "menu.view": "View",
+  "menu.open_window": "Open Control Plane",
+  "menu.refresh_data": "Refresh Control Plane",
+  "menu.copy_mcp_url": "Copy MCP Endpoint",
+  "menu.quit": "Quit %s",
+  "tray.status.starting": "Status: Starting gateway…"
+}

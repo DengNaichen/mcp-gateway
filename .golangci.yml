@@ -85,6 +85,12 @@ linters:
           deny:
             - pkg: gatewaylab/internal
               desc: "buildinfo is a leaf package and imports no other internal package"
+        leaf-i18n:
+          files: ["**/internal/i18n/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "i18n is a leaf package and imports no other internal package"
         apiclient-layer:
           files: ["**/internal/apiclient/**"]
           list-mode: lax
@@ -106,19 +112,21 @@ linters:
           list-mode: lax
           allow:
             - gatewaylab/internal/buildinfo
+            - gatewaylab/internal/i18n
           deny:
             - pkg: gatewaylab/internal
-              desc: "clientconfig may only import buildinfo"
+              desc: "clientconfig may only import buildinfo and i18n"
         clientplugin-layer:
           files: ["**/internal/clientplugin/**"]
           list-mode: lax
           allow:
             - gatewaylab/internal/buildinfo
             - gatewaylab/internal/clientconfig
+            - gatewaylab/internal/i18n
             - gatewaylab/internal/workspace
           deny:
             - pkg: gatewaylab/internal
-              desc: "clientplugin may only import buildinfo, clientconfig, and workspace"
+              desc: "clientplugin may only import buildinfo, clientconfig, i18n, and workspace"
         store-layer:
           files: ["**/internal/store/**"]
           list-mode: lax
@@ -212,6 +220,7 @@ linters:
             - gatewaylab/internal/buildinfo
             - gatewaylab/internal/clientconfig
             - gatewaylab/internal/clientplugin
+            - gatewaylab/internal/i18n
           deny:
             - pkg: gatewaylab/internal
               desc: "the desktop UI reaches the backend only over HTTP: use gatewaylab/internal/apitypes and gatewaylab/internal/apiclient for calls; only server.go may import internal/api to host the backend"
