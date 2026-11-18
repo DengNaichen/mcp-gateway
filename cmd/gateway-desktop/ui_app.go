@@ -79,13 +79,7 @@ type playgroundReplayIntent struct {
 // background polling, and thread-safe async updates for the desktop window.
 type DesktopUI struct {
 	ClientConfigs     *clientconfig.Manager
-	ClientStatuses    []clientconfig.Status
-	ClientConfigError string
-	ClientsBusy       bool
 	ClientPlugins     *clientplugin.Manager
-	PluginStatuses    []clientplugin.Status
-	PluginError       string
-	PluginsBusy       bool
 	Runtime           *gatewayRuntime
 	Client            *apiclient.Client
 	OnLanguageChanged func(i18n.Lang)
@@ -122,9 +116,9 @@ type DesktopUI struct {
 	playground *playgroundState
 	logs       *logsPageState
 	settings   *settingsState
-	clients    *clientsPageState
-	hookModal  *hookSnippetModalState
-	credCache  serverCredentialCache
+	clientsPageState
+	hookModal *hookSnippetModalState
+	credCache serverCredentialCache
 
 	// Auth & bootstrap lifecycle state.
 	NeedsLogin bool
@@ -842,7 +836,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 					servicesNavItem(activeRealServers, u.servicesNeedingAttention()),
 					{id: ViewCatalog, label: i18n.T("nav.catalog"), icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
 					{id: ViewRepos, label: i18n.T("nav.repos"), icon: IconFolderGit, badge: reposNavBadge(state.Scopes)},
-					{id: ViewClients, label: i18n.T("nav.clients"), icon: IconServer, badge: clientsNavBadge(u)},
+					{id: ViewClients, label: i18n.T("nav.clients"), icon: IconServer, badge: u.clientsNavBadge()},
 					{id: ViewSettings, label: i18n.T("nav.settings"), icon: IconShield},
 				})
 				u.renderNavGroup(c, i18n.T("nav.group.observability"), []navItem{
@@ -882,16 +876,6 @@ func countBadge(n int) string {
 		return ""
 	}
 	return fmt.Sprintf("%d", n)
-}
-
-func clientsNavBadge(u *DesktopUI) string {
-	if len(u.PluginStatuses) > 0 {
-		return countBadge(len(u.PluginStatuses))
-	}
-	if len(u.ClientStatuses) > 0 {
-		return countBadge(len(u.ClientStatuses))
-	}
-	return ""
 }
 
 func reposNavBadge(scopes apitypes.ScopeOverview) string {
