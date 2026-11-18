@@ -14,6 +14,7 @@ import (
 
 	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
+	"gatewaylab/internal/i18n"
 )
 
 type serviceReadinessKind uint8
@@ -234,7 +235,7 @@ func latestServerInvokeFailure(
 		return nil
 	}
 	if latestErr == "" {
-		latestErr = "下游工具调用失败"
+		latestErr = i18n.T("readiness.invoke.failed_default")
 	}
 	return &serverInvokeFailure{
 		Time:   latest.Time,
@@ -259,9 +260,9 @@ func evaluateServiceReadiness(
 		return serviceReadiness{
 			Kind:        readinessDemo,
 			DotColor:    SailInkFaint,
-			BadgeLabel:  "演示",
+			BadgeLabel:  i18n.T("common.demo"),
 			BadgeTone:   ToneNeutral,
-			StatusLabel: "演示服务",
+			StatusLabel: i18n.T("readiness.demo.status"),
 		}
 	}
 
@@ -316,12 +317,12 @@ func evaluateServiceReadiness(
 	if len(refs) > 0 {
 		switch {
 		case len(missingVars) > 0:
-			credSummary = "缺少 " + strings.Join(missingVars, ", ")
+			credSummary = i18n.T("readiness.cred.missing_list", strings.Join(missingVars, ", "))
 			credDanger = true
 		case credLoaded:
-			credSummary = fmt.Sprintf("%d/%d 已就绪", len(refs), len(refs))
+			credSummary = fmt.Sprintf(i18n.T("readiness.cred.ready"), len(refs), len(refs))
 		default:
-			credSummary = fmt.Sprintf("引用 %d 项变量", len(refs))
+			credSummary = fmt.Sprintf(i18n.T("readiness.cred.referenced"), len(refs))
 		}
 	}
 
@@ -329,17 +330,17 @@ func evaluateServiceReadiness(
 		chkLabel := ""
 		chkDisp := checkDisplayNone
 		if hasCheck {
-			chkLabel = "历史记录 · " + FormatTime(check.CheckedAt)
+			chkLabel = i18n.T("readiness.check.history", FormatTime(check.CheckedAt))
 			chkDisp = checkDisplaySubtle
 		}
 		rowSum := ""
 		if len(missingVars) > 0 {
-			rowSum = "已停用 · 缺少凭据 " + strings.Join(missingVars, ", ")
+			rowSum = i18n.T("readiness.cred.disabled_missing", strings.Join(missingVars, ", "))
 		}
 		return serviceReadiness{
 			Kind:           readinessDisabled,
 			DotColor:       SailInkFaint,
-			StatusLabel:    "已停用",
+			StatusLabel:    i18n.T("common.disabled"),
 			RowSummary:     rowSum,
 			ReferencedVars: refs,
 			MissingVars:    missingVars,
@@ -353,23 +354,23 @@ func evaluateServiceReadiness(
 	// 1. Missing referenced credentials.
 	if len(missingVars) > 0 {
 		joined := strings.Join(missingVars, ", ")
-		chkLabel := "未检查"
+		chkLabel := i18n.T("readiness.check.unchecked")
 		if hasCheck {
 			if check.Status == "error" {
-				chkLabel = "异常 · " + FormatTime(check.CheckedAt)
+				chkLabel = i18n.T("readiness.check.error_at", FormatTime(check.CheckedAt))
 			} else {
-				chkLabel = "历史通过 · " + FormatTime(check.CheckedAt)
+				chkLabel = i18n.T("readiness.check.passed_at", FormatTime(check.CheckedAt))
 			}
 		}
-		rowSummary := "缺少凭据：" + joined
+		rowSummary := i18n.T("readiness.alert.missing_creds", joined)
 		detailMsg := fmt.Sprintf(
-			"当前网关进程与系统钥匙串均未提供 %s。请在「连接与认证配置 → 服务凭据」中直接填入保存（免重启立即生效），或在启动网关前导出该环境变量。",
+			i18n.T("readiness.cred.detail_missing"),
 			joined,
 		)
 		if invFail != nil {
-			rowSummary = fmt.Sprintf("缺少凭据 %s · 最近调用 %s 失败", joined, invFail.ToolID)
+			rowSummary = fmt.Sprintf(i18n.T("readiness.cred.missing_recent_fail"), joined, invFail.ToolID)
 			detailMsg = fmt.Sprintf(
-				"当前网关进程与系统钥匙串均未提供 %s，最近调用 %s（%s）已因此失败。请在「连接与认证配置 → 服务凭据」中直接填入保存（免重启立即生效），或导出该环境变量后重启网关。",
+				i18n.T("readiness.cred.detail_missing_recent"),
 				joined,
 				invFail.ToolID,
 				FormatTime(invFail.Time),
@@ -378,9 +379,9 @@ func evaluateServiceReadiness(
 		return serviceReadiness{
 			Kind:             readinessMissingCreds,
 			DotColor:         SailDangerInk,
-			BadgeLabel:       "缺少凭据",
+			BadgeLabel:       i18n.T("common.missing_credentials"),
 			BadgeTone:        ToneDanger,
-			StatusLabel:      "缺少凭据",
+			StatusLabel:      i18n.T("common.missing_credentials"),
 			RowSummary:       rowSummary,
 			ReferencedVars:   refs,
 			MissingVars:      missingVars,
@@ -389,10 +390,10 @@ func evaluateServiceReadiness(
 			CheckLabel:       chkLabel,
 			CheckDisplay:     checkDisplaySubtle,
 			AlertTone:        ToneDanger,
-			AlertTitle:       "当前缺少凭据：" + joined,
+			AlertTitle:       i18n.T("readiness.alert.missing_creds_prefix", joined),
 			AlertDetail:      detailMsg,
 			AlertAction:      readinessActionFillCreds,
-			AlertActionLabel: "填写服务凭据",
+			AlertActionLabel: i18n.T("readiness.action.fill_creds"),
 		}
 	}
 
@@ -404,49 +405,49 @@ func evaluateServiceReadiness(
 		}
 		title := strings.TrimSpace(check.Message)
 		if title == "" {
-			title = "连接检查失败"
+			title = i18n.T("readiness.conn.failed_title")
 		}
 		return serviceReadiness{
 			Kind:             readinessConnError,
 			DotColor:         SailDangerInk,
-			BadgeLabel:       "连接异常",
+			BadgeLabel:       i18n.T("readiness.conn.error"),
 			BadgeTone:        ToneDanger,
-			StatusLabel:      "连接异常",
+			StatusLabel:      i18n.T("readiness.conn.error"),
 			RowSummary:       summary,
 			ReferencedVars:   refs,
 			CredSummary:      credSummary,
-			CheckLabel:       "异常 · " + FormatTime(check.CheckedAt),
+			CheckLabel:       i18n.T("readiness.check.error_at", FormatTime(check.CheckedAt)),
 			CheckDisplay:     checkDisplayDanger,
 			AlertTone:        ToneDanger,
 			AlertTitle:       title,
 			AlertDetail:      strings.TrimSpace(check.Detail),
 			AlertAction:      readinessActionProbe,
-			AlertActionLabel: "重新测试连接",
+			AlertActionLabel: i18n.T("readiness.action.retest"),
 		}
 	}
 
 	// 3. Runtime invoke failed after last passing check (or with no check).
 	if invFail != nil {
-		chkLabel := "未检查"
+		chkLabel := i18n.T("readiness.check.unchecked")
 		if hasCheck {
-			chkLabel = "历史通过 · " + FormatTime(check.CheckedAt)
+			chkLabel = i18n.T("readiness.check.passed_at", FormatTime(check.CheckedAt))
 		}
 		return serviceReadiness{
 			Kind:             readinessInvokeError,
 			DotColor:         SailDangerInk,
-			BadgeLabel:       "调用失败",
+			BadgeLabel:       i18n.T("readiness.invoke.failed_badge"),
 			BadgeTone:        ToneDanger,
-			StatusLabel:      "最近调用失败",
-			RowSummary:       fmt.Sprintf("最近调用 %s 失败：%s", invFail.ToolID, invFail.Detail),
+			StatusLabel:      i18n.T("readiness.invoke.failed_status"),
+			RowSummary:       fmt.Sprintf(i18n.T("readiness.invoke.row_summary"), invFail.ToolID, invFail.Detail),
 			ReferencedVars:   refs,
 			CredSummary:      credSummary,
 			CheckLabel:       chkLabel,
 			CheckDisplay:     checkDisplaySubtle,
 			AlertTone:        ToneDanger,
-			AlertTitle:       fmt.Sprintf("最近实际调用失败 · %s（%s）", invFail.ToolID, FormatTime(invFail.Time)),
+			AlertTitle:       fmt.Sprintf(i18n.T("readiness.invoke.alert_title"), invFail.ToolID, FormatTime(invFail.Time)),
 			AlertDetail:      invFail.Detail,
 			AlertAction:      readinessActionProbe,
-			AlertActionLabel: "立即测试连接",
+			AlertActionLabel: i18n.T("readiness.action.probe_now"),
 		}
 	}
 
@@ -456,55 +457,55 @@ func evaluateServiceReadiness(
 			return serviceReadiness{
 				Kind:             readinessUnverified,
 				DotColor:         SailWarningInk,
-				BadgeLabel:       "待验证",
+				BadgeLabel:       i18n.T("readiness.unverified.badge"),
 				BadgeTone:        ToneWarning,
-				StatusLabel:      "待复测",
-				RowSummary:       fmt.Sprintf("连接配置或凭据环境已变更，上次检查通过于 %s", FormatTime(check.CheckedAt)),
+				StatusLabel:      i18n.T("readiness.stale.status"),
+				RowSummary:       fmt.Sprintf(i18n.T("readiness.stale.row_summary"), FormatTime(check.CheckedAt)),
 				ReferencedVars:   refs,
 				CredSummary:      credSummary,
-				CheckLabel:       "待复测 · " + FormatTime(check.CheckedAt),
+				CheckLabel:       i18n.T("readiness.check.stale_at", FormatTime(check.CheckedAt)),
 				CheckDisplay:     checkDisplayWarn,
 				AlertTone:        ToneWarning,
-				AlertTitle:       "连接配置或凭据已变更，待重新验证",
-				AlertDetail:      fmt.Sprintf("上次检查通过时间为 %s，当前进程环境或配置指纹已变化，历史结果不代表当前可用。", FormatTime(check.CheckedAt)),
+				AlertTitle:       i18n.T("readiness.stale.alert_title"),
+				AlertDetail:      fmt.Sprintf(i18n.T("readiness.stale.alert_detail"), FormatTime(check.CheckedAt)),
 				AlertAction:      readinessActionProbe,
-				AlertActionLabel: "测试连接",
+				AlertActionLabel: i18n.T("common.test_connection"),
 			}
 		}
 		return serviceReadiness{
 			Kind:             readinessUnverified,
 			DotColor:         SailWarningInk,
-			BadgeLabel:       "待验证",
+			BadgeLabel:       i18n.T("readiness.unverified.badge"),
 			BadgeTone:        ToneWarning,
-			StatusLabel:      "尚未检查",
-			RowSummary:       "尚未执行连接检查，点击测试连接确认服务可用",
+			StatusLabel:      i18n.T("readiness.unverified.status"),
+			RowSummary:       i18n.T("readiness.unverified.row_summary"),
 			ReferencedVars:   refs,
 			CredSummary:      credSummary,
-			CheckLabel:       "未检查",
+			CheckLabel:       i18n.T("readiness.check.unchecked"),
 			CheckDisplay:     checkDisplaySubtle,
 			AlertTone:        ToneWarning,
-			AlertTitle:       "尚未执行连接检查",
-			AlertDetail:      "服务已启用，但尚未验证当前连接与认证是否可用。",
+			AlertTitle:       i18n.T("readiness.unverified.row_prefix"),
+			AlertDetail:      i18n.T("readiness.unverified.alert_detail"),
 			AlertAction:      readinessActionProbe,
-			AlertActionLabel: "测试连接",
+			AlertActionLabel: i18n.T("common.test_connection"),
 		}
 	}
 
 	// 5. Verified connection, but 0 open tools in whitelist.
 	if enabledTools == 0 {
-		badge := "未开放工具"
-		statusLbl := "未开放工具"
-		rowSum := fmt.Sprintf("连接正常，但 %d 个工具均未开放白名单", len(srvTools))
-		alertTitle := "尚未向 Agent 开放任何工具"
-		alertDetail := "连接与认证检查已通过，但当前白名单开放工具数为 0，Agent 无法发现或调用此服务。"
+		badge := i18n.T("readiness.no_tools.badge")
+		statusLbl := i18n.T("readiness.no_tools.badge")
+		rowSum := fmt.Sprintf(i18n.T("readiness.no_tools.row_summary"), len(srvTools))
+		alertTitle := i18n.T("readiness.no_tools.alert_title")
+		alertDetail := i18n.T("readiness.no_tools.alert_detail")
 		action := readinessActionEnableReadOnly
-		actionLbl := "仅开放只读工具"
+		actionLbl := i18n.T("readiness.action.enable_read_only")
 		if len(srvTools) == 0 {
-			badge = "无工具"
-			statusLbl = "无可用工具"
-			rowSum = "连接正常，但当前服务下尚无工具定义"
-			alertTitle = "当前服务尚无工具定义"
-			alertDetail = "连接检查已通过，请同步下游工具或添加 HTTP 工具。"
+			badge = i18n.T("readiness.empty_tools.badge")
+			statusLbl = i18n.T("readiness.empty_tools.status")
+			rowSum = i18n.T("readiness.empty_tools.row_summary")
+			alertTitle = i18n.T("readiness.empty_tools.alert_title")
+			alertDetail = i18n.T("readiness.empty_tools.alert_detail")
 			action = readinessActionNone
 			actionLbl = ""
 		}
@@ -531,7 +532,7 @@ func evaluateServiceReadiness(
 	return serviceReadiness{
 		Kind:           readinessReady,
 		DotColor:       SailSuccessInk,
-		StatusLabel:    "就绪",
+		StatusLabel:    i18n.T("readiness.ready.status"),
 		ReferencedVars: refs,
 		CredSummary:    credSummary,
 		CheckLabel:     FormatTime(check.CheckedAt),
@@ -722,9 +723,15 @@ const (
 	triageBucketCount
 )
 
-var triageBucketLabels = [triageBucketCount]string{"需处理", "待验证", "就绪", "已停用"}
+// triageBucketLabelKeys lists the label keys per triage bucket in bucket order.
+var triageBucketLabelKeys = [triageBucketCount]string{
+	"readiness.bucket.attention",
+	"readiness.unverified.badge",
+	"readiness.ready.status",
+	"common.disabled",
+}
 
-func (b serviceTriageBucket) Label() string { return triageBucketLabels[b] }
+func (b serviceTriageBucket) Label() string { return i18n.T(triageBucketLabelKeys[b]) }
 
 func (r serviceReadiness) TriageBucket() serviceTriageBucket {
 	switch {
@@ -744,14 +751,14 @@ func (r serviceReadiness) TriageBucket() serviceTriageBucket {
 func (r serviceReadiness) RowAction() (readinessActionKind, string) {
 	switch r.Kind {
 	case readinessMissingCreds:
-		return readinessActionFillCreds, "填写凭据"
+		return readinessActionFillCreds, i18n.T("readiness.row_action.fill_creds")
 	case readinessConnError, readinessInvokeError:
-		return readinessActionProbe, "重新测试"
+		return readinessActionProbe, i18n.T("readiness.row_action.retest")
 	case readinessUnverified:
-		return readinessActionProbe, "测试连接"
+		return readinessActionProbe, i18n.T("common.test_connection")
 	case readinessNoOpenTools:
 		if r.AlertAction == readinessActionEnableReadOnly {
-			return readinessActionEnableReadOnly, "开放只读"
+			return readinessActionEnableReadOnly, i18n.T("readiness.row_action.enable_read_only")
 		}
 	}
 	return readinessActionNone, ""

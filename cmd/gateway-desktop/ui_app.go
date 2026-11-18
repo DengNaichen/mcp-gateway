@@ -373,7 +373,7 @@ func (u *DesktopUI) Refresh() {
 					u.BootError = err.Error()
 				} else {
 					u.toastMu.Lock()
-					u.pendingToasts = append(u.pendingToasts, "刷新失败: "+err.Error())
+					u.pendingToasts = append(u.pendingToasts, i18n.T("app.toast.refresh_failed", err.Error()))
 					u.toastMu.Unlock()
 				}
 				return
@@ -722,22 +722,22 @@ func (u *DesktopUI) renderLoginView(c *ui.Context) {
 					})
 
 					if u.LoginError != "" {
-						SailAlertBox(c, ToneDanger, "登录失败", u.LoginError)
+						SailAlertBox(c, ToneDanger, i18n.T("app.login.failed_title"), u.LoginError)
 					}
 
 					ui.Column(c).Gap(6).FillWidth().Children(func() {
-						ui.Text(c, "Admin 访问令牌").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("app.login.token_label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						if ui.TextInput(c.Key("login-token"), &u.LoginToken).
 							Password().
 							AutoFocus().
-							Placeholder("粘贴令牌").
+							Placeholder(i18n.T("app.login.token_placeholder")).
 							FillWidth().
 							Submitted() {
 							u.submitLogin()
 						}
 					})
 
-					if SailPrimaryButton(c, "登录").FillWidth().Disabled(u.LoggingIn || strings.TrimSpace(u.LoginToken) == "").Clicked() {
+					if SailPrimaryButton(c, i18n.T("app.login.submit")).FillWidth().Disabled(u.LoggingIn || strings.TrimSpace(u.LoginToken) == "").Clicked() {
 						u.submitLogin()
 					}
 				})
@@ -765,15 +765,15 @@ func (u *DesktopUI) renderBootView(c *ui.Context) {
 						ui.Icon(c, IconLogo).Size(20, 20).TextColor(SailAccent)
 					})
 					if u.BootError != "" {
-						ui.Text(c, "无法连接网关控制面").FontSize(15.5).Bold().TextColor(SailInkStrong)
+						ui.Text(c, i18n.T("app.connect.failed_title")).FontSize(15.5).Bold().TextColor(SailInkStrong)
 						ui.Text(c, u.BootError).FontSize(12.5).TextColor(SailInkMuted).TextAlign(ui.Center)
-						if SailPrimaryButton(c, "重试连接").Clicked() {
+						if SailPrimaryButton(c, i18n.T("app.connect.retry")).Clicked() {
 							u.Refresh()
 						}
 					} else {
 						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.Spinner(c).Label("正在加载")
-							ui.Text(c, "正在加载网关控制面…").FontSize(13.5).TextColor(SailInkMuted)
+							ui.Spinner(c).Label(i18n.T("app.connect.loading_label"))
+							ui.Text(c, i18n.T("app.connect.loading")).FontSize(13.5).TextColor(SailInkMuted)
 						})
 					}
 				})
@@ -1010,7 +1010,7 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 							svcLink.Background(SailBgHover)
 						}
 						svcLink.Children(func() {
-							ui.Text(c, "服务").FontSize(13).TextColor(SailInkMuted).SingleLine()
+							ui.Text(c, i18n.T("app.topbar.services")).FontSize(13).TextColor(SailInkMuted).SingleLine()
 						})
 						if svcLink.Clicked() {
 							u.Navigate(ViewServices)
@@ -1031,7 +1031,7 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						Gap(6).
 						AlignItems(ui.Center).
 						Cursor(ui.CursorPointer).
-						Tooltip("路由模型配置")
+						Tooltip(i18n.T("app.topbar.routing_tooltip"))
 					if modelChip.Hovered() {
 						modelChip.Background(SailBgHover)
 					}
@@ -1043,7 +1043,7 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						SailStatusDot(c, dotColor)
 						modelName := state.Settings.Model
 						if modelName == "" {
-							modelName = "未配置模型"
+							modelName = i18n.T("app.topbar.no_model")
 						}
 						ui.Text(c, modelName).Font("monospace").FontSize(12).TextColor(SailInkBody).SingleLine()
 					})
@@ -1061,9 +1061,9 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						Cursor(ui.CursorPointer)
 					refreshBtn.Children(func() {
 						ui.Icon(c, IconRefresh).Size(12.5, 12.5).TextColor(SailInkMuted)
-						lbl := "刷新"
+						lbl := i18n.T("app.topbar.refresh")
 						if u.Refreshing {
-							lbl = "同步中"
+							lbl = i18n.T("app.topbar.syncing")
 						}
 						ui.Text(c, lbl).FontSize(12).TextColor(SailInkBody).SingleLine()
 					})
@@ -1073,7 +1073,7 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 
 					if state.Access.Shared {
 						ui.Text(c, state.Access.Actor).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
-						if SailSmallButton(c.Key("top-logout-btn"), "退出").Clicked() {
+						if SailSmallButton(c.Key("top-logout-btn"), i18n.T("app.topbar.logout")).Clicked() {
 							u.logout()
 						}
 					}

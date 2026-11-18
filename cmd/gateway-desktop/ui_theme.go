@@ -7,6 +7,8 @@ import (
 	"unicode"
 
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/i18n"
 )
 
 //go:embed assets/mcp.svg
@@ -481,14 +483,14 @@ func SailCodeBlock(c *ui.Context, title, code string, onCopied func()) {
 						copyBtn.Background(ui.RGBA(255, 255, 255, 0.15))
 					}
 					copyBtn.Children(func() {
-						ui.Text(c, "复制").FontSize(11).FontWeight(500).TextColor(SailNavyText).SingleLine()
+						ui.Text(c, i18n.T("common.copy")).FontSize(11).FontWeight(500).TextColor(SailNavyText).SingleLine()
 					})
 					if copyBtn.Clicked() {
 						c.WriteClipboard(code)
 						if onCopied != nil {
 							onCopied()
 						} else {
-							c.Toast("已复制到剪贴板")
+							c.Toast(i18n.T("theme.copied"))
 						}
 					}
 				})
@@ -1055,7 +1057,7 @@ func renderInlineRichText(c *ui.Context, text string, fontSize, lineHeight float
 func SailDescriptionDetail(c *ui.Context, key, raw string) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		ui.Text(c, "暂无功能描述").FontSize(12.5).TextColor(SailInkFaint)
+		ui.Text(c, i18n.T("theme.no_description")).FontSize(12.5).TextColor(SailInkFaint)
 		return
 	}
 
@@ -1089,7 +1091,7 @@ func SailDescriptionDetail(c *ui.Context, key, raw string) {
 		if len(parsed.Params) > 0 {
 			maxParams := min(len(parsed.Params), 6)
 			ui.Column(c).FillWidth().Padding(10, 12).Gap(6).Radius(8).Background(SailBgSubtle).Children(func() {
-				ui.Text(c, "参数说明").FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
+				ui.Text(c, i18n.T("theme.parameters")).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
 				for i := 0; i < maxParams; i++ {
 					p := parsed.Params[i]
 					ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Start).Children(func() {
@@ -1118,10 +1120,10 @@ func SailDescriptionDetail(c *ui.Context, key, raw string) {
 			}
 			toggleBtn.Children(func() {
 				rot := float32(0)
-				lbl := "展开完整原始描述"
+				lbl := i18n.T("theme.expand_raw")
 				if *rawOpen {
 					rot = 90
-					lbl = "收起原始描述"
+					lbl = i18n.T("theme.collapse_raw")
 				}
 				ui.Icon(c, IconChevronRight).Size(12, 12).TextColor(SailInkMuted).Rotate(rot)
 				ui.Text(c, lbl).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
