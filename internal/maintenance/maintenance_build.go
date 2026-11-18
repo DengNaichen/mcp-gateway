@@ -175,7 +175,13 @@ func (m *Maintainer) build(ctx context.Context, r *MaintenanceRun) error {
 		if err := m.update(r.ID, "Pi 正在维护工具与适配代码"); err != nil {
 			return err
 		}
-		if err := sandbox.RunPi(ctx, m.execution, m.command, dir, sandbox.PiOptions{Provider: r.Source.Provider, Model: r.Source.Model}, func(stage string) error { return m.update(r.ID, stage) }); err != nil {
+		if err := sandbox.RunPi(ctx, sandbox.PiRunOptions{
+			Policy:   m.execution,
+			Command:  m.command,
+			Dir:      dir,
+			Model:    sandbox.PiOptions{Provider: r.Source.Provider, Model: r.Source.Model},
+			Progress: func(stage string) error { return m.update(r.ID, stage) },
+		}); err != nil {
 			return err
 		}
 	} else {
@@ -320,7 +326,7 @@ func (m *Maintainer) validateBundle(ctx context.Context, r MaintenanceRun, dir s
 			if _, err := regularArtifact(dir, t.Adapter); err != nil {
 				return bundle, err
 			}
-			if _, err := m.execution.RunNode(ctx, dir, []string{"--check", t.Adapter}, nil, false, 64<<10); err != nil {
+			if _, err := m.execution.RunNode(ctx, sandbox.NodeRunOptions{Dir: dir, Args: []string{"--check", t.Adapter}, Limit: 64 << 10}); err != nil {
 				return bundle, fmt.Errorf("check adapter syntax: %w", err)
 			}
 			t.Revision = r.ID
@@ -337,7 +343,7 @@ func (m *Maintainer) validateBundle(ctx context.Context, r MaintenanceRun, dir s
 		}
 		verifyCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		defer cancel()
-		if _, err := m.execution.RunNode(verifyCtx, dir, []string{"verify.mjs"}, nil, false, 64<<10); err != nil {
+		if _, err := m.execution.RunNode(verifyCtx, sandbox.NodeRunOptions{Dir: dir, Args: []string{"verify.mjs"}, Limit: 64 << 10}); err != nil {
 			return bundle, fmt.Errorf("adapter verification failed: %w", err)
 		}
 	}

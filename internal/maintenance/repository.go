@@ -63,7 +63,13 @@ func (m *Maintainer) repositoryDocuments(ctx context.Context, r *MaintenanceRun)
 	}
 	base := []string{"-c", "core.hooksPath=/dev/null", "-c", "protocol.ext.allow=never", "-c", "protocol.file.allow=always"}
 	git := func(args ...string) ([]byte, error) {
-		return sandbox.RunCommand(ctx, "git", append(append([]string{}, base...), args...), dir, nil, map[string]string{"GIT_TERMINAL_PROMPT": "0"}, 2<<20)
+		return sandbox.RunCommand(ctx, sandbox.CommandOptions{
+			Name:  "git",
+			Args:  append(append([]string{}, base...), args...),
+			Dir:   dir,
+			Env:   map[string]string{"GIT_TERMINAL_PROMPT": "0"},
+			Limit: 2 << 20,
+		})
 	}
 	if _, err := os.Stat(filepath.Join(dir, "HEAD")); os.IsNotExist(err) {
 		if _, err := git("init", "--bare", "--template=", dir); err != nil {

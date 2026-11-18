@@ -55,13 +55,20 @@ func containerName() string { return fmt.Sprintf("gateway-%x", rand.Text()) }
 func removeContainer(name string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if _, err := RunCommand(ctx, "docker", []string{"rm", "-f", name}, "", nil, nil, 4096); err != nil {
+	if _, err := RunCommand(ctx, CommandOptions{Name: "docker", Args: []string{"rm", "-f", name}, Limit: 4096}); err != nil {
 		slog.Warn("remove sandbox container", "container", name, "error", err)
 	}
 }
 
-func (p Policy) dockerArgs(name, dir string, writable, network bool) ([]string, error) {
-	abs, err := filepath.Abs(dir)
+type dockerRunOptions struct {
+	Name     string
+	Dir      string
+	Writable bool
+	Network  bool
+}
+
+func (p Policy) dockerArgs(opts dockerRunOptions) ([]string, error) {
+	abs, err := filepath.Abs(opts.Dir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve sandbox directory: %w", err)
 	}
@@ -69,15 +76,15 @@ func (p Policy) dockerArgs(name, dir string, writable, network bool) ([]string, 
 		return nil, invalid("沙箱路径不能包含逗号或换行")
 	}
 	destination := "/job"
-	if writable {
+	if opts.Writable {
 		destination = "/input"
 	}
 	mount := "type=bind,src=" + abs + ",dst=" + destination + ",readonly"
-	args := []string{"run", "--pull=never", "--name", name, "--label", "gateway.sandbox=true", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=64", "--memory=512m", "--cpus=1", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m", "--mount", mount, "--workdir", "/job", "--env", "HOME=/tmp", "--env", "NODE_OPTIONS=--max-old-space-size=256"}
-	if writable {
+	args := []string{"run", "--pull=never", "--name", opts.Name, "--label", "gateway.sandbox=true", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--pids-limit=64", "--memory=512m", "--cpus=1", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m", "--mount", mount, "--workdir", "/job", "--env", "HOME=/tmp", "--env", "NODE_OPTIONS=--max-old-space-size=256"}
+	if opts.Writable {
 		args = append(args, "--tmpfs", "/job:rw,nosuid,nodev,size=128m,mode=1777")
 	}
-	if network {
+	if opts.Network {
 		args = append(args, "--add-host=host.docker.internal:host-gateway")
 	} else {
 		args = append(args, "--network=none")
@@ -85,24 +92,32 @@ func (p Policy) dockerArgs(name, dir string, writable, network bool) ([]string, 
 	return args, nil
 }
 
-func (p Policy) RunNode(ctx context.Context, dir string, args []string, input []byte, network bool, limit int) ([]byte, error) {
+type NodeRunOptions struct {
+	Dir     string
+	Args    []string
+	Input   []byte
+	Network bool
+	Limit   int
+}
+
+func (p Policy) RunNode(ctx context.Context, opts NodeRunOptions) ([]byte, error) {
 	if p.Mode == "local" {
-		return RunCommand(ctx, "node", args, dir, input, nil, limit)
+		return RunCommand(ctx, CommandOptions{Name: "node", Args: opts.Args, Dir: opts.Dir, Input: opts.Input, Limit: opts.Limit})
 	}
 	name := containerName()
-	dockerArgs, err := p.dockerArgs(name, dir, false, network)
+	dockerArgs, err := p.dockerArgs(dockerRunOptions{Name: name, Dir: opts.Dir, Network: opts.Network})
 	if err != nil {
 		return nil, err
 	}
 	defer removeContainer(name)
 	dockerArgs = append(dockerArgs, "--rm", "-i", p.Image, "node")
-	for _, arg := range args {
+	for _, arg := range opts.Args {
 		if filepath.IsAbs(arg) {
 			arg = "/job/" + filepath.Base(arg)
 		}
 		dockerArgs = append(dockerArgs, arg)
 	}
-	out, err := RunCommand(ctx, "docker", dockerArgs, "", input, nil, limit)
+	out, err := RunCommand(ctx, CommandOptions{Name: "docker", Args: dockerArgs, Input: opts.Input, Limit: opts.Limit})
 	if err != nil {
 		return nil, fmt.Errorf("sandbox execution failed (Docker and the configured image must be installed): %w", err)
 	}
@@ -114,7 +129,7 @@ func (p Policy) preparePi(ctx context.Context, dir string) ([]string, map[string
 		return []string{"--tools", "read,write,edit,bash"}, nil, func() error { return nil }, func() {}, nil
 	}
 	name := containerName()
-	args, err := p.dockerArgs(name, dir, true, false)
+	args, err := p.dockerArgs(dockerRunOptions{Name: name, Dir: dir, Writable: true})
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -123,11 +138,11 @@ func (p Policy) preparePi(ctx context.Context, dir string) ([]string, map[string
 		ttl = max(1, int(time.Until(deadline).Seconds())+60)
 	}
 	args = append(args, "--rm", "-d", p.Image, "sleep", fmt.Sprint(ttl))
-	if _, err := RunCommand(ctx, "docker", args, "", nil, nil, 4096); err != nil {
+	if _, err := RunCommand(ctx, CommandOptions{Name: "docker", Args: args, Limit: 4096}); err != nil {
 		removeContainer(name)
 		return nil, nil, nil, nil, fmt.Errorf("start coding sandbox (install Docker and pull the configured image): %w", err)
 	}
-	if _, err := RunCommand(ctx, "docker", []string{"exec", name, "cp", "-R", "/input/.", "/job/"}, "", nil, nil, 4096); err != nil {
+	if _, err := RunCommand(ctx, CommandOptions{Name: "docker", Args: []string{"exec", name, "cp", "-R", "/input/.", "/job/"}, Limit: 4096}); err != nil {
 		removeContainer(name)
 		return nil, nil, nil, nil, fmt.Errorf("copy isolated job inputs: %w", err)
 	}
@@ -156,7 +171,7 @@ func (p Policy) preparePi(ctx context.Context, dir string) ([]string, map[string
 if(!fs.lstatSync('/job/output').isDirectory()) throw Error('output must be a directory');
 const names=fs.readdirSync('/job/output'); if(names.length>64) throw Error('too many artifacts');
 const files={};let total=0;for(const name of names){const p='/job/output/'+name,s=fs.lstatSync(p);if(!s.isFile()||s.size>1048576)throw Error('invalid artifact');total+=s.size;if(total>8388608)throw Error('artifacts too large');files[name]=fs.readFileSync(p).toString('base64');} console.log(JSON.stringify(files));`
-		b, err := RunCommand(ctx, "docker", []string{"exec", name, "node", "-e", program}, "", nil, nil, 12<<20)
+		b, err := RunCommand(ctx, CommandOptions{Name: "docker", Args: []string{"exec", name, "node", "-e", program}, Limit: 12 << 20})
 		if err != nil {
 			return fmt.Errorf("export sandbox artifacts: %w", err)
 		}

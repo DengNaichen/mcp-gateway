@@ -42,7 +42,7 @@ fetch('https://example.com',{signal:AbortSignal.timeout(1500)}).then(()=>process
 	defer cancel()
 	// Pass host path via a JSON string inside code; positional absolute args are remapped.
 	program = strings.ReplaceAll(program, "process.argv[1]", string(mustJSON(t, hostSecret)))
-	out, err := p.RunNode(ctx, dir, []string{"-e", program}, nil, false, 4096)
+	out, err := p.RunNode(ctx, NodeRunOptions{Dir: dir, Args: []string{"-e", program}, Limit: 4096})
 	if err != nil || strings.TrimSpace(string(out)) != "isolated" {
 		t.Fatalf("isolation: %s %v", out, err)
 	}
