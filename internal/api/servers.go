@@ -20,7 +20,13 @@ func (g *server) registerServers(mux *http.ServeMux) {
 		respond(w, 200, in)
 	})
 	mux.HandleFunc("GET /api/servers/{id}/credentials", func(w http.ResponseWriter, r *http.Request) {
-		statuses, err := g.gw.ServerCredentials(r.PathValue("id"))
+		id := r.PathValue("id")
+		statuses, err := g.gw.ServerCredentials(id)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		oauth, upgrade, err := g.gw.ServerOAuthInfo(id)
 		if err != nil {
 			fail(w, err)
 			return
@@ -30,6 +36,12 @@ func (g *server) registerServers(mux *http.ServeMux) {
 		out.Credentials = []apitypes.CredentialStatus{}
 		for _, status := range statuses {
 			out.Credentials = append(out.Credentials, apitypes.CredentialStatus{Name: status.Name, Configured: status.Configured, Saved: status.Saved, Environment: status.Environment})
+		}
+		if oauth != nil {
+			out.OAuth = &apitypes.OAuthStatus{Enabled: oauth.Enabled, Authorized: oauth.Authorized}
+		}
+		if upgrade != nil {
+			out.OAuthUpgrade = &apitypes.OAuthUpgradeInfo{Title: upgrade.Title, Endpoint: upgrade.Endpoint, Homepage: upgrade.Homepage}
 		}
 		respond(w, 200, out)
 	})
@@ -44,6 +56,13 @@ func (g *server) registerServers(mux *http.ServeMux) {
 			return
 		}
 		respond(w, 200, apitypes.Saved{Saved: true})
+	})
+	mux.HandleFunc("DELETE /api/servers/{id}/oauth", func(w http.ResponseWriter, r *http.Request) {
+		if err := g.gw.ClearServerOAuth(r.PathValue("id")); err != nil {
+			fail(w, err)
+			return
+		}
+		respond(w, 200, apitypes.Deleted{Deleted: true})
 	})
 	mux.HandleFunc("DELETE /api/servers/{id}", func(w http.ResponseWriter, r *http.Request) {
 		if err := g.gw.DeleteServer(r.PathValue("id")); err != nil {

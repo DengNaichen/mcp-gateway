@@ -46,6 +46,7 @@ type servicesPageState struct {
 	addWorkDir         string
 	addEndpoint        string
 	addRemoteProto     string // "MCP Streamable HTTP" or "MCP SSE (Streamable 兼容)"
+	addRemoteOAuth     bool
 	addHeadersText     string
 	addOpenAPIBaseURL  string
 	addOpenAPISpecURL  string
@@ -98,6 +99,7 @@ type servicesPageState struct {
 	connArgsText         string
 	connEnvText          string
 	connHeadersText      string
+	connOAuth            bool
 	connRedactEmails     bool
 	connRedactFieldsText string
 	connRawJSON          string
@@ -177,6 +179,7 @@ func (st *servicesPageState) resetAddFields() {
 	st.addWorkDir = ""
 	st.addEndpoint = ""
 	st.addRemoteProto = "MCP Streamable HTTP"
+	st.addRemoteOAuth = false
 	st.addHeadersText = "{}"
 	st.addOpenAPIBaseURL = ""
 	st.addOpenAPISpecURL = ""
@@ -535,7 +538,7 @@ func (u *DesktopUI) renderServiceListRow(c *ui.Context, st *servicesPageState, s
 			ui.Text(c, countText).FontSize(12).FontFeatures("tnum").TextColor(countInk).SingleLine().Tooltip(countTip)
 
 			// Fixed-width slot keeps switches aligned whether or not a row has an action.
-			ui.Row(c).Width(84).Justify(ui.End).Children(func() {
+			ui.Row(c).Width(94).Justify(ui.End).Children(func() {
 				action, label := readiness.RowAction()
 				if action == readinessActionNone {
 					return
@@ -584,7 +587,18 @@ func renderServiceRowStatusLine(c *ui.Context, s apitypes.Server, r serviceReadi
 	case readinessMissingCreds:
 		statusWord(i18n.T("common.missing_credentials"), SailDangerInk)
 		ui.Text(c, strings.Join(r.MissingVars, ", ")).Font("monospace").FontSize(12).TextColor(SailInkStrong).SingleLine().Shrink(0)
-		ui.Text(c, i18n.T("services.row.agent_will_fail")).FontSize(12.5).TextColor(SailInkFaint).SingleLine().MinWidth(0)
+		if r.OAuthUpgrade != nil {
+			ui.Text(c, i18n.T("services.row.supports_oauth")).FontSize(12.5).TextColor(SailInkMuted).SingleLine().MinWidth(0)
+		} else {
+			ui.Text(c, i18n.T("services.row.agent_will_fail")).FontSize(12.5).TextColor(SailInkFaint).SingleLine().MinWidth(0)
+		}
+	case readinessOAuthRequired:
+		ink := SailWarningInk
+		if r.BadgeTone == ToneDanger {
+			ink = SailDangerInk
+		}
+		statusWord(r.BadgeLabel, ink)
+		detail(r.RowSummary, false)
 	case readinessConnError, readinessInvokeError:
 		statusWord(r.BadgeLabel, SailDangerInk)
 		detail(r.RowSummary, false)
@@ -617,7 +631,7 @@ func (u *DesktopUI) runServiceRowAction(st *servicesPageState, s apitypes.Server
 		u.OpenServiceDetail(s.ID)
 		st.detailSubtab = 1
 		st.connMode = 0
-	case readinessActionProbe:
+	case readinessActionOAuthSignIn, readinessActionProbe:
 		u.probeServerConnection(st, s)
 	case readinessActionEnableReadOnly:
 		var roIDs []string
@@ -896,7 +910,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 			case readinessActionFillCreds:
 				st.detailSubtab = 1
 				st.connMode = 0
-			case readinessActionProbe:
+			case readinessActionOAuthSignIn, readinessActionProbe:
 				u.probeServerConnection(st, server)
 			case readinessActionEnableReadOnly:
 				var roIDs []string
@@ -907,6 +921,9 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 				}
 				u.applyServerToolWhitelist(st, server.ID, roIDs, i18n.T("services.toast.opened_read_only"))
 			}
+		},
+		func(upg apitypes.OAuthUpgradeInfo) {
+			u.switchServerToOAuth(st, server, upg)
 		},
 	)
 
@@ -1182,6 +1199,7 @@ func (st *servicesPageState) hydrateConnForm(server apitypes.Server) {
 	} else {
 		st.connHeadersText = "{}"
 	}
+	st.connOAuth = server.OAuth
 	st.connRedactEmails = server.RedactEmails
 	st.connRedactFieldsText = strings.Join(server.RedactFields, ", ")
 	st.connRawJSON = PrettyJSON(server)
@@ -1192,7 +1210,8 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 	if st.connHydratedID != server.ID {
 		st.hydrateConnForm(server)
 	}
-	credsFirst := len(serverReferencedEnvVars(server)) > 0
+	cachedCreds := u.cachedServerCredentials(server)
+	credsFirst := len(serverReferencedEnvVars(server)) > 0 || serverUsesOAuth(server) || (cachedCreds != nil && cachedCreds.OAuthUpgrade != nil)
 	if credsFirst {
 		u.renderServerCredentials(c, st, server)
 	}
@@ -1297,6 +1316,15 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 						Height(104).
 						FillWidth()
 				})
+
+				if server.Kind == "mcp" {
+					ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Wrap().Children(func() {
+						ui.Checkbox(c.Key("conn-oauth-"+server.ID), &st.connOAuth, i18n.T("services.conn.oauth_checkbox"))
+						if st.connOAuth {
+							ui.Text(c, i18n.T("services.conn.oauth_header_hint")).FontSize(11.5).TextColor(SailInkMuted)
+						}
+					})
+				}
 			}
 
 			// Redaction controls
@@ -1369,13 +1397,18 @@ func (st *servicesPageState) buildServerFromConnForm(orig apitypes.Server) (apit
 		}
 		out.Args = args
 		out.Env = env
+		out.OAuth = false
 		out.Endpoint = ""
 		out.Headers = nil
 	} else {
 		if out.Kind == "http" {
 			out.Transport = "http"
-		} else if out.Transport == "" {
-			out.Transport = "http"
+			out.OAuth = false
+		} else {
+			if out.Transport == "" {
+				out.Transport = "http"
+			}
+			out.OAuth = st.connOAuth
 		}
 		out.Endpoint = strings.TrimSpace(st.connEndpoint)
 		headers, err := parseStringMapJSON(st.connHeadersText)
@@ -1846,6 +1879,12 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 						Height(96).
 						FillWidth()
 				})
+				ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Wrap().Children(func() {
+					ui.Checkbox(c.Key("add-remote-oauth"), &st.addRemoteOAuth, i18n.T("services.add.remote_oauth"))
+					if st.addRemoteOAuth {
+						ui.Text(c, i18n.T("services.add.remote_oauth_hint")).FontSize(11.5).TextColor(SailInkMuted)
+					}
+				})
 
 			case 2: // OpenAPI / Swagger Import
 				u.renderAddCommonIdentityFields(c, st, "openapi")
@@ -1999,6 +2038,7 @@ func (st *servicesPageState) parsePasteJSON() {
 		}
 		st.addEndpoint, _ = raw["endpoint"].(string)
 		st.addHeadersText = marshalMapOrDefault(raw["headers"])
+		st.addRemoteOAuth, _ = raw["oauth"].(bool)
 		st.addTab = 1
 		return
 	}
@@ -2036,6 +2076,7 @@ func (st *servicesPageState) parsePasteJSON() {
 	}
 	st.addEndpoint, _ = entry["url"].(string)
 	st.addHeadersText = marshalMapOrDefault(entry["headers"])
+	st.addRemoteOAuth, _ = entry["oauth"].(bool)
 	if typ, _ := entry["type"].(string); strings.EqualFold(typ, "sse") {
 		st.addRemoteProto = i18n.T("services.add.proto_sse")
 	} else {
@@ -2302,7 +2343,11 @@ func (u *DesktopUI) syncServerTools(st *servicesPageState, server apitypes.Serve
 	st.syncingServerID = server.ID
 	u.RunAsync(func() error {
 		defer u.updateUI(func() { st.syncingServerID = "" })
-		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+		timeout := 35 * time.Second
+		if server.OAuth {
+			timeout = 305 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		imported, err := u.Client.SyncServer(ctx, server.ID)
 		if err != nil {
@@ -2444,17 +2489,26 @@ func (u *DesktopUI) submitAddMCPService(st *servicesPageState) {
 		payload.Transport = "http"
 		payload.Endpoint = ep
 		payload.Headers = headers
+		payload.OAuth = st.addRemoteOAuth
 	}
 
 	st.addBusy = true
 	u.RunAsync(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+		timeout := 40 * time.Second
+		if payload.OAuth {
+			timeout = 305 * time.Second
+			u.Notify(i18n.T("services.toast.oauth_opened", payload.Name))
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		check, err := u.Client.TestSource(ctx, payload)
 		if err != nil {
 			if apiclient.IsUnauthorized(err) {
 				u.updateUI(func() { st.addBusy = false })
 				return err
+			}
+			if payload.OAuth {
+				_ = u.RefreshSync()
 			}
 			u.updateUI(func() {
 				st.addBusy = false
@@ -2573,7 +2627,12 @@ func (u *DesktopUI) saveConnForm(st *servicesPageState, orig apitypes.Server, te
 	}
 	st.connBusy = true
 	u.RunAsync(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+		timeout := 35 * time.Second
+		if testSource && payload.OAuth {
+			timeout = 305 * time.Second
+			u.Notify(i18n.T("services.toast.oauth_opened", payload.Name))
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		var msg string
 		if testSource {
@@ -2668,12 +2727,17 @@ func (u *DesktopUI) saveConnJSON(st *servicesPageState, orig apitypes.Server) {
 }
 
 func (u *DesktopUI) probeServerConnection(st *servicesPageState, server apitypes.Server) {
-	if u.Client == nil || st.connBusy {
+	if u.Client == nil || st.connBusy || (u.market != nil && u.market.installingID == server.ID) {
 		return
 	}
 	st.connBusy = true
 	u.RunAsync(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		timeout := 30 * time.Second
+		if server.OAuth {
+			timeout = 305 * time.Second
+			u.Notify(i18n.T("services.toast.oauth_opened", server.Name))
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		check, err := u.Client.TestSource(ctx, server)
 		if err != nil {

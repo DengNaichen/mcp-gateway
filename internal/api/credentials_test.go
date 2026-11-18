@@ -65,3 +65,78 @@ func TestCredentialAPIIsWriteOnlyAndAdminOnly(t *testing.T) {
 		t.Fatal("clear did not remove credential")
 	}
 }
+
+func TestServerCredentialsReportsOAuthUpgradeAndClearsOAuth(t *testing.T) {
+	g := sharedGateway(t)
+	stdioNotion := registry.Server{
+		ID:        "notion",
+		Name:      "Notion",
+		Kind:      "mcp",
+		Transport: "stdio",
+		Command:   "npx",
+		Args:      []string{"-y", "@notionhq/notion-mcp-server"},
+		Env:       map[string]string{"NOTION_TOKEN": "${NOTION_TOKEN}"},
+		Enabled:   true,
+	}
+	if err := g.SaveServer(stdioNotion); err != nil {
+		t.Fatal(err)
+	}
+	handler := Handler(g)
+	request := func(method, path, token string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "http://localhost"+path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		return recorder
+	}
+
+	r := request(http.MethodGet, "/api/servers/notion/credentials", adminTestToken)
+	if r.Code != 200 {
+		t.Fatalf("get credentials: %d %s", r.Code, r.Body.String())
+	}
+	var status apitypes.ServerCredentials
+	if err := json.Unmarshal(r.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.OAuth != nil {
+		t.Fatalf("expected nil oauth status for stdio server, got %+v", status.OAuth)
+	}
+	if status.OAuthUpgrade == nil || status.OAuthUpgrade.Endpoint != "https://mcp.notion.com/mcp" {
+		t.Fatalf("expected Notion OAuthUpgrade, got %+v", status.OAuthUpgrade)
+	}
+
+	// Switch to remote OAuth server and verify OAuth status & DELETE /oauth.
+	oauthNotion := registry.Server{
+		ID:        "notion",
+		Name:      "Notion",
+		Kind:      "mcp",
+		Transport: "http",
+		Endpoint:  "https://mcp.notion.com/mcp",
+		OAuth:     true,
+		Enabled:   true,
+	}
+	if err := g.SaveServer(oauthNotion); err != nil {
+		t.Fatal(err)
+	}
+	r = request(http.MethodGet, "/api/servers/notion/credentials", adminTestToken)
+	if r.Code != 200 {
+		t.Fatalf("get oauth credentials: %d", r.Code)
+	}
+	status = apitypes.ServerCredentials{}
+	if err := json.Unmarshal(r.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.OAuth == nil || !status.OAuth.Enabled || status.OAuth.Authorized {
+		t.Fatalf("expected enabled=true authorized=false, got %+v", status.OAuth)
+	}
+	if status.OAuthUpgrade != nil {
+		t.Fatalf("expected nil OAuthUpgrade for remote OAuth server, got %+v", status.OAuthUpgrade)
+	}
+
+	if r := request(http.MethodDelete, "/api/servers/notion/oauth", readerTestToken); r.Code != http.StatusForbidden {
+		t.Fatalf("expected non-admin DELETE oauth forbidden, got %d", r.Code)
+	}
+	if r := request(http.MethodDelete, "/api/servers/notion/oauth", adminTestToken); r.Code != 200 {
+		t.Fatalf("expected admin DELETE oauth 200, got %d %s", r.Code, r.Body.String())
+	}
+}

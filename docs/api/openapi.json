@@ -1568,6 +1568,38 @@
         ],
         "type": "object"
       },
+      "OAuthStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "authorized": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "OAuthUpgradeInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "type": "string"
+          },
+          "homepage": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint",
+          "title"
+        ],
+        "type": "object"
+      },
       "ObservedRepo": {
         "additionalProperties": false,
         "properties": {
@@ -2421,6 +2453,26 @@
             "type": [
               "array",
               "null"
+            ]
+          },
+          "oauth": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "oauth_upgrade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthUpgradeInfo"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "persistent": {
@@ -4513,6 +4565,48 @@
           }
         },
         "summary": "Save or clear service credentials",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/servers/{id}/oauth": {
+      "delete": {
+        "description": "Management route: requires an admin principal in shared mode.",
+        "operationId": "delete_servers_by_id_oauth",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Clear a service's cached and saved OAuth session",
         "tags": [
           "servers"
         ]

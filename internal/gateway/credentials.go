@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"gatewaylab/internal/market"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/secrets"
 )
@@ -110,6 +111,55 @@ func (g *Gateway) ServerCredentials(id string) ([]CredentialStatus, error) {
 		return out, nil
 	}
 	return nil, invalid("未找到指定的上游服务")
+}
+
+type OAuthStatus struct {
+	Enabled    bool `json:"enabled,omitempty"`
+	Authorized bool `json:"authorized,omitempty"`
+}
+
+func (g *Gateway) ServerOAuthInfo(id string) (*OAuthStatus, *market.OAuthRemoteTarget, error) {
+	for _, s := range g.Snapshot().Servers {
+		if s.ID != id {
+			continue
+		}
+		var oauth *OAuthStatus
+		if s.Kind == "mcp" && s.Transport != "stdio" && s.OAuth {
+			oauth = &OAuthStatus{
+				Enabled:    true,
+				Authorized: g.upstream != nil && g.upstream.HasOAuthSession(s),
+			}
+		}
+		upgrade := market.MatchOAuthRemote(s)
+		return oauth, upgrade, nil
+	}
+	return nil, nil, invalid("未找到指定的上游服务")
+}
+
+func (g *Gateway) ClearServerOAuth(id string) error {
+	found := false
+	for _, s := range g.Snapshot().Servers {
+		if s.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return invalid("未找到指定的上游服务")
+	}
+	changes := map[string]string{}
+	for _, key := range g.credentials.Prefix("oauth/" + id + "/") {
+		changes[key] = ""
+	}
+	if len(changes) > 0 {
+		if err := g.credentials.Update(changes, nil); err != nil {
+			return err
+		}
+	}
+	if g.upstream != nil {
+		g.upstream.ForgetOAuth(id)
+	}
+	return nil
 }
 
 func (g *Gateway) DeleteServer(id string) error {

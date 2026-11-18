@@ -24,6 +24,59 @@ import (
 	"gatewaylab/internal/registry"
 )
 
+// OAuthRemoteTarget describes a curated remote MCP server with browser OAuth
+// that can replace a local stdio configuration for the same service.
+type OAuthRemoteTarget struct {
+	ID       string
+	Title    string
+	Endpoint string
+	Homepage string
+}
+
+var stdioOAuthPackageAliases = map[string][]string{
+	"notion":    {"@notionhq/notion-mcp-server", "notion-mcp-server"},
+	"linear":    {"@linear/mcp-server", "mcp-linear", "linear-mcp"},
+	"figma":     {"figma-developer-mcp", "@figma/mcp"},
+	"sentry":    {"@sentry/mcp-server", "mcp-server-sentry"},
+	"atlassian": {"mcp-atlassian"},
+	"supabase":  {"@supabase/mcp-server-supabase"},
+	"stripe":    {"@stripe/mcp"},
+	"vercel":    {"@vercel/mcp"},
+	"neon":      {"@neondatabase/mcp-server-neon"},
+}
+
+// MatchOAuthRemote returns the curated OAuth remote target if s is a stdio MCP
+// service that corresponds to an official OAuth-capable market service.
+func MatchOAuthRemote(s registry.Server) *OAuthRemoteTarget {
+	if s.Demo || s.Kind != "mcp" || s.Transport != "stdio" {
+		return nil
+	}
+	cmdAndArgs := strings.ToLower(strings.TrimSpace(s.Command + " " + strings.Join(s.Args, " ")))
+	for _, item := range curatedMarketServers() {
+		if item.Transport != "http" || !item.SignIn || item.Endpoint == "" {
+			continue
+		}
+		matched := strings.EqualFold(s.ID, item.ServerID)
+		if !matched {
+			for _, pkg := range stdioOAuthPackageAliases[item.ID] {
+				if strings.Contains(cmdAndArgs, pkg) {
+					matched = true
+					break
+				}
+			}
+		}
+		if matched {
+			return &OAuthRemoteTarget{
+				ID:       item.ID,
+				Title:    item.Title,
+				Endpoint: item.Endpoint,
+				Homepage: item.Homepage,
+			}
+		}
+	}
+	return nil
+}
+
 // MarketInput describes a single header, environment variable, or command argument
 // a user supplies when installing a server from the MCP market.
 type MarketInput struct {
@@ -243,7 +296,12 @@ func (g *Service) MarketServers(ctx context.Context, query string) MarketSearchR
 	var out []MarketServer
 	seenKeys := map[string]bool{}
 	markInstalled := func(m *MarketServer) {
-		if installedByID[m.ServerID] || installedByKey[marketServerKey(*m)] {
+		if existing, ok := installedByID[m.ServerID]; ok {
+			if existing.Transport == m.Transport || !m.SignIn {
+				m.Installed = true
+			}
+		}
+		if installedByKey[marketServerKey(*m)] {
 			m.Installed = true
 		}
 	}
@@ -284,15 +342,15 @@ func (g *Service) MarketServers(ctx context.Context, query string) MarketSearchR
 	return MarketSearchResult{Items: out, RegistryError: registryErr}
 }
 
-func (g *Service) installedServerLookup() (map[string]bool, map[string]bool) {
+func (g *Service) installedServerLookup() (map[string]registry.Server, map[string]bool) {
 	snap := g.Snapshot()
-	byID := make(map[string]bool, len(snap.Servers))
+	byID := make(map[string]registry.Server, len(snap.Servers))
 	byKey := make(map[string]bool, len(snap.Servers))
 	for _, s := range snap.Servers {
 		if s.Demo {
 			continue
 		}
-		byID[s.ID] = true
+		byID[s.ID] = s
 		if s.Transport == "stdio" {
 			byKey["stdio:"+s.Command+":"+strings.Join(s.Args, " ")] = true
 		} else if s.Endpoint != "" {

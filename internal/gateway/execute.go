@@ -25,7 +25,7 @@ func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
 	}
 	timeout := 30 * time.Second
 	if r.Servers[i].OAuth {
-		timeout = 120 * time.Second
+		timeout = 5 * time.Minute
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

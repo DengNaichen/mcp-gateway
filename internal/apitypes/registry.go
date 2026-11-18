@@ -124,7 +124,18 @@ type CredentialStatus struct {
 	Saved       bool   `json:"saved"`
 	Environment bool   `json:"environment"`
 }
+type OAuthStatus struct {
+	Enabled    bool `json:"enabled,omitempty"`
+	Authorized bool `json:"authorized,omitempty"`
+}
+type OAuthUpgradeInfo struct {
+	Title    string `json:"title"`
+	Endpoint string `json:"endpoint"`
+	Homepage string `json:"homepage,omitempty"`
+}
 type ServerCredentials struct {
-	Persistent  bool               `json:"persistent"`
-	Credentials []CredentialStatus `json:"credentials"`
+	Persistent   bool               `json:"persistent"`
+	Credentials  []CredentialStatus `json:"credentials"`
+	OAuth        *OAuthStatus       `json:"oauth,omitempty"`
+	OAuthUpgrade *OAuthUpgradeInfo  `json:"oauth_upgrade,omitempty"`
 }
