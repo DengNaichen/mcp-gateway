@@ -114,19 +114,17 @@ type DesktopUI struct {
 	pendingReplay        *playgroundReplayIntent
 
 	// Per-page UI state owned directly by this DesktopUI instance.
-	overview        *overviewLocalState
-	services        *servicesPageState
-	market          *marketPageState
-	catalog         *catalogPageState
-	repos           *reposPageState
-	playground      *playgroundState
-	logs            *logsPageState
-	settings        *settingsState
-	clients         *clientsPageState
-	hookModal       *hookSnippetModalState
-	serverCreds     map[string]apitypes.ServerCredentials
-	serverCredsSig  map[string]string
-	serverCredsBusy map[string]bool
+	overview   *overviewLocalState
+	services   *servicesPageState
+	market     *marketPageState
+	catalog    *catalogPageState
+	repos      *reposPageState
+	playground *playgroundState
+	logs       *logsPageState
+	settings   *settingsState
+	clients    *clientsPageState
+	hookModal  *hookSnippetModalState
+	credCache  serverCredentialCache
 
 	// Auth & bootstrap lifecycle state.
 	NeedsLogin bool
