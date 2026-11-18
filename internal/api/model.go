@@ -10,7 +10,7 @@ import (
 )
 
 func (g *server) verifyModelConnection(ctx context.Context, w http.ResponseWriter, p model.ModelProfile, apiKey string, clearKey bool) bool {
-	if err := g.gw.Model().VerifyModelConnection(ctx, p, apiKey, clearKey); err != nil {
+	if err := g.gw.VerifyModelConnection(ctx, p, apiKey, clearKey); err != nil {
 		if errors.Is(err, model.ErrInvalid) {
 			fail(w, err)
 			return false
