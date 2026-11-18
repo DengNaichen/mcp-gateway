@@ -22,8 +22,7 @@ const servicesToolPageSize = 30
 
 var nonServiceIDRe = regexp.MustCompile(`[^a-z0-9._-]+`)
 
-type servicesPageState struct {
-	// List view state
+type serviceListState struct {
 	subtab           int // 0=已接入, 1=市场
 	listQuery        string
 	listStatusFilter int // 0=全部, else serviceTriageBucket+1
@@ -31,31 +30,9 @@ type servicesPageState struct {
 	demoExpanded     bool
 	syncingServerID  string
 	toggleBusyID     string
+}
 
-	// Add / Import Service modal
-	showAddModal       bool
-	addTab             int // 0=MCP Stdio, 1=MCP HTTP/SSE, 2=OpenAPI 导入, 3=粘贴 JSON
-	addBusy            bool
-	addError           string
-	addID              string
-	addName            string
-	addDescription     string
-	addCommand         string
-	addArgsText        string
-	addEnvText         string
-	addWorkDir         string
-	addEndpoint        string
-	addRemoteProto     string // "MCP Streamable HTTP" or "MCP SSE (Streamable 兼容)"
-	addRemoteOAuth     bool
-	addHeadersText     string
-	addOpenAPIBaseURL  string
-	addOpenAPISpecURL  string
-	addOpenAPISpecText string
-	addOpenAPIOpsText  string
-	addOpenAPIHeaders  string
-	addPasteText       string
-
-	// Detail view state
+type serviceDetailState struct {
 	detailServerID    string
 	detailSubtab      int // 0=工具白名单, 1=连接与认证配置, 2=健康与维护概览
 	toolQuery         string
@@ -64,31 +41,122 @@ type servicesPageState struct {
 	toolBatchBusy     bool
 	confirmDeactivate bool
 	deactivateBusy    bool
+}
 
-	// Tool edit modal
-	showToolModal    bool
-	toolEditTab      int // 0=属性与 Schema, 1=完整 JSON
-	editingTool      *apitypes.Tool
-	toolEditDesc     string
-	toolEditActors   string
-	toolEditEnabled  bool
-	toolEditReadOnly bool
-	toolEditRawJSON  string
-	toolEditBusy     bool
-	toolEditError    string
+type serviceAddFormState struct {
+	show            bool
+	tab             int // 0=MCP Stdio, 1=MCP HTTP/SSE, 2=OpenAPI 导入, 3=粘贴 JSON
+	busy            bool
+	errMsg          string
+	id              string
+	name            string
+	description     string
+	command         string
+	argsText        string
+	envText         string
+	workDir         string
+	endpoint        string
+	remoteProto     string // "MCP Streamable HTTP" or "MCP SSE (Streamable 兼容)"
+	remoteOAuth     bool
+	headersText     string
+	openAPIBaseURL  string
+	openAPISpecURL  string
+	openAPISpecText string
+	openAPIOpsText  string
+	openAPIHeaders  string
+	pasteText       string
+}
 
-	// Add HTTP tool modal
-	showAddHTTPTool  bool
-	httpToolName     string
-	httpToolMethod   string
-	httpToolPath     string
-	httpToolDesc     string
-	httpToolReadOnly bool
-	httpToolSchema   string
-	httpToolBusy     bool
-	httpToolError    string
+func defaultServiceAddFormState() serviceAddFormState {
+	return serviceAddFormState{
+		argsText:       "[]",
+		envText:        "{}",
+		headersText:    "{}",
+		openAPIHeaders: "{}",
+		remoteProto:    "MCP Streamable HTTP",
+	}
+}
 
-	// Connection edit form
+func (s *serviceAddFormState) open(tab int) {
+	s.show = true
+	s.tab = tab
+	s.errMsg = ""
+	if s.argsText == "" {
+		s.argsText = "[]"
+	}
+	if s.envText == "" {
+		s.envText = "{}"
+	}
+	if s.headersText == "" {
+		s.headersText = "{}"
+	}
+	if s.openAPIHeaders == "" {
+		s.openAPIHeaders = "{}"
+	}
+	if s.remoteProto == "" {
+		s.remoteProto = "MCP Streamable HTTP"
+	}
+}
+
+func (s *serviceAddFormState) reset() {
+	show, tab := s.show, s.tab
+	*s = defaultServiceAddFormState()
+	s.show = show
+	s.tab = tab
+}
+
+type serviceToolEditState struct {
+	show     bool
+	tab      int // 0=属性与 Schema, 1=完整 JSON
+	tool     *apitypes.Tool
+	desc     string
+	actors   string
+	enabled  bool
+	readOnly bool
+	rawJSON  string
+	busy     bool
+	errMsg   string
+}
+
+func (s *serviceToolEditState) open(t apitypes.Tool) {
+	copyTool := t
+	*s = serviceToolEditState{
+		show:     true,
+		tool:     &copyTool,
+		desc:     t.Description,
+		actors:   strings.Join(t.Actors, ", "),
+		enabled:  t.Enabled,
+		readOnly: t.ReadOnly,
+		rawJSON:  PrettyJSON(t),
+	}
+}
+
+type serviceHTTPToolState struct {
+	show     bool
+	name     string
+	method   string
+	path     string
+	desc     string
+	readOnly bool
+	schema   string
+	busy     bool
+	errMsg   string
+}
+
+func defaultServiceHTTPToolState() serviceHTTPToolState {
+	return serviceHTTPToolState{
+		method:   "GET",
+		readOnly: true,
+		schema:   "{\n  \"type\": \"object\",\n  \"properties\": {},\n  \"required\": [],\n  \"additionalProperties\": false\n}",
+	}
+}
+
+func (s *serviceHTTPToolState) open() {
+	*s = defaultServiceHTTPToolState()
+	s.show = true
+}
+
+type serviceConnFormState struct {
 	connHydratedID       string
 	connMode             int // 0=表单视图, 1=JSON 定义
 	connName             string
@@ -105,13 +173,9 @@ type servicesPageState struct {
 	connRawJSON          string
 	connBusy             bool
 	connError            string
-	credentialServerID   string
-	credentialState      apitypes.ServerCredentials
-	credentialValues     map[string]string
-	credentialBusy       bool
-	credentialError      string
+}
 
-	// Maintenance & health subtab
+type serviceMaintState struct {
 	maintLoading          bool
 	maintError            string
 	maintBusy             bool
@@ -129,65 +193,42 @@ type servicesPageState struct {
 	selectedRunID         string
 }
 
+func defaultServiceMaintState() serviceMaintState {
+	return serviceMaintState{
+		maintIntervalStr: "60",
+		maintTimeoutStr:  "900",
+		maintAutoPublish: true,
+	}
+}
+
+type servicesPageState struct {
+	serviceListState
+	serviceDetailState
+	serviceConnFormState
+	serviceMaintState
+
+	add      serviceAddFormState
+	toolEdit serviceToolEditState
+	httpTool serviceHTTPToolState
+
+	// Kept directly on servicesPageState because sibling credentials files
+	// construct &servicesPageState{credentialServerID: ...} and access these directly.
+	credentialServerID string
+	credentialState    apitypes.ServerCredentials
+	credentialValues   map[string]string
+	credentialBusy     bool
+	credentialError    string
+}
+
 func (u *DesktopUI) servicesState() *servicesPageState {
 	if u.services == nil {
 		u.services = &servicesPageState{
-			addArgsText:       "[]",
-			addEnvText:        "{}",
-			addHeadersText:    "{}",
-			addOpenAPIHeaders: "{}",
-			addRemoteProto:    "MCP Streamable HTTP",
-			httpToolMethod:    "GET",
-			httpToolReadOnly:  true,
-			httpToolSchema:    "{\n  \"type\": \"object\",\n  \"properties\": {},\n  \"required\": [],\n  \"additionalProperties\": false\n}",
-			maintIntervalStr:  "60",
-			maintTimeoutStr:   "900",
-			maintAutoPublish:  true,
+			serviceMaintState: defaultServiceMaintState(),
+			add:               defaultServiceAddFormState(),
+			httpTool:          defaultServiceHTTPToolState(),
 		}
 	}
 	return u.services
-}
-
-func (st *servicesPageState) openAddModal(tab int) {
-	st.showAddModal = true
-	st.addTab = tab
-	st.addError = ""
-	if st.addArgsText == "" {
-		st.addArgsText = "[]"
-	}
-	if st.addEnvText == "" {
-		st.addEnvText = "{}"
-	}
-	if st.addHeadersText == "" {
-		st.addHeadersText = "{}"
-	}
-	if st.addOpenAPIHeaders == "" {
-		st.addOpenAPIHeaders = "{}"
-	}
-	if st.addRemoteProto == "" {
-		st.addRemoteProto = "MCP Streamable HTTP"
-	}
-}
-
-func (st *servicesPageState) resetAddFields() {
-	st.addID = ""
-	st.addName = ""
-	st.addDescription = ""
-	st.addCommand = ""
-	st.addArgsText = "[]"
-	st.addEnvText = "{}"
-	st.addWorkDir = ""
-	st.addEndpoint = ""
-	st.addRemoteProto = "MCP Streamable HTTP"
-	st.addRemoteOAuth = false
-	st.addHeadersText = "{}"
-	st.addOpenAPIBaseURL = ""
-	st.addOpenAPISpecURL = ""
-	st.addOpenAPISpecText = ""
-	st.addOpenAPIOpsText = ""
-	st.addOpenAPIHeaders = "{}"
-	st.addPasteText = ""
-	st.addError = ""
 }
 
 func serviceProtocolTag(s apitypes.Server) string {
@@ -219,7 +260,7 @@ func (u *DesktopUI) renderServices(c *ui.Context) {
 
 	// Consume cross-page trigger to open Add Service modal.
 	if u.consumePendingAddService() {
-		st.openAddModal(0)
+		st.add.open(0)
 	}
 
 	var selectedServer *apitypes.Server
@@ -241,13 +282,13 @@ func (u *DesktopUI) renderServices(c *ui.Context) {
 		u.renderServiceList(c, st)
 	}
 
-	if st.showAddModal {
+	if st.add.show {
 		u.renderAddServiceModal(c, st)
 	}
-	if st.showToolModal && st.editingTool != nil {
+	if st.toolEdit.show && st.toolEdit.tool != nil {
 		u.renderToolEditModal(c, st)
 	}
-	if st.showAddHTTPTool && selectedServer != nil {
+	if st.httpTool.show && selectedServer != nil {
 		u.renderAddHTTPToolModal(c, st, *selectedServer)
 	}
 }
@@ -316,20 +357,20 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 			}
 			ui.Row(c).Gap(1).AlignItems(ui.Center).Shrink(0).Children(func() {
 				if SailPrimaryButton(c.Key("svc-btn-add"), i18n.T("services.action.add")).Clicked() {
-					st.openAddModal(0)
+					st.add.open(0)
 				}
 				SailPrimaryButton(c.Key("svc-btn-add-more"), "▾").
 					Padding(0, 8).
 					Label(i18n.T("services.action.more_add")).
 					PopoverMenuButton(func(menu *ui.Menu) {
 						if menu.Item(i18n.T("services.add.menu.manual")).Chosen() {
-							st.openAddModal(0)
+							st.add.open(0)
 						}
 						if menu.Item(i18n.T("services.add.menu.paste_json")).Chosen() {
-							st.openAddModal(3)
+							st.add.open(3)
 						}
 						if menu.Item(i18n.T("services.add.menu.openapi")).Chosen() {
-							st.openAddModal(2)
+							st.add.open(2)
 						}
 						if st.subtab == 0 && menu.Item(i18n.T("services.add.menu.market")).Chosen() {
 							st.subtab = 1
@@ -348,7 +389,7 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 	SailFlushCard(c, func() {
 		if len(rows) == 0 {
 			ui.Column(c).FillWidth().Padding(20).Children(func() {
-				SailEmptyState(c, i18n.T("services.empty.title"), "", i18n.T("services.action.add"), func() { st.openAddModal(0) })
+				SailEmptyState(c, i18n.T("services.empty.title"), "", i18n.T("services.action.add"), func() { st.add.open(0) })
 			})
 			return
 		}
@@ -792,7 +833,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 					Padding(5, 11).
 					FontSize(12.5).
 					Clicked() {
-					st.openAddHTTPToolModal()
+					st.httpTool.open()
 				}
 			}
 
@@ -1053,7 +1094,7 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 							i18n.T("services.tools.empty"),
 							"",
 							i18n.T("services.detail.add_http_tool"),
-							func() { st.openAddHTTPToolModal() },
+							func() { st.httpTool.open() },
 						)
 					} else {
 						SailEmptyState(
@@ -1124,7 +1165,7 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 							ui.Text(c, t.Name).Font("monospace").FontSize(13).FontWeight(600).TextColor(SailInkStrong).SingleLine()
 						})
 						if nameBtn.Clicked() {
-							st.openToolEditModal(t)
+							st.toolEdit.open(t)
 						}
 						if !t.ReadOnly {
 							SailBadge(c, i18n.T("common.write_operation"), ToneWarning)
@@ -1145,7 +1186,7 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 						}
 					}
 					if SailSmallButton(c.Key("tool-edit-"+t.ID), i18n.T("common.edit")).Clicked() {
-						st.openToolEditModal(t)
+						st.toolEdit.open(t)
 					}
 				})
 			})
@@ -1177,7 +1218,7 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 
 // --- Detail Subtab 1: Connection & Auth Config ---
 
-func (st *servicesPageState) hydrateConnForm(server apitypes.Server) {
+func (st *serviceConnFormState) hydrateConnForm(server apitypes.Server) {
 	st.connHydratedID = server.ID
 	st.connName = server.Name
 	st.connDesc = server.Description
@@ -1377,7 +1418,7 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 	}
 }
 
-func (st *servicesPageState) buildServerFromConnForm(orig apitypes.Server) (apitypes.Server, error) {
+func (st *serviceConnFormState) buildServerFromConnForm(orig apitypes.Server) (apitypes.Server, error) {
 	out := orig
 	out.Name = strings.TrimSpace(st.connName)
 	out.Description = strings.TrimSpace(st.connDesc)
@@ -1726,7 +1767,7 @@ func maintenanceStatusLabel(status string) string {
 	}
 }
 
-func (st *servicesPageState) hydrateMaintSource(ov apitypes.MaintenanceStatus, server apitypes.Server) {
+func (st *serviceMaintState) hydrateMaintSource(ov apitypes.MaintenanceStatus, server apitypes.Server) {
 	st.maintHydratedServerID = server.ID
 	var found *apitypes.MaintenanceSource
 	for i := range ov.Sources {
@@ -1773,7 +1814,7 @@ func (st *servicesPageState) hydrateMaintSource(ov apitypes.MaintenanceStatus, s
 // --- Add / Import Service Modal ---
 
 func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) {
-	ui.DialogBase(c.Key("add-service-dialog"), &st.showAddModal, func(backdrop, panel ui.Element) {
+	ui.DialogBase(c.Key("add-service-dialog"), &st.add.show, func(backdrop, panel ui.Element) {
 		backdrop.Background(SailModalBackdrop)
 		panel.Width(680).
 			MaxWidthPercent(92).
@@ -1789,46 +1830,46 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Text(c, i18n.T("services.action.add")).FontSize(17).Bold().TextColor(SailInkStrong)
 			if SailSmallButton(c.Key("add-modal-close"), i18n.T("common.close")).Clicked() {
-				st.showAddModal = false
+				st.add.show = false
 			}
 		})
 
 		ui.Segmented(
 			c.Key("add-svc-tabs"),
-			&st.addTab,
+			&st.add.tab,
 			i18n.T("services.add.tab_stdio"),
 			i18n.T("services.add.tab_remote"),
 			i18n.T("services.add.tab_openapi"),
 			i18n.T("services.add.tab_paste"),
 		).FillEqually()
 
-		if st.addError != "" {
-			SailAlertBox(c, ToneDanger, i18n.T("services.add.error_title"), st.addError)
+		if st.add.errMsg != "" {
+			SailAlertBox(c, ToneDanger, i18n.T("services.add.error_title"), st.add.errMsg)
 		}
 
 		// Scrollable form body
 		ui.Scroll(c.Key("add-svc-scroll")).Grow(1).FillWidth().MaxHeight(460).Gap(12).Children(func() {
-			switch st.addTab {
+			switch st.add.tab {
 			case 0: // MCP Stdio
 				u.renderAddCommonIdentityFields(c, st, "stdio")
 				ui.Row(c).FillWidth().Gap(12).Children(func() {
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
 						ui.Text(c, i18n.T("services.field.command_required")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-						ui.TextInput(c.Key("add-cmd"), &st.addCommand).
+						ui.TextInput(c.Key("add-cmd"), &st.add.command).
 							Font("monospace").
 							Placeholder(i18n.T("services.add.command_placeholder")).
 							FillWidth()
 					})
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
 						ui.Text(c, i18n.T("services.field.workdir")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-						ui.TextInput(c.Key("add-cwd"), &st.addWorkDir).
+						ui.TextInput(c.Key("add-cwd"), &st.add.workDir).
 							Font("monospace").
 							FillWidth()
 					})
 				})
 				ui.Column(c).FillWidth().Gap(5).Children(func() {
 					ui.Text(c, i18n.T("services.field.args")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-					ui.TextArea(c.Key("add-args"), &st.addArgsText).
+					ui.TextArea(c.Key("add-args"), &st.add.argsText).
 						Font("monospace").
 						FontSize(12).
 						Placeholder("[\"-y\", \"@modelcontextprotocol/server-filesystem\", \"/tmp\"]").
@@ -1840,7 +1881,7 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 						ui.Text(c, i18n.T("services.field.env")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						ui.Text(c, i18n.T("services.add.env_only")).FontSize(11.5).TextColor(SailInkMuted)
 					})
-					ui.TextArea(c.Key("add-env"), &st.addEnvText).
+					ui.TextArea(c.Key("add-env"), &st.add.envText).
 						Font("monospace").
 						FontSize(12).
 						Placeholder("{\"GITHUB_TOKEN\": \"${GITHUB_TOKEN}\"}").
@@ -1853,7 +1894,7 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 				ui.Row(c).FillWidth().Gap(12).Children(func() {
 					ui.Column(c).Grow(2).MinWidth(0).Gap(5).Children(func() {
 						ui.Text(c, i18n.T("services.field.endpoint_required")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-						SailTextInput(c.Key("add-url"), &st.addEndpoint).
+						SailTextInput(c.Key("add-url"), &st.add.endpoint).
 							Font("monospace").
 							Placeholder("https://api.example.com/mcp").
 							FillWidth()
@@ -1862,7 +1903,7 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 						ui.Text(c, i18n.T("common.protocol")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						SailSelect(
 							c.Key("add-remote-proto"),
-							&st.addRemoteProto,
+							&st.add.remoteProto,
 							[]string{"MCP Streamable HTTP", i18n.T("services.add.proto_sse")},
 						).FillWidth()
 					})
@@ -1872,7 +1913,7 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 						ui.Text(c, i18n.T("services.field.headers")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						ui.Text(c, i18n.T("services.add.env_only")).FontSize(11.5).TextColor(SailInkMuted)
 					})
-					ui.TextArea(c.Key("add-headers"), &st.addHeadersText).
+					ui.TextArea(c.Key("add-headers"), &st.add.headersText).
 						Font("monospace").
 						FontSize(12).
 						Placeholder("{\"Authorization\": \"Bearer ${SERVICE_TOKEN}\"}").
@@ -1880,8 +1921,8 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 						FillWidth()
 				})
 				ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Wrap().Children(func() {
-					ui.Checkbox(c.Key("add-remote-oauth"), &st.addRemoteOAuth, i18n.T("services.add.remote_oauth"))
-					if st.addRemoteOAuth {
+					ui.Checkbox(c.Key("add-remote-oauth"), &st.add.remoteOAuth, i18n.T("services.add.remote_oauth"))
+					if st.add.remoteOAuth {
 						ui.Text(c, i18n.T("services.add.remote_oauth_hint")).FontSize(11.5).TextColor(SailInkMuted)
 					}
 				})
@@ -1891,14 +1932,14 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 				ui.Row(c).FillWidth().Gap(12).Children(func() {
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
 						ui.Text(c, "API Base URL *").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-						ui.TextInput(c.Key("add-oapi-base"), &st.addOpenAPIBaseURL).
+						ui.TextInput(c.Key("add-oapi-base"), &st.add.openAPIBaseURL).
 							Font("monospace").
 							Placeholder("https://api.internal.example/v1").
 							FillWidth()
 					})
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
 						ui.Text(c, i18n.T("services.add.doc_url")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-						ui.TextInput(c.Key("add-oapi-url"), &st.addOpenAPISpecURL).
+						ui.TextInput(c.Key("add-oapi-url"), &st.add.openAPISpecURL).
 							Font("monospace").
 							Placeholder("https://api.internal.example/openapi.json").
 							FillWidth()
@@ -1906,7 +1947,7 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 				})
 				ui.Column(c).FillWidth().Gap(5).Children(func() {
 					ui.Text(c, "OpenAPI JSON / YAML").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-					ui.TextArea(c.Key("add-oapi-spec"), &st.addOpenAPISpecText).
+					ui.TextArea(c.Key("add-oapi-spec"), &st.add.openAPISpecText).
 						Font("monospace").
 						FontSize(12).
 						Placeholder("openapi: 3.0.3 ...").
@@ -1916,14 +1957,14 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 				ui.Row(c).FillWidth().Gap(12).Children(func() {
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
 						ui.Text(c, i18n.T("services.add.filter_operations")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-						ui.TextInput(c.Key("add-oapi-ops"), &st.addOpenAPIOpsText).
+						ui.TextInput(c.Key("add-oapi-ops"), &st.add.openAPIOpsText).
 							Font("monospace").
 							Placeholder(i18n.T("services.add.filter_placeholder")).
 							FillWidth()
 					})
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
 						ui.Text(c, i18n.T("services.field.headers")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-						ui.TextInput(c.Key("add-oapi-hdrs"), &st.addOpenAPIHeaders).
+						ui.TextInput(c.Key("add-oapi-hdrs"), &st.add.openAPIHeaders).
 							Font("monospace").
 							Placeholder("{\"Authorization\": \"Bearer ${API_TOKEN}\"}").
 							FillWidth()
@@ -1933,7 +1974,7 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 			case 3: // Paste mcpServers JSON
 				ui.Column(c).FillWidth().Gap(6).Children(func() {
 					ui.Text(c, i18n.T("services.add.paste_label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-					ui.TextArea(c.Key("add-paste-json"), &st.addPasteText).
+					ui.TextArea(c.Key("add-paste-json"), &st.add.pasteText).
 						Font("monospace").
 						FontSize(12).
 						Placeholder("{\n  \"mcpServers\": {\n    \"github\": {\n      \"type\": \"http\",\n      \"url\": \"https://api.githubcopilot.com/mcp/\"\n    }\n  }\n}").
@@ -1946,35 +1987,35 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 		// Footer buttons
 		ui.Row(c).FillWidth().Padding(8, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(SailBorder).
 			AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			if SailButton(c.Key("add-reset"), i18n.T("services.add.clear_form")).Disabled(st.addBusy).Clicked() {
-				st.resetAddFields()
+			if SailButton(c.Key("add-reset"), i18n.T("services.add.clear_form")).Disabled(st.add.busy).Clicked() {
+				st.add.reset()
 			}
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				if SailButton(c.Key("add-cancel"), i18n.T("common.cancel")).Disabled(st.addBusy).Clicked() {
-					st.showAddModal = false
+				if SailButton(c.Key("add-cancel"), i18n.T("common.cancel")).Disabled(st.add.busy).Clicked() {
+					st.add.show = false
 				}
-				switch st.addTab {
+				switch st.add.tab {
 				case 0, 1:
 					lbl := i18n.T("services.add.connect_and_read")
-					if st.addBusy {
+					if st.add.busy {
 						lbl = i18n.T("common.connecting")
 					}
-					if SailPrimaryButton(c.Key("add-submit-mcp"), lbl).Disabled(st.addBusy).Clicked() {
+					if SailPrimaryButton(c.Key("add-submit-mcp"), lbl).Disabled(st.add.busy).Clicked() {
 						u.submitAddMCPService(st)
 					}
 				case 2:
 					lbl := i18n.T("services.add.import_openapi")
-					if st.addBusy {
+					if st.add.busy {
 						lbl = i18n.T("common.importing")
 					}
-					if SailPrimaryButton(c.Key("add-submit-oapi"), lbl).Disabled(st.addBusy).Clicked() {
+					if SailPrimaryButton(c.Key("add-submit-oapi"), lbl).Disabled(st.add.busy).Clicked() {
 						u.submitAddOpenAPIService(st)
 					}
 				case 3:
 					if SailPrimaryButton(c.Key("add-parse-paste"), i18n.T("services.add.parse_into_form")).
-						Disabled(strings.TrimSpace(st.addPasteText) == "").
+						Disabled(strings.TrimSpace(st.add.pasteText) == "").
 						Clicked() {
-						st.parsePasteJSON()
+						st.add.parsePasteJSON()
 					}
 				}
 			})
@@ -1986,11 +2027,11 @@ func (u *DesktopUI) renderAddCommonIdentityFields(c *ui.Context, st *servicesPag
 	ui.Row(c).FillWidth().Gap(12).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
 			ui.Text(c, i18n.T("services.field.name_required")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-			ui.TextInput(c.Key("add-name-"+keyPrefix), &st.addName).FillWidth()
+			ui.TextInput(c.Key("add-name-"+keyPrefix), &st.add.name).FillWidth()
 		})
 		ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
 			ui.Text(c, i18n.T("services.field.service_id")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-			ui.TextInput(c.Key("add-id-"+keyPrefix), &st.addID).
+			ui.TextInput(c.Key("add-id-"+keyPrefix), &st.add.id).
 				Font("monospace").
 				Placeholder(i18n.T("services.add.id_placeholder")).
 				FillWidth()
@@ -1998,48 +2039,48 @@ func (u *DesktopUI) renderAddCommonIdentityFields(c *ui.Context, st *servicesPag
 	})
 	ui.Column(c).FillWidth().Gap(5).Children(func() {
 		ui.Text(c, i18n.T("services.field.description")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-		ui.TextInput(c.Key("add-desc-"+keyPrefix), &st.addDescription).FillWidth()
+		ui.TextInput(c.Key("add-desc-"+keyPrefix), &st.add.description).FillWidth()
 	})
 }
 
-func (st *servicesPageState) parsePasteJSON() {
-	st.addError = ""
+func (s *serviceAddFormState) parsePasteJSON() {
+	s.errMsg = ""
 	var raw map[string]any
-	if err := json.Unmarshal([]byte(st.addPasteText), &raw); err != nil {
-		st.addError = i18n.T("services.err.json_parse", err.Error())
+	if err := json.Unmarshal([]byte(s.pasteText), &raw); err != nil {
+		s.errMsg = i18n.T("services.err.json_parse", err.Error())
 		return
 	}
 
 	// Gateway Server format
 	if kind, ok := raw["kind"].(string); ok && kind != "" {
 		if id, _ := raw["id"].(string); id != "" {
-			st.addID = id
+			s.id = id
 		}
 		if name, _ := raw["name"].(string); name != "" {
-			st.addName = name
+			s.name = name
 		} else {
-			st.addName = st.addID
+			s.name = s.id
 		}
-		st.addDescription, _ = raw["description"].(string)
+		s.description, _ = raw["description"].(string)
 		transport, _ := raw["transport"].(string)
 		if kind == "http" {
-			st.addOpenAPIBaseURL, _ = raw["endpoint"].(string)
-			st.addOpenAPIHeaders = marshalMapOrDefault(raw["headers"])
-			st.addTab = 2
+			s.openAPIBaseURL, _ = raw["endpoint"].(string)
+			s.openAPIHeaders = marshalMapOrDefault(raw["headers"])
+			s.tab = 2
 			return
 		}
 		if transport == "stdio" {
-			st.addCommand, _ = raw["command"].(string)
-			st.addWorkDir, _ = raw["work_dir"].(string)
-			st.addArgsText = marshalSliceOrDefault(raw["args"])
-			st.addEnvText = marshalMapOrDefault(raw["env"])
-			st.addTab = 0
+			s.command, _ = raw["command"].(string)
+			s.workDir, _ = raw["work_dir"].(string)
+			s.argsText = marshalSliceOrDefault(raw["args"])
+			s.envText = marshalMapOrDefault(raw["env"])
+			s.tab = 0
 			return
 		}
-		st.addEndpoint, _ = raw["endpoint"].(string)
-		st.addHeadersText = marshalMapOrDefault(raw["headers"])
-		st.addRemoteOAuth, _ = raw["oauth"].(bool)
-		st.addTab = 1
+		s.endpoint, _ = raw["endpoint"].(string)
+		s.headersText = marshalMapOrDefault(raw["headers"])
+		s.remoteOAuth, _ = raw["oauth"].(bool)
+		s.tab = 1
 		return
 	}
 
@@ -2048,7 +2089,7 @@ func (st *servicesPageState) parsePasteJSON() {
 	var entry map[string]any
 	if mcpServers, ok := raw["mcpServers"].(map[string]any); ok {
 		if len(mcpServers) != 1 {
-			st.addError = i18n.T("services.add.paste_single")
+			s.errMsg = i18n.T("services.add.paste_single")
 			return
 		}
 		for k, v := range mcpServers {
@@ -2060,49 +2101,36 @@ func (st *servicesPageState) parsePasteJSON() {
 		entry = raw
 	}
 	if entry == nil {
-		st.addError = i18n.T("services.add.paste_unrecognized")
+		s.errMsg = i18n.T("services.add.paste_unrecognized")
 		return
 	}
 
-	st.addName = srvName
-	st.addID = slugServiceID(srvName, "mcp")
+	s.name = srvName
+	s.id = slugServiceID(srvName, "mcp")
 	if cmd, _ := entry["command"].(string); cmd != "" {
-		st.addCommand = cmd
-		st.addWorkDir, _ = entry["cwd"].(string)
-		st.addArgsText = marshalSliceOrDefault(entry["args"])
-		st.addEnvText = marshalMapOrDefault(entry["env"])
-		st.addTab = 0
+		s.command = cmd
+		s.workDir, _ = entry["cwd"].(string)
+		s.argsText = marshalSliceOrDefault(entry["args"])
+		s.envText = marshalMapOrDefault(entry["env"])
+		s.tab = 0
 		return
 	}
-	st.addEndpoint, _ = entry["url"].(string)
-	st.addHeadersText = marshalMapOrDefault(entry["headers"])
-	st.addRemoteOAuth, _ = entry["oauth"].(bool)
+	s.endpoint, _ = entry["url"].(string)
+	s.headersText = marshalMapOrDefault(entry["headers"])
+	s.remoteOAuth, _ = entry["oauth"].(bool)
 	if typ, _ := entry["type"].(string); strings.EqualFold(typ, "sse") {
-		st.addRemoteProto = i18n.T("services.add.proto_sse")
+		s.remoteProto = i18n.T("services.add.proto_sse")
 	} else {
-		st.addRemoteProto = "MCP Streamable HTTP"
+		s.remoteProto = "MCP Streamable HTTP"
 	}
-	st.addTab = 1
+	s.tab = 1
 }
 
 // --- Tool Edit Modal & Add HTTP Tool Modal ---
 
-func (st *servicesPageState) openToolEditModal(t apitypes.Tool) {
-	copyTool := t
-	st.editingTool = &copyTool
-	st.showToolModal = true
-	st.toolEditTab = 0
-	st.toolEditDesc = t.Description
-	st.toolEditEnabled = t.Enabled
-	st.toolEditReadOnly = t.ReadOnly
-	st.toolEditActors = strings.Join(t.Actors, ", ")
-	st.toolEditRawJSON = PrettyJSON(t)
-	st.toolEditError = ""
-}
-
 func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
-	t := *st.editingTool
-	ui.DialogBase(c.Key("tool-edit-dialog-"+t.ID), &st.showToolModal, func(backdrop, panel ui.Element) {
+	t := *st.toolEdit.tool
+	ui.DialogBase(c.Key("tool-edit-dialog-"+t.ID), &st.toolEdit.show, func(backdrop, panel ui.Element) {
 		backdrop.Background(SailModalBackdrop)
 		panel.Width(640).
 			MaxWidthPercent(92).
@@ -2120,28 +2148,28 @@ func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 				ui.Text(c, t.ID).Font("monospace").FontSize(12).TextColor(SailInkMuted)
 			})
 			if SailSmallButton(c.Key("tool-modal-close"), i18n.T("common.close")).Clicked() {
-				st.showToolModal = false
+				st.toolEdit.show = false
 			}
 		})
 
-		if ui.Segmented(c.Key("tool-edit-tabs"), &st.toolEditTab, i18n.T("services.tool.tab_props"), i18n.T("services.tool.tab_json")).Changed() {
-			if st.toolEditTab == 1 {
+		if ui.Segmented(c.Key("tool-edit-tabs"), &st.toolEdit.tab, i18n.T("services.tool.tab_props"), i18n.T("services.tool.tab_json")).Changed() {
+			if st.toolEdit.tab == 1 {
 				updated := t
-				updated.Description = st.toolEditDesc
-				updated.Enabled = st.toolEditEnabled
-				updated.ReadOnly = st.toolEditReadOnly
-				updated.Actors = splitCommaList(st.toolEditActors)
-				st.toolEditRawJSON = PrettyJSON(updated)
+				updated.Description = st.toolEdit.desc
+				updated.Enabled = st.toolEdit.enabled
+				updated.ReadOnly = st.toolEdit.readOnly
+				updated.Actors = splitCommaList(st.toolEdit.actors)
+				st.toolEdit.rawJSON = PrettyJSON(updated)
 			}
 		}
 
-		if st.toolEditError != "" {
-			SailAlertBox(c, ToneDanger, i18n.T("services.tool.error_title"), st.toolEditError)
+		if st.toolEdit.errMsg != "" {
+			SailAlertBox(c, ToneDanger, i18n.T("services.tool.error_title"), st.toolEdit.errMsg)
 		}
 
 		ui.Scroll(c.Key("tool-edit-scroll")).Grow(1).FillWidth().MaxHeight(460).Gap(14).Children(func() {
-			if st.toolEditTab == 1 {
-				ui.TextArea(c.Key("tool-raw-json"), &st.toolEditRawJSON).
+			if st.toolEdit.tab == 1 {
+				ui.TextArea(c.Key("tool-raw-json"), &st.toolEdit.rawJSON).
 					Font("monospace").
 					FontSize(12).
 					Height(340).
@@ -2151,13 +2179,13 @@ func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 					subtlePanel(c, 160, 1, func() {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 							ui.Text(c, i18n.T("services.tool.open_section")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-							ui.Switch(c.Key("tool-edit-enabled"), &st.toolEditEnabled).Label(i18n.T("services.field.open_tools"))
+							ui.Switch(c.Key("tool-edit-enabled"), &st.toolEdit.enabled).Label(i18n.T("services.field.open_tools"))
 						})
 					})
 					subtlePanel(c, 160, 1, func() {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 							ui.Text(c, i18n.T("services.tool.read_only_section")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-							ui.Switch(c.Key("tool-edit-ro"), &st.toolEditReadOnly).Label(i18n.T("services.tool.read_only_label"))
+							ui.Switch(c.Key("tool-edit-ro"), &st.toolEdit.readOnly).Label(i18n.T("services.tool.read_only_label"))
 						})
 					})
 				})
@@ -2166,10 +2194,10 @@ func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 					SailKeyValueRow(c, i18n.T("services.tool.http_endpoint"), t.Method+" "+t.Path, true)
 				}
 
-				if strings.TrimSpace(st.toolEditDesc) != "" {
+				if strings.TrimSpace(st.toolEdit.desc) != "" {
 					SailSubtleCard(c, func() {
 						ui.Text(c, i18n.T("services.tool.preview")).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
-						SailDescriptionDetail(c, "modal-desc-"+t.ID, st.toolEditDesc)
+						SailDescriptionDetail(c, "modal-desc-"+t.ID, st.toolEdit.desc)
 					})
 				}
 
@@ -2178,14 +2206,14 @@ func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 						FontSize(12.5).
 						FontWeight(600).
 						TextColor(SailInkBody)
-					ui.TextArea(c.Key("tool-edit-desc"), &st.toolEditDesc).
+					ui.TextArea(c.Key("tool-edit-desc"), &st.toolEdit.desc).
 						Height(88).
 						FillWidth()
 				})
 
 				ui.Column(c).FillWidth().Gap(5).Children(func() {
 					ui.Text(c, i18n.T("services.tool.actors")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-					ui.TextInput(c.Key("tool-edit-actors"), &st.toolEditActors).
+					ui.TextInput(c.Key("tool-edit-actors"), &st.toolEdit.actors).
 						Font("monospace").
 						Placeholder("developer, observer").
 						FillWidth()
@@ -2199,33 +2227,22 @@ func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 
 		ui.Row(c).FillWidth().Padding(8, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(SailBorder).
 			AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailButton(c.Key("tool-edit-cancel"), i18n.T("common.cancel")).Disabled(st.toolEditBusy).Clicked() {
-				st.showToolModal = false
+			if SailButton(c.Key("tool-edit-cancel"), i18n.T("common.cancel")).Disabled(st.toolEdit.busy).Clicked() {
+				st.toolEdit.show = false
 			}
 			lbl := i18n.T("services.tool.save")
-			if st.toolEditBusy {
+			if st.toolEdit.busy {
 				lbl = i18n.T("common.saving")
 			}
-			if SailPrimaryButton(c.Key("tool-edit-save"), lbl).Disabled(st.toolEditBusy).Clicked() {
+			if SailPrimaryButton(c.Key("tool-edit-save"), lbl).Disabled(st.toolEdit.busy).Clicked() {
 				u.saveEditedTool(st, t)
 			}
 		})
 	})
 }
 
-func (st *servicesPageState) openAddHTTPToolModal() {
-	st.showAddHTTPTool = true
-	st.httpToolName = ""
-	st.httpToolMethod = "GET"
-	st.httpToolPath = ""
-	st.httpToolDesc = ""
-	st.httpToolReadOnly = true
-	st.httpToolSchema = "{\n  \"type\": \"object\",\n  \"properties\": {},\n  \"required\": [],\n  \"additionalProperties\": false\n}"
-	st.httpToolError = ""
-}
-
 func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState, server apitypes.Server) {
-	ui.DialogBase(c.Key("add-http-tool-dialog-"+server.ID), &st.showAddHTTPTool, func(backdrop, panel ui.Element) {
+	ui.DialogBase(c.Key("add-http-tool-dialog-"+server.ID), &st.httpTool.show, func(backdrop, panel ui.Element) {
 		backdrop.Background(SailModalBackdrop)
 		panel.Width(600).
 			MaxWidthPercent(92).
@@ -2240,36 +2257,36 @@ func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState,
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Text(c, i18n.T("services.detail.add_http_tool")).FontSize(17).Bold().TextColor(SailInkStrong)
 			if SailSmallButton(c.Key("http-tool-close"), i18n.T("common.close")).Clicked() {
-				st.showAddHTTPTool = false
+				st.httpTool.show = false
 			}
 		})
 
-		if st.httpToolError != "" {
-			SailAlertBox(c, ToneDanger, i18n.T("services.http_tool.error_title"), st.httpToolError)
+		if st.httpTool.errMsg != "" {
+			SailAlertBox(c, ToneDanger, i18n.T("services.http_tool.error_title"), st.httpTool.errMsg)
 		}
 
 		ui.Scroll(c.Key("http-tool-scroll")).Grow(1).FillWidth().MaxHeight(440).Gap(10).Children(func() {
 			ui.Row(c).FillWidth().Gap(12).Children(func() {
 				ui.Column(c).Grow(2).MinWidth(0).Gap(5).Children(func() {
 					ui.Text(c, i18n.T("services.http_tool.name_required")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-					SailTextInput(c.Key("http-tool-name"), &st.httpToolName).
+					SailTextInput(c.Key("http-tool-name"), &st.httpTool.name).
 						Font("monospace").
 						Placeholder("search_documents").
 						FillWidth()
 				})
 				ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
 					ui.Text(c, i18n.T("services.http_tool.method")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-					if SailSelect(c.Key("http-tool-method"), &st.httpToolMethod, []string{"GET", "POST", "PUT", "PATCH", "DELETE"}).
+					if SailSelect(c.Key("http-tool-method"), &st.httpTool.method, []string{"GET", "POST", "PUT", "PATCH", "DELETE"}).
 						FillWidth().
 						Changed() {
-						st.httpToolReadOnly = st.httpToolMethod == "GET"
+						st.httpTool.readOnly = st.httpTool.method == "GET"
 					}
 				})
 			})
 
 			ui.Column(c).FillWidth().Gap(5).Children(func() {
 				ui.Text(c, i18n.T("services.http_tool.path_required")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-				ui.TextInput(c.Key("http-tool-path"), &st.httpToolPath).
+				ui.TextInput(c.Key("http-tool-path"), &st.httpTool.path).
 					Font("monospace").
 					Placeholder("/documents/search").
 					FillWidth()
@@ -2277,31 +2294,31 @@ func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState,
 
 			ui.Column(c).FillWidth().Gap(5).Children(func() {
 				ui.Text(c, i18n.T("services.http_tool.description_required")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-				ui.TextInput(c.Key("http-tool-desc"), &st.httpToolDesc).FillWidth()
+				ui.TextInput(c.Key("http-tool-desc"), &st.httpTool.desc).FillWidth()
 			})
 
 			ui.Column(c).FillWidth().Gap(5).Children(func() {
 				ui.Text(c, i18n.T("services.http_tool.schema")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-				ui.TextArea(c.Key("http-tool-schema"), &st.httpToolSchema).
+				ui.TextArea(c.Key("http-tool-schema"), &st.httpTool.schema).
 					Font("monospace").
 					FontSize(12).
 					Height(150).
 					FillWidth()
 			})
 
-			ui.Checkbox(c.Key("http-tool-ro"), &st.httpToolReadOnly, i18n.T("services.tool.read_only_label"))
+			ui.Checkbox(c.Key("http-tool-ro"), &st.httpTool.readOnly, i18n.T("services.tool.read_only_label"))
 		})
 
 		ui.Row(c).FillWidth().Padding(8, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(SailBorder).
 			AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailButton(c.Key("http-tool-cancel"), i18n.T("common.cancel")).Disabled(st.httpToolBusy).Clicked() {
-				st.showAddHTTPTool = false
+			if SailButton(c.Key("http-tool-cancel"), i18n.T("common.cancel")).Disabled(st.httpTool.busy).Clicked() {
+				st.httpTool.show = false
 			}
 			lbl := i18n.T("services.http_tool.save")
-			if st.httpToolBusy {
+			if st.httpTool.busy {
 				lbl = i18n.T("common.saving")
 			}
-			if SailPrimaryButton(c.Key("http-tool-submit"), lbl).Disabled(st.httpToolBusy).Clicked() {
+			if SailPrimaryButton(c.Key("http-tool-submit"), lbl).Disabled(st.httpTool.busy).Clicked() {
 				u.submitAddHTTPTool(st, server.ID)
 			}
 		})
@@ -2432,13 +2449,13 @@ func (u *DesktopUI) deactivateService(st *servicesPageState, server apitypes.Ser
 }
 
 func (u *DesktopUI) submitAddMCPService(st *servicesPageState) {
-	if u.Client == nil || st.addBusy {
+	if u.Client == nil || st.add.busy {
 		return
 	}
-	st.addError = ""
+	st.add.errMsg = ""
 
-	name := strings.TrimSpace(st.addName)
-	id := strings.TrimSpace(st.addID)
+	name := strings.TrimSpace(st.add.name)
+	id := strings.TrimSpace(st.add.id)
 	if id == "" {
 		id = slugServiceID(name, "mcp")
 	}
@@ -2449,50 +2466,50 @@ func (u *DesktopUI) submitAddMCPService(st *servicesPageState) {
 	payload := apitypes.Server{
 		ID:          id,
 		Name:        name,
-		Description: strings.TrimSpace(st.addDescription),
+		Description: strings.TrimSpace(st.add.description),
 		Kind:        "mcp",
 		Enabled:     true,
 	}
 
-	if st.addTab == 0 {
-		cmd := strings.TrimSpace(st.addCommand)
+	if st.add.tab == 0 {
+		cmd := strings.TrimSpace(st.add.command)
 		if cmd == "" {
-			st.addError = i18n.T("services.err.command_required")
+			st.add.errMsg = i18n.T("services.err.command_required")
 			return
 		}
-		args, err := parseStringSliceJSON(st.addArgsText)
+		args, err := parseStringSliceJSON(st.add.argsText)
 		if err != nil {
-			st.addError = i18n.T("services.err.args_format", err.Error())
+			st.add.errMsg = i18n.T("services.err.args_format", err.Error())
 			return
 		}
-		env, err := parseStringMapJSON(st.addEnvText)
+		env, err := parseStringMapJSON(st.add.envText)
 		if err != nil {
-			st.addError = i18n.T("services.err.env_format", err.Error())
+			st.add.errMsg = i18n.T("services.err.env_format", err.Error())
 			return
 		}
 		payload.Transport = "stdio"
 		payload.Command = cmd
 		payload.Args = args
 		payload.Env = env
-		payload.WorkDir = strings.TrimSpace(st.addWorkDir)
+		payload.WorkDir = strings.TrimSpace(st.add.workDir)
 	} else {
-		ep := strings.TrimSpace(st.addEndpoint)
+		ep := strings.TrimSpace(st.add.endpoint)
 		if ep == "" {
-			st.addError = i18n.T("services.err.endpoint_required")
+			st.add.errMsg = i18n.T("services.err.endpoint_required")
 			return
 		}
-		headers, err := parseStringMapJSON(st.addHeadersText)
+		headers, err := parseStringMapJSON(st.add.headersText)
 		if err != nil {
-			st.addError = i18n.T("services.err.headers_format", err.Error())
+			st.add.errMsg = i18n.T("services.err.headers_format", err.Error())
 			return
 		}
 		payload.Transport = "http"
 		payload.Endpoint = ep
 		payload.Headers = headers
-		payload.OAuth = st.addRemoteOAuth
+		payload.OAuth = st.add.remoteOAuth
 	}
 
-	st.addBusy = true
+	st.add.busy = true
 	u.RunAsync(func() error {
 		timeout := 40 * time.Second
 		if payload.OAuth {
@@ -2504,28 +2521,28 @@ func (u *DesktopUI) submitAddMCPService(st *servicesPageState) {
 		check, err := u.Client.TestSource(ctx, payload)
 		if err != nil {
 			if apiclient.IsUnauthorized(err) {
-				u.updateUI(func() { st.addBusy = false })
+				u.updateUI(func() { st.add.busy = false })
 				return err
 			}
 			if payload.OAuth {
 				_ = u.RefreshSync()
 			}
 			u.updateUI(func() {
-				st.addBusy = false
-				st.addError = formatAPIError(err)
+				st.add.busy = false
+				st.add.errMsg = formatAPIError(err)
 			})
 			return nil
 		}
 		if err := u.RefreshSync(); err != nil {
-			u.updateUI(func() { st.addBusy = false })
+			u.updateUI(func() { st.add.busy = false })
 			if apiclient.IsUnauthorized(err) {
 				return err
 			}
 		}
 		u.updateUI(func() {
-			st.addBusy = false
-			st.showAddModal = false
-			st.resetAddFields()
+			st.add.busy = false
+			st.add.show = false
+			st.add.reset()
 			st.enterDetail(id)
 			u.OpenServiceDetail(id)
 		})
@@ -2539,74 +2556,74 @@ func (u *DesktopUI) submitAddMCPService(st *servicesPageState) {
 }
 
 func (u *DesktopUI) submitAddOpenAPIService(st *servicesPageState) {
-	if u.Client == nil || st.addBusy {
+	if u.Client == nil || st.add.busy {
 		return
 	}
-	st.addError = ""
+	st.add.errMsg = ""
 
-	name := strings.TrimSpace(st.addName)
-	id := strings.TrimSpace(st.addID)
+	name := strings.TrimSpace(st.add.name)
+	id := strings.TrimSpace(st.add.id)
 	if id == "" {
 		id = slugServiceID(name, "api")
 	}
 	if name == "" {
 		name = id
 	}
-	baseURL := strings.TrimSpace(st.addOpenAPIBaseURL)
+	baseURL := strings.TrimSpace(st.add.openAPIBaseURL)
 	if baseURL == "" {
-		st.addError = i18n.T("services.err.base_url_required")
+		st.add.errMsg = i18n.T("services.err.base_url_required")
 		return
 	}
-	headers, err := parseStringMapJSON(st.addOpenAPIHeaders)
+	headers, err := parseStringMapJSON(st.add.openAPIHeaders)
 	if err != nil {
-		st.addError = i18n.T("services.err.headers_format", err.Error())
+		st.add.errMsg = i18n.T("services.err.headers_format", err.Error())
 		return
 	}
-	specBytes := []byte(strings.TrimSpace(st.addOpenAPISpecText))
-	specURL := strings.TrimSpace(st.addOpenAPISpecURL)
+	specBytes := []byte(strings.TrimSpace(st.add.openAPISpecText))
+	specURL := strings.TrimSpace(st.add.openAPISpecURL)
 	if len(specBytes) == 0 && specURL == "" {
-		st.addError = i18n.T("services.err.openapi_required")
+		st.add.errMsg = i18n.T("services.err.openapi_required")
 		return
 	}
 
 	srv := apitypes.Server{
 		ID:          id,
 		Name:        name,
-		Description: strings.TrimSpace(st.addDescription),
+		Description: strings.TrimSpace(st.add.description),
 		Kind:        "http",
 		Transport:   "http",
 		Endpoint:    baseURL,
 		Headers:     headers,
 		Enabled:     true,
 	}
-	opIDs := splitCommaList(st.addOpenAPIOpsText)
+	opIDs := splitCommaList(st.add.openAPIOpsText)
 
-	st.addBusy = true
+	st.add.busy = true
 	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 		count, err := u.Client.ImportOpenAPI(ctx, srv, specBytes, specURL, opIDs)
 		if err != nil {
 			if apiclient.IsUnauthorized(err) {
-				u.updateUI(func() { st.addBusy = false })
+				u.updateUI(func() { st.add.busy = false })
 				return err
 			}
 			u.updateUI(func() {
-				st.addBusy = false
-				st.addError = formatAPIError(err)
+				st.add.busy = false
+				st.add.errMsg = formatAPIError(err)
 			})
 			return nil
 		}
 		if err := u.RefreshSync(); err != nil {
-			u.updateUI(func() { st.addBusy = false })
+			u.updateUI(func() { st.add.busy = false })
 			if apiclient.IsUnauthorized(err) {
 				return err
 			}
 		}
 		u.updateUI(func() {
-			st.addBusy = false
-			st.showAddModal = false
-			st.resetAddFields()
+			st.add.busy = false
+			st.add.show = false
+			st.add.reset()
 			st.enterDetail(id)
 			u.OpenServiceDetail(id)
 		})
@@ -2766,48 +2783,48 @@ func (u *DesktopUI) probeServerConnection(st *servicesPageState, server apitypes
 }
 
 func (u *DesktopUI) saveEditedTool(st *servicesPageState, orig apitypes.Tool) {
-	if u.Client == nil || st.toolEditBusy {
+	if u.Client == nil || st.toolEdit.busy {
 		return
 	}
-	st.toolEditError = ""
+	st.toolEdit.errMsg = ""
 	var payload apitypes.Tool
-	if st.toolEditTab == 1 {
-		if err := json.Unmarshal([]byte(st.toolEditRawJSON), &payload); err != nil {
-			st.toolEditError = i18n.T("services.err.json_invalid", err.Error())
+	if st.toolEdit.tab == 1 {
+		if err := json.Unmarshal([]byte(st.toolEdit.rawJSON), &payload); err != nil {
+			st.toolEdit.errMsg = i18n.T("services.err.json_invalid", err.Error())
 			return
 		}
 	} else {
 		payload = orig
-		payload.Description = strings.TrimSpace(st.toolEditDesc)
-		payload.Enabled = st.toolEditEnabled
-		payload.ReadOnly = st.toolEditReadOnly
-		payload.Actors = splitCommaList(st.toolEditActors)
+		payload.Description = strings.TrimSpace(st.toolEdit.desc)
+		payload.Enabled = st.toolEdit.enabled
+		payload.ReadOnly = st.toolEdit.readOnly
+		payload.Actors = splitCommaList(st.toolEdit.actors)
 	}
 
-	st.toolEditBusy = true
+	st.toolEdit.busy = true
 	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if _, err := u.Client.SaveTool(ctx, payload); err != nil {
 			if apiclient.IsUnauthorized(err) {
-				u.updateUI(func() { st.toolEditBusy = false })
+				u.updateUI(func() { st.toolEdit.busy = false })
 				return err
 			}
 			u.updateUI(func() {
-				st.toolEditBusy = false
-				st.toolEditError = formatAPIError(err)
+				st.toolEdit.busy = false
+				st.toolEdit.errMsg = formatAPIError(err)
 			})
 			return nil
 		}
 		if err := u.RefreshSync(); err != nil {
-			u.updateUI(func() { st.toolEditBusy = false })
+			u.updateUI(func() { st.toolEdit.busy = false })
 			if apiclient.IsUnauthorized(err) {
 				return err
 			}
 		}
 		u.updateUI(func() {
-			st.toolEditBusy = false
-			st.showToolModal = false
+			st.toolEdit.busy = false
+			st.toolEdit.show = false
 		})
 		u.Notify(i18n.T("services.toast.tool_saved"))
 		return nil
@@ -2815,20 +2832,20 @@ func (u *DesktopUI) saveEditedTool(st *servicesPageState, orig apitypes.Tool) {
 }
 
 func (u *DesktopUI) submitAddHTTPTool(st *servicesPageState, serverID string) {
-	if u.Client == nil || st.httpToolBusy {
+	if u.Client == nil || st.httpTool.busy {
 		return
 	}
-	st.httpToolError = ""
-	name := strings.TrimSpace(st.httpToolName)
-	path := strings.TrimSpace(st.httpToolPath)
-	desc := strings.TrimSpace(st.httpToolDesc)
+	st.httpTool.errMsg = ""
+	name := strings.TrimSpace(st.httpTool.name)
+	path := strings.TrimSpace(st.httpTool.path)
+	desc := strings.TrimSpace(st.httpTool.desc)
 	if name == "" || path == "" || desc == "" {
-		st.httpToolError = i18n.T("services.err.http_tool_required")
+		st.httpTool.errMsg = i18n.T("services.err.http_tool_required")
 		return
 	}
 	var schema map[string]any
-	if err := json.Unmarshal([]byte(st.httpToolSchema), &schema); err != nil {
-		st.httpToolError = i18n.T("services.err.schema_invalid", err.Error())
+	if err := json.Unmarshal([]byte(st.httpTool.schema), &schema); err != nil {
+		st.httpTool.errMsg = i18n.T("services.err.schema_invalid", err.Error())
 		return
 	}
 	payload := apitypes.Tool{
@@ -2836,39 +2853,39 @@ func (u *DesktopUI) submitAddHTTPTool(st *servicesPageState, serverID string) {
 		ServerID:    serverID,
 		Name:        name,
 		Description: desc,
-		Method:      st.httpToolMethod,
+		Method:      st.httpTool.method,
 		Path:        path,
-		ReadOnly:    st.httpToolReadOnly,
+		ReadOnly:    st.httpTool.readOnly,
 		InputSchema: schema,
 		Actors:      []string{"developer"},
 		Tags:        []string{},
 		Enabled:     true,
 	}
 
-	st.httpToolBusy = true
+	st.httpTool.busy = true
 	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if _, err := u.Client.SaveTool(ctx, payload); err != nil {
 			if apiclient.IsUnauthorized(err) {
-				u.updateUI(func() { st.httpToolBusy = false })
+				u.updateUI(func() { st.httpTool.busy = false })
 				return err
 			}
 			u.updateUI(func() {
-				st.httpToolBusy = false
-				st.httpToolError = formatAPIError(err)
+				st.httpTool.busy = false
+				st.httpTool.errMsg = formatAPIError(err)
 			})
 			return nil
 		}
 		if err := u.RefreshSync(); err != nil {
-			u.updateUI(func() { st.httpToolBusy = false })
+			u.updateUI(func() { st.httpTool.busy = false })
 			if apiclient.IsUnauthorized(err) {
 				return err
 			}
 		}
 		u.updateUI(func() {
-			st.httpToolBusy = false
-			st.showAddHTTPTool = false
+			st.httpTool.busy = false
+			st.httpTool.show = false
 		})
 		u.Notify(i18n.T("services.toast.http_tool_created"))
 		return nil
@@ -2905,7 +2922,7 @@ func (u *DesktopUI) loadMaintenanceOverview(st *servicesPageState, server apityp
 	})
 }
 
-func (st *servicesPageState) buildMaintenanceSource(server apitypes.Server) apitypes.MaintenanceSource {
+func (st *serviceMaintState) buildMaintenanceSource(server apitypes.Server) apitypes.MaintenanceSource {
 	interval, err := strconv.Atoi(strings.TrimSpace(st.maintIntervalStr))
 	if err != nil || interval < 1 {
 		interval = 60
