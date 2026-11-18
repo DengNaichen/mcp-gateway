@@ -7,6 +7,7 @@ import (
 
 	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
+	"gatewaylab/internal/i18n"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -104,8 +105,8 @@ func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
 			Shadow(0, 12, 36, 0, SailModalShadow)
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			ui.Text(c, "手动配置 Hook").FontSize(17).Bold().TextColor(SailInkStrong)
-			if SailSmallButton(c.Key("hook-modal-close"), "关闭").Clicked() {
+			ui.Text(c, i18n.T("ops.manual-hook-config")).FontSize(17).Bold().TextColor(SailInkStrong)
+			if SailSmallButton(c.Key("hook-modal-close"), i18n.T("ops.close")).Clicked() {
 				st.show = false
 			}
 		})
@@ -129,14 +130,14 @@ func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
 		}
 
 		if st.errMsg != "" {
-			SailAlertBox(c, ToneDanger, "获取 Hook 配置失败", st.errMsg)
+			SailAlertBox(c, ToneDanger, i18n.T("ops.hook-config-failed"), st.errMsg)
 		}
 
 		ui.Scroll(c.Key("hook-modal-scroll")).Grow(1).FillWidth().MaxHeight(460).Gap(12).Children(func() {
 			if st.loadingAgent == activeAgent.ID && !hasSnip {
 				ui.Row(c).FillWidth().Padding(24).Gap(8).Center().Children(func() {
-					ui.Spinner(c).Label("加载配置片段")
-					ui.Text(c, "正在生成 Hook 配置…").FontSize(13).TextColor(SailInkMuted)
+					ui.Spinner(c).Label(i18n.T("ops.loading-snippet"))
+					ui.Text(c, i18n.T("ops.generating-hook-config")).FontSize(13).TextColor(SailInkMuted)
 				})
 				return
 			}
@@ -145,10 +146,10 @@ func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
 				if snip.ConfigPath != "" {
 					ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
 						ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-							SailKeyValueRow(c, "配置文件", snip.ConfigPath, true)
+							SailKeyValueRow(c, i18n.T("ops.config-file"), snip.ConfigPath, true)
 						})
 						if u.State == nil || !u.State.Access.Shared {
-							if SailSmallButton(c.Key("hook-reveal-cfg"), "定位 ↗").Clicked() {
+							if SailSmallButton(c.Key("hook-reveal-cfg"), i18n.T("ops.reveal")).Clicked() {
 								cfgPath := snip.ConfigPath
 								u.RunAsync(func() error { return revealClientConfig(cfgPath) })
 							}
@@ -156,10 +157,10 @@ func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
 					})
 				}
 				if hookBin != "" {
-					SailKeyValueRow(c, "Hook 程序", hookBin, true)
+					SailKeyValueRow(c, i18n.T("ops.hook-program"), hookBin, true)
 				}
 				if snip.MCPURL != "" {
-					SailKeyValueRow(c, "MCP 端点", snip.MCPURL, true)
+					SailKeyValueRow(c, i18n.T("ops.mcp-endpoint"), snip.MCPURL, true)
 				}
 			})
 
@@ -173,22 +174,22 @@ func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
 
 			code := snip.Snippet
 			if code == "" && !hasSnip {
-				code = "// 暂无可展示的 Hook 配置片段"
+				code = i18n.T("ops.no-hook-snippet")
 			}
 			SailCodeBlock(c, strings.ToUpper(activeAgent.ID)+" HOOK", code, func() {
-				u.Notify("已复制 " + activeAgent.Name + " Hook 配置")
+				u.Notify(i18n.T("ops.copied-hook-config-for", activeAgent.Name))
 			})
 		})
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailButton(c.Key("hook-refresh-btn"), "重新获取").Disabled(st.loadingAgent != "").Clicked() {
+			if SailButton(c.Key("hook-refresh-btn"), i18n.T("ops.refetch")).Disabled(st.loadingAgent != "").Clicked() {
 				u.ensureHookSnippetLoaded(st, activeAgent.ID, true)
 			}
-			if SailPrimaryButton(c.Key("hook-copy-primary"), "复制配置片段").
+			if SailPrimaryButton(c.Key("hook-copy-primary"), i18n.T("ops.copy-snippet")).
 				Disabled(strings.TrimSpace(snip.Snippet) == "").
 				Clicked() {
 				c.WriteClipboard(snip.Snippet)
-				u.Notify("已复制 " + activeAgent.Name + " Hook 配置")
+				u.Notify(i18n.T("ops.copied-hook-config-for", activeAgent.Name))
 			}
 		})
 	})

@@ -9,6 +9,7 @@ import (
 
 	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
+	"gatewaylab/internal/i18n"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -163,7 +164,7 @@ func (u *DesktopUI) renderSettings(c *ui.Context) {
 
 	dirty := settingsIsDirty(st, state.Settings)
 
-	SailSectionHeader(c, "访问与路由", "", nil)
+	SailSectionHeader(c, i18n.T("ops.settings-title"), "", nil)
 
 	// Section 1: Actor & Read/Write Guardrail Matrix.
 	u.renderSettingsGuardrailSection(c, st, state)
@@ -196,24 +197,24 @@ func (u *DesktopUI) renderSettingsGuardrailSection(c *ui.Context, st *settingsSt
 	}
 
 	SailFlushCard(c, func() {
-		accessDesc := "本机直连 · developer"
+		accessDesc := i18n.T("ops.local-direct-developer")
 		if state.Access.Shared {
-			accessDesc = fmt.Sprintf("共享鉴权 · %s", state.Access.Actor)
+			accessDesc = i18n.T("ops.shared-auth", state.Access.Actor)
 		}
 
-		SailListCardHeader(c, "调用身份与写操作护栏矩阵", accessDesc, func() {
+		SailListCardHeader(c, i18n.T("ops.actor-write-matrix"), accessDesc, func() {
 			if len(enabledWriteTools) == 0 {
-				SailQuietStatus(c, "全部只读", SailSuccessInk, SailInkStrong)
+				SailQuietStatus(c, i18n.T("ops.all-read-only"), SailSuccessInk, SailInkStrong)
 			} else {
-				SailBadgeDot(c, fmt.Sprintf("写工具 %d", len(enabledWriteTools)), ToneWarning)
+				SailBadgeDot(c, i18n.T("ops.write-tools-count", len(enabledWriteTools)), ToneWarning)
 			}
-			if SailSmallButton(c.Key("set-review-rw"), "审查写操作").Clicked() {
+			if SailSmallButton(c.Key("set-review-rw"), i18n.T("ops.review-writes")).Clicked() {
 				u.OpenCatalogFilter("", "rw")
 			}
 			if len(enabledWriteTools) > 0 {
-				lbl := "全局收敛为只读"
+				lbl := i18n.T("ops.enforce-read-only")
 				if st.guardrailBusy {
-					lbl = "收敛中…"
+					lbl = i18n.T("ops.enforcing")
 				}
 				if SailDangerButton(c.Key("set-enforce-ro"), lbl).Disabled(st.guardrailBusy).Clicked() {
 					u.enforceSettingsReadOnlyGuardrail(st, state, enabledWriteTools)
@@ -231,12 +232,12 @@ func (u *DesktopUI) renderSettingsGuardrailSection(c *ui.Context, st *settingsSt
 			BorderColor(SailDivider).
 			AlignItems(ui.Center).
 			Children(func() {
-				ui.Text(c, "身份").Width(120).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
-				ui.Text(c, "服务").Width(72).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
-				ui.Text(c, "开放工具").Width(72).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
-				ui.Text(c, "只读").Width(64).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
-				ui.Text(c, "写操作").Width(68).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
-				ui.Text(c, "服务分布").Grow(1).MinWidth(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
+				ui.Text(c, i18n.T("ops.actor")).Width(120).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
+				ui.Text(c, i18n.T("ops.services")).Width(72).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
+				ui.Text(c, i18n.T("ops.exposed-tools")).Width(72).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
+				ui.Text(c, i18n.T("ops.read-only")).Width(64).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
+				ui.Text(c, i18n.T("ops.write-access")).Width(68).Shrink(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
+				ui.Text(c, i18n.T("ops.service-distribution")).Grow(1).MinWidth(0).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
 			})
 
 		for i, row := range actorRows {
@@ -273,7 +274,7 @@ func (u *DesktopUI) renderSettingsGuardrailSection(c *ui.Context, st *settingsSt
 						for _, srv := range row.ByServer {
 							seg := fmt.Sprintf("%s %d", srv.ServerName, srv.ReadOnly+srv.Write)
 							if srv.Write > 0 {
-								seg += fmt.Sprintf(" (%d 写)", srv.Write)
+								seg += i18n.T("ops.write-count-suffix", srv.Write)
 							}
 							parts = append(parts, seg)
 						}
@@ -300,15 +301,15 @@ func editingProfileKeyConfigured(st *settingsState, state *apitypes.Bootstrap) b
 
 func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState, state *apitypes.Bootstrap, dirty bool) {
 	SailCard(c, func() {
-		SailCardTitle(c, "Decisions 语义路由模型", "", func() {
-			if SailSmallButton(c.Key("set-preset-openai"), "OpenAI 预设").Clicked() {
+		SailCardTitle(c, i18n.T("ops.decisions-model-title"), "", func() {
+			if SailSmallButton(c.Key("set-preset-openai"), i18n.T("ops.preset-openai")).Clicked() {
 				st.editingProfileID = ""
 				st.config.BaseURL = "https://api.openai.com/v1"
 				st.config.Model = "gpt-6-luna"
 				st.clearKey = false
 				clearSettingsFeedback(st)
 			}
-			if SailSmallButton(c.Key("set-preset-gemini"), "Gemini 预设").Clicked() {
+			if SailSmallButton(c.Key("set-preset-gemini"), i18n.T("ops.preset-gemini")).Clicked() {
 				st.editingProfileID = ""
 				st.config.BaseURL = "https://generativelanguage.googleapis.com/v1beta"
 				st.config.Model = "gemini-decision-1"
@@ -347,21 +348,21 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 				ui.Text(c, "API Key").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 					if keyConfigured {
-						SailQuietStatus(c, "已配置", SailSuccessInk, SailInkStrong)
-						if SailSmallButton(c.Key("set-clear-key-inline"), "清除").Clicked() {
+						SailQuietStatus(c, i18n.T("client.state.configured"), SailSuccessInk, SailInkStrong)
+						if SailSmallButton(c.Key("set-clear-key-inline"), i18n.T("ops.clear")).Clicked() {
 							st.clearKey = true
 							st.apiKey = ""
 							clearSettingsFeedback(st)
 						}
 					} else {
-						SailQuietStatus(c, "未配置", SailInkMuted, SailInkMuted)
+						SailQuietStatus(c, i18n.T("client.state.not-configured"), SailInkMuted, SailInkMuted)
 					}
 				})
 			})
 
-			placeholder := "粘贴 API Key"
+			placeholder := i18n.T("ops.paste-api-key")
 			if keyConfigured {
-				placeholder = "留空保持当前 Key"
+				placeholder = i18n.T("ops.keep-current-key")
 			}
 			if ui.TextInput(c.Key("set-api-key"), &st.apiKey).
 				Password().
@@ -375,9 +376,9 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 		})
 
 		if u.State != nil && u.State.CredentialsPersistent {
-			ui.Text(c, "保存时将密钥存入系统钥匙串，重启后自动恢复").FontSize(12).TextColor(SailInkMuted)
+			ui.Text(c, i18n.T("ops.key-stored-keychain")).FontSize(12).TextColor(SailInkMuted)
 		} else {
-			ui.Text(c, "此实例仅在内存中保留密钥，重启后需重新提供").FontSize(12).TextColor(SailInkMuted)
+			ui.Text(c, i18n.T("ops.key-memory-only")).FontSize(12).TextColor(SailInkMuted)
 		}
 
 		// Collapsible advanced routing policy & end-to-end verification.
@@ -386,10 +387,10 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 			if st.advancedExpanded {
 				arrow = "▾"
 			}
-			if SailSmallButton(c.Key("set-toggle-advanced"), fmt.Sprintf("%s 高级设置 · 路由策略与校验", arrow)).Clicked() {
+			if SailSmallButton(c.Key("set-toggle-advanced"), i18n.T("ops.advanced-settings", arrow)).Clicked() {
 				st.advancedExpanded = !st.advancedExpanded
 			}
-			ui.Textf(c, "上限 %d · 超时 %ds", st.config.MaxTools, st.config.TimeoutSeconds).
+			ui.Text(c, i18n.T("ops.max-tools-timeout", st.config.MaxTools, st.config.TimeoutSeconds)).
 				Font("monospace").FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted)
 		})
 
@@ -397,9 +398,9 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 			SailSubtleCard(c, func() {
 				ui.Row(c).FillWidth().Gap(16).Children(func() {
 					ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
-						ui.Text(c, "单次返回上限 (1–12)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("ops.max-tools-label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						if ui.NumberInput(c.Key("set-max-tools"), &st.maxToolsFloat, 1, 12, 1).
-							Label("单次返回工具上限").
+							Label(i18n.T("ops.max-tools-tooltip")).
 							Width(200).
 							Changed() {
 							st.config.MaxTools = clampInt(int(math.Round(st.maxToolsFloat)), 1, 12)
@@ -408,9 +409,9 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 					})
 
 					ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
-						ui.Text(c, "请求超时 (5–180 秒)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("ops.timeout-label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						if ui.NumberInput(c.Key("set-timeout"), &st.timeoutFloat, 5, 180, 5).
-							Label("模型请求超时").
+							Label(i18n.T("ops.timeout-tooltip")).
 							Width(200).
 							Changed() {
 							st.config.TimeoutSeconds = clampInt(int(math.Round(st.timeoutFloat)), 5, 180)
@@ -420,16 +421,16 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 				})
 
 				ui.Column(c).FillWidth().Gap(6).Children(func() {
-					ui.Text(c, "校验意图（可选）").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+					ui.Text(c, i18n.T("ops.validation-intent")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 					ui.TextInput(c.Key("set-test-intent"), &st.testIntent).
-						Placeholder("留空自动生成").
+						Placeholder(i18n.T("ops.validation-intent-placeholder")).
 						FillWidth()
 				})
 
 				if !state.Setup.ToolsReady {
 					ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
-						SailQuietStatus(c, "尚未启用真实工具，暂不可运行路由校验", SailWarningInk, SailInkMuted)
-						if SailSmallButton(c.Key("set-goto-services"), "前往服务").Clicked() {
+						SailQuietStatus(c, i18n.T("ops.validation-unavailable"), SailWarningInk, SailInkMuted)
+						if SailSmallButton(c.Key("set-goto-services"), i18n.T("ops.goto-services")).Clicked() {
 							u.Navigate(ViewServices)
 						}
 					})
@@ -437,13 +438,13 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 
 				modelCheck := state.Setup.ModelCheck
 				if !dirty && modelCheck != nil && modelCheck.Status == "error" {
-					SailAlertBox(c, ToneDanger, fmt.Sprintf("%s（%s）", modelCheck.Message, FormatTime(modelCheck.CheckedAt)), modelCheck.Detail)
+					SailAlertBox(c, ToneDanger, i18n.T("ops.message-with-time", modelCheck.Message, FormatTime(modelCheck.CheckedAt)), modelCheck.Detail)
 				} else if !dirty && modelCheck != nil {
 					dotCol := SailSuccessInk
 					lbl := fmt.Sprintf("%s · %s", modelCheck.Message, FormatTime(modelCheck.CheckedAt))
 					if modelCheck.Stale {
 						dotCol = SailWarningInk
-						lbl = fmt.Sprintf("配置已变更，建议重新校验 · 上次 %s", FormatTime(modelCheck.CheckedAt))
+						lbl = i18n.T("ops.config-changed-revalidate", FormatTime(modelCheck.CheckedAt))
 					}
 					SailQuietStatus(c, lbl, dotCol, SailInkMuted)
 				}
@@ -452,7 +453,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 					SailCard(c, func() {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 							if res.Status == "selected" {
-								SailQuietStatus(c, "路由校验通过 · "+res.Status, SailSuccessInk, SailInkStrong)
+								SailQuietStatus(c, i18n.T("ops.route-validation-passed", res.Status), SailSuccessInk, SailInkStrong)
 							} else {
 								SailBadge(c, res.Status, ToneWarning)
 							}
@@ -475,9 +476,9 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 				}
 
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Children(func() {
-					testLabel := "运行路由校验"
+					testLabel := i18n.T("ops.run-validation")
 					if st.busyMode == "test" {
-						testLabel = "校验中…"
+						testLabel = i18n.T("ops.validating")
 					}
 					if SailButton(c.Key("set-save-test"), testLabel).
 						Disabled(st.busyMode != "" || !state.Setup.ToolsReady).
@@ -499,30 +500,30 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 			ui.Row(c).Grow(1).MinWidth(0).AlignItems(ui.Center).Children(func() {
 				switch {
 				case st.pingBusy:
-					SailQuietStatus(c, "正在测试模型连接…", SailWarningInk, SailInkMuted)
+					SailQuietStatus(c, i18n.T("ops.testing-model"), SailWarningInk, SailInkMuted)
 				case settingsPingPassed(st):
-					SailQuietStatus(c, fmt.Sprintf("模型测试通过 · %s 已响应 · %d ms", st.pingResult.Model, st.pingResult.DurationMS), SailSuccessInk, SailSuccessInk)
+					SailQuietStatus(c, i18n.T("ops.model-test-passed", st.pingResult.Model, st.pingResult.DurationMS), SailSuccessInk, SailSuccessInk)
 				case st.pingErr != "":
 					SailQuietStatus(c, st.pingErr, SailDangerInk, SailDangerInk)
 				case isVerifiedActiveConnectionUnchanged(st, state) && st.config.MaxTools != state.Settings.MaxTools:
-					SailQuietStatus(c, "连接已验证，可直接保存上限调整", SailSuccessInk, SailInkMuted)
+					SailQuietStatus(c, i18n.T("ops.connection-verified"), SailSuccessInk, SailInkMuted)
 				default:
-					SailQuietStatus(c, "通过「测试连接」后才可保存配置", SailInkMuted, SailInkMuted)
+					SailQuietStatus(c, i18n.T("ops.test-before-save"), SailInkMuted, SailInkMuted)
 				}
 			})
 
 			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-				pingLabel := "测试连接"
+				pingLabel := i18n.T("ops.test-connection")
 				if st.pingBusy {
-					pingLabel = "测试中…"
+					pingLabel = i18n.T("ops.testing")
 				}
 				if SailButton(c.Key("set-ping-model"), pingLabel).Disabled(st.pingBusy || st.busyMode != "").Clicked() {
 					u.pingSettingsModel(st)
 				}
 
-				saveLabel := "保存配置"
+				saveLabel := i18n.T("ops.save-config")
 				if st.busyMode == "save" {
-					saveLabel = "保存中…"
+					saveLabel = i18n.T("ops.saving")
 				}
 				if SailPrimaryButton(c.Key("set-save-only"), saveLabel).Disabled(!settingsCanSave(st, state)).Clicked() {
 					u.submitSettings(st, false)
@@ -535,9 +536,9 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 func (u *DesktopUI) renderSettingsProfilesSection(c *ui.Context, st *settingsState, state *apitypes.Bootstrap) {
 	profiles := state.Profiles
 	SailFlushCard(c, func() {
-		SailListCardHeader(c, "已保存的模型", fmt.Sprintf("%d 个配置", len(profiles)), nil)
+		SailListCardHeader(c, i18n.T("ops.saved-models"), i18n.T("ops.profiles-count", len(profiles)), nil)
 		if len(profiles) == 0 {
-			SailEmptyState(c, "暂无已保存模型", "在上方填写模型信息并点击「保存配置」即可添加到列表。", "", nil)
+			SailEmptyState(c, i18n.T("ops.no-saved-models"), i18n.T("ops.no-saved-models-detail"), "", nil)
 			return
 		}
 		for i, p := range profiles {
@@ -555,31 +556,31 @@ func (u *DesktopUI) renderSettingsProfilesSection(c *ui.Context, st *settingsSta
 					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 						ui.Text(c, prof.Model).Font("monospace").FontSize(13).FontWeight(600).TextColor(SailInkStrong).SingleLine()
 						if prof.Active {
-							SailQuietStatus(c, "使用中", SailSuccessInk, SailSuccessInk)
+							SailQuietStatus(c, i18n.T("ops.profile-active"), SailSuccessInk, SailSuccessInk)
 						} else {
-							SailQuietStatus(c, "备用", SailInkMuted, SailInkMuted)
+							SailQuietStatus(c, i18n.T("ops.profile-standby"), SailInkMuted, SailInkMuted)
 						}
 					})
 					ui.Text(c, prof.BaseURL).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
 				})
 
-				keyTxt := "未配置 Key"
+				keyTxt := i18n.T("ops.key-not-configured")
 				if prof.KeyConfigured {
-					keyTxt = "Key 已配置"
+					keyTxt = i18n.T("ops.key-configured")
 				}
-				ui.Textf(c, "%s · 上限 %d · %ds", keyTxt, prof.MaxTools, prof.TimeoutSeconds).
+				ui.Text(c, i18n.T("ops.profile-summary", keyTxt, prof.MaxTools, prof.TimeoutSeconds)).
 					Font("monospace").FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted).SingleLine()
 
 				ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 					busy := st.profileBusyID == prof.ID
 					if !prof.Active {
-						if SailSmallButton(c.Key("set-prof-activate-"+prof.ID), "设为当前").Disabled(busy).Clicked() {
+						if SailSmallButton(c.Key("set-prof-activate-"+prof.ID), i18n.T("ops.set-active")).Disabled(busy).Clicked() {
 							u.activateProfile(st, prof.ID)
 						}
 					}
-					editLabel := "编辑"
+					editLabel := i18n.T("ops.edit")
 					if isEditing {
-						editLabel = "编辑中"
+						editLabel = i18n.T("ops.editing")
 					}
 					if SailSmallButton(c.Key("set-prof-edit-"+prof.ID), editLabel).Disabled(busy).Clicked() {
 						loadProfileIntoSettings(st, prof.ID, apitypes.Settings{
@@ -590,7 +591,7 @@ func (u *DesktopUI) renderSettingsProfilesSection(c *ui.Context, st *settingsSta
 						})
 					}
 					if len(profiles) > 1 {
-						if SailDangerButton(c.Key("set-prof-del-"+prof.ID), "删除").Disabled(busy).Clicked() {
+						if SailDangerButton(c.Key("set-prof-del-"+prof.ID), i18n.T("ops.delete")).Disabled(busy).Clicked() {
 							u.deleteProfile(st, prof.ID)
 						}
 					}
@@ -611,7 +612,7 @@ func (u *DesktopUI) pingSettingsModel(st *settingsState) {
 	st.config.TimeoutSeconds = cfg.TimeoutSeconds
 	if cfg.BaseURL == "" || cfg.Model == "" {
 		clearSettingsFeedback(st)
-		st.pingErr = "请填写 Base URL 与 Model ID 后再测试连接"
+		st.pingErr = i18n.T("ops.base-url-model-required")
 		return
 	}
 	st.pingBusy = true
@@ -675,7 +676,7 @@ func (u *DesktopUI) activateProfile(st *settingsState, id string) {
 				TimeoutSeconds: prof.TimeoutSeconds,
 			})
 		})
-		u.Notify("已切换当前模型：" + prof.Model)
+		u.Notify(i18n.T("ops.model-switched-toast", prof.Model))
 		return nil
 	})
 }
@@ -712,7 +713,7 @@ func (u *DesktopUI) deleteProfile(st *settingsState, id string) {
 				}
 			}
 		})
-		u.Notify("已删除模型配置")
+		u.Notify(i18n.T("ops.profile-deleted"))
 		return nil
 	})
 }
@@ -729,7 +730,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 	st.config = cfg
 
 	if cfg.Model == "" {
-		st.errTitle = "请填写路由模型名称（如 gpt-6-luna 或 gemini-decision-1）。"
+		st.errTitle = i18n.T("ops.model-name-required")
 		st.errDetail = ""
 		return
 	}
@@ -837,7 +838,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 			u.updateUI(func() {
 				finishSaved(&res, "", "")
 			})
-			u.Notify("路由配置已保存并通过实时校验")
+			u.Notify(i18n.T("ops.routing-config-saved"))
 			return nil
 		}
 
@@ -845,7 +846,7 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 		u.updateUI(func() {
 			finishSaved(nil, "", "")
 		})
-		u.Notify("模型配置已保存并设为当前模型")
+		u.Notify(i18n.T("ops.model-profile-saved"))
 		return nil
 	})
 }
@@ -892,7 +893,7 @@ func (u *DesktopUI) enforceSettingsReadOnlyGuardrail(st *settingsState, state *a
 			return err
 		}
 		u.updateUI(func() { st.guardrailBusy = false })
-		u.Notify(fmt.Sprintf("已关闭 %d 个写操作工具，全局候选池已收敛为只读", closedCount))
+		u.Notify(i18n.T("ops.guardrail-applied", closedCount))
 		return nil
 	})
 }

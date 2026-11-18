@@ -8,6 +8,7 @@ import (
 
 	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
+	"gatewaylab/internal/i18n"
 )
 
 func (u *DesktopUI) loadServerCredentials(st *servicesPageState, id string) {
@@ -62,54 +63,54 @@ func (u *DesktopUI) renderServerCredentials(c *ui.Context, st *servicesPageState
 		}
 	}
 	SailCard(c, func() {
-		subtitle := "凭据仅用于本次运行；当前实例未启用安全持久化"
+		subtitle := i18n.T("ops.credentials-ephemeral-note")
 		if st.credentialState.Persistent {
-			subtitle = "凭据保存在系统钥匙串，重启后自动恢复；环境变量优先"
+			subtitle = i18n.T("ops.credentials-keychain-note")
 		}
-		SailCardTitle(c, "服务凭据", subtitle, nil)
+		SailCardTitle(c, i18n.T("ops.service-credentials"), subtitle, nil)
 		if st.credentialError != "" {
-			SailAlertBox(c, ToneDanger, "凭据操作失败", st.credentialError)
+			SailAlertBox(c, ToneDanger, i18n.T("ops.credential-action-failed"), st.credentialError)
 		}
 		if len(st.credentialState.Credentials) == 0 && !st.credentialBusy {
-			ui.Text(c, "此服务未引用环境变量；修改连接配置后刷新凭据").FontSize(12).TextColor(SailInkMuted)
+			ui.Text(c, i18n.T("ops.credentials-not-referenced")).FontSize(12).TextColor(SailInkMuted)
 		}
 		for _, entry := range st.credentialState.Credentials {
-			status := "未配置"
+			status := i18n.T("client.state.not-configured")
 			dotCol := SailDangerInk
 			txtCol := SailDangerInk
 			if entry.Saved {
-				status = "已保存"
+				status = i18n.T("ops.credential-saved")
 				dotCol = SailSuccessInk
 				txtCol = SailInkMuted
 			} else if entry.Configured {
-				status = "由运行环境提供"
+				status = i18n.T("ops.credential-from-env")
 				dotCol = SailSuccessInk
 				txtCol = SailInkMuted
 			}
 			if entry.Environment {
-				status = "由运行环境提供"
+				status = i18n.T("ops.credential-from-env")
 				dotCol = SailSuccessInk
 				txtCol = SailInkMuted
 			}
 			if entry.Saved && !st.credentialState.Persistent && !entry.Environment {
-				status = "仅本次运行"
+				status = i18n.T("ops.credential-session-only")
 				dotCol = SailWarningInk
 				txtCol = SailInkMuted
 			}
 			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, entry.Name).Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).Width(220).SingleLine()
 				value := st.credentialValues[entry.Name]
-				if SailTextInput(c.Key("credential-"+server.ID+"-"+entry.Name), &value).Password().Disabled(st.credentialBusy).Placeholder("输入新凭据，留空保留").Grow(1).Changed() {
+				if SailTextInput(c.Key("credential-"+server.ID+"-"+entry.Name), &value).Password().Disabled(st.credentialBusy).Placeholder(i18n.T("ops.credential-placeholder")).Grow(1).Changed() {
 					st.credentialValues[entry.Name] = value
 				}
 				SailQuietStatus(c, status, dotCol, txtCol)
-				if SailButton(c.Key("credential-clear-"+server.ID+"-"+entry.Name), "清除").Disabled(st.credentialBusy || !entry.Saved).Clicked() {
+				if SailButton(c.Key("credential-clear-"+server.ID+"-"+entry.Name), i18n.T("ops.clear")).Disabled(st.credentialBusy || !entry.Saved).Clicked() {
 					u.saveServerCredentialValues(st, server, map[string]string{entry.Name: ""}, false)
 				}
 			})
 		}
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailButton(c.Key("credential-refresh-"+server.ID), "刷新").Disabled(st.credentialBusy).Clicked() {
+			if SailButton(c.Key("credential-refresh-"+server.ID), i18n.T("ops.refresh")).Disabled(st.credentialBusy).Clicked() {
 				u.loadServerCredentials(st, server.ID)
 			}
 			values := map[string]string{}
@@ -119,12 +120,12 @@ func (u *DesktopUI) renderServerCredentials(c *ui.Context, st *servicesPageState
 				}
 			}
 			if len(st.credentialState.Credentials) > 0 {
-				if SailButton(c.Key("credential-save-"+server.ID), "保存凭据").Disabled(st.credentialBusy || len(values) == 0).Clicked() {
+				if SailButton(c.Key("credential-save-"+server.ID), i18n.T("ops.save-credentials")).Disabled(st.credentialBusy || len(values) == 0).Clicked() {
 					u.saveServerCredentialValues(st, server, values, false)
 				}
-				testBtnLabel := "保存凭据并测试连接"
+				testBtnLabel := i18n.T("ops.save-and-test")
 				if st.credentialBusy && st.connBusy {
-					testBtnLabel = "验证连接中…"
+					testBtnLabel = i18n.T("ops.verifying-connection")
 				}
 				if SailPrimaryButton(c.Key("credential-save-test-"+server.ID), testBtnLabel).Disabled(st.credentialBusy || st.connBusy || len(values) == 0).Clicked() {
 					u.saveServerCredentialValues(st, server, values, true)
@@ -193,13 +194,13 @@ func (u *DesktopUI) saveServerCredentialValues(st *servicesPageState, server api
 			st.credentialState = state
 			st.credentialValues = map[string]string{}
 			if probeErr != nil {
-				st.credentialError = "凭据已保存，但连接测试未通过：" + formatAPIError(probeErr)
+				st.credentialError = i18n.T("ops.credentials-saved-probe-failed", formatAPIError(probeErr))
 			}
 		})
 		if err == nil && testAfter && probeErr == nil {
 			msg := probeCheck.Message
 			if msg == "" {
-				msg = "凭据已保存且连接测试通过"
+				msg = i18n.T("ops.credentials-saved-probe-passed")
 			}
 			u.Notify(msg)
 		} else if err == nil && !testAfter {
@@ -210,9 +211,9 @@ func (u *DesktopUI) saveServerCredentialValues(st *servicesPageState, server api
 				}
 			}
 			if isClear {
-				u.Notify("已清除保存的凭据")
+				u.Notify(i18n.T("ops.credentials-cleared"))
 			} else {
-				u.Notify("服务凭据已保存")
+				u.Notify(i18n.T("ops.service-credentials-saved"))
 			}
 		}
 		return nil

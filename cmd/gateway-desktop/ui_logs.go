@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gatewaylab/internal/apitypes"
+	"gatewaylab/internal/i18n"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -158,15 +159,15 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 	// 1. Page Header.
 	SailSectionHeader(
 		c,
-		"请求日志",
+		i18n.T("ops.logs-title"),
 		"",
 		func() {
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-				SailQuietStatus(c, "4s 自动同步", SailSuccessInk, SailInkMuted)
+				SailQuietStatus(c, i18n.T("ops.auto-sync"), SailSuccessInk, SailInkMuted)
 				if errCount > 0 {
-					SailBadge(c, fmt.Sprintf("错误 %d", errCount), ToneDanger)
+					SailBadge(c, i18n.T("ops.error-count", errCount), ToneDanger)
 				}
-				if SailSmallButton(c.Key("logs-refresh-btn"), "刷新").Disabled(u.Refreshing).Clicked() {
+				if SailSmallButton(c.Key("logs-refresh-btn"), i18n.T("ops.refresh")).Disabled(u.Refreshing).Clicked() {
 					u.Refresh()
 				}
 			})
@@ -178,32 +179,32 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 		ui.Row(c).FillWidth().Wrap().Gap(10).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Row(c).Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
 				SailSearchField(c.Key("logs-search"), &st.query).
-					Placeholder("搜索意图、工具名或载荷…").
-					Label("搜索请求日志").
+					Placeholder(i18n.T("ops.search-logs-placeholder")).
+					Label(i18n.T("ops.search-logs")).
 					Width(236)
 
 				SailSegmented(
 					c.Key("logs-kind-seg"),
 					&st.kindIdx,
-					"全部",
+					i18n.T("ops.filter-all"),
 					"discover",
 					"invoke",
 					"agent_tool",
-				).Label("事件类型筛选")
+				).Label(i18n.T("ops.event-kind-filter"))
 
 				SailSegmented(
 					c.Key("logs-status-seg"),
 					&st.statusIdx,
-					"全部",
-					"成功",
-					"未命中",
-					"错误",
-				).Label("事件状态筛选")
+					i18n.T("ops.filter-all"),
+					i18n.T("ops.status-success"),
+					i18n.T("ops.status-miss"),
+					i18n.T("ops.status-error"),
+				).Label(i18n.T("ops.event-status-filter"))
 			})
 
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				if st.hasActiveFilters() {
-					if SailButton(c.Key("logs-reset-btn"), "重置").Clicked() {
+					if SailButton(c.Key("logs-reset-btn"), i18n.T("ops.reset")).Clicked() {
 						st.resetFilters()
 					}
 				}
@@ -221,9 +222,9 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 		if len(events) == 0 {
 			SailEmptyState(
 				c,
-				"暂无请求记录",
+				i18n.T("ops.no-requests"),
 				"",
-				"前往路由沙盒",
+				i18n.T("ops.goto-playground"),
 				func() {
 					u.Navigate(ViewPlayground)
 				},
@@ -232,12 +233,12 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 			var resetFn func()
 			resetLbl := ""
 			if st.hasActiveFilters() {
-				resetLbl = "清空筛选"
+				resetLbl = i18n.T("ops.clear-filters")
 				resetFn = st.resetFilters
 			}
 			SailEmptyState(
 				c,
-				"无匹配日志",
+				i18n.T("ops.no-matching-logs"),
 				"",
 				resetLbl,
 				resetFn,
@@ -282,7 +283,7 @@ func (u *DesktopUI) renderLogsTimelinePane(
 		Shadow(0, 3, 10, 0, SailCardShadow).
 		Clip().
 		Children(func() {
-			SailListCardHeader(c, "时间线", fmt.Sprintf("%d 条", len(filtered)), nil)
+			SailListCardHeader(c, i18n.T("ops.timeline"), i18n.T("ops.entries-count", len(filtered)), nil)
 
 			// Scrollable Hairline Timeline Rows (max 3 anchors per row, zero per-row borders).
 			ui.Scroll(c.Key("logs-timeline-scroll")).
@@ -332,7 +333,7 @@ func (u *DesktopUI) renderLogsTimelinePane(
 										TextColor(SailInkMuted).
 										SingleLine()
 									if logsIsErrorStatus(ev.Status) {
-										SailBadge(c, "错误", ToneDanger)
+										SailBadge(c, i18n.T("ops.status-error"), ToneDanger)
 									}
 								})
 
@@ -377,7 +378,7 @@ func (u *DesktopUI) renderLogsTimelinePane(
 
 					if hasMore {
 						ui.Row(c).FillWidth().Padding(10, 16).Justify(ui.Center).Children(func() {
-							if SailSmallButton(c.Key("logs-load-more"), fmt.Sprintf("加载更多 (%d)", len(filtered)-visibleCount)).Clicked() {
+							if SailSmallButton(c.Key("logs-load-more"), i18n.T("ops.load-more", len(filtered)-visibleCount)).Clicked() {
 								st.timelineLimit += logsDefaultTimelineLimit
 							}
 						})
@@ -444,7 +445,7 @@ func (u *DesktopUI) renderLogsInspectorPane(
 
 				ui.Row(c).Shrink(0).Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
 					if ev.Kind == "discover" && strings.TrimSpace(ev.Title) != "" {
-						if SailSmallButton(c.Key("logs-replay-"+ev.ID), "沙盒重放").Clicked() {
+						if SailSmallButton(c.Key("logs-replay-"+ev.ID), i18n.T("ops.replay-in-sandbox")).Clicked() {
 							if parsed.Scope != nil {
 								replayRepo := logsResolveReplayRepoKey(u.State, *parsed.Scope)
 								u.OpenPlaygroundReplay(ev.Title, ev.Actor, replayRepo)
@@ -459,21 +460,21 @@ func (u *DesktopUI) renderLogsInspectorPane(
 							targetToolID = ev.Title
 						}
 						if regTool, ok := toolByID[targetToolID]; ok {
-							if SailSmallButton(c.Key("logs-jump-cat-"+ev.ID), "查看契约").Clicked() {
+							if SailSmallButton(c.Key("logs-jump-cat-"+ev.ID), i18n.T("ops.view-contract")).Clicked() {
 								u.OpenCatalogTool(regTool.ID, regTool.ServerID)
 							}
 						}
 					}
-					if SailSmallButton(c.Key("logs-copy-json-"+ev.ID), "复制 JSON").Clicked() {
+					if SailSmallButton(c.Key("logs-copy-json-"+ev.ID), i18n.T("ops.copy-json")).Clicked() {
 						c.WriteClipboard(parsed.FullEventJSON)
-						u.Notify("已复制事件完整 JSON")
+						u.Notify(i18n.T("ops.copied-event-json"))
 					}
 				})
 			})
 
 			// 2. Borderless Key Trace Metrics Strip (no chatty captions).
 			ui.Row(c).FillWidth().Wrap().Gap(12).Children(func() {
-				logsMetricTile(c, "耗时", fmt.Sprintf("%d ms", ev.DurationMS), "", true)
+				logsMetricTile(c, i18n.T("ops.duration"), fmt.Sprintf("%d ms", ev.DurationMS), "", true)
 
 				tokMain := "—"
 				tokSub := ""
@@ -494,9 +495,9 @@ func (u *DesktopUI) renderLogsInspectorPane(
 				if actorStr == "" {
 					actorStr = "anonymous"
 				}
-				logsMetricTile(c, "身份", actorStr, "", true)
+				logsMetricTile(c, i18n.T("ops.actor"), actorStr, "", true)
 
-				logsMetricTile(c, "时间", FormatTime(ev.Time), ev.Time.Local().Format("2006-01-02"), true)
+				logsMetricTile(c, i18n.T("ops.time"), FormatTime(ev.Time), ev.Time.Local().Format("2006-01-02"), true)
 			})
 
 			// Secondary metadata row when model / candidate pool / protocol details exist.
@@ -509,25 +510,25 @@ func (u *DesktopUI) renderLogsInspectorPane(
 			if hasExtraMeta {
 				SailSubtleCard(c, func() {
 					if parsed.Model != "" {
-						SailKeyValueRow(c, "路由模型", parsed.Model, true)
+						SailKeyValueRow(c, i18n.T("ops.routing-model"), parsed.Model, true)
 					}
 					if parsed.Eligible != nil {
-						SailKeyValueRow(c, "候选收敛", fmt.Sprintf("%d → %d", *parsed.Eligible, len(parsed.Tools)), true)
+						SailKeyValueRow(c, i18n.T("ops.candidate-narrowing"), fmt.Sprintf("%d → %d", *parsed.Eligible, len(parsed.Tools)), true)
 					}
 					if len(parsed.Servers) > 0 {
-						SailKeyValueRow(c, "命中服务", strings.Join(parsed.Servers, ", "), true)
+						SailKeyValueRow(c, i18n.T("ops.matched-services"), strings.Join(parsed.Servers, ", "), true)
 					}
 					if parsed.Method != "" {
-						SailKeyValueRow(c, "协议方法", parsed.Method, true)
+						SailKeyValueRow(c, i18n.T("ops.protocol-method"), parsed.Method, true)
 					}
 					if parsed.AgentToolName != "" {
-						SailKeyValueRow(c, "元工具", parsed.AgentToolName, true)
+						SailKeyValueRow(c, i18n.T("ops.meta-tool"), parsed.AgentToolName, true)
 					}
 					if parsed.Client != "" {
-						SailKeyValueRow(c, "客户端", parsed.Client, true)
+						SailKeyValueRow(c, i18n.T("ops.client-label"), parsed.Client, true)
 					}
 					if len(parsed.Fields) > 0 {
-						SailKeyValueRow(c, "裁剪字段", strings.Join(parsed.Fields, ", "), true)
+						SailKeyValueRow(c, i18n.T("ops.trimmed-fields"), strings.Join(parsed.Fields, ", "), true)
 					}
 				})
 			}
@@ -544,16 +545,16 @@ func (u *DesktopUI) renderLogsInspectorPane(
 				})
 			}
 			if parsed.Question != "" {
-				SailAlertBox(c, ToneWarning, "需补充上下文", parsed.Question)
+				SailAlertBox(c, ToneWarning, i18n.T("ops.needs-context"), parsed.Question)
 			}
 			if parsed.Error != "" {
-				SailAlertBox(c, ToneDanger, "执行异常", parsed.Error)
+				SailAlertBox(c, ToneDanger, i18n.T("ops.execution-error"), parsed.Error)
 			}
 
 			// 4. Matched Candidate Tools (hairline rows, no nested bordered cards).
 			if len(parsed.Tools) > 0 {
 				SailSubtleCard(c, func() {
-					ui.Textf(c, "命中工具 (%d)", len(parsed.Tools)).
+					ui.Text(c, i18n.T("ops.matched-tools-count", len(parsed.Tools))).
 						FontSize(12).
 						FontWeight(600).
 						TextColor(SailInkMuted)
@@ -584,13 +585,13 @@ func (u *DesktopUI) renderLogsInspectorPane(
 											Selectable()
 
 										if item.HasReadOnly && !item.ReadOnly {
-											SailBadge(c, "写操作", ToneWarning)
+											SailBadge(c, i18n.T("ops.write-access"), ToneWarning)
 										}
 									})
 
 									if item.ID != "" {
 										if _, exists := toolByID[item.ID]; exists {
-											if SailSmallButton(c.Key(fmt.Sprintf("logs-open-tool-%s-%d", ev.ID, idx)), "目录详情").Clicked() {
+											if SailSmallButton(c.Key(fmt.Sprintf("logs-open-tool-%s-%d", ev.ID, idx)), i18n.T("ops.catalog-detail")).Clicked() {
 												u.OpenCatalogTool(item.ID, item.ServerID)
 											}
 										}
@@ -612,24 +613,24 @@ func (u *DesktopUI) renderLogsInspectorPane(
 				})
 			} else if ev.Kind == "discover" && parsed.Error == "" {
 				SailSubtleCard(c, func() {
-					ui.Text(c, "未命中候选工具").FontSize(12.5).TextColor(SailInkMuted)
+					ui.Text(c, i18n.T("ops.no-candidate-tools")).FontSize(12.5).TextColor(SailInkMuted)
 				})
 			}
 
 			// 5. Formatted JSON Payload Viewer.
 			ui.Column(c).FillWidth().Gap(10).Children(func() {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.Start).Children(func() {
-					ui.Segmented(c.Key("logs-payload-tab"), &st.payloadTab, "完整事件 JSON", "Detail 详情载荷").
-						Label("JSON 载荷视图")
+					ui.Segmented(c.Key("logs-payload-tab"), &st.payloadTab, i18n.T("ops.raw-event-json"), i18n.T("ops.detail-payload")).
+						Label(i18n.T("ops.payload-view"))
 				})
 
 				if st.payloadTab == 1 {
 					SailCodeBlock(c, "DETAIL PAYLOAD", parsed.DetailJSON, func() {
-						u.Notify("已复制 Detail 载荷 JSON")
+						u.Notify(i18n.T("ops.copied-detail-payload"))
 					})
 				} else {
 					SailCodeBlock(c, "EVENT TRACE", parsed.FullEventJSON, func() {
-						u.Notify("已复制完整事件 JSON")
+						u.Notify(i18n.T("ops.copied-full-event-json"))
 					})
 				}
 			})
@@ -1047,7 +1048,7 @@ func (u *DesktopUI) renderLogsScopeCard(c *ui.Context, st *logsPageState, evID s
 	SailSubtleCard(c, func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "仓库作用域").FontSize(12).FontWeight(600).TextColor(SailInkMuted).SingleLine()
+				ui.Text(c, i18n.T("ops.repo-scope")).FontSize(12).FontWeight(600).TextColor(SailInkMuted).SingleLine()
 				if sc.Status != "" {
 					if logsScopeIsErrorStatus(sc.Status) {
 						SailBadge(c, sc.Status, ToneDanger)
@@ -1059,13 +1060,13 @@ func (u *DesktopUI) renderLogsScopeCard(c *ui.Context, st *logsPageState, evID s
 
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 				if boundRepo != nil {
-					if SailSmallButton(c.Key("logs-open-repo-"+evID), "仓库规则").Clicked() {
+					if SailSmallButton(c.Key("logs-open-repo-"+evID), i18n.T("ops.repo-rule")).Clicked() {
 						u.OpenRepos(boundRepo.ID)
 					}
 				} else if canBind {
-					bindLbl := "绑定此仓库"
+					bindLbl := i18n.T("ops.bind-this-repo")
 					if st.bindingRepo {
-						bindLbl = "绑定中…"
+						bindLbl = i18n.T("ops.binding")
 					}
 					if SailSmallButton(c.Key("logs-bind-repo-"+evID), bindLbl).Disabled(st.bindingRepo).Clicked() {
 						u.bindRepoFromLogScope(st, sc)
@@ -1075,7 +1076,7 @@ func (u *DesktopUI) renderLogsScopeCard(c *ui.Context, st *logsPageState, evID s
 		})
 
 		if sc.Agent != "" {
-			SailKeyValueRow(c, "调用客户端", fmt.Sprintf("%s (%s)", agentDisplayName(sc.Agent), sc.Agent), false)
+			SailKeyValueRow(c, i18n.T("ops.calling-client"), fmt.Sprintf("%s (%s)", agentDisplayName(sc.Agent), sc.Agent), false)
 		}
 		repoDisplay := sc.RepoName
 		if boundRepo != nil && boundRepo.Name != "" {
@@ -1086,15 +1087,15 @@ func (u *DesktopUI) renderLogsScopeCard(c *ui.Context, st *logsPageState, evID s
 		}
 		if repoDisplay != "" {
 			if boundRepo == nil && (sc.RepoID == "" || sc.RepoID == "*") {
-				repoDisplay += " (未绑定)"
+				repoDisplay += i18n.T("ops.unbound-suffix")
 			}
-			SailKeyValueRow(c, "仓库", repoDisplay, false)
+			SailKeyValueRow(c, i18n.T("ops.repo-label"), repoDisplay, false)
 		}
 		if sc.Root != "" {
-			SailKeyValueRow(c, "工作目录", sc.Root, true)
+			SailKeyValueRow(c, i18n.T("ops.workdir"), sc.Root, true)
 		}
 		if sc.MatchedRule != "" {
-			SailKeyValueRow(c, "命中规则", sc.MatchedRule, true)
+			SailKeyValueRow(c, i18n.T("ops.matched-rule"), sc.MatchedRule, true)
 		}
 	})
 }
@@ -1153,7 +1154,7 @@ func (u *DesktopUI) bindRepoFromLogScope(st *logsPageState, sc logsParsedScope) 
 		u.updateUI(func() {
 			st.bindingRepo = false
 		})
-		u.Notify("已绑定仓库 " + saved.Name)
+		u.Notify(i18n.T("ops.repo-bound-toast", saved.Name))
 		return nil
 	})
 }

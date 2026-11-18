@@ -2,11 +2,11 @@ package clientplugin
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 
 	"gatewaylab/internal/clientconfig"
+	"gatewaylab/internal/i18n"
 )
 
 func (m *Manager) cursorPluginDir() string {
@@ -21,7 +21,7 @@ func (m *Manager) observeCursor(endpoint string, legacy bool) Status {
 		ID:            ClientCursor,
 		Name:          clientconfig.ClientDisplayName(ClientCursor),
 		Path:          pluginDir,
-		State:         "未安装",
+		State:         i18n.T("client.state.not-installed"),
 		TargetVersion: m.version,
 		CLIAvailable:  true,
 		HasLegacyMCP:  legacy,
@@ -29,19 +29,19 @@ func (m *Manager) observeCursor(endpoint string, legacy bool) Status {
 	}
 	expected, renderErr := m.renderCursorPlugin(endpoint, hookBin, dataDir)
 	if renderErr != nil {
-		s.State = "配置异常"
+		s.State = i18n.T("client.state.config-error")
 		s.Detail = renderErr.Error()
 		s.CanInstall = false
 		return s
 	}
 	if legacy {
-		s.State = "待升级"
-		s.Detail = "当前仅配置了全局 MCP，升级为官方插件后可自动加载 Rules、Skill 与 Hook"
+		s.State = i18n.T("client.state.upgradable")
+		s.Detail = i18n.T("client.detail-fs-legacy")
 	}
 
 	r, rErr := m.loadReceipt(ClientCursor)
 	if rErr != nil {
-		s.State = "记录异常"
+		s.State = i18n.T("client.state.record-error")
 		s.Detail = rErr.Error()
 		s.CanInstall = false
 		return s
@@ -52,20 +52,20 @@ func (m *Manager) observeCursor(endpoint string, legacy bool) Status {
 		return s
 	}
 	if err != nil {
-		s.State = "读取失败"
+		s.State = i18n.T("client.state.read-failed")
 		s.Detail = err.Error()
 		s.CanInstall = false
 		return s
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		s.State = "配置异常"
-		s.Detail = "目标路径不是普通插件目录"
+		s.State = i18n.T("client.state.config-error")
+		s.Detail = i18n.T("client.detail-plugin-dir-invalid")
 		s.CanInstall = false
 		return s
 	}
 	if r == nil {
-		s.State = "已有插件"
-		s.Detail = "目录已存在但无本应用写入记录，未覆盖"
+		s.State = i18n.T("client.state.existing-plugin")
+		s.Detail = i18n.T("client.detail-dir-unmanaged")
 		s.CanInstall = false
 		return s
 	}
@@ -73,18 +73,18 @@ func (m *Manager) observeCursor(endpoint string, legacy bool) Status {
 	s.InstalledVersion = r.Version
 	s.CanInstall = false
 	if err := verifyOwnedFilesAbsentOrMatching(pluginDir, expected.RootFiles, r); err != nil {
-		s.State = "配置已变更"
+		s.State = i18n.T("client.state.config-changed")
 		s.Detail = err.Error()
 		return s
 	}
 	s.CanRemove = true
 	if !verifyTreeMatches(pluginDir, r.Files) || r.Digest != expected.Digest {
-		s.State = "需要更新"
+		s.State = i18n.T("client.state.update-required")
 		s.CanUpdate = true
-		s.Detail = "Gateway 地址或插件文件需要更新"
+		s.Detail = i18n.T("client.detail-plugin-file-update")
 		return s
 	}
-	s.State = "已安装"
+	s.State = i18n.T("client.state.installed")
 	return s
 }
 
@@ -107,7 +107,7 @@ func (m *Manager) installCursor(endpoint string, update bool) error {
 			return nil
 		}
 		if !update {
-			return errors.New("当前 Cursor 官方插件需要更新，请执行更新插件")
+			return errors.New(i18n.T("client.err-cursor-needs-update"))
 		}
 	}
 
@@ -132,7 +132,7 @@ func (m *Manager) removeCursor() error {
 		return err
 	}
 	if r == nil {
-		return errors.New("没有可卸载的 Cursor 官方插件记录")
+		return errors.New(i18n.T("client.err-cursor-nothing-to-remove"))
 	}
 	pluginDir := m.cursorPluginDir()
 	if err := verifyOwnedFilesAbsentOrMatching(pluginDir, nil, r); err != nil {
@@ -157,7 +157,7 @@ func (m *Manager) observeOpenCode(endpoint string, legacy bool) Status {
 		ID:            ClientOpenCode,
 		Name:          clientconfig.ClientDisplayName(ClientOpenCode),
 		Path:          pluginPath,
-		State:         "未安装",
+		State:         i18n.T("client.state.not-installed"),
 		TargetVersion: m.version,
 		CLIAvailable:  true,
 		HasLegacyMCP:  legacy,
@@ -165,28 +165,28 @@ func (m *Manager) observeOpenCode(endpoint string, legacy bool) Status {
 	}
 	expected, renderErr := m.renderOpenCodePlugin(endpoint, hookBin, dataDir)
 	if renderErr != nil {
-		s.State = "配置异常"
+		s.State = i18n.T("client.state.config-error")
 		s.Detail = renderErr.Error()
 		s.CanInstall = false
 		return s
 	}
 	if legacy {
-		s.State = "待升级"
-		s.Detail = "当前仅配置了全局 MCP，升级为 OpenCode v2 插件后可自动注册并签名"
+		s.State = i18n.T("client.state.upgradable")
+		s.Detail = i18n.T("client.detail-opencode-legacy")
 	}
 
 	r, rErr := m.loadReceipt(ClientOpenCode)
 	if rErr != nil {
-		s.State = "记录异常"
+		s.State = i18n.T("client.state.record-error")
 		s.Detail = rErr.Error()
 		s.CanInstall = false
 		return s
 	}
 
 	if err := verifyOpenCodeOwnership(cfgDir, expected.RootFiles, r); err != nil {
-		s.State = "已有插件"
+		s.State = i18n.T("client.state.existing-plugin")
 		if r != nil {
-			s.State = "配置已变更"
+			s.State = i18n.T("client.state.config-changed")
 		}
 		s.Detail = err.Error()
 		s.CanInstall = false
@@ -200,12 +200,12 @@ func (m *Manager) observeOpenCode(endpoint string, legacy bool) Status {
 	s.CanInstall = false
 	s.CanRemove = true
 	if !verifyTreeMatches(cfgDir, r.Files) || r.Digest != expected.Digest {
-		s.State = "需要更新"
+		s.State = i18n.T("client.state.update-required")
 		s.CanUpdate = true
-		s.Detail = "Gateway 地址或 OpenCode v2 插件需要更新"
+		s.Detail = i18n.T("client.detail-opencode-update")
 		return s
 	}
-	s.State = "已安装"
+	s.State = i18n.T("client.state.installed")
 	return s
 }
 
@@ -228,7 +228,7 @@ func (m *Manager) installOpenCode(endpoint string, update bool) error {
 			return nil
 		}
 		if !update {
-			return errors.New("当前 OpenCode v2 插件需要更新，请执行更新插件")
+			return errors.New(i18n.T("client.err-opencode-needs-update"))
 		}
 	}
 
@@ -261,7 +261,7 @@ func (m *Manager) removeOpenCode() error {
 		return err
 	}
 	if r == nil {
-		return errors.New("没有可卸载的 OpenCode v2 插件记录")
+		return errors.New(i18n.T("client.err-opencode-nothing-to-remove"))
 	}
 	cfgDir := m.hostConfigDir(ClientOpenCode)
 	if err := verifyOpenCodeOwnership(cfgDir, nil, r); err != nil {
@@ -289,7 +289,7 @@ func verifyOpenCodeOwnership(cfgDir string, files []renderedFile, r *pluginRecei
 				return err
 			}
 			if sha256Hex(raw) != wantHash {
-				return fmt.Errorf("插件文件 %s 已被外部修改，未覆盖", p)
+				return errors.New(i18n.T("client.err-plugin-file-modified", p))
 			}
 		}
 	}
@@ -301,7 +301,7 @@ func verifyOpenCodeOwnership(cfgDir string, files []renderedFile, r *pluginRecei
 		}
 		p := filepath.Join(cfgDir, filepath.FromSlash(f.RelPath))
 		if _, err := os.Lstat(p); err == nil {
-			return fmt.Errorf("目标文件 %s 已存在且不属于本应用，未覆盖", p)
+			return errors.New(i18n.T("client.err-file-exists-other-app", p))
 		}
 	}
 	return nil

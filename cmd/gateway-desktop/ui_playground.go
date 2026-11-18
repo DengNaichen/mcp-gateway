@@ -10,6 +10,7 @@ import (
 
 	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
+	"gatewaylab/internal/i18n"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -19,10 +20,14 @@ type playgroundDemoExample struct {
 	Intent string
 }
 
-var playgroundDemoExamples = []playgroundDemoExample{
-	{Short: "排查服务错误日志", Intent: "排查 billing 服务最近频繁报错的原因"},
-	{Short: "查询服务归属团队", Intent: "查一下 checkout 服务由哪个团队负责"},
-	{Short: "查看近期部署版本", Intent: "查看 billing 最近部署了什么版本"},
+// playgroundDemoExamples is resolved on every render so the sample intents
+// follow the active UI language instead of being frozen at package init.
+func playgroundDemoExamples() []playgroundDemoExample {
+	return []playgroundDemoExample{
+		{Short: i18n.T("ops.sample-short-errors"), Intent: i18n.T("ops.sample-intent-errors")},
+		{Short: i18n.T("ops.sample-short-ownership"), Intent: i18n.T("ops.sample-intent-ownership")},
+		{Short: i18n.T("ops.sample-short-deploys"), Intent: i18n.T("ops.sample-intent-deploys")},
+	}
 }
 
 type playgroundState struct {
@@ -57,8 +62,8 @@ func (u *DesktopUI) playgroundState() *playgroundState {
 	if u.playground == nil {
 		u.playground = &playgroundState{
 			actor:             "developer",
-			serviceScopeLabel: "全部已启用服务",
-			simRepoLabel:      "管理员全量",
+			serviceScopeLabel: i18n.T("ops.all-enabled-services"),
+			simRepoLabel:      i18n.T("ops.admin-all"),
 			argsText:          "{}",
 		}
 	}
@@ -90,7 +95,7 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 		applyPlaygroundReplayScope(st, replay)
 		st.includeDemo = false
 		st.selectedServiceID = ""
-		st.serviceScopeLabel = "全部已启用服务"
+		st.serviceScopeLabel = i18n.T("ops.all-enabled-services")
 		st.result = nil
 		st.selectedTool = nil
 		st.invocation = nil
@@ -108,8 +113,8 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 
 	// Build active server lookup & scope selector options.
 	serversByID := make(map[string]apitypes.Server, len(state.Registry.Servers))
-	scopeOptions := []string{"全部已启用服务"}
-	scopeLabelToID := map[string]string{"全部已启用服务": ""}
+	scopeOptions := []string{i18n.T("ops.all-enabled-services")}
+	scopeLabelToID := map[string]string{i18n.T("ops.all-enabled-services"): ""}
 	for _, srv := range state.Registry.Servers {
 		serversByID[srv.ID] = srv
 		if !srv.Enabled || (srv.Demo && !st.includeDemo) {
@@ -117,7 +122,7 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 		}
 		label := fmt.Sprintf("%s (%s)", srv.Name, srv.ID)
 		if srv.Demo {
-			label += " [演示]"
+			label += i18n.T("ops.demo-suffix")
 		}
 		scopeOptions = append(scopeOptions, label)
 		scopeLabelToID[label] = srv.ID
@@ -130,14 +135,14 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 	}
 
 	// Build repository & coding agent simulation options.
-	repoOptions := []string{"管理员全量", "未绑定新仓库 (*)"}
+	repoOptions := []string{i18n.T("ops.admin-all"), i18n.T("ops.unbound-new-repo")}
 	repoLabelToKey := map[string]string{
-		"管理员全量":      "",
-		"未绑定新仓库 (*)": "*",
+		i18n.T("ops.admin-all"):        "",
+		i18n.T("ops.unbound-new-repo"): "*",
 	}
 	repoKeyToLabel := map[string]string{
-		"":  "管理员全量",
-		"*": "未绑定新仓库 (*)",
+		"":  i18n.T("ops.admin-all"),
+		"*": i18n.T("ops.unbound-new-repo"),
 	}
 	for _, repo := range state.Scopes.Repositories {
 		lbl := repo.Name
@@ -154,7 +159,7 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 		st.simRepoLabel = lbl
 	} else {
 		st.simRepoKey = ""
-		st.simRepoLabel = "管理员全量"
+		st.simRepoLabel = i18n.T("ops.admin-all")
 	}
 
 	simScope := activePlaygroundSimScope(st)
@@ -193,21 +198,21 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 	// Page Header.
 	modelDisplay := state.Settings.Model
 	if modelDisplay == "" {
-		modelDisplay = "未配置模型"
+		modelDisplay = i18n.T("ops.no-model-configured")
 	}
-	SailSectionHeader(c, "路由沙盒", "", func() {
-		ui.Textf(c, "%s · 候选 %d", modelDisplay, eligibleCount).
+	SailSectionHeader(c, i18n.T("ops.playground"), "", func() {
+		ui.Text(c, i18n.T("ops.model-with-candidates", modelDisplay, eligibleCount)).
 			FontSize(12.5).
 			FontFeatures("tnum").
 			TextColor(SailInkMuted).
 			SingleLine()
-		if SailSmallButton(c.Key("pg-settings-btn"), "路由参数").Clicked() {
+		if SailSmallButton(c.Key("pg-settings-btn"), i18n.T("ops.routing-params")).Clicked() {
 			u.Navigate(ViewSettings)
 		}
 	})
 
 	if strings.TrimSpace(state.Settings.Model) == "" {
-		SailAlertBox(c, ToneWarning, "尚未配置路由模型", "请前往「访问与路由」设置 Model ID 与 API Key。")
+		SailAlertBox(c, ToneWarning, i18n.T("ops.routing-model-missing"), i18n.T("ops.routing-model-missing-detail"))
 	}
 
 	// Two-column Workbench Split.
@@ -253,12 +258,12 @@ func (u *DesktopUI) renderPlaygroundComposer(
 	repoLabelToKey map[string]string,
 ) {
 	SailCard(c, func() {
-		SailCardTitle(c, "任务意图", "", func() {
+		SailCardTitle(c, i18n.T("ops.task-intent"), "", func() {
 			ui.Text(c, "⌘+Enter").FontSize(11.5).Font("monospace").TextColor(SailInkFaint).SingleLine()
 		})
 
 		ui.TextArea(c.Key("pg-intent"), &st.intent).
-			Placeholder("输入任务意图，例如：查看待 review 的未关闭 PR…").
+			Placeholder(i18n.T("ops.task-intent-placeholder")).
 			Lines(3, 6).
 			FillWidth().
 			OnTextKey(func(k ui.TextKey) bool {
@@ -273,9 +278,9 @@ func (u *DesktopUI) renderPlaygroundComposer(
 
 		if st.showContext {
 			ui.Column(c).FillWidth().Gap(5).Children(func() {
-				ui.Text(c, "补充上下文").FontSize(12).FontWeight(600).TextColor(SailInkMuted)
+				ui.Text(c, i18n.T("ops.extra-context")).FontSize(12).FontWeight(600).TextColor(SailInkMuted)
 				ui.TextArea(c.Key("pg-context"), &st.context).
-					Placeholder("已知服务名、仓库名或排查线索…").
+					Placeholder(i18n.T("ops.extra-context-placeholder")).
 					Lines(2, 4).
 					FillWidth()
 			})
@@ -283,23 +288,23 @@ func (u *DesktopUI) renderPlaygroundComposer(
 
 		// Context toggle + quick demo examples.
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Wrap().Children(func() {
-			ctxLabel := "+ 上下文"
+			ctxLabel := i18n.T("ops.context-open")
 			if st.showContext {
-				ctxLabel = "收起上下文"
+				ctxLabel = i18n.T("ops.context-close")
 			}
 			if SailSmallButton(c.Key("pg-toggle-context"), ctxLabel).Clicked() {
 				st.showContext = !st.showContext
 			}
 
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Wrap().Children(func() {
-				for i, ex := range playgroundDemoExamples {
+				for i, ex := range playgroundDemoExamples() {
 					if SailSmallButton(c.Key(fmt.Sprintf("pg-demo-%d", i)), ex.Short).Clicked() {
 						st.intent = ex.Intent
 						st.includeDemo = true
 						st.selectedServiceID = ""
-						st.serviceScopeLabel = "全部已启用服务"
+						st.serviceScopeLabel = i18n.T("ops.all-enabled-services")
 						st.simRepoKey = ""
-						st.simRepoLabel = "管理员全量"
+						st.simRepoLabel = i18n.T("ops.admin-all")
 						st.result = nil
 						st.selectedTool = nil
 						st.invocation = nil
@@ -315,7 +320,7 @@ func (u *DesktopUI) renderPlaygroundComposer(
 		// Actor, Service Scope, Include Demo, Summary Only controls + Primary Discover action.
 		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Wrap().Children(func() {
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "身份").FontSize(12).TextColor(SailInkMuted).SingleLine()
+				ui.Text(c, i18n.T("ops.actor")).FontSize(12).TextColor(SailInkMuted).SingleLine()
 				if state.Access.Shared {
 					ui.Text(c, effectiveActor).Font("monospace").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
 				} else {
@@ -328,7 +333,7 @@ func (u *DesktopUI) renderPlaygroundComposer(
 			})
 
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "服务").FontSize(12).TextColor(SailInkMuted).SingleLine()
+				ui.Text(c, i18n.T("ops.services")).FontSize(12).TextColor(SailInkMuted).SingleLine()
 				if ui.Select(c.Key("pg-scope"), &st.serviceScopeLabel, scopeOptions).MinWidth(164).Changed() {
 					st.selectedServiceID = scopeLabelToID[st.serviceScopeLabel]
 					st.result = nil
@@ -338,7 +343,7 @@ func (u *DesktopUI) renderPlaygroundComposer(
 			})
 
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "仓库").FontSize(12).TextColor(SailInkMuted).SingleLine()
+				ui.Text(c, i18n.T("ops.repo-label")).FontSize(12).TextColor(SailInkMuted).SingleLine()
 				if ui.Select(c.Key("pg-sim-repo"), &st.simRepoLabel, repoOptions).MinWidth(156).Changed() {
 					st.simRepoKey = repoLabelToKey[st.simRepoLabel]
 					st.result = nil
@@ -350,22 +355,22 @@ func (u *DesktopUI) renderPlaygroundComposer(
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Wrap().Children(func() {
 			ui.Row(c).Gap(16).AlignItems(ui.Center).Wrap().Children(func() {
-				if ui.Checkbox(c.Key("pg-include-demo"), &st.includeDemo, "演示工具").Changed() {
+				if ui.Checkbox(c.Key("pg-include-demo"), &st.includeDemo, i18n.T("ops.demo-tools")).Changed() {
 					st.result = nil
 					st.selectedTool = nil
 					st.invocation = nil
 				}
 
-				if ui.Checkbox(c.Key("pg-summary-only"), &st.summaryOnly, "仅摘要").Changed() {
+				if ui.Checkbox(c.Key("pg-summary-only"), &st.summaryOnly, i18n.T("ops.summary-only")).Changed() {
 					st.result = nil
 					st.selectedTool = nil
 					st.invocation = nil
 				}
 			})
 
-			btnLabel := "发起路由发现"
+			btnLabel := i18n.T("ops.start-routing")
 			if st.routing {
-				btnLabel = "路由中…"
+				btnLabel = i18n.T("ops.routing-in-progress")
 			}
 			if SailPrimaryButton(c.Key("pg-discover-btn"), btnLabel).
 				Disabled(strings.TrimSpace(st.intent) == "" || st.routing).
@@ -386,19 +391,19 @@ func (u *DesktopUI) renderPlaygroundResults(
 	SailFlushCard(c, func() {
 		var headerNote string
 		if res := st.result; res != nil {
-			headerNote = fmt.Sprintf("候选 %d · %d ms", res.Eligible, res.DurationMS)
+			headerNote = i18n.T("ops.candidates-with-latency", res.Eligible, res.DurationMS)
 			if res.PromptTokens+res.OutputTokens > 0 {
 				headerNote += fmt.Sprintf(" · %d tok", res.PromptTokens+res.OutputTokens)
 			}
 		}
 
-		SailListCardHeader(c, "路由结果", headerNote, func() {
+		SailListCardHeader(c, i18n.T("ops.routing-result"), headerNote, func() {
 			if res := st.result; res != nil {
 				switch res.Status {
 				case "selected":
-					SailQuietStatus(c, "已命中", SailSuccessInk, SailInkStrong)
+					SailQuietStatus(c, i18n.T("ops.routing-matched"), SailSuccessInk, SailInkStrong)
 				case "needs_context":
-					SailBadge(c, "需补充信息", ToneWarning)
+					SailBadge(c, i18n.T("ops.routing-needs-more"), ToneWarning)
 				case "error", "failed":
 					SailBadge(c, discoveryStatusLabel(res.Status), ToneDanger)
 				default:
@@ -409,14 +414,14 @@ func (u *DesktopUI) renderPlaygroundResults(
 
 		if st.routeError != "" {
 			ui.Column(c).FillWidth().Padding(16, 20).Children(func() {
-				SailAlertBox(c, ToneDanger, "路由发现失败", st.routeError)
+				SailAlertBox(c, ToneDanger, i18n.T("ops.routing-failed"), st.routeError)
 			})
 		}
 
 		if st.routing {
 			ui.Column(c).FillWidth().Padding(32, 20).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Spinner(c).Label("正在请求路由模型")
-				ui.Text(c, "正在评估候选工具…").FontSize(13).TextColor(SailInkMuted)
+				ui.Spinner(c).Label(i18n.T("ops.requesting-routing-model"))
+				ui.Text(c, i18n.T("ops.evaluating-candidates")).FontSize(13).TextColor(SailInkMuted)
 			})
 			return
 		}
@@ -425,7 +430,7 @@ func (u *DesktopUI) renderPlaygroundResults(
 		if res == nil {
 			if st.routeError == "" {
 				ui.Column(c).FillWidth().Padding(20).Children(func() {
-					SailEmptyState(c, "尚未发起路由", "", "", nil)
+					SailEmptyState(c, i18n.T("ops.no-routing-yet"), "", "", nil)
 				})
 			}
 			return
@@ -444,14 +449,14 @@ func (u *DesktopUI) renderPlaygroundResults(
 						ui.Text(c, res.Summary).FontSize(13).LineHeight(1.48).FontWeight(500).TextColor(SailInkStrong)
 					}
 					if res.Question != "" {
-						ui.Text(c, "建议补充："+res.Question).FontSize(12.5).TextColor(SailWarningInk)
+						ui.Text(c, i18n.T("ops.suggested-followup", res.Question)).FontSize(12.5).TextColor(SailWarningInk)
 					}
 				})
 		}
 
 		if len(res.Tools) == 0 {
 			ui.Column(c).FillWidth().Padding(20).Children(func() {
-				SailEmptyState(c, "未命中工具", "", "", nil)
+				SailEmptyState(c, i18n.T("ops.no-tool-matched"), "", "", nil)
 			})
 			return
 		}
@@ -503,7 +508,7 @@ func (u *DesktopUI) renderPlaygroundResults(
 
 				// Anchor 3: RW risk badge only when write-capable
 				if !sel.ReadOnly {
-					SailBadge(c, "写操作", ToneWarning).Shrink(0)
+					SailBadge(c, i18n.T("ops.write-access"), ToneWarning).Shrink(0)
 				}
 			})
 
@@ -521,19 +526,19 @@ func (u *DesktopUI) renderPlaygroundInspector(
 	effectiveActor string,
 ) {
 	SailCard(c, func() {
-		SailCardTitle(c, "工具检查与试调用", "", func() {
+		SailCardTitle(c, i18n.T("ops.tool-inspector"), "", func() {
 			if st.selectedTool != nil {
 				if st.selectedTool.ReadOnly {
-					ui.Text(c, "只读").FontSize(12).TextColor(SailInkMuted).SingleLine()
+					ui.Text(c, i18n.T("ops.read-only")).FontSize(12).TextColor(SailInkMuted).SingleLine()
 				} else {
-					SailBadge(c, "写操作", ToneWarning)
+					SailBadge(c, i18n.T("ops.write-access"), ToneWarning)
 				}
 			}
 		})
 
 		sel := st.selectedTool
 		if sel == nil {
-			SailEmptyState(c, "未选择工具", "", "", nil)
+			SailEmptyState(c, i18n.T("ops.no-tool-selected"), "", "", nil)
 			return
 		}
 
@@ -547,22 +552,22 @@ func (u *DesktopUI) renderPlaygroundInspector(
 			}
 		})
 
-		ui.Segmented(c.Key("pg-inspector-tab"), &st.inspectorTab, "Input Schema", "发起试调用").Label("工具检查模式")
+		ui.Segmented(c.Key("pg-inspector-tab"), &st.inspectorTab, "Input Schema", i18n.T("ops.start-trial-call")).Label(i18n.T("ops.inspector-mode"))
 
 		if st.inspectorTab == 0 {
 			if sel.InputSchema == nil {
 				SailSubtleCard(c, func() {
-					ui.Text(c, "摘要模式未附带 Input Schema").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
+					ui.Text(c, i18n.T("ops.summary-mode-no-schema")).FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-						btnText := "拉取 Schema"
+						btnText := i18n.T("ops.fetch-schema")
 						if st.loadingSchema {
-							btnText = "加载中…"
+							btnText = i18n.T("ops.loading")
 						}
 						if SailSmallPrimaryButton(c.Key("pg-fetch-schema"), btnText).Disabled(st.loadingSchema).Clicked() {
 							u.fetchPlaygroundToolSchema(st, sel.ID, effectiveActor)
 						}
 						if full, ok := toolsByID[sel.ID]; ok && full.InputSchema != nil {
-							if SailSmallButton(c.Key("pg-use-local-schema"), "使用本地缓存").Clicked() {
+							if SailSmallButton(c.Key("pg-use-local-schema"), i18n.T("ops.use-local-cache")).Clicked() {
 								sel.Tool = full
 								st.argsText = initialArgsForTool(full)
 							}
@@ -571,11 +576,11 @@ func (u *DesktopUI) renderPlaygroundInspector(
 				})
 			} else {
 				SailCodeBlock(c, "INPUT SCHEMA", PrettyJSON(sel.InputSchema), func() {
-					u.Notify("已复制 Schema")
+					u.Notify(i18n.T("ops.copied-schema"))
 				})
 			}
 
-			if SailPrimaryButton(c.Key("pg-goto-invoke"), "试运行此工具").Clicked() {
+			if SailPrimaryButton(c.Key("pg-goto-invoke"), i18n.T("ops.try-this-tool")).Clicked() {
 				st.inspectorTab = 1
 			}
 			return
@@ -584,8 +589,8 @@ func (u *DesktopUI) renderPlaygroundInspector(
 		// Tab 1: Direct Invoke Workbench.
 		ui.Column(c).FillWidth().Gap(6).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-				ui.Text(c, "参数 (JSON)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-				if SailSmallButton(c.Key("pg-reset-args"), "示例参数").Clicked() {
+				ui.Text(c, i18n.T("ops.arguments-json")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+				if SailSmallButton(c.Key("pg-reset-args"), i18n.T("ops.example-args")).Clicked() {
 					toolForArgs := sel.Tool
 					if toolForArgs.InputSchema == nil {
 						if full, ok := toolsByID[sel.ID]; ok {
@@ -603,32 +608,32 @@ func (u *DesktopUI) renderPlaygroundInspector(
 		})
 
 		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			ui.Text(c, "字段裁剪").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+			ui.Text(c, i18n.T("ops.field-trimming")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 			ui.TextInput(c.Key("pg-fields"), &st.fieldsText).
 				Font("monospace").
-				Placeholder("可选，如 logs.timestamp, logs.message").
+				Placeholder(i18n.T("ops.field-trimming-placeholder")).
 				FillWidth()
 		})
 
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-			invokeLabel := "执行调用"
+			invokeLabel := i18n.T("ops.invoke")
 			if st.invoking {
-				invokeLabel = "执行中…"
+				invokeLabel = i18n.T("ops.invoking")
 			}
 			if SailPrimaryButton(c.Key("pg-invoke-btn"), invokeLabel).Disabled(st.invoking).Clicked() {
 				u.runPlaygroundInvoke(st, sel.ID, effectiveActor)
 			}
-			ui.Textf(c, "身份 · %s", effectiveActor).Font("monospace").FontSize(12).TextColor(SailInkMuted)
+			ui.Text(c, i18n.T("ops.actor-with-value", effectiveActor)).Font("monospace").FontSize(12).TextColor(SailInkMuted)
 		})
 
 		if st.invokeError != "" {
-			SailAlertBox(c, ToneDanger, "调用失败", st.invokeError)
+			SailAlertBox(c, ToneDanger, i18n.T("ops.invoke-failed"), st.invokeError)
 		}
 
 		if inv := st.invocation; inv != nil {
 			title := fmt.Sprintf("RESPONSE · %s · %d ms", inv.Protocol, inv.DurationMS)
 			SailCodeBlock(c, title, PrettyJSON(inv.Data), func() {
-				u.Notify("已复制调用结果")
+				u.Notify(i18n.T("ops.copied-invoke-result"))
 			})
 		}
 	})
@@ -776,7 +781,7 @@ func (u *DesktopUI) runPlaygroundInvoke(st *playgroundState, toolID, effectiveAc
 	}
 	var parsedArgs map[string]any
 	if err := json.Unmarshal([]byte(rawArgs), &parsedArgs); err != nil {
-		st.invokeError = "arguments 必须是合法的 JSON 对象: " + err.Error()
+		st.invokeError = i18n.T("ops.invalid-json-arguments", err.Error())
 		return
 	}
 	if parsedArgs == nil {
@@ -832,11 +837,11 @@ func (u *DesktopUI) runPlaygroundInvoke(st *playgroundState, toolID, effectiveAc
 func discoveryStatusLabel(status string) string {
 	switch status {
 	case "selected":
-		return "已命中"
+		return i18n.T("ops.routing-matched")
 	case "needs_context":
-		return "需补充信息"
+		return i18n.T("ops.routing-needs-more")
 	case "no_match":
-		return "无匹配"
+		return i18n.T("ops.no-match")
 	default:
 		return status
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gatewaylab/internal/apitypes"
+	"gatewaylab/internal/i18n"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -149,7 +150,7 @@ func (st *reposPageState) ensureDraft(rules []apitypes.ScopeRule, repoKey string
 func shortRemoteHint(remote string) string {
 	r := strings.TrimSpace(remote)
 	if r == "" {
-		return "本地仓库"
+		return i18n.T("ops.local-repos")
 	}
 	r = strings.TrimSuffix(r, ".git")
 	for _, prefix := range []string{"https://", "http://", "ssh://", "git://"} {
@@ -193,21 +194,21 @@ func primaryRepoPath(repo apitypes.Repository) string {
 func repoBoundServiceSummary(repoID string, rules []apitypes.ScopeRule) string {
 	if r, ok := findScopeRule(rules, repoID); ok {
 		if len(r.Grants) == 0 {
-			return "无服务"
+			return i18n.T("ops.no-service")
 		}
-		return fmt.Sprintf("%d 个服务", len(r.Grants))
+		return i18n.T("ops.services-count", len(r.Grants))
 	}
 	if g, ok := findScopeRule(rules, "*"); ok && len(g.Grants) > 0 {
-		return fmt.Sprintf("继承 %d", len(g.Grants))
+		return i18n.T("ops.inherited-count", len(g.Grants))
 	}
-	return "无服务"
+	return i18n.T("ops.no-service")
 }
 
 func globalDefaultServiceSummary(rules []apitypes.ScopeRule) string {
 	if r, ok := findScopeRule(rules, "*"); ok && len(r.Grants) > 0 {
-		return fmt.Sprintf("%d 个服务", len(r.Grants))
+		return i18n.T("ops.services-count", len(r.Grants))
 	}
-	return "默认无服务"
+	return i18n.T("ops.no-default-service")
 }
 
 // --- Deterministic Local Scope Policy Evaluator (mirrors backend precedence) ---
@@ -215,16 +216,16 @@ func globalDefaultServiceSummary(rules []apitypes.ScopeRule) string {
 func resolveEffectiveScopeRule(scopes apitypes.ScopeOverview, repoKey string) (grants []apitypes.ServiceGrant, matchedRepo, sourceLabel string) {
 	if repoKey != "" && repoKey != "*" {
 		if r, ok := findScopeRule(scopes.Rules, repoKey); ok {
-			return r.Grants, repoKey, "仓库默认"
+			return r.Grants, repoKey, i18n.T("ops.repo-default")
 		}
 	}
 	if r, ok := findScopeRule(scopes.Rules, "*"); ok {
 		if len(r.Grants) == 0 {
-			return r.Grants, "*", "无权限"
+			return r.Grants, "*", i18n.T("ops.no-permission")
 		}
-		return r.Grants, "*", "全局默认"
+		return r.Grants, "*", i18n.T("ops.global-default")
 	}
-	return nil, "*", "无权限"
+	return nil, "*", i18n.T("ops.no-permission")
 }
 
 func scopeGrantAllowsTool(grants []apitypes.ServiceGrant, t apitypes.Tool) bool {
@@ -283,10 +284,10 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 		switch ui.AlertDialog(
 			c,
 			&st.showDeleteConfirm,
-			fmt.Sprintf("移除仓库「%s」？", targetName),
-			"移除后将删除该仓库专属规则，恢复按全局默认求值。",
-			"取消",
-			"移除绑定",
+			i18n.T("ops.remove-repo-confirm-title", targetName),
+			i18n.T("ops.remove-repo-confirm-body"),
+			i18n.T("ops.cancel"),
+			i18n.T("ops.remove-binding"),
 		) {
 		case 1:
 			u.deleteBoundRepository(st, targetID, targetName)
@@ -295,25 +296,25 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 
 	// 1. Top Header: Title, Enforce Switch, Manual Hook Button, Add Local Repo Button.
 	enforceVal := state.Scopes.Enforce
-	SailSectionHeader(c, "仓库绑定", "", func() {
+	SailSectionHeader(c, i18n.T("ops.repos-title"), "", func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(4, 10).Radius(6).Background(SailBgSubtle).Children(func() {
 			sw := ui.Switch(c.Key("repos-enforce-sw"), &enforceVal).
 				Disabled(st.modeBusy).
-				Label("启用仓库隔离拦截")
-			ui.Text(c, "启用仓库隔离拦截").FontSize(12.5).FontWeight(500).TextColor(SailInkStrong).SingleLine()
+				Label(i18n.T("ops.enable-repo-isolation"))
+			ui.Text(c, i18n.T("ops.enable-repo-isolation")).FontSize(12.5).FontWeight(500).TextColor(SailInkStrong).SingleLine()
 			if sw.Changed() {
 				u.toggleScopeEnforceMode(st, enforceVal)
 			}
 		})
 
-		if SailButton(c.Key("repos-hook-btn"), "手动配置 Hook").Clicked() {
+		if SailButton(c.Key("repos-hook-btn"), i18n.T("ops.manual-hook-config")).Clicked() {
 			u.OpenHookSnippetModal("claude")
 		}
 
 		if !state.Access.Shared {
-			addLbl := "添加本地仓库…"
+			addLbl := i18n.T("ops.add-local-repo")
 			if st.repoBusy {
-				addLbl = "添加中…"
+				addLbl = i18n.T("ops.adding")
 			}
 			if SailPrimaryButton(c.Key("repos-add-repo-btn"), addLbl).Disabled(st.repoBusy).Clicked() {
 				u.pickAndBindLocalRepo(st)
@@ -321,7 +322,7 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 		}
 	})
 
-	ui.Segmented(c.Key("repos-view-mode"), &st.viewMode, "矩阵视图", "单仓库详情").AlignSelf(ui.Start).Label("仓库视图")
+	ui.Segmented(c.Key("repos-view-mode"), &st.viewMode, i18n.T("ops.matrix-view"), i18n.T("ops.single-repo-detail")).AlignSelf(ui.Start).Label(i18n.T("ops.repo-view"))
 	if st.viewMode == 0 {
 		u.renderReposMatrix(c.Key("repos-matrix"), st, state)
 		return
@@ -364,12 +365,12 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 					if globalSelected {
 						titleCol = SailAccent
 					}
-					ui.Text(c, "全局默认").FontSize(13.5).FontWeight(600).TextColor(titleCol).SingleLine()
-					ui.Text(c, "未绑定仓库兜底").FontSize(11.5).TextColor(SailInkMuted).SingleLine()
+					ui.Text(c, i18n.T("ops.global-default")).FontSize(13.5).FontWeight(600).TextColor(titleCol).SingleLine()
+					ui.Text(c, i18n.T("ops.unbound-fallback")).FontSize(11.5).TextColor(SailInkMuted).SingleLine()
 				})
 				sum := globalDefaultServiceSummary(state.Scopes.Rules)
 				sumCol := SailInkMuted
-				if sum == "默认无服务" {
+				if sum == i18n.T("ops.no-default-service") {
 					sumCol = SailInkFaint
 				}
 				ui.Text(c, sum).FontSize(11.5).FontFeatures("tnum").TextColor(sumCol).Shrink(0).SingleLine()
@@ -379,12 +380,12 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 			}
 
 			// 2. Section Header: 已绑定仓库
-			SailGroupHeader(c, "已绑定仓库", len(state.Scopes.Repositories), 16, false)
+			SailGroupHeader(c, i18n.T("ops.bound-repos"), len(state.Scopes.Repositories), 16, false)
 
 			if len(state.Scopes.Repositories) == 0 {
 				emptyRow := ui.Column(c).FillWidth().Padding(6, 16, 14, 16)
 				emptyRow.Children(func() {
-					ui.Text(c, "尚未绑定仓库").FontSize(12.5).TextColor(SailInkFaint)
+					ui.Text(c, i18n.T("ops.no-bound-repos")).FontSize(12.5).TextColor(SailInkFaint)
 				})
 			} else {
 				for idx, repoItem := range state.Scopes.Repositories {
@@ -441,7 +442,7 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 								Radius(5).
 								Center().
 								Cursor(ui.CursorPointer).
-								Label("在 Finder 中定位 " + repo.Name).
+								Label(i18n.T("ops.reveal-in-finder-for", repo.Name)).
 								Tooltip(repoPath)
 							if revBtn.Hovered() {
 								revBtn.Background(SailBgMuted)
@@ -459,7 +460,7 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 							Radius(5).
 							Center().
 							Cursor(ui.CursorPointer).
-							Label(repo.Name + " 更多操作")
+							Label(i18n.T("ops.more-actions-for", repo.Name))
 						if moreBtn.Hovered() {
 							moreBtn.Background(SailBgMuted)
 						}
@@ -468,11 +469,11 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 						})
 						moreBtn.PopoverMenuButton(func(menu *ui.Menu) {
 							if repoPath != "" && !state.Access.Shared {
-								if menu.Item("在 Finder 中显示").Chosen() {
+								if menu.Item(i18n.T("ops.reveal-in-finder")).Chosen() {
 									u.RunAsync(func() error { return revealClientConfig(repoPath) })
 								}
 							}
-							if menu.Item("移除仓库绑定").Chosen() {
+							if menu.Item(i18n.T("ops.remove-repo-binding")).Chosen() {
 								st.confirmDeleteRepoID = repo.ID
 								st.confirmDeleteRepoName = repo.Name
 								st.showDeleteConfirm = true
@@ -484,7 +485,7 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 
 			// 3. Observed Unbound Section: 最近请求 · 未绑定
 			if len(state.Scopes.Observed) > 0 {
-				SailGroupHeader(c, "最近请求 · 未绑定", len(state.Scopes.Observed), 16, false)
+				SailGroupHeader(c, i18n.T("ops.recent-request-unbound"), len(state.Scopes.Observed), 16, false)
 
 				for idx, obsItem := range state.Scopes.Observed {
 					obs := obsItem
@@ -509,7 +510,7 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 								obsName = filepath.Base(obs.Root)
 							}
 							if obsName == "" {
-								obsName = "未命名目录"
+								obsName = i18n.T("ops.untitled-directory")
 							}
 							ui.Text(c, obsName).FontSize(12.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
 
@@ -523,7 +524,7 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 							ui.Text(c, sub).TruncateMiddle().Tooltip(obs.Root).FontSize(11).TextColor(SailInkMuted).SingleLine()
 						})
 
-						if SailSmallButton(c.Key("repos-bind-btn-"+obsKey), "绑定").Disabled(st.repoBusy).Clicked() {
+						if SailSmallButton(c.Key("repos-bind-btn-"+obsKey), i18n.T("ops.bind")).Disabled(st.repoBusy).Clicked() {
 							u.bindObservedRepo(st, obs)
 						}
 					})
@@ -557,11 +558,11 @@ func (u *DesktopUI) renderRepoDetailHeaderCard(
 ) {
 	SailCard(c, func() {
 		if selectedRepo == nil {
-			SailCardTitle(c, "全局默认", "适用于尚未单独绑定规则的仓库兜底", func() {
+			SailCardTitle(c, i18n.T("ops.global-default"), i18n.T("ops.global-default-detail"), func() {
 				if state.Scopes.Enforce {
-					SailQuietStatus(c, "强制隔离中", SailSuccessInk, SailInkStrong)
+					SailQuietStatus(c, i18n.T("ops.isolation-enforced"), SailSuccessInk, SailInkStrong)
 				} else {
-					SailQuietStatus(c, "兼容模式", SailInkFaint, SailInkMuted)
+					SailQuietStatus(c, i18n.T("ops.compat-mode"), SailInkFaint, SailInkMuted)
 				}
 			})
 			return
@@ -572,11 +573,11 @@ func (u *DesktopUI) renderRepoDetailHeaderCard(
 
 		SailCardTitle(c, repo.Name, repo.RemoteHint, func() {
 			if repoPath != "" && !state.Access.Shared {
-				if SailSmallButton(c.Key("detail-reveal-"+repo.ID), "在 Finder 中显示 ↗").Clicked() {
+				if SailSmallButton(c.Key("detail-reveal-"+repo.ID), i18n.T("ops.reveal-in-finder-arrow")).Clicked() {
 					u.RunAsync(func() error { return revealClientConfig(repoPath) })
 				}
 			}
-			if SailDangerButton(c.Key("detail-del-"+repo.ID), "移除绑定").Clicked() {
+			if SailDangerButton(c.Key("detail-del-"+repo.ID), i18n.T("ops.remove-binding")).Clicked() {
 				st.confirmDeleteRepoID = repo.ID
 				st.confirmDeleteRepoName = repo.Name
 				st.showDeleteConfirm = true
@@ -589,7 +590,7 @@ func (u *DesktopUI) renderRepoDetailHeaderCard(
 					SailKeyValueRow(c, "CommonDir", strings.Join(repo.GitCommonDirs, "\n"), true)
 				}
 				if len(repo.RootPaths) > 0 {
-					SailKeyValueRow(c, "工作目录", strings.Join(repo.RootPaths, "\n"), true)
+					SailKeyValueRow(c, i18n.T("ops.workdir"), strings.Join(repo.RootPaths, "\n"), true)
 				}
 			})
 		}
@@ -627,15 +628,15 @@ func (u *DesktopUI) renderRepoDefaultServicesCard(
 	servers := enabledRealServers(state)
 	toolsBySrv := enabledToolsByServer(state)
 
-	title := "仓库默认服务"
+	title := i18n.T("ops.repo-default-services")
 	if repoKey == "*" {
-		title = "全局默认服务"
+		title = i18n.T("ops.global-default-services")
 	}
-	note := "默认无服务"
+	note := i18n.T("ops.no-default-service")
 	if len(draft.grants) > 0 {
-		note = fmt.Sprintf("%d 个服务", len(draft.grants))
+		note = i18n.T("ops.services-count", len(draft.grants))
 	} else if repoKey != "*" && !hasSavedRule && !draft.dirty {
-		note = "未单独设置 · 继承全局默认"
+		note = i18n.T("ops.not-set-inherits-global")
 	}
 
 	SailFlushCard(c, func() {
@@ -643,18 +644,18 @@ func (u *DesktopUI) renderRepoDefaultServicesCard(
 			u.renderAddServiceToDraftMenu(c.Key("def-add-svc-"+repoKey), draft, servers)
 
 			if repoKey != "*" && hasSavedRule && !draft.dirty {
-				if SailSmallButton(c.Key("def-inherit-"+repoKey), "恢复继承全局").Disabled(draft.saving).Clicked() {
-					u.deleteScopeRuleAsync(st, repoKey, "已恢复继承全局默认规则")
+				if SailSmallButton(c.Key("def-inherit-"+repoKey), i18n.T("ops.restore-inherit-global")).Disabled(draft.saving).Clicked() {
+					u.deleteScopeRuleAsync(st, repoKey, i18n.T("ops.inherit-restored"))
 				}
 			}
 			if draft.dirty {
-				if SailSmallButton(c.Key("def-reset-"+repoKey), "重置").Disabled(draft.saving).Clicked() {
+				if SailSmallButton(c.Key("def-reset-"+repoKey), i18n.T("ops.reset")).Disabled(draft.saving).Clicked() {
 					u.resetDraft(state.Scopes.Rules, draft, repoKey)
 				}
 			}
-			saveLbl := "保存"
+			saveLbl := i18n.T("ops.save")
 			if draft.saving {
-				saveLbl = "保存中…"
+				saveLbl = i18n.T("ops.saving")
 			}
 			canSave := draft.dirty || (repoKey != "*" && !hasSavedRule)
 			if SailSmallPrimaryButton(c.Key("def-save-"+repoKey), saveLbl).Disabled(!canSave || draft.saving).Clicked() {
@@ -682,7 +683,7 @@ func (u *DesktopUI) renderAddServiceToDraftMenu(
 		}
 	}
 
-	addBtn := SailSmallButton(c.Key("add-svc-menu"), "+ 添加服务").Disabled(len(available) == 0 || draft.saving)
+	addBtn := SailSmallButton(c.Key("add-svc-menu"), i18n.T("ops.add-service")).Disabled(len(available) == 0 || draft.saving)
 	if len(available) > 0 {
 		addBtn.PopoverMenuButton(func(menu *ui.Menu) {
 			for _, srvItem := range available {
@@ -707,7 +708,7 @@ func (u *DesktopUI) renderServiceGrantList(
 ) {
 	if len(draft.grants) == 0 {
 		ui.Row(c).FillWidth().Padding(18, 20).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			ui.Text(c, "未授权任何服务（0 工具）").FontSize(12.5).TextColor(SailInkMuted)
+			ui.Text(c, i18n.T("ops.no-services-granted")).FontSize(12.5).TextColor(SailInkMuted)
 		})
 		return
 	}
@@ -760,9 +761,9 @@ func (u *DesktopUI) renderServiceGrantList(
 
 			// Anchor 2 & 3: Tool Subset Expander + RO/RW Toggle + Remove
 			ui.Row(c).Shrink(0).Gap(8).AlignItems(ui.Center).Children(func() {
-				subsetLabel := fmt.Sprintf("全部工具 (%d)", len(srvTools))
+				subsetLabel := i18n.T("ops.all-tools-count", len(srvTools))
 				if len(g.ToolIDs) > 0 {
-					subsetLabel = fmt.Sprintf("工具子集 (%d/%d)", len(g.ToolIDs), len(srvTools))
+					subsetLabel = i18n.T("ops.tool-subset-count", len(g.ToolIDs), len(srvTools))
 				}
 				if SailSmallButton(c.Key("subset-btn-"+g.ServerID), subsetLabel).Clicked() {
 					if isExpanded {
@@ -776,8 +777,8 @@ func (u *DesktopUI) renderServiceGrantList(
 				if strings.EqualFold(g.Access, "rw") {
 					accIdx = 1
 				}
-				if SailSmallSegmented(c.Key("acc-seg-"+g.ServerID), &accIdx, "只读", "读写").
-					Label(srvName + " 读写权限").
+				if SailSmallSegmented(c.Key("acc-seg-"+g.ServerID), &accIdx, i18n.T("ops.read-only"), i18n.T("ops.read-write")).
+					Label(i18n.T("ops.access-mode-for", srvName)).
 					Changed() {
 					if accIdx == 1 {
 						draft.grants[i].Access = "rw"
@@ -787,7 +788,7 @@ func (u *DesktopUI) renderServiceGrantList(
 					draft.dirty = true
 				}
 
-				if SailSmallButton(c.Key("rm-srv-"+g.ServerID), "移除").Disabled(draft.saving).Clicked() {
+				if SailSmallButton(c.Key("rm-srv-"+g.ServerID), i18n.T("ops.remove")).Disabled(draft.saving).Clicked() {
 					removeClicked = true
 				}
 			})
@@ -827,21 +828,21 @@ func (u *DesktopUI) renderGrantToolSubsetDrawer(
 
 	drawer.Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
-			modeNote := "当前开放该服务下全部已启用工具"
+			modeNote := i18n.T("ops.service-all-tools-open")
 			if len(g.ToolIDs) > 0 {
-				modeNote = fmt.Sprintf("仅开放已勾选的 %d 个工具", len(g.ToolIDs))
+				modeNote = i18n.T("ops.only-selected-tools-open", len(g.ToolIDs))
 			}
 			ui.Text(c, modeNote).FontSize(12).FontWeight(500).TextColor(SailInkMuted)
 
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 				if len(g.ToolIDs) > 0 {
-					if SailSmallButton(c.Key("subset-all"), "恢复全部工具").Clicked() {
+					if SailSmallButton(c.Key("subset-all"), i18n.T("ops.restore-all-tools")).Clicked() {
 						g.ToolIDs = nil
 						draft.dirty = true
 					}
 				}
 				if len(srvTools) > 0 {
-					if SailSmallButton(c.Key("subset-ro"), "仅选只读工具").Clicked() {
+					if SailSmallButton(c.Key("subset-ro"), i18n.T("ops.select-read-only-tools")).Clicked() {
 						var roIDs []string
 						for _, t := range srvTools {
 							if t.ReadOnly {
@@ -856,7 +857,7 @@ func (u *DesktopUI) renderGrantToolSubsetDrawer(
 		})
 
 		if len(srvTools) == 0 {
-			ui.Text(c, "该服务暂无已启用工具").FontSize(12).TextColor(SailInkFaint)
+			ui.Text(c, i18n.T("ops.service-has-no-tools")).FontSize(12).TextColor(SailInkFaint)
 			return
 		}
 
@@ -900,7 +901,7 @@ func (u *DesktopUI) renderGrantToolSubsetDrawer(
 				if !t.ReadOnly {
 					ui.Row(c).Shrink(0).Gap(6).AlignItems(ui.Center).Children(func() {
 						if !strings.EqualFold(g.Access, "rw") {
-							ui.Text(c, "只读已拦截").FontSize(11).TextColor(SailInkFaint).SingleLine()
+							ui.Text(c, i18n.T("ops.read-only-blocked")).FontSize(11).TextColor(SailInkFaint).SingleLine()
 						}
 						SailBadge(c, "RW", ToneWarning)
 					})
@@ -929,9 +930,9 @@ func (u *DesktopUI) toggleScopeEnforceMode(st *reposPageState, enforce bool) {
 			st.modeBusy = false
 		})
 		if enforce {
-			u.Notify("已启用仓库隔离拦截")
+			u.Notify(i18n.T("ops.repo-isolation-enabled"))
 		} else {
-			u.Notify("已切换为兼容模式")
+			u.Notify(i18n.T("ops.switched-to-compat-mode"))
 		}
 		return nil
 	})
@@ -945,7 +946,7 @@ func (u *DesktopUI) pickAndBindLocalRepo(st *reposPageState) {
 	u.RunAsync(func() error {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 			Parent:    u.currentWindow(),
-			Title:     "选择本地仓库目录",
+			Title:     i18n.T("ops.pick-local-repo"),
 			Directory: true,
 		})
 		if err != nil {
@@ -1008,7 +1009,7 @@ func (u *DesktopUI) saveRepoInputAsync(st *reposPageState, in apitypes.SaveRepos
 			st.selectedRepoKey = saved.ID
 		}
 	})
-	u.Notify("已绑定仓库 " + saved.Name)
+	u.Notify(i18n.T("ops.repo-bound-toast", saved.Name))
 	return nil
 }
 
@@ -1032,7 +1033,7 @@ func (u *DesktopUI) deleteBoundRepository(st *reposPageState, repoID, repoName s
 			}
 			delete(st.drafts, repoID)
 		})
-		u.Notify("已移除仓库绑定 " + repoName)
+		u.Notify(i18n.T("ops.repo-binding-removed-toast", repoName))
 		return nil
 	})
 }
@@ -1070,7 +1071,7 @@ func (u *DesktopUI) saveDraftRuleAsync(st *reposPageState, draft *ruleDraft, rep
 			draft.dirty = false
 			draft.grants = cloneGrants(saved.Grants)
 		})
-		u.Notify("作用域规则已保存")
+		u.Notify(i18n.T("ops.scope-rules-saved"))
 		return nil
 	})
 }
