@@ -255,6 +255,24 @@ func SailFlushCard(c *ui.Context, fn func()) ui.Element {
 		Children(fn)
 }
 
+// SailGroupHeader renders an in-list group label without a fill: groups are
+// separated by a single hairline above the label plus whitespace. The row
+// before a group header must not draw its own bottom divider (no double
+// rules), and the label sits on its first row without a divider in between.
+// The first group in a list (directly under a toolbar) omits the hairline.
+func SailGroupHeader(c *ui.Context, label string, count int, padX float32, first bool) {
+	row := ui.Row(c).FillWidth().Padding(16, padX, 6, padX).Gap(6).AlignItems(ui.Baseline)
+	if first {
+		row.Padding(14, padX, 6, padX)
+	} else {
+		row.BorderWidth(1, 0, 0, 0).BorderColor(SailDivider)
+	}
+	row.Children(func() {
+		ui.Text(c, label).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted).SingleLine()
+		ui.Textf(c, "%d", count).FontSize(11.5).FontFeatures("tnum").TextColor(SailInkFaint).SingleLine()
+	})
+}
+
 // SailListCardHeader renders a clean header row at the top of a SailFlushCard.
 func SailListCardHeader(c *ui.Context, title, note string, right func()) {
 	ui.Row(c).
