@@ -50,9 +50,41 @@ func digest(v any) (string, error) {
 	return sum, nil
 }
 
+func modelConnectionFingerprint(settings model.Settings, key string) (string, error) {
+	return digest([]any{
+		routingProtocol,
+		strings.TrimSpace(settings.BaseURL),
+		strings.TrimSpace(settings.Model),
+		settings.TimeoutSeconds,
+		key,
+	})
+}
+
 func (g *Gateway) modelFingerprint() (string, error) {
 	settings, key := g.model.RuntimeConfig()
-	return digest([]any{routingProtocol, settings, key, g.realTools()})
+	return modelConnectionFingerprint(settings, key)
+}
+
+func modelCheckID(fingerprint string) string {
+	return "model:" + fingerprint
+}
+
+func (g *Gateway) loadModelCheck(fingerprint string) (*ConnectionCheck, error) {
+	check, err := g.loadCheck(modelCheckID(fingerprint), fingerprint)
+	if err != nil || check != nil {
+		return check, err
+	}
+	// Fall back to the pre-migration singleton "model" check only when its
+	// stored fingerprint still matches the active model connection.
+	legacy, err := g.loadCheck("model", fingerprint)
+	if err != nil || legacy == nil || legacy.Stale {
+		return nil, err
+	}
+	return legacy, nil
+}
+
+func (g *Gateway) recordModelCheck(fingerprint string, check ConnectionCheck) error {
+	return g.saveCheck(modelCheckID(fingerprint), fingerprint, check)
 }
 
 func (g *Gateway) realTools() []registry.Tool {
@@ -119,7 +151,7 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 	if err != nil {
 		return out, err
 	}
-	out.ModelCheck, err = g.loadCheck("model", fingerprint)
+	out.ModelCheck, err = g.loadModelCheck(fingerprint)
 	if err != nil {
 		return out, err
 	}
@@ -215,10 +247,60 @@ func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult,
 		check.Message = "模型路由未试通"
 		check.Detail = g.ErrorDetail(routeErr)
 	}
-	if err := g.saveCheck("model", fingerprint, check); err != nil {
+	if err := g.recordModelCheck(fingerprint, check); err != nil {
 		return result, errors.Join(routeErr, err)
 	}
 	return result, routeErr
+}
+
+// PingModel verifies model connectivity without saving settings and persists
+// the passing check keyed by the model connection fingerprint.
+func (g *Gateway) PingModel(ctx context.Context, s model.Settings, profileID, apiKey string, clearKey bool) (model.PingModelResult, error) {
+	norm, effectiveKey, err := g.model.NormalizePingTarget(s, profileID, apiKey, clearKey)
+	if err != nil {
+		return model.PingModelResult{}, err
+	}
+	res, err := g.model.PingModel(ctx, norm, profileID, apiKey, clearKey)
+	if err != nil {
+		return res, err
+	}
+	fingerprint, err := modelConnectionFingerprint(norm, effectiveKey)
+	if err != nil {
+		return res, err
+	}
+	if err := g.recordModelCheck(fingerprint, ConnectionCheck{
+		Status:    "success",
+		Message:   "模型连接校验通过",
+		CheckedAt: time.Now(),
+	}); err != nil {
+		return res, err
+	}
+	return res, nil
+}
+
+// VerifyModelConnection reuses a persisted passing check for the exact
+// endpoint, model, timeout, and key, or performs a live ping and persists it.
+func (g *Gateway) VerifyModelConnection(ctx context.Context, p model.ModelProfile, apiKey string, clearKey bool) error {
+	s, err := model.ValidateModelProfile(p)
+	if err != nil {
+		return err
+	}
+	effectiveKey := g.model.ResolveEffectiveKey(p.ID, apiKey, clearKey)
+	fingerprint, err := modelConnectionFingerprint(s, effectiveKey)
+	if err != nil {
+		return err
+	}
+	if check, err := g.loadModelCheck(fingerprint); err == nil && check != nil && check.Status == "success" && !check.Stale {
+		return nil
+	}
+	if err := g.model.VerifyModelConnection(ctx, p, apiKey, clearKey); err != nil {
+		return err
+	}
+	return g.recordModelCheck(fingerprint, ConnectionCheck{
+		Status:    "success",
+		Message:   "模型连接校验通过",
+		CheckedAt: time.Now(),
+	})
 }
 
 // SetupModelError preserves whether settings were persisted before model
@@ -247,7 +329,7 @@ func (g *Gateway) SetupModel(ctx context.Context, settings model.Settings, apiKe
 			MaxTools:       settings.MaxTools,
 			TimeoutSeconds: settings.TimeoutSeconds,
 		}
-		if err := g.model.VerifyModelConnection(ctx, prof, apiKey, clearKey); err != nil {
+		if err := g.VerifyModelConnection(ctx, prof, apiKey, clearKey); err != nil {
 			if errors.Is(err, model.ErrInvalid) {
 				return DiscoverResult{}, err
 			}

@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"context"
-
 	"gatewaylab/internal/access"
 	"gatewaylab/internal/activity"
 	"gatewaylab/internal/maintenance"
@@ -27,8 +25,6 @@ func (g *Gateway) Registry() *registry.Service { return g.registry }
 type ModelQueries interface {
 	Config() (model.Settings, bool)
 	ModelProfiles() []model.ModelProfile
-	PingModel(context.Context, model.Settings, string, string, bool) (model.PingModelResult, error)
-	VerifyModelConnection(context.Context, model.ModelProfile, string, bool) error
 }
 
 func (g *Gateway) Model() ModelQueries { return g.model }
