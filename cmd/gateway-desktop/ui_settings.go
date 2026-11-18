@@ -301,193 +301,9 @@ func editingProfileKeyConfigured(st *settingsState, state *apitypes.Bootstrap) b
 
 func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState, state *apitypes.Bootstrap, dirty bool) {
 	SailCard(c, func() {
-		SailCardTitle(c, i18n.T("ops.decisions-model-title"), "", func() {
-			if SailSmallButton(c.Key("set-preset-openai"), i18n.T("ops.preset-openai")).Clicked() {
-				st.editingProfileID = ""
-				st.config.BaseURL = "https://api.openai.com/v1"
-				st.config.Model = "gpt-6-luna"
-				st.clearKey = false
-				clearSettingsFeedback(st)
-			}
-			if SailSmallButton(c.Key("set-preset-gemini"), i18n.T("ops.preset-gemini")).Clicked() {
-				st.editingProfileID = ""
-				st.config.BaseURL = "https://generativelanguage.googleapis.com/v1beta"
-				st.config.Model = "gemini-decision-1"
-				st.clearKey = false
-				clearSettingsFeedback(st)
-			}
-		})
-
-		ui.Row(c).FillWidth().Gap(16).Children(func() {
-			ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
-				ui.Text(c, "Base URL").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-				if ui.TextInput(c.Key("set-base-url"), &st.config.BaseURL).
-					Font("monospace").
-					Placeholder("https://api.openai.com/v1").
-					FillWidth().
-					Changed() {
-					clearSettingsFeedback(st)
-				}
-			})
-
-			ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
-				ui.Text(c, "Model ID").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-				if ui.TextInput(c.Key("set-model"), &st.config.Model).
-					Font("monospace").
-					Placeholder("gpt-6-luna / gemini-decision-1").
-					FillWidth().
-					Changed() {
-					clearSettingsFeedback(st)
-				}
-			})
-		})
-
-		keyConfigured := editingProfileKeyConfigured(st, state)
-		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-				ui.Text(c, "API Key").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-					if keyConfigured {
-						SailQuietStatus(c, i18n.T("client.state.configured"), SailSuccessInk, SailInkStrong)
-						if SailSmallButton(c.Key("set-clear-key-inline"), i18n.T("ops.clear")).Clicked() {
-							st.clearKey = true
-							st.apiKey = ""
-							clearSettingsFeedback(st)
-						}
-					} else {
-						SailQuietStatus(c, i18n.T("client.state.not-configured"), SailInkMuted, SailInkMuted)
-					}
-				})
-			})
-
-			placeholder := i18n.T("ops.paste-api-key")
-			if keyConfigured {
-				placeholder = i18n.T("ops.keep-current-key")
-			}
-			if ui.TextInput(c.Key("set-api-key"), &st.apiKey).
-				Password().
-				Font("monospace").
-				Placeholder(placeholder).
-				FillWidth().
-				Changed() {
-				st.clearKey = false
-				clearSettingsFeedback(st)
-			}
-		})
-
-		if u.State != nil && u.State.CredentialsPersistent {
-			ui.Text(c, i18n.T("ops.key-stored-keychain")).FontSize(12).TextColor(SailInkMuted)
-		} else {
-			ui.Text(c, i18n.T("ops.key-memory-only")).FontSize(12).TextColor(SailInkMuted)
-		}
-
-		// Collapsible advanced routing policy & end-to-end verification.
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			arrow := "▸"
-			if st.advancedExpanded {
-				arrow = "▾"
-			}
-			if SailSmallButton(c.Key("set-toggle-advanced"), i18n.T("ops.advanced-settings", arrow)).Clicked() {
-				st.advancedExpanded = !st.advancedExpanded
-			}
-			ui.Text(c, i18n.T("ops.max-tools-timeout", st.config.MaxTools, st.config.TimeoutSeconds)).
-				Font("monospace").FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted)
-		})
-
-		if st.advancedExpanded {
-			SailSubtleCard(c, func() {
-				ui.Row(c).FillWidth().Gap(16).Children(func() {
-					ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
-						ui.Text(c, i18n.T("ops.max-tools-label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-						if ui.NumberInput(c.Key("set-max-tools"), &st.maxToolsFloat, 1, 12, 1).
-							Label(i18n.T("ops.max-tools-tooltip")).
-							Width(200).
-							Changed() {
-							st.config.MaxTools = clampInt(int(math.Round(st.maxToolsFloat)), 1, 12)
-							resetSettingsTestOutput(st)
-						}
-					})
-
-					ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
-						ui.Text(c, i18n.T("ops.timeout-label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-						if ui.NumberInput(c.Key("set-timeout"), &st.timeoutFloat, 5, 180, 5).
-							Label(i18n.T("ops.timeout-tooltip")).
-							Width(200).
-							Changed() {
-							st.config.TimeoutSeconds = clampInt(int(math.Round(st.timeoutFloat)), 5, 180)
-							clearSettingsFeedback(st)
-						}
-					})
-				})
-
-				ui.Column(c).FillWidth().Gap(6).Children(func() {
-					ui.Text(c, i18n.T("ops.validation-intent")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-					ui.TextInput(c.Key("set-test-intent"), &st.testIntent).
-						Placeholder(i18n.T("ops.validation-intent-placeholder")).
-						FillWidth()
-				})
-
-				if !state.Setup.ToolsReady {
-					ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
-						SailQuietStatus(c, i18n.T("ops.validation-unavailable"), SailWarningInk, SailInkMuted)
-						if SailSmallButton(c.Key("set-goto-services"), i18n.T("ops.goto-services")).Clicked() {
-							u.Navigate(ViewServices)
-						}
-					})
-				}
-
-				modelCheck := state.Setup.ModelCheck
-				if !dirty && modelCheck != nil && modelCheck.Status == "error" {
-					SailAlertBox(c, ToneDanger, i18n.T("ops.message-with-time", modelCheck.Message, FormatTime(modelCheck.CheckedAt)), modelCheck.Detail)
-				} else if !dirty && modelCheck != nil {
-					dotCol := SailSuccessInk
-					lbl := fmt.Sprintf("%s · %s", modelCheck.Message, FormatTime(modelCheck.CheckedAt))
-					if modelCheck.Stale {
-						dotCol = SailWarningInk
-						lbl = i18n.T("ops.config-changed-revalidate", FormatTime(modelCheck.CheckedAt))
-					}
-					SailQuietStatus(c, lbl, dotCol, SailInkMuted)
-				}
-
-				if res := st.testResult; res != nil {
-					SailCard(c, func() {
-						ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-							if res.Status == "selected" {
-								SailQuietStatus(c, i18n.T("ops.route-validation-passed", res.Status), SailSuccessInk, SailInkStrong)
-							} else {
-								SailBadge(c, res.Status, ToneWarning)
-							}
-							ui.Textf(c, "%d ms", res.DurationMS).Font("monospace").FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted)
-						})
-						if res.Summary != "" {
-							ui.Text(c, res.Summary).FontSize(12.5).TextColor(SailInkMuted)
-						}
-						if len(res.Tools) > 0 {
-							ui.Column(c).FillWidth().Gap(4).Margin(4, 0, 0, 0).Children(func() {
-								for _, t := range res.Tools {
-									ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Start).Children(func() {
-										ui.Text(c, t.ID).Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-										ui.Text(c, "— "+t.Reason).Grow(1).MinWidth(0).FontSize(12).TextColor(SailInkMuted)
-									})
-								}
-							})
-						}
-					})
-				}
-
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Children(func() {
-					testLabel := i18n.T("ops.run-validation")
-					if st.busyMode == "test" {
-						testLabel = i18n.T("ops.validating")
-					}
-					if SailButton(c.Key("set-save-test"), testLabel).
-						Disabled(st.busyMode != "" || !state.Setup.ToolsReady).
-						Clicked() {
-						u.submitSettings(st, true)
-					}
-				})
-			})
-		}
+		renderSettingsModelPresetsHeader(c, st)
+		renderSettingsModelInputs(c, st, state)
+		u.renderSettingsAdvancedSection(c, st, state, dirty)
 
 		if st.errTitle != "" {
 			SailAlertBox(c, ToneDanger, st.errTitle, st.errDetail)
@@ -496,39 +312,251 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 			SailAlertBox(c, ToneDanger, st.pingErr, st.pingDetail)
 		}
 
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
-			ui.Row(c).Grow(1).MinWidth(0).AlignItems(ui.Center).Children(func() {
-				switch {
-				case st.pingBusy:
-					SailQuietStatus(c, i18n.T("ops.testing-model"), SailWarningInk, SailInkMuted)
-				case settingsPingPassed(st):
-					SailQuietStatus(c, i18n.T("ops.model-test-passed", st.pingResult.Model, st.pingResult.DurationMS), SailSuccessInk, SailSuccessInk)
-				case st.pingErr != "":
-					SailQuietStatus(c, st.pingErr, SailDangerInk, SailDangerInk)
-				case isVerifiedActiveConnectionUnchanged(st, state) && st.config.MaxTools != state.Settings.MaxTools:
-					SailQuietStatus(c, i18n.T("ops.connection-verified"), SailSuccessInk, SailInkMuted)
-				default:
-					SailQuietStatus(c, i18n.T("ops.test-before-save"), SailInkMuted, SailInkMuted)
-				}
-			})
+		u.renderSettingsModelFooter(c, st, state)
+	})
+}
 
+func renderSettingsModelPresetsHeader(c *ui.Context, st *settingsState) {
+	SailCardTitle(c, i18n.T("ops.decisions-model-title"), "", func() {
+		if SailSmallButton(c.Key("set-preset-openai"), i18n.T("ops.preset-openai")).Clicked() {
+			st.editingProfileID = ""
+			st.config.BaseURL = "https://api.openai.com/v1"
+			st.config.Model = "gpt-6-luna"
+			st.clearKey = false
+			clearSettingsFeedback(st)
+		}
+		if SailSmallButton(c.Key("set-preset-gemini"), i18n.T("ops.preset-gemini")).Clicked() {
+			st.editingProfileID = ""
+			st.config.BaseURL = "https://generativelanguage.googleapis.com/v1beta"
+			st.config.Model = "gemini-decision-1"
+			st.clearKey = false
+			clearSettingsFeedback(st)
+		}
+	})
+}
+
+func renderSettingsModelInputs(c *ui.Context, st *settingsState, state *apitypes.Bootstrap) {
+	ui.Row(c).FillWidth().Gap(16).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
+			ui.Text(c, "Base URL").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+			if ui.TextInput(c.Key("set-base-url"), &st.config.BaseURL).
+				Font("monospace").
+				Placeholder("https://api.openai.com/v1").
+				FillWidth().
+				Changed() {
+				clearSettingsFeedback(st)
+			}
+		})
+
+		ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
+			ui.Text(c, "Model ID").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+			if ui.TextInput(c.Key("set-model"), &st.config.Model).
+				Font("monospace").
+				Placeholder("gpt-6-luna / gemini-decision-1").
+				FillWidth().
+				Changed() {
+				clearSettingsFeedback(st)
+			}
+		})
+	})
+
+	keyConfigured := editingProfileKeyConfigured(st, state)
+	ui.Column(c).FillWidth().Gap(6).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+			ui.Text(c, "API Key").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 			ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-				pingLabel := i18n.T("ops.test-connection")
-				if st.pingBusy {
-					pingLabel = i18n.T("ops.testing")
-				}
-				if SailButton(c.Key("set-ping-model"), pingLabel).Disabled(st.pingBusy || st.busyMode != "").Clicked() {
-					u.pingSettingsModel(st)
-				}
-
-				saveLabel := i18n.T("ops.save-config")
-				if st.busyMode == "save" {
-					saveLabel = i18n.T("ops.saving")
-				}
-				if SailPrimaryButton(c.Key("set-save-only"), saveLabel).Disabled(!settingsCanSave(st, state)).Clicked() {
-					u.submitSettings(st, false)
+				if keyConfigured {
+					SailQuietStatus(c, i18n.T("client.state.configured"), SailSuccessInk, SailInkStrong)
+					if SailSmallButton(c.Key("set-clear-key-inline"), i18n.T("ops.clear")).Clicked() {
+						st.clearKey = true
+						st.apiKey = ""
+						clearSettingsFeedback(st)
+					}
+				} else {
+					SailQuietStatus(c, i18n.T("client.state.not-configured"), SailInkMuted, SailInkMuted)
 				}
 			})
+		})
+
+		placeholder := i18n.T("ops.paste-api-key")
+		if keyConfigured {
+			placeholder = i18n.T("ops.keep-current-key")
+		}
+		if ui.TextInput(c.Key("set-api-key"), &st.apiKey).
+			Password().
+			Font("monospace").
+			Placeholder(placeholder).
+			FillWidth().
+			Changed() {
+			st.clearKey = false
+			clearSettingsFeedback(st)
+		}
+	})
+
+	if state != nil && state.CredentialsPersistent {
+		ui.Text(c, i18n.T("ops.key-stored-keychain")).FontSize(12).TextColor(SailInkMuted)
+	} else {
+		ui.Text(c, i18n.T("ops.key-memory-only")).FontSize(12).TextColor(SailInkMuted)
+	}
+}
+
+func (u *DesktopUI) renderSettingsAdvancedSection(c *ui.Context, st *settingsState, state *apitypes.Bootstrap, dirty bool) {
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+		arrow := "▸"
+		if st.advancedExpanded {
+			arrow = "▾"
+		}
+		if SailSmallButton(c.Key("set-toggle-advanced"), i18n.T("ops.advanced-settings", arrow)).Clicked() {
+			st.advancedExpanded = !st.advancedExpanded
+		}
+		ui.Text(c, i18n.T("ops.max-tools-timeout", st.config.MaxTools, st.config.TimeoutSeconds)).
+			Font("monospace").FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted)
+	})
+
+	if !st.advancedExpanded {
+		return
+	}
+
+	SailSubtleCard(c, func() {
+		renderSettingsAdvancedInputs(c, st)
+
+		if !state.Setup.ToolsReady {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
+				SailQuietStatus(c, i18n.T("ops.validation-unavailable"), SailWarningInk, SailInkMuted)
+				if SailSmallButton(c.Key("set-goto-services"), i18n.T("ops.goto-services")).Clicked() {
+					u.Navigate(ViewServices)
+				}
+			})
+		}
+
+		renderSettingsModelCheckStatus(c, state.Setup.ModelCheck, dirty)
+		if res := st.testResult; res != nil {
+			renderSettingsTestResultCard(c, res)
+		}
+
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Children(func() {
+			testLabel := i18n.T("ops.run-validation")
+			if st.busyMode == "test" {
+				testLabel = i18n.T("ops.validating")
+			}
+			if SailButton(c.Key("set-save-test"), testLabel).
+				Disabled(st.busyMode != "" || !state.Setup.ToolsReady).
+				Clicked() {
+				u.submitSettings(st, true)
+			}
+		})
+	})
+}
+
+func renderSettingsAdvancedInputs(c *ui.Context, st *settingsState) {
+	ui.Row(c).FillWidth().Gap(16).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
+			ui.Text(c, i18n.T("ops.max-tools-label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+			if ui.NumberInput(c.Key("set-max-tools"), &st.maxToolsFloat, 1, 12, 1).
+				Label(i18n.T("ops.max-tools-tooltip")).
+				Width(200).
+				Changed() {
+				st.config.MaxTools = clampInt(int(math.Round(st.maxToolsFloat)), 1, 12)
+				resetSettingsTestOutput(st)
+			}
+		})
+
+		ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
+			ui.Text(c, i18n.T("ops.timeout-label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+			if ui.NumberInput(c.Key("set-timeout"), &st.timeoutFloat, 5, 180, 5).
+				Label(i18n.T("ops.timeout-tooltip")).
+				Width(200).
+				Changed() {
+				st.config.TimeoutSeconds = clampInt(int(math.Round(st.timeoutFloat)), 5, 180)
+				clearSettingsFeedback(st)
+			}
+		})
+	})
+
+	ui.Column(c).FillWidth().Gap(6).Children(func() {
+		ui.Text(c, i18n.T("ops.validation-intent")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+		ui.TextInput(c.Key("set-test-intent"), &st.testIntent).
+			Placeholder(i18n.T("ops.validation-intent-placeholder")).
+			FillWidth()
+	})
+}
+
+func renderSettingsModelCheckStatus(c *ui.Context, modelCheck *apitypes.ConnectionCheck, dirty bool) {
+	if dirty || modelCheck == nil {
+		return
+	}
+	if modelCheck.Status == "error" {
+		SailAlertBox(c, ToneDanger, i18n.T("ops.message-with-time", modelCheck.Message, FormatTime(modelCheck.CheckedAt)), modelCheck.Detail)
+		return
+	}
+	dotCol := SailSuccessInk
+	lbl := fmt.Sprintf("%s · %s", modelCheck.Message, FormatTime(modelCheck.CheckedAt))
+	if modelCheck.Stale {
+		dotCol = SailWarningInk
+		lbl = i18n.T("ops.config-changed-revalidate", FormatTime(modelCheck.CheckedAt))
+	}
+	SailQuietStatus(c, lbl, dotCol, SailInkMuted)
+}
+
+func renderSettingsTestResultCard(c *ui.Context, res *apitypes.DiscoverResult) {
+	SailCard(c, func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+			if res.Status == "selected" {
+				SailQuietStatus(c, i18n.T("ops.route-validation-passed", res.Status), SailSuccessInk, SailInkStrong)
+			} else {
+				SailBadge(c, res.Status, ToneWarning)
+			}
+			ui.Textf(c, "%d ms", res.DurationMS).Font("monospace").FontSize(12).FontFeatures("tnum").TextColor(SailInkMuted)
+		})
+		if res.Summary != "" {
+			ui.Text(c, res.Summary).FontSize(12.5).TextColor(SailInkMuted)
+		}
+		if len(res.Tools) > 0 {
+			ui.Column(c).FillWidth().Gap(4).Margin(4, 0, 0, 0).Children(func() {
+				for _, t := range res.Tools {
+					ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Start).Children(func() {
+						ui.Text(c, t.ID).Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+						ui.Text(c, "— "+t.Reason).Grow(1).MinWidth(0).FontSize(12).TextColor(SailInkMuted)
+					})
+				}
+			})
+		}
+	})
+}
+
+func (u *DesktopUI) renderSettingsModelFooter(c *ui.Context, st *settingsState, state *apitypes.Bootstrap) {
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
+		ui.Row(c).Grow(1).MinWidth(0).AlignItems(ui.Center).Children(func() {
+			switch {
+			case st.pingBusy:
+				SailQuietStatus(c, i18n.T("ops.testing-model"), SailWarningInk, SailInkMuted)
+			case settingsPingPassed(st):
+				SailQuietStatus(c, i18n.T("ops.model-test-passed", st.pingResult.Model, st.pingResult.DurationMS), SailSuccessInk, SailSuccessInk)
+			case st.pingErr != "":
+				SailQuietStatus(c, st.pingErr, SailDangerInk, SailDangerInk)
+			case isVerifiedActiveConnectionUnchanged(st, state) && st.config.MaxTools != state.Settings.MaxTools:
+				SailQuietStatus(c, i18n.T("ops.connection-verified"), SailSuccessInk, SailInkMuted)
+			default:
+				SailQuietStatus(c, i18n.T("ops.test-before-save"), SailInkMuted, SailInkMuted)
+			}
+		})
+
+		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+			pingLabel := i18n.T("ops.test-connection")
+			if st.pingBusy {
+				pingLabel = i18n.T("ops.testing")
+			}
+			if SailButton(c.Key("set-ping-model"), pingLabel).Disabled(st.pingBusy || st.busyMode != "").Clicked() {
+				u.pingSettingsModel(st)
+			}
+
+			saveLabel := i18n.T("ops.save-config")
+			if st.busyMode == "save" {
+				saveLabel = i18n.T("ops.saving")
+			}
+			if SailPrimaryButton(c.Key("set-save-only"), saveLabel).Disabled(!settingsCanSave(st, state)).Clicked() {
+				u.submitSettings(st, false)
+			}
 		})
 	})
 }
@@ -718,10 +746,20 @@ func (u *DesktopUI) deleteProfile(st *settingsState, id string) {
 	})
 }
 
-func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
-	if st.busyMode != "" || st.pingBusy || u.Client == nil {
-		return
-	}
+type settingsSubmitPlan struct {
+	runTest             bool
+	mode                string
+	cfg                 apitypes.Settings
+	profile             apitypes.ModelProfile
+	apiKey              string
+	clearKey            bool
+	testIntent          string
+	pingKey             string
+	pingPassed          bool
+	needsPingBeforeSave bool
+}
+
+func prepareSettingsSubmit(st *settingsState, state *apitypes.Bootstrap, runTest bool) (settingsSubmitPlan, string) {
 	cfg := st.config
 	cfg.BaseURL = strings.TrimSpace(cfg.BaseURL)
 	cfg.Model = strings.TrimSpace(cfg.Model)
@@ -730,21 +768,16 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 	st.config = cfg
 
 	if cfg.Model == "" {
-		st.errTitle = i18n.T("ops.model-name-required")
-		st.errDetail = ""
-		return
+		return settingsSubmitPlan{}, i18n.T("ops.model-name-required")
 	}
-	if !runTest && !settingsCanSave(st, u.State) {
-		return
+	if !runTest && !settingsCanSave(st, state) {
+		return settingsSubmitPlan{}, "skip"
 	}
 
 	mode := "save"
 	if runTest {
 		mode = "test"
 	}
-	st.busyMode = mode
-	resetSettingsTestOutput(st)
-
 	profile := apitypes.ModelProfile{
 		ID:             st.editingProfileID,
 		BaseURL:        cfg.BaseURL,
@@ -752,103 +785,148 @@ func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
 		MaxTools:       cfg.MaxTools,
 		TimeoutSeconds: cfg.TimeoutSeconds,
 	}
-	apiKey := st.apiKey
-	clearKey := st.clearKey
-	testIntent := st.testIntent
-	pingKey := settingsConnectionKey(cfg, profile.ID, apiKey, clearKey)
 	pingPassed := settingsPingPassed(st)
-	needsPingBeforeSave := !pingPassed && !isVerifiedActiveConnectionUnchanged(st, u.State)
+	return settingsSubmitPlan{
+		runTest:             runTest,
+		mode:                mode,
+		cfg:                 cfg,
+		profile:             profile,
+		apiKey:              st.apiKey,
+		clearKey:            st.clearKey,
+		testIntent:          st.testIntent,
+		pingKey:             settingsConnectionKey(cfg, profile.ID, st.apiKey, st.clearKey),
+		pingPassed:          pingPassed,
+		needsPingBeforeSave: !pingPassed && !isVerifiedActiveConnectionUnchanged(st, state),
+	}, ""
+}
+
+func (u *DesktopUI) submitSettings(st *settingsState, runTest bool) {
+	if st.busyMode != "" || st.pingBusy || u.Client == nil {
+		return
+	}
+	plan, errMsg := prepareSettingsSubmit(st, u.State, runTest)
+	if errMsg != "" {
+		if errMsg != "skip" {
+			st.errTitle = errMsg
+			st.errDetail = ""
+		}
+		return
+	}
+
+	st.busyMode = plan.mode
+	resetSettingsTestOutput(st)
 
 	u.RunAsync(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.TimeoutSeconds*2+20)*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(plan.cfg.TimeoutSeconds*2+20)*time.Second)
 		defer cancel()
+		return u.executeSettingsSubmit(ctx, st, plan)
+	})
+}
 
-		var pingRes *apitypes.PingModelResult
-		if needsPingBeforeSave {
-			res, err := u.Client.PingModel(ctx, cfg, profile.ID, apiKey, clearKey)
-			if err != nil {
-				if apiclient.IsUnauthorized(err) {
-					u.updateUI(func() { st.busyMode = "" })
-					return err
-				}
-				title, detail := splitAPIError(err)
-				u.updateUI(func() {
-					st.busyMode = ""
-					st.pingResult = nil
-					st.pingPassedKey = ""
-					st.pingErr = title
-					st.pingDetail = detail
-				})
-				return nil
-			}
-			pingRes = &res
-			pingPassed = true
-		}
-
-		saved, err := u.Client.SaveModelProfile(ctx, profile, apiKey, clearKey)
+func (u *DesktopUI) executeSettingsSubmit(ctx context.Context, st *settingsState, plan settingsSubmitPlan) error {
+	var pingRes *apitypes.PingModelResult
+	pingPassed := plan.pingPassed
+	if plan.needsPingBeforeSave {
+		res, err := u.Client.PingModel(ctx, plan.cfg, plan.profile.ID, plan.apiKey, plan.clearKey)
 		if err != nil {
-			if apiclient.IsUnauthorized(err) {
+			return u.handleSettingsPingFailure(st, err)
+		}
+		pingRes = &res
+		pingPassed = true
+	}
+
+	saved, err := u.Client.SaveModelProfile(ctx, plan.profile, plan.apiKey, plan.clearKey)
+	if err != nil {
+		return u.handleSettingsSaveFailure(st, err)
+	}
+
+	if plan.runTest {
+		res, testErr := u.Client.TestModel(ctx, plan.cfg, "", false, plan.testIntent)
+		if testErr != nil {
+			if apiclient.IsUnauthorized(testErr) {
 				u.updateUI(func() { st.busyMode = "" })
-				return err
-			}
-			title, detail := splitAPIError(err)
-			u.updateUI(func() {
-				st.busyMode = ""
-				st.pingResult = nil
-				st.pingPassedKey = ""
-				st.errTitle = title
-				st.errDetail = detail
-			})
-			return nil
-		}
-
-		finishSaved := func(testRes *apitypes.DiscoverResult, errTitle, errDetail string) {
-			st.busyMode = ""
-			if pingRes != nil {
-				st.pingResult = pingRes
-				st.pingErr = ""
-				st.pingDetail = ""
-			}
-			if pingPassed && settingsConnectionKey(st.config, st.editingProfileID, st.apiKey, st.clearKey) == pingKey {
-				st.pingPassedKey = settingsConnectionKey(cfg, saved.ID, "", false)
-			}
-			st.editingProfileID = saved.ID
-			st.apiKey = ""
-			st.clearKey = false
-			st.testResult = testRes
-			st.errTitle = errTitle
-			st.errDetail = errDetail
-		}
-
-		if runTest {
-			res, err := u.Client.TestModel(ctx, cfg, "", false, testIntent)
-			if err != nil {
-				if apiclient.IsUnauthorized(err) {
-					u.updateUI(func() { st.busyMode = "" })
-					return err
-				}
-				_ = u.RefreshSync()
-				title, detail := splitAPIError(err)
-				u.updateUI(func() {
-					finishSaved(nil, title, detail)
-				})
-				return nil
+				return testErr
 			}
 			_ = u.RefreshSync()
+			title, detail := splitAPIError(testErr)
 			u.updateUI(func() {
-				finishSaved(&res, "", "")
+				finishSettingsSaved(st, plan, settingsSavedResult{pingRes: pingRes, pingPassed: pingPassed, savedID: saved.ID, errTitle: title, errDetail: detail})
 			})
-			u.Notify(i18n.T("ops.routing-config-saved"))
 			return nil
 		}
-
 		_ = u.RefreshSync()
 		u.updateUI(func() {
-			finishSaved(nil, "", "")
+			finishSettingsSaved(st, plan, settingsSavedResult{pingRes: pingRes, pingPassed: pingPassed, savedID: saved.ID, testRes: &res})
 		})
-		u.Notify(i18n.T("ops.model-profile-saved"))
+		u.Notify(i18n.T("ops.routing-config-saved"))
 		return nil
+	}
+
+	_ = u.RefreshSync()
+	u.updateUI(func() {
+		finishSettingsSaved(st, plan, settingsSavedResult{pingRes: pingRes, pingPassed: pingPassed, savedID: saved.ID})
 	})
+	u.Notify(i18n.T("ops.model-profile-saved"))
+	return nil
+}
+
+func (u *DesktopUI) handleSettingsPingFailure(st *settingsState, err error) error {
+	if apiclient.IsUnauthorized(err) {
+		u.updateUI(func() { st.busyMode = "" })
+		return err
+	}
+	title, detail := splitAPIError(err)
+	u.updateUI(func() {
+		st.busyMode = ""
+		st.pingResult = nil
+		st.pingPassedKey = ""
+		st.pingErr = title
+		st.pingDetail = detail
+	})
+	return nil
+}
+
+func (u *DesktopUI) handleSettingsSaveFailure(st *settingsState, err error) error {
+	if apiclient.IsUnauthorized(err) {
+		u.updateUI(func() { st.busyMode = "" })
+		return err
+	}
+	title, detail := splitAPIError(err)
+	u.updateUI(func() {
+		st.busyMode = ""
+		st.pingResult = nil
+		st.pingPassedKey = ""
+		st.errTitle = title
+		st.errDetail = detail
+	})
+	return nil
+}
+
+type settingsSavedResult struct {
+	pingRes    *apitypes.PingModelResult
+	pingPassed bool
+	savedID    string
+	testRes    *apitypes.DiscoverResult
+	errTitle   string
+	errDetail  string
+}
+
+func finishSettingsSaved(st *settingsState, plan settingsSubmitPlan, r settingsSavedResult) {
+	st.busyMode = ""
+	if r.pingRes != nil {
+		st.pingResult = r.pingRes
+		st.pingErr = ""
+		st.pingDetail = ""
+	}
+	if r.pingPassed && settingsConnectionKey(st.config, st.editingProfileID, st.apiKey, st.clearKey) == plan.pingKey {
+		st.pingPassedKey = settingsConnectionKey(plan.cfg, r.savedID, "", false)
+	}
+	st.editingProfileID = r.savedID
+	st.apiKey = ""
+	st.clearKey = false
+	st.testResult = r.testRes
+	st.errTitle = r.errTitle
+	st.errDetail = r.errDetail
 }
 
 func (u *DesktopUI) enforceSettingsReadOnlyGuardrail(st *settingsState, state *apitypes.Bootstrap, enabledWriteTools []apitypes.Tool) {
