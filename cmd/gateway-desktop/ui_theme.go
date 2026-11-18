@@ -255,16 +255,19 @@ func SailFlushCard(c *ui.Context, fn func()) ui.Element {
 		Children(fn)
 }
 
-// SailGroupHeader renders a quiet in-list group label (Linear style): no fill
-// and no rules, groups are separated by whitespace above the label. The row
-// before a group header must not draw its own bottom divider, and the label
-// sits directly on its first row without a divider in between.
+// SailGroupHeader renders an in-list group label without a fill: groups are
+// separated by a single hairline above the label plus whitespace. The row
+// before a group header must not draw its own bottom divider (no double
+// rules), and the label sits on its first row without a divider in between.
+// The first group in a list (directly under a toolbar) omits the hairline.
 func SailGroupHeader(c *ui.Context, label string, count int, padX float32, first bool) {
-	top := float32(20)
+	row := ui.Row(c).FillWidth().Padding(16, padX, 6, padX).Gap(6).AlignItems(ui.Baseline)
 	if first {
-		top = 14
+		row.Padding(14, padX, 6, padX)
+	} else {
+		row.BorderWidth(1, 0, 0, 0).BorderColor(SailDivider)
 	}
-	ui.Row(c).FillWidth().Padding(top, padX, 6, padX).Gap(6).AlignItems(ui.Baseline).Children(func() {
+	row.Children(func() {
 		ui.Text(c, label).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted).SingleLine()
 		ui.Textf(c, "%d", count).FontSize(11.5).FontFeatures("tnum").TextColor(SailInkFaint).SingleLine()
 	})
