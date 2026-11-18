@@ -321,7 +321,7 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 		}
 	})
 
-	ui.Segmented(c.Key("repos-view-mode"), &st.viewMode, "矩阵视图", "单仓库详情").Label("仓库视图")
+	ui.Segmented(c.Key("repos-view-mode"), &st.viewMode, "矩阵视图", "单仓库详情").AlignSelf(ui.Start).Label("仓库视图")
 	if st.viewMode == 0 {
 		u.renderReposMatrix(c.Key("repos-matrix"), st, state)
 		return
