@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"gatewaylab/internal/clientconfig"
+	"gatewaylab/internal/i18n"
 )
 
 func (m *Manager) agyPluginDir() string {
@@ -34,7 +35,7 @@ func (m *Manager) observeAntigravity(endpoint string, legacy bool) Status {
 		ID:            ClientAntigravity,
 		Name:          clientconfig.ClientDisplayName(ClientAntigravity),
 		Path:          pluginDir,
-		State:         "未安装",
+		State:         i18n.T("client.state.not-installed"),
 		TargetVersion: m.version,
 		CLIAvailable:  cliOK,
 		HasLegacyMCP:  legacy,
@@ -42,22 +43,22 @@ func (m *Manager) observeAntigravity(endpoint string, legacy bool) Status {
 	}
 	expected, renderErr := m.renderAntigravityPlugin(endpoint, hookBin, dataDir)
 	if renderErr != nil {
-		s.State = "配置异常"
+		s.State = i18n.T("client.state.config-error")
 		s.Detail = renderErr.Error()
 		s.CanInstall = false
 		return s
 	}
 	if legacy {
-		s.State = "待升级"
-		s.Detail = "当前仅配置了全局 mcp_config.json，升级为官方插件后可自动加载 Rules、Skill 与 Hook"
+		s.State = i18n.T("client.state.upgradable")
+		s.Detail = i18n.T("client.detail-antigravity-legacy")
 	}
 	if hasLegacyAntigravityIDEMCP(m.homeDir, m.slug) {
-		s.Warnings = append(s.Warnings, "检测到旧版 ~/.gemini/antigravity/mcp_config.json 存在同名配置；CLI 与新版桌面端已统一使用 ~/.gemini/config/")
+		s.Warnings = append(s.Warnings, i18n.T("client.warn-antigravity-legacy-path"))
 	}
 
 	r, rErr := m.loadReceipt(ClientAntigravity)
 	if rErr != nil {
-		s.State = "记录异常"
+		s.State = i18n.T("client.state.record-error")
 		s.Detail = rErr.Error()
 		s.CanInstall = false
 		return s
@@ -68,20 +69,20 @@ func (m *Manager) observeAntigravity(endpoint string, legacy bool) Status {
 		return s
 	}
 	if err != nil {
-		s.State = "读取失败"
+		s.State = i18n.T("client.state.read-failed")
 		s.Detail = err.Error()
 		s.CanInstall = false
 		return s
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		s.State = "配置异常"
-		s.Detail = "目标路径不是普通 Antigravity 插件目录"
+		s.State = i18n.T("client.state.config-error")
+		s.Detail = i18n.T("client.detail-antigravity-dir-invalid")
 		s.CanInstall = false
 		return s
 	}
 	if r == nil {
-		s.State = "已有插件"
-		s.Detail = "检测到非本应用安装的 Antigravity 同名插件，未覆盖"
+		s.State = i18n.T("client.state.existing-plugin")
+		s.Detail = i18n.T("client.detail-antigravity-foreign-plugin")
 		s.CanInstall = false
 		return s
 	}
@@ -89,31 +90,31 @@ func (m *Manager) observeAntigravity(endpoint string, legacy bool) Status {
 	s.InstalledVersion = r.Version
 	s.CanInstall = false
 	if err := verifyOwnedFilesAbsentOrMatching(pluginDir, expected.RootFiles, r); err != nil {
-		s.State = "配置已变更"
+		s.State = i18n.T("client.state.config-changed")
 		s.Detail = err.Error()
 		return s
 	}
 
 	enabled, err := readAntigravityPluginEnabled(cfgDir, m.slug)
 	if err != nil {
-		s.State = "配置异常"
+		s.State = i18n.T("client.state.config-error")
 		s.Detail = err.Error()
 		return s
 	}
 	s.CanRemove = true
 	if !enabled {
-		s.State = "已禁用"
-		s.Detail = "插件在 Antigravity 中被禁用，点击更新可重新启用"
+		s.State = i18n.T("client.state.disabled")
+		s.Detail = i18n.T("client.detail-antigravity-disabled")
 		s.CanUpdate = true
 		return s
 	}
 	if !verifyTreeMatches(pluginDir, r.Files) || r.Digest != expected.Digest || r.Version != m.version {
-		s.State = "需要更新"
+		s.State = i18n.T("client.state.update-required")
 		s.CanUpdate = true
-		s.Detail = "Gateway 地址或 Antigravity 插件内容已变更，可更新官方插件"
+		s.Detail = i18n.T("client.detail-antigravity-update")
 		return s
 	}
-	s.State = "已安装"
+	s.State = i18n.T("client.state.installed")
 	return s
 }
 
@@ -142,7 +143,7 @@ func (m *Manager) installAntigravity(endpoint string, update bool) error {
 			return nil
 		}
 		if !update {
-			return errors.New("当前 Antigravity 官方插件需要更新，请执行更新插件")
+			return errors.New(i18n.T("client.err-antigravity-needs-update"))
 		}
 	}
 
@@ -195,7 +196,7 @@ func (m *Manager) removeAntigravity() error {
 		return err
 	}
 	if r == nil {
-		return errors.New("没有可卸载的 Antigravity 官方插件记录")
+		return errors.New(i18n.T("client.err-antigravity-nothing-to-remove"))
 	}
 	pluginDir := m.agyPluginDir()
 	if err := verifyOwnedFilesAbsentOrMatching(pluginDir, nil, r); err != nil {
@@ -234,7 +235,7 @@ func readAntigravityPluginEnabled(cfgDir, slug string) (bool, error) {
 		} `json:"plugins"`
 	}
 	if err := json.Unmarshal(b, &doc); err != nil {
-		return false, fmt.Errorf("解析 Antigravity config.json 失败: %w", err)
+		return false, fmt.Errorf(i18n.T("client.err-antigravity-config-parse"), err)
 	}
 	if entry, ok := doc.Plugins[slug]; ok && entry.Enabled != nil {
 		return *entry.Enabled, nil
@@ -266,7 +267,7 @@ func collectRenderedFileHashes(root string, files []renderedFile) (map[string]st
 		p := filepath.Join(root, filepath.FromSlash(f.RelPath))
 		raw, err := os.ReadFile(p) //nolint:gosec // G304: verified relative plugin file path
 		if err != nil {
-			return nil, fmt.Errorf("校验已安装插件文件 %s 失败: %w", f.RelPath, err)
+			return nil, fmt.Errorf(i18n.T("client.err-verify-installed-file"), f.RelPath, err)
 		}
 		out[f.RelPath] = sha256Hex(raw)
 	}

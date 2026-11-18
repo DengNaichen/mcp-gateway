@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"gatewaylab/internal/buildinfo"
+	"gatewaylab/internal/i18n"
 
 	"github.com/gofrs/flock"
 	"github.com/pelletier/go-toml/v2"
@@ -72,7 +73,7 @@ func (m *Manager) client(id string) (Client, error) {
 			return c, nil
 		}
 	}
-	return Client{}, errors.New("未知客户端")
+	return Client{}, errors.New(i18n.T("client.err-unknown-client"))
 }
 func desired(c Client, endpoint string) map[string]any {
 	e := map[string]any{"url": ClientEndpoint(endpoint, c.ID)}
@@ -112,7 +113,7 @@ func decode(c Client, b []byte) (map[string]any, error) {
 	v.Standardize()
 	e = json.Unmarshal(v.Pack(), &root)
 	if e == nil && root == nil {
-		e = errors.New("配置根节点必须是对象")
+		e = errors.New(i18n.T("client.err-root-not-object"))
 	}
 	return root, e
 }
@@ -128,7 +129,7 @@ func entry(c Client, b []byte) (map[string]any, error) {
 		}
 		root, ok = v.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("%s 必须是对象", key)
+			return nil, errors.New(i18n.T("client.err-key-not-object", key))
 		}
 	}
 	v, ok := root[serverName]
@@ -137,7 +138,7 @@ func entry(c Client, b []byte) (map[string]any, error) {
 	}
 	out, ok := v.(map[string]any)
 	if !ok {
-		return nil, errors.New("Gateway 配置不是对象") //nolint:staticcheck // ST1005: "Gateway" is the product name
+		return nil, errors.New(i18n.T("client.err-gateway-not-object")) //nolint:staticcheck // ST1005: "Gateway" is the product name
 	}
 	return out, nil
 }
@@ -150,7 +151,7 @@ func (m *Manager) load(c Client) (*receipt, error) {
 	var r receipt
 	e = json.Unmarshal(b, &r)
 	if e == nil && r.Path != c.Path {
-		e = errors.New("配置路径已改变，保留原写入记录")
+		e = errors.New(i18n.T("client.err-path-changed"))
 	}
 	return &r, e
 }
@@ -163,24 +164,24 @@ func matchingReceipt(r *receipt, got map[string]any) *receipt {
 	return r
 }
 func (m *Manager) status(c Client, endpoint string) Status {
-	s := Status{ID: c.ID, Name: c.Name, Path: c.Path, State: "未配置", CanWrite: true}
+	s := Status{ID: c.ID, Name: c.Name, Path: c.Path, State: i18n.T("client.state.not-configured"), CanWrite: true}
 	b, e := read(c.Path)
 	if e != nil {
-		s.State = "读取失败"
+		s.State = i18n.T("client.state.read-failed")
 		s.Detail = e.Error()
 		s.CanWrite = false
 		return s
 	}
 	got, e := entry(c, b)
 	if e != nil {
-		s.State = "配置异常"
+		s.State = i18n.T("client.state.config-error")
 		s.Detail = e.Error()
 		s.CanWrite = false
 		return s
 	}
 	r, e := m.load(c)
 	if e != nil {
-		s.State = "记录异常"
+		s.State = i18n.T("client.state.record-error")
 		s.Detail = e.Error()
 		s.CanWrite = false
 		return s
@@ -192,21 +193,21 @@ func (m *Manager) status(c Client, endpoint string) Status {
 	s.CanWrite = false
 	if r != nil && reflect.DeepEqual(got, r.Entry) {
 		if c.TOML && (r.Block == "" || bytes.Count(b, []byte(r.Block)) != 1) {
-			s.State = "配置已变更"
-			s.Detail = "配置文本已被外部修改，请检查配置"
+			s.State = i18n.T("client.state.config-changed")
+			s.Detail = i18n.T("client.detail-external-modification")
 			return s
 		}
-		s.State = "已配置"
+		s.State = i18n.T("client.state.configured")
 		s.CanRevoke = true
 		if !reflect.DeepEqual(got, desired(c, endpoint)) {
-			s.State = "需要更新"
+			s.State = i18n.T("client.state.update-required")
 			s.CanUpdate = true
-			s.Detail = "Gateway 地址已改变，可更新本应用管理的配置"
+			s.Detail = i18n.T("client.detail-endpoint-changed")
 		}
 		return s
 	}
-	s.State = "已有配置"
-	s.Detail = "此条目不属于本次管理记录，或已被外部修改；保留原内容"
+	s.State = i18n.T("client.state.existing-config")
+	s.Detail = i18n.T("client.detail-not-managed")
 	return s
 }
 func (m *Manager) Statuses(endpoint string) []Status {
@@ -229,7 +230,7 @@ func (m *Manager) write(id, endpoint string, update bool) error {
 	defer m.mu.Unlock()
 	u, e := url.Parse(endpoint)
 	if e != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
-		return errors.New("无效的 MCP HTTP 地址")
+		return errors.New(i18n.T("client.err-invalid-mcp-url"))
 	}
 	c, e := m.client(id)
 	if e != nil {
@@ -257,7 +258,7 @@ func (m *Manager) write(id, endpoint string, update bool) error {
 	r = matchingReceipt(r, got)
 	if got != nil {
 		if r == nil || !reflect.DeepEqual(got, r.Entry) {
-			return errors.New("配置已被外部修改或不属于本应用，未覆盖")
+			return errors.New(i18n.T("client.err-external-modified"))
 		}
 		if reflect.DeepEqual(got, want) {
 			if pending {
@@ -269,10 +270,10 @@ func (m *Manager) write(id, endpoint string, update bool) error {
 			return nil
 		}
 		if !update {
-			return errors.New("已有配置需要更新，请使用更新配置")
+			return errors.New(i18n.T("client.err-existing-needs-update"))
 		}
 	} else if update {
-		return errors.New("配置已不存在，请刷新后写入配置")
+		return errors.New(i18n.T("client.err-config-missing"))
 	}
 	rec := receipt{Path: c.Path, Entry: want}
 	if got != nil {
@@ -287,7 +288,7 @@ func (m *Manager) write(id, endpoint string, update bool) error {
 		rec.Block = "\n[mcp_servers." + serverName + "]\nurl = " + string(encoded) + "\n"
 		if got != nil {
 			if r.Block == "" || bytes.Count(b, []byte(r.Block)) != 1 {
-				return errors.New("配置文本已改变，未更新")
+				return errors.New(i18n.T("client.err-text-changed-not-updated"))
 			}
 			next = bytes.Replace(b, []byte(r.Block), []byte(rec.Block), 1)
 		} else {
@@ -300,7 +301,7 @@ func (m *Manager) write(id, endpoint string, update bool) error {
 		}
 	}
 	if _, e = entry(c, next); e != nil {
-		return fmt.Errorf("生成配置失败: %w", e)
+		return fmt.Errorf(i18n.T("client.err-generate-failed"), e)
 	}
 	rb, _ := json.MarshalIndent(rec, "", "  ")
 	if e = atomicWrite(m.receiptPath(c), rb); e != nil {
@@ -318,7 +319,7 @@ func (m *Manager) write(id, endpoint string, update bool) error {
 		return e
 	}
 	if !reflect.DeepEqual(actual, want) {
-		return errors.New("写入后校验失败，请刷新配置")
+		return errors.New(i18n.T("client.err-verify-after-write"))
 	}
 	if rec.Previous != nil {
 		rec.Previous = nil
@@ -344,7 +345,7 @@ func (m *Manager) Revoke(id string) error {
 		return e
 	}
 	if r == nil {
-		return errors.New("没有可撤回的写入记录")
+		return errors.New(i18n.T("client.err-no-write-record"))
 	}
 	b, e := read(c.Path)
 	if e != nil {
@@ -359,12 +360,12 @@ func (m *Manager) Revoke(id string) error {
 		return os.Remove(m.receiptPath(c))
 	}
 	if !reflect.DeepEqual(got, r.Entry) {
-		return errors.New("配置已被外部修改，未撤回")
+		return errors.New(i18n.T("client.err-not-revoked-external"))
 	}
 	var next []byte
 	if c.TOML {
 		if r.Block == "" || bytes.Count(b, []byte(r.Block)) != 1 {
-			return errors.New("配置文本已改变，未撤回")
+			return errors.New(i18n.T("client.err-not-revoked-text-changed"))
 		}
 		next = bytes.Replace(b, []byte(r.Block), nil, 1)
 	} else {
@@ -417,7 +418,7 @@ func replaceIfUnchanged(path string, b, next []byte) error {
 		return e
 	}
 	if !bytes.Equal(now, b) {
-		return errors.New("配置刚被其他程序修改，请刷新后重试")
+		return errors.New(i18n.T("client.err-modified-just-now"))
 	}
 	return atomicWrite(path, next)
 }
@@ -428,7 +429,7 @@ func atomicWrite(path string, b []byte) error {
 	mode := os.FileMode(0600)
 	if info, e := os.Lstat(path); e == nil {
 		if !info.Mode().IsRegular() {
-			return errors.New("配置路径不是普通文件")
+			return errors.New(i18n.T("client.err-path-not-regular-file"))
 		}
 		mode = info.Mode().Perm()
 	}
@@ -463,7 +464,7 @@ func uniqueKeys(v *hujson.Value) error {
 					return err
 				}
 				if seen[key] {
-					return fmt.Errorf("配置包含重复键 %q", key)
+					return errors.New(i18n.T("client.err-duplicate-key", key))
 				}
 				seen[key] = true
 			}
@@ -485,9 +486,9 @@ func lockConfig(path string) (*flock.Flock, error) {
 	if err != nil || !ok {
 		_ = lock.Close()
 		if err != nil {
-			return nil, fmt.Errorf("等待客户端配置锁失败，请稍后重试: %w", err)
+			return nil, fmt.Errorf(i18n.T("client.err-lock-wait"), err)
 		}
-		return nil, errors.New("客户端配置正被其他进程修改，请稍后重试")
+		return nil, errors.New(i18n.T("client.err-locked-by-other-process"))
 	}
 	return lock, nil
 }

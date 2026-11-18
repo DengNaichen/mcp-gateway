@@ -18,6 +18,7 @@ import (
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
 	"gatewaylab/internal/clientplugin"
+	"gatewaylab/internal/i18n"
 )
 
 // ViewID identifies a top-level control plane page.
@@ -37,23 +38,23 @@ const (
 func viewTitle(v ViewID) string {
 	switch v {
 	case ViewOverview:
-		return "概览"
+		return i18n.T("nav.overview")
 	case ViewServices:
-		return "服务"
+		return i18n.T("nav.services")
 	case ViewCatalog:
-		return "工具目录"
+		return i18n.T("nav.catalog")
 	case ViewRepos:
-		return "仓库绑定"
+		return i18n.T("nav.repos")
 	case ViewPlayground:
-		return "路由沙盒"
+		return i18n.T("nav.playground")
 	case ViewLogs:
-		return "请求日志"
+		return i18n.T("nav.logs")
 	case ViewClients:
-		return "连接客户端"
+		return i18n.T("nav.clients")
 	case ViewSettings:
-		return "访问与路由"
+		return i18n.T("nav.settings")
 	default:
-		return "概览"
+		return i18n.T("nav.overview")
 	}
 }
 
@@ -87,6 +88,7 @@ type DesktopUI struct {
 	PluginsBusy       bool
 	Runtime           *gatewayRuntime
 	Client            *apiclient.Client
+	OnLanguageChanged func(i18n.Lang)
 
 	// Current window reference (guarded by mu for background goroutines).
 	mu        sync.Mutex
@@ -371,7 +373,7 @@ func (u *DesktopUI) Refresh() {
 					u.BootError = err.Error()
 				} else {
 					u.toastMu.Lock()
-					u.pendingToasts = append(u.pendingToasts, "刷新失败: "+err.Error())
+					u.pendingToasts = append(u.pendingToasts, i18n.T("app.toast.refresh_failed", err.Error()))
 					u.toastMu.Unlock()
 				}
 				return
@@ -720,22 +722,22 @@ func (u *DesktopUI) renderLoginView(c *ui.Context) {
 					})
 
 					if u.LoginError != "" {
-						SailAlertBox(c, ToneDanger, "登录失败", u.LoginError)
+						SailAlertBox(c, ToneDanger, i18n.T("app.login.failed_title"), u.LoginError)
 					}
 
 					ui.Column(c).Gap(6).FillWidth().Children(func() {
-						ui.Text(c, "Admin 访问令牌").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("app.login.token_label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						if ui.TextInput(c.Key("login-token"), &u.LoginToken).
 							Password().
 							AutoFocus().
-							Placeholder("粘贴令牌").
+							Placeholder(i18n.T("app.login.token_placeholder")).
 							FillWidth().
 							Submitted() {
 							u.submitLogin()
 						}
 					})
 
-					if SailPrimaryButton(c, "登录").FillWidth().Disabled(u.LoggingIn || strings.TrimSpace(u.LoginToken) == "").Clicked() {
+					if SailPrimaryButton(c, i18n.T("app.login.submit")).FillWidth().Disabled(u.LoggingIn || strings.TrimSpace(u.LoginToken) == "").Clicked() {
 						u.submitLogin()
 					}
 				})
@@ -763,15 +765,15 @@ func (u *DesktopUI) renderBootView(c *ui.Context) {
 						ui.Icon(c, IconLogo).Size(20, 20).TextColor(SailAccent)
 					})
 					if u.BootError != "" {
-						ui.Text(c, "无法连接网关控制面").FontSize(15.5).Bold().TextColor(SailInkStrong)
+						ui.Text(c, i18n.T("app.connect.failed_title")).FontSize(15.5).Bold().TextColor(SailInkStrong)
 						ui.Text(c, u.BootError).FontSize(12.5).TextColor(SailInkMuted).TextAlign(ui.Center)
-						if SailPrimaryButton(c, "重试连接").Clicked() {
+						if SailPrimaryButton(c, i18n.T("app.connect.retry")).Clicked() {
 							u.Refresh()
 						}
 					} else {
 						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.Spinner(c).Label("正在加载")
-							ui.Text(c, "正在加载网关控制面…").FontSize(13.5).TextColor(SailInkMuted)
+							ui.Spinner(c).Label(i18n.T("app.connect.loading_label"))
+							ui.Text(c, i18n.T("app.connect.loading")).FontSize(13.5).TextColor(SailInkMuted)
 						})
 					}
 				})
@@ -836,19 +838,22 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 
 			// Scrollable navigation sections.
 			ui.Scroll(c).Grow(1).FillWidth().Padding(4, 10, 10, 10).Gap(18).Children(func() {
-				u.renderNavGroup(c, "工作台", []navItem{
-					{id: ViewOverview, label: "概览", icon: IconHome},
+				u.renderNavGroup(c, i18n.T("nav.group.workspace"), []navItem{
+					{id: ViewOverview, label: i18n.T("nav.overview"), icon: IconHome},
 					servicesNavItem(activeRealServers, u.servicesNeedingAttention()),
-					{id: ViewCatalog, label: "工具目录", icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
-					{id: ViewRepos, label: "仓库绑定", icon: IconFolderGit, badge: reposNavBadge(state.Scopes)},
-					{id: ViewClients, label: "连接客户端", icon: IconServer, badge: clientsNavBadge(u)},
-					{id: ViewSettings, label: "访问与路由", icon: IconShield},
+					{id: ViewCatalog, label: i18n.T("nav.catalog"), icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
+					{id: ViewRepos, label: i18n.T("nav.repos"), icon: IconFolderGit, badge: reposNavBadge(state.Scopes)},
+					{id: ViewClients, label: i18n.T("nav.clients"), icon: IconServer, badge: clientsNavBadge(u)},
+					{id: ViewSettings, label: i18n.T("nav.settings"), icon: IconShield},
 				})
-				u.renderNavGroup(c, "观测与调试", []navItem{
-					{id: ViewLogs, label: "请求日志", icon: IconActivity, badge: countBadge(len(state.Events))},
-					{id: ViewPlayground, label: "路由沙盒", icon: IconWaypoints},
+				u.renderNavGroup(c, i18n.T("nav.group.observability"), []navItem{
+					{id: ViewLogs, label: i18n.T("nav.logs"), icon: IconActivity, badge: countBadge(len(state.Events))},
+					{id: ViewPlayground, label: i18n.T("nav.playground"), icon: IconWaypoints},
 				})
 			})
+
+			ui.Box(c).FillWidth().Height(1).Background(SailDivider)
+			u.renderSidebarLanguageSwitcher(c)
 
 		})
 }
@@ -865,7 +870,7 @@ type navItem struct {
 // servicesNavItem shows how many services need action when any do, otherwise
 // how many are enabled, so the sidebar count never reads as "all healthy".
 func servicesNavItem(enabled, attention int) navItem {
-	item := navItem{id: ViewServices, label: "服务", icon: IconServer, badge: countBadge(enabled)}
+	item := navItem{id: ViewServices, label: i18n.T("nav.services"), icon: IconServer, badge: countBadge(enabled)}
 	if attention > 0 {
 		item.badge = countBadge(attention)
 		item.badgeDanger = true
@@ -1005,7 +1010,7 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 							svcLink.Background(SailBgHover)
 						}
 						svcLink.Children(func() {
-							ui.Text(c, "服务").FontSize(13).TextColor(SailInkMuted).SingleLine()
+							ui.Text(c, i18n.T("app.topbar.services")).FontSize(13).TextColor(SailInkMuted).SingleLine()
 						})
 						if svcLink.Clicked() {
 							u.Navigate(ViewServices)
@@ -1026,7 +1031,7 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						Gap(6).
 						AlignItems(ui.Center).
 						Cursor(ui.CursorPointer).
-						Tooltip("路由模型配置")
+						Tooltip(i18n.T("app.topbar.routing_tooltip"))
 					if modelChip.Hovered() {
 						modelChip.Background(SailBgHover)
 					}
@@ -1038,7 +1043,7 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						SailStatusDot(c, dotColor)
 						modelName := state.Settings.Model
 						if modelName == "" {
-							modelName = "未配置模型"
+							modelName = i18n.T("app.topbar.no_model")
 						}
 						ui.Text(c, modelName).Font("monospace").FontSize(12).TextColor(SailInkBody).SingleLine()
 					})
@@ -1056,9 +1061,9 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						Cursor(ui.CursorPointer)
 					refreshBtn.Children(func() {
 						ui.Icon(c, IconRefresh).Size(12.5, 12.5).TextColor(SailInkMuted)
-						lbl := "刷新"
+						lbl := i18n.T("app.topbar.refresh")
 						if u.Refreshing {
-							lbl = "同步中"
+							lbl = i18n.T("app.topbar.syncing")
 						}
 						ui.Text(c, lbl).FontSize(12).TextColor(SailInkBody).SingleLine()
 					})
@@ -1068,7 +1073,7 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 
 					if state.Access.Shared {
 						ui.Text(c, state.Access.Actor).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
-						if SailSmallButton(c.Key("top-logout-btn"), "退出").Clicked() {
+						if SailSmallButton(c.Key("top-logout-btn"), i18n.T("app.topbar.logout")).Clicked() {
 							u.logout()
 						}
 					}

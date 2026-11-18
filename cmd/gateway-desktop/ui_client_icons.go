@@ -2,12 +2,15 @@ package main
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+
+	"gatewaylab/internal/i18n"
 )
 
 //go:embed assets/clients/*.svg
@@ -39,11 +42,11 @@ func nearestConfigLocation(path string) (string, bool, error) {
 			return target, !info.IsDir(), nil
 		}
 		if !os.IsNotExist(err) {
-			return "", false, fmt.Errorf("无法打开配置位置: %w", err)
+			return "", false, fmt.Errorf("%s: %w", i18n.T("app.client_config.open_failed"), err)
 		}
 		parent := filepath.Dir(target)
 		if parent == target {
-			return "", false, fmt.Errorf("配置位置不存在: %s", path)
+			return "", false, errors.New(i18n.T("app.client_config.not_found", path))
 		}
 		target = parent
 	}

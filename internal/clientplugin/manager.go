@@ -13,6 +13,7 @@ import (
 
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
+	"gatewaylab/internal/i18n"
 	"gatewaylab/internal/workspace"
 )
 
@@ -23,7 +24,7 @@ func validateEndpoint(endpoint string) (string, error) {
 	}
 	u, err := url.Parse(trimmed)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
-		return "", errors.New("无效的 MCP HTTP 地址")
+		return "", errors.New(i18n.T("client.err-invalid-mcp-url"))
 	}
 	return trimmed, nil
 }
@@ -74,7 +75,7 @@ func (m *Manager) Statuses(endpoint string) []Status {
 	legacy := m.legacyStatusMap(endpoint)
 	hasLegacy := func(id string) bool {
 		row, ok := legacy[id]
-		return ok && (row.CanRevoke || row.CanUpdate || row.State == "已有配置")
+		return ok && (row.CanRevoke || row.CanUpdate || row.State == i18n.T("client.state.existing-config"))
 	}
 
 	ids := clientconfig.ClientIDs()

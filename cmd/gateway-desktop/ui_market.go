@@ -10,6 +10,7 @@ import (
 
 	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
+	"gatewaylab/internal/i18n"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -72,7 +73,7 @@ func (u *DesktopUI) renderMarketContent(c *ui.Context) {
 	// Search & Filter Bar.
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
 		inp := SailTextInput(c.Key("mkt-search"), &st.query).
-			Placeholder("搜索 MCP 服务器 — GitHub、Postgres、Figma、URL 或包名...").
+			Placeholder(i18n.T("market.search.placeholder")).
 			Grow(1).
 			MinWidth(0)
 		if inp.Changed() && strings.TrimSpace(st.query) == "" && st.registryQuery != "" {
@@ -82,9 +83,9 @@ func (u *DesktopUI) renderMarketContent(c *ui.Context) {
 			u.fetchMarket(st, strings.TrimSpace(st.query))
 		}
 
-		regBtnLabel := "搜索 Registry"
+		regBtnLabel := i18n.T("market.search.registry")
 		if st.loading && st.registryQuery != "" {
-			regBtnLabel = "搜索中…"
+			regBtnLabel = i18n.T("common.searching")
 		}
 		if SailButton(c.Key("mkt-search-reg"), regBtnLabel).Disabled(st.loading).Clicked() {
 			u.fetchMarket(st, strings.TrimSpace(st.query))
@@ -99,17 +100,17 @@ func (u *DesktopUI) renderMarketContent(c *ui.Context) {
 	}
 
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-		renderMarketFilterPill(c, st, "all", "全部")
-		renderMarketFilterPill(c, st, "http", "云端 SaaS")
-		renderMarketFilterPill(c, st, "stdio", "本地工具")
-		renderMarketFilterPill(c, st, "installed", fmt.Sprintf("已接入 (%d)", installedCount))
+		renderMarketFilterPill(c, st, "all", i18n.T("common.all"))
+		renderMarketFilterPill(c, st, "http", i18n.T("market.filter.cloud"))
+		renderMarketFilterPill(c, st, "stdio", i18n.T("market.filter.local"))
+		renderMarketFilterPill(c, st, "installed", fmt.Sprintf(i18n.T("market.filter.installed"), installedCount))
 	})
 
 	if st.fetchErr != "" {
-		SailAlertBox(c, ToneDanger, "加载 MCP 市场失败", st.fetchErr)
+		SailAlertBox(c, ToneDanger, i18n.T("market.error.load"), st.fetchErr)
 	}
 	if st.registryErr != "" {
-		SailAlertBox(c, ToneWarning, "官方 MCP Registry 暂时不可达，当前仅展示内置精选服务", st.registryErr)
+		SailAlertBox(c, ToneWarning, i18n.T("market.warning.registry_down"), st.registryErr)
 	}
 
 	q := strings.ToLower(strings.TrimSpace(st.query))
@@ -138,16 +139,16 @@ func (u *DesktopUI) renderMarketContent(c *ui.Context) {
 
 	if st.loading && len(st.items) == 0 {
 		SailCard(c, func() {
-			SailQuietStatus(c, "正在加载精选 MCP 服务...", SailWarningInk, SailInkMuted)
+			SailQuietStatus(c, i18n.T("market.loading"), SailWarningInk, SailInkMuted)
 		})
 	} else if len(featuredFiltered) == 0 && len(registryFiltered) == 0 {
 		actionLbl := ""
 		var onAction func()
 		if strings.TrimSpace(st.query) != "" && strings.TrimSpace(st.query) != st.registryQuery {
-			actionLbl = "去官方 MCP Registry 搜索"
+			actionLbl = i18n.T("market.search.registry_cta")
 			onAction = func() { u.fetchMarket(st, strings.TrimSpace(st.query)) }
 		}
-		SailEmptyState(c, "未找到匹配的 MCP 服务", "试试搜索 GitHub、Postgres、Figma，或点击在官方 MCP Registry 中检索。", actionLbl, onAction)
+		SailEmptyState(c, i18n.T("market.empty.title"), i18n.T("market.empty.subtitle"), actionLbl, onAction)
 	} else {
 		if len(featuredFiltered) > 0 {
 			u.renderMarketGrid(c, st, featuredFiltered, cols, "feat")
@@ -155,7 +156,7 @@ func (u *DesktopUI) renderMarketContent(c *ui.Context) {
 		if len(registryFiltered) > 0 {
 			ui.Column(c).FillWidth().Gap(10).Children(func() {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-					ui.Text(c, "官方 MCP Registry 搜索结果").FontSize(13).FontWeight(600).TextColor(SailInkBody)
+					ui.Text(c, i18n.T("market.section.registry_results")).FontSize(13).FontWeight(600).TextColor(SailInkBody)
 					ui.Text(c, "registry.modelcontextprotocol.io").Font("monospace").FontSize(11.5).TextColor(SailInkMuted)
 				})
 				u.renderMarketGrid(c, st, registryFiltered, cols, "reg")
@@ -243,7 +244,7 @@ func (u *DesktopUI) renderMarketCard(c *ui.Context, st *marketPageState, item ap
 						ui.Text(c, item.Title).FontSize(13.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
 						ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 							ui.Text(c, item.Publisher).FontSize(11.5).TextColor(SailInkMuted).SingleLine()
-							renderMarketChip(c, item.Runs)
+							renderMarketChip(c, marketRunsLabel(item.Runs))
 							if chip := marketAuthChipLabel(item); chip != "" {
 								renderMarketChip(c, chip)
 							}
@@ -262,22 +263,22 @@ func (u *DesktopUI) renderMarketCard(c *ui.Context, st *marketPageState, item ap
 				ui.Text(c, item.ServerID).Font("monospace").FontSize(11.5).TextColor(SailInkFaint).SingleLine().Grow(1).MinWidth(0)
 				if item.Installed {
 					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-						SailQuietStatus(c, "已接入", SailSuccessInk, SailSuccessInk)
-						if SailSmallButton(c.Key("mkt-view-"+item.ID), "查看").Clicked() {
+						SailQuietStatus(c, i18n.T("common.connected"), SailSuccessInk, SailSuccessInk)
+						if SailSmallButton(c.Key("mkt-view-"+item.ID), i18n.T("common.view")).Clicked() {
 							u.OpenServiceDetail(item.ServerID)
 						}
 					})
 				} else {
 					busy := st.installingID == item.ID
-					btnLabel := "添加"
+					btnLabel := i18n.T("common.add")
 					if marketHasRequiredInputs(item) {
-						btnLabel = "添加..."
+						btnLabel = i18n.T("market.action.add_with_inputs")
 					}
 					if busy {
 						if item.SignIn {
-							btnLabel = "登录中…"
+							btnLabel = i18n.T("common.signing_in")
 						} else {
-							btnLabel = "添加中…"
+							btnLabel = i18n.T("common.adding")
 						}
 					}
 					if SailSmallButton(c.Key("mkt-add-"+item.ID), btnLabel).Disabled(st.installingID != "").Clicked() {
@@ -307,6 +308,16 @@ func renderMarketChip(c *ui.Context, label string) {
 		})
 }
 
+// marketRunsLabel localizes the runtime token the backend puts on the wire:
+// hosted remotes arrive as the zh-CN placeholder for "remote", while local
+// runners (npx, uvx, ...) are already language-neutral.
+func marketRunsLabel(runs string) string {
+	if runs == i18n.TLang(i18n.LangZH, "market.runs.remote") {
+		return i18n.T("market.runs.remote")
+	}
+	return runs
+}
+
 func marketHasRequiredInputs(item apitypes.MarketServer) bool {
 	for _, inp := range item.Inputs {
 		if inp.Required {
@@ -318,7 +329,7 @@ func marketHasRequiredInputs(item apitypes.MarketServer) bool {
 
 func marketAuthChipLabel(item apitypes.MarketServer) string {
 	if item.SignIn {
-		return "需登录"
+		return i18n.T("market.badge.sign_in")
 	}
 	hasSecret := false
 	hasRequired := false
@@ -331,10 +342,10 @@ func marketAuthChipLabel(item apitypes.MarketServer) string {
 		}
 	}
 	if hasSecret {
-		return "需凭据"
+		return i18n.T("market.badge.credentials")
 	}
 	if hasRequired {
-		return "需参数"
+		return i18n.T("market.badge.params")
 	}
 	return ""
 }
@@ -437,11 +448,11 @@ func (u *DesktopUI) renderMarketInstallModal(c *ui.Context, st *marketPageState,
 			ui.Row(c).AlignItems(ui.Center).Gap(10).Grow(1).MinWidth(0).Children(func() {
 				u.renderMarketIcon(c, st, item)
 				ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-					ui.Text(c, "添加 "+item.Title).FontSize(15).FontWeight(700).TextColor(SailInkStrong).SingleLine()
-					ui.Text(c, item.Publisher+" · "+item.Runs).FontSize(12).TextColor(SailInkMuted).SingleLine()
+					ui.Text(c, i18n.T("market.modal.title", item.Title)).FontSize(15).FontWeight(700).TextColor(SailInkStrong).SingleLine()
+					ui.Text(c, item.Publisher+" · "+marketRunsLabel(item.Runs)).FontSize(12).TextColor(SailInkMuted).SingleLine()
 				})
 			})
-			if SailSmallButton(c.Key("mkt-modal-close"), "关闭").Clicked() {
+			if SailSmallButton(c.Key("mkt-modal-close"), i18n.T("common.close")).Clicked() {
 				st.showModal = false
 			}
 		})
@@ -455,7 +466,7 @@ func (u *DesktopUI) renderMarketInstallModal(c *ui.Context, st *marketPageState,
 		})
 
 		if st.modalErr != "" {
-			SailAlertBox(c, ToneDanger, "无法添加服务", st.modalErr)
+			SailAlertBox(c, ToneDanger, i18n.T("market.modal.error_title"), st.modalErr)
 		}
 
 		for _, inp := range item.Inputs {
@@ -487,17 +498,17 @@ func (u *DesktopUI) renderMarketInstallModal(c *ui.Context, st *marketPageState,
 		}
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailButton(c.Key("mkt-modal-cancel"), "取消").Disabled(st.installingID != "").Clicked() {
+			if SailButton(c.Key("mkt-modal-cancel"), i18n.T("common.cancel")).Disabled(st.installingID != "").Clicked() {
 				st.showModal = false
 			}
-			confirmLabel := "确认添加并同步工具"
+			confirmLabel := i18n.T("market.modal.confirm")
 			if st.installingID == item.ID {
-				confirmLabel = "添加中…"
+				confirmLabel = i18n.T("common.adding")
 			}
 			if SailPrimaryButton(c.Key("mkt-modal-submit"), confirmLabel).Disabled(st.installingID != "").Clicked() {
 				for _, inp := range item.Inputs {
 					if inp.Required && strings.TrimSpace(st.modalInputs[inp.Key]) == "" {
-						st.modalErr = "请填写必填项：" + inp.Label
+						st.modalErr = i18n.T("market.modal.required_missing", inp.Label)
 						return
 					}
 				}
@@ -577,7 +588,7 @@ func (u *DesktopUI) installFromMarket(st *marketPageState, item apitypes.MarketS
 			title, detail := splitAPIError(err)
 			msg := title
 			if detail != "" {
-				msg += "：" + detail
+				msg += i18n.T("market.modal.separator") + detail
 			}
 			u.updateUI(func() {
 				st.installingID = ""
@@ -603,9 +614,9 @@ func (u *DesktopUI) installFromMarket(st *marketPageState, item apitypes.MarketS
 			}
 		})
 		if res.SyncError != "" {
-			u.Notify(fmt.Sprintf("已添加 %s，工具同步失败（可在已接入服务重试）", item.Title))
+			u.Notify(fmt.Sprintf(i18n.T("market.toast.added_sync_failed"), item.Title))
 		} else {
-			u.Notify(fmt.Sprintf("已接入 %s（读取到 %d 个工具）", item.Title, res.ToolCount))
+			u.Notify(fmt.Sprintf(i18n.T("market.toast.installed"), item.Title, res.ToolCount))
 		}
 		return nil
 	})

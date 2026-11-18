@@ -7,7 +7,7 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 output = subprocess.check_output(
-    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault", "./internal/retry", "./internal/apitypes", "./internal/apiclient", "./internal/buildinfo", "./internal/workspace", "./internal/clientconfig", "./internal/clientplugin"],
+    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault", "./internal/retry", "./internal/apitypes", "./internal/apiclient", "./internal/buildinfo", "./internal/i18n", "./internal/workspace", "./internal/clientconfig", "./internal/clientplugin"],
     cwd=root, text=True,
 )
 allowed = {
@@ -34,7 +34,7 @@ allowed.update({
 })
 allowed.update({
     "gatewaylab/internal/access": {"gatewaylab/internal/registry", "gatewaylab/internal/input", "gatewaylab/internal/fault", "gatewaylab/internal/secrets"},
-    "gatewaylab/internal/market": {"gatewaylab/internal/registry", "gatewaylab/internal/input", "gatewaylab/internal/fault"},
+    "gatewaylab/internal/market": {"gatewaylab/internal/registry", "gatewaylab/internal/input", "gatewaylab/internal/fault", "gatewaylab/internal/i18n"},
     "gatewaylab/internal/demo": {"gatewaylab/internal/registry"},
     "gatewaylab/internal/procutil": set(),
     "gatewaylab/internal/input": set(),
@@ -46,9 +46,10 @@ allowed.update({
     "gatewaylab/internal/apitypes": set(),
     "gatewaylab/internal/apiclient": {"gatewaylab/internal/apitypes"},
     "gatewaylab/internal/buildinfo": set(),
+    "gatewaylab/internal/i18n": set(),
     "gatewaylab/internal/workspace": {"gatewaylab/internal/buildinfo"},
-    "gatewaylab/internal/clientconfig": {"gatewaylab/internal/buildinfo"},
-    "gatewaylab/internal/clientplugin": {"gatewaylab/internal/buildinfo", "gatewaylab/internal/clientconfig", "gatewaylab/internal/workspace", "gatewaylab/plugins"},
+    "gatewaylab/internal/clientconfig": {"gatewaylab/internal/buildinfo", "gatewaylab/internal/i18n"},
+    "gatewaylab/internal/clientplugin": {"gatewaylab/internal/buildinfo", "gatewaylab/internal/clientconfig", "gatewaylab/internal/i18n", "gatewaylab/internal/workspace", "gatewaylab/plugins"},
 })
 decoder = json.JSONDecoder()
 while output.strip():
@@ -145,6 +146,7 @@ while output.strip():
         desktop_allowed = {
             "gatewaylab/internal/api", "gatewaylab/internal/apiclient", "gatewaylab/internal/apitypes",
             "gatewaylab/internal/buildinfo", "gatewaylab/internal/clientconfig", "gatewaylab/internal/clientplugin",
+            "gatewaylab/internal/i18n",
         }
         assert internal <= desktop_allowed, f"gateway-desktop imports backend packages {sorted(internal - desktop_allowed)}; use internal/apitypes over HTTP"
 print("PASS: cmd -> api -> gateway reverse edges; apitypes stays at the HTTP edge; desktop uses the HTTP contract; sandbox is independent of upstream")

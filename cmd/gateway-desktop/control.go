@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo"
 
 	"gatewaylab/internal/buildinfo"
+	"gatewaylab/internal/i18n"
 )
 
 // startControlSocket starts an optional local Unix domain socket server when
@@ -55,6 +56,7 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 			"build":           buildinfo.Current(),
 			"updates_enabled": buildinfo.Current().Channel == "stable",
 			"dark":            mygo.Theme.IsDark(),
+			"lang":            string(i18n.Current()),
 		}
 		if rt != nil {
 			resp["mode"] = rt.Mode

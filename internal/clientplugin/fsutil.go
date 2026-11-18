@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"gatewaylab/internal/i18n"
 )
 
 type pluginReceipt struct {
@@ -37,7 +39,7 @@ func (m *Manager) loadReceipt(id string) (*pluginReceipt, error) {
 	}
 	var r pluginReceipt
 	if err := json.Unmarshal(b, &r); err != nil {
-		return nil, fmt.Errorf("插件安装记录损坏: %w", err)
+		return nil, fmt.Errorf(i18n.T("client.err-install-record-corrupt"), err)
 	}
 	return &r, nil
 }
@@ -77,10 +79,10 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	}
 	if info, err := os.Lstat(path); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("拒绝写入符号链接路径 %s", path)
+			return errors.New(i18n.T("client.err-symlink-path", path))
 		}
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("目标路径不是普通文件 %s", path)
+			return errors.New(i18n.T("client.err-target-not-regular-file", path))
 		}
 	}
 	f, err := os.CreateTemp(filepath.Dir(path), ".gw-plugin-*")
@@ -116,7 +118,7 @@ func writeRenderedTree(root string, files []renderedFile) (map[string]string, er
 	for _, f := range files {
 		rel := filepath.ToSlash(filepath.Clean(f.RelPath))
 		if strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
-			return nil, fmt.Errorf("非法相对路径 %q", f.RelPath)
+			return nil, errors.New(i18n.T("client.err-invalid-relative-path", f.RelPath))
 		}
 		wanted[rel] = f
 		hashes[rel] = sha256Hex(f.Data)
@@ -184,10 +186,10 @@ func verifyOwnedFilesAbsentOrMatching(root string, files []renderedFile, r *plug
 		return err
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("目标插件目录异常: %s", root)
+		return errors.New(i18n.T("client.err-plugin-dir-invalid", root))
 	}
 	if r == nil {
-		return fmt.Errorf("目录 %s 已存在但无本应用写入记录，未覆盖", root)
+		return errors.New(i18n.T("client.err-dir-exists-unmanaged", root))
 	}
 	for rel, wantHash := range r.Files {
 		p := filepath.Join(root, filepath.FromSlash(rel))
@@ -199,7 +201,7 @@ func verifyOwnedFilesAbsentOrMatching(root string, files []renderedFile, r *plug
 			return err
 		}
 		if sha256Hex(raw) != wantHash {
-			return fmt.Errorf("插件文件 %s 已被外部修改，未覆盖", p)
+			return errors.New(i18n.T("client.err-plugin-file-modified", p))
 		}
 	}
 	// Ensure no unexpected non-managed files conflict with new writes.
@@ -209,7 +211,7 @@ func verifyOwnedFilesAbsentOrMatching(root string, files []renderedFile, r *plug
 			continue
 		}
 		if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
-			return fmt.Errorf("目标文件 %s 已存在且不属于本插件，未覆盖", rel)
+			return errors.New(i18n.T("client.err-file-exists-other-plugin", rel))
 		}
 	}
 	return nil

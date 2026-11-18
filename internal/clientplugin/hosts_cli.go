@@ -12,6 +12,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"gatewaylab/internal/clientconfig"
+	"gatewaylab/internal/i18n"
 	"gatewaylab/internal/workspace"
 )
 
@@ -53,7 +54,7 @@ func (m *Manager) observeClaude(endpoint string, legacy bool) Status {
 		ID:            ClientClaude,
 		Name:          clientconfig.ClientDisplayName(ClientClaude),
 		Path:          filepath.Join(cfgDir, "plugins", "installed_plugins.json"),
-		State:         "未安装",
+		State:         i18n.T("client.state.not-installed"),
 		TargetVersion: m.version,
 		CLIAvailable:  cliOK,
 		HasLegacyMCP:  legacy,
@@ -61,22 +62,22 @@ func (m *Manager) observeClaude(endpoint string, legacy bool) Status {
 	}
 	expected, renderErr := m.renderClaudeMarketplace(endpoint, hookBin, dataDir)
 	if renderErr != nil {
-		s.State = "配置异常"
+		s.State = i18n.T("client.state.config-error")
 		s.Detail = renderErr.Error()
 		s.CanInstall = false
 		return s
 	}
 	if legacy {
-		s.State = "待升级"
-		s.Detail = "当前仅配置了全局 MCP，升级为官方插件后可自动签名与加载 Skill"
+		s.State = i18n.T("client.state.upgradable")
+		s.Detail = i18n.T("client.detail-cli-legacy")
 	}
 	if !cliOK {
-		s.Detail = "未检测到 claude CLI，请先安装 Claude Code CLI"
+		s.Detail = i18n.T("client.detail-claude-cli-missing")
 	}
 
 	r, rErr := m.loadReceipt(ClientClaude)
 	if rErr != nil {
-		s.State = "记录异常"
+		s.State = i18n.T("client.state.record-error")
 		s.Detail = rErr.Error()
 		s.CanInstall = false
 		return s
@@ -84,7 +85,7 @@ func (m *Manager) observeClaude(endpoint string, legacy bool) Status {
 
 	inst, instErr := readClaudeInstalledPlugin(cfgDir, m.pluginID())
 	if instErr != nil {
-		s.State = "配置异常"
+		s.State = i18n.T("client.state.config-error")
 		s.Detail = instErr.Error()
 		s.CanInstall = false
 		return s
@@ -94,7 +95,7 @@ func (m *Manager) observeClaude(endpoint string, legacy bool) Status {
 
 	if inst == nil {
 		if r != nil && mpKnown {
-			s.Detail = "Marketplace 已注册但插件未安装，点击安装可修复"
+			s.Detail = i18n.T("client.detail-marketplace-registered")
 		}
 		return s
 	}
@@ -103,14 +104,14 @@ func (m *Manager) observeClaude(endpoint string, legacy bool) Status {
 	s.InstalledVersion = inst.Version
 	mktDir := filepath.Join(m.stateDir, "marketplaces", ClientClaude)
 	if r == nil || !mpKnown || !sameCleanedPath(mpSource, mktDir) {
-		s.State = "已有插件"
-		s.Detail = "检测到非本应用管理的同名 Claude 插件，未覆盖"
+		s.State = i18n.T("client.state.existing-plugin")
+		s.Detail = i18n.T("client.detail-claude-foreign-plugin")
 		s.CanInstall = false
 		return s
 	}
 	if !enabled {
-		s.State = "已禁用"
-		s.Detail = "插件在 Claude Code 中被禁用，点击更新可重新启用"
+		s.State = i18n.T("client.state.disabled")
+		s.Detail = i18n.T("client.detail-claude-disabled")
 		s.CanUpdate = cliOK
 		s.CanRemove = cliOK
 		s.CanInstall = false
@@ -120,18 +121,18 @@ func (m *Manager) observeClaude(endpoint string, legacy bool) Status {
 	s.CanInstall = false
 	s.CanRemove = cliOK
 	if r.Digest != expected.Digest || inst.Version != m.version {
-		s.State = "需要更新"
+		s.State = i18n.T("client.state.update-required")
 		s.CanUpdate = cliOK
-		s.Detail = "Gateway 地址或插件版本已变更，可更新官方插件"
+		s.Detail = i18n.T("client.detail-cli-update")
 		return s
 	}
-	s.State = "已安装"
+	s.State = i18n.T("client.state.installed")
 	return s
 }
 
 func (m *Manager) installClaude(endpoint string, update bool) error {
 	if _, err := m.runner.LookPath("claude"); err != nil {
-		return fmt.Errorf("未找到 claude CLI，无法安装 Claude Code 官方插件: %w", err)
+		return fmt.Errorf(i18n.T("client.err-claude-install"), err)
 	}
 	cfgDir := m.hostConfigDir(ClientClaude)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
@@ -148,10 +149,10 @@ func (m *Manager) installClaude(endpoint string, update bool) error {
 	mktDir := filepath.Join(m.stateDir, "marketplaces", ClientClaude)
 	mpSource, mpKnown := readClaudeMarketplaceSource(cfgDir, m.slug)
 	if inst != nil && r == nil {
-		return errors.New("检测到 Claude Code 已存在非本应用安装的同名插件，未覆盖")
+		return errors.New(i18n.T("client.err-claude-foreign-plugin"))
 	}
 	if mpKnown && !sameCleanedPath(mpSource, mktDir) && r == nil {
-		return fmt.Errorf("检测到 Claude Code 已存在同名 marketplace (%s)，未覆盖", mpSource)
+		return errors.New(i18n.T("client.err-claude-marketplace-exists", mpSource))
 	}
 	hookBin, dataDir := m.resolveHookBinaryAndData()
 	bundle, err := m.renderClaudeMarketplace(endpoint, hookBin, dataDir)
@@ -162,7 +163,7 @@ func (m *Manager) installClaude(endpoint string, update bool) error {
 		if r != nil && r.Digest == bundle.Digest {
 			return nil
 		}
-		return errors.New("插件已安装但需要更新，请执行更新插件")
+		return errors.New(i18n.T("client.err-plugin-needs-update"))
 	}
 	filesMap, err := writeRenderedTree(mktDir, bundle.RootFiles)
 	if err != nil {
@@ -202,10 +203,10 @@ func (m *Manager) removeClaude() error {
 		return err
 	}
 	if r == nil {
-		return errors.New("没有可卸载的 Claude Code 官方插件记录")
+		return errors.New(i18n.T("client.err-claude-nothing-to-remove"))
 	}
 	if _, err := m.runner.LookPath("claude"); err != nil {
-		return fmt.Errorf("未找到 claude CLI，无法卸载 Claude Code 插件: %w", err)
+		return fmt.Errorf(i18n.T("client.err-claude-uninstall"), err)
 	}
 	cfgDir := m.hostConfigDir(ClientClaude)
 	ctx := context.Background()
@@ -236,12 +237,12 @@ func (m *Manager) observeCodex(endpoint string, legacy bool) Status {
 		ID:            ClientCodex,
 		Name:          clientconfig.ClientDisplayName(ClientCodex),
 		Path:          filepath.Join(cfgDir, "config.toml"),
-		State:         "未安装",
+		State:         i18n.T("client.state.not-installed"),
 		TargetVersion: m.version,
 		CLIAvailable:  cliOK,
 		HasLegacyMCP:  legacy,
 		CanInstall:    cliOK,
-		Warnings:      []string{"若 Codex 首次提示审查插件 Hook，请在 Codex 中确认信任"},
+		Warnings:      []string{i18n.T("client.warn-codex-trust-hook")},
 	}
 	r, rErr := m.loadReceipt(ClientCodex)
 	installationID := ""
@@ -253,21 +254,21 @@ func (m *Manager) observeCodex(endpoint string, legacy bool) Status {
 	}
 	expected, renderErr := m.renderCodexMarketplace(endpoint, hookBin, dataDir, installationID)
 	if renderErr != nil {
-		s.State = "配置异常"
+		s.State = i18n.T("client.state.config-error")
 		s.Detail = renderErr.Error()
 		s.CanInstall = false
 		return s
 	}
 	if legacy {
-		s.State = "待升级"
-		s.Detail = "当前仅配置了全局 MCP，升级为官方插件后可自动签名与加载 Skill"
+		s.State = i18n.T("client.state.upgradable")
+		s.Detail = i18n.T("client.detail-cli-legacy")
 	}
 	if !cliOK {
-		s.Detail = "未检测到 codex CLI，请先安装 Codex CLI"
+		s.Detail = i18n.T("client.detail-codex-cli-missing")
 	}
 
 	if rErr != nil {
-		s.State = "记录异常"
+		s.State = i18n.T("client.state.record-error")
 		s.Detail = rErr.Error()
 		s.CanInstall = false
 		return s
@@ -275,7 +276,7 @@ func (m *Manager) observeCodex(endpoint string, legacy bool) Status {
 
 	enabled, hasPlugin, mpSource, hasMP, parseErr := readCodexPluginState(cfgDir, m.slug, m.pluginID())
 	if parseErr != nil {
-		s.State = "配置异常"
+		s.State = i18n.T("client.state.config-error")
 		s.Detail = parseErr.Error()
 		s.CanInstall = false
 		return s
@@ -293,14 +294,14 @@ func (m *Manager) observeCodex(endpoint string, legacy bool) Status {
 
 	mktDir := filepath.Join(m.stateDir, "marketplaces", ClientCodex)
 	if r == nil || !hasMP || !sameCleanedPath(mpSource, mktDir) {
-		s.State = "已有插件"
-		s.Detail = "检测到非本应用管理的同名 Codex 插件，未覆盖"
+		s.State = i18n.T("client.state.existing-plugin")
+		s.Detail = i18n.T("client.detail-codex-foreign-plugin")
 		s.CanInstall = false
 		return s
 	}
 	if !enabled {
-		s.State = "已禁用"
-		s.Detail = "插件在 Codex 中被禁用，点击更新可重新启用"
+		s.State = i18n.T("client.state.disabled")
+		s.Detail = i18n.T("client.detail-codex-disabled")
 		s.CanUpdate = cliOK
 		s.CanRemove = cliOK
 		s.CanInstall = false
@@ -310,18 +311,18 @@ func (m *Manager) observeCodex(endpoint string, legacy bool) Status {
 	s.CanInstall = false
 	s.CanRemove = cliOK
 	if r.InstallationID == "" || r.Digest != expected.Digest || (cacheVer != "" && cacheVer != m.version) {
-		s.State = "需要更新"
+		s.State = i18n.T("client.state.update-required")
 		s.CanUpdate = cliOK
-		s.Detail = "Gateway 地址或插件版本已变更，可更新官方插件"
+		s.Detail = i18n.T("client.detail-cli-update")
 		return s
 	}
-	s.State = "已安装"
+	s.State = i18n.T("client.state.installed")
 	return s
 }
 
 func (m *Manager) installCodex(endpoint string, update bool) error {
 	if _, err := m.runner.LookPath("codex"); err != nil {
-		return fmt.Errorf("未找到 codex CLI，无法安装 Codex 官方插件: %w", err)
+		return fmt.Errorf(i18n.T("client.err-codex-install"), err)
 	}
 	cfgDir := m.hostConfigDir(ClientCodex)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
@@ -337,10 +338,10 @@ func (m *Manager) installCodex(endpoint string, update bool) error {
 	}
 	mktDir := filepath.Join(m.stateDir, "marketplaces", ClientCodex)
 	if hasPlugin && r == nil {
-		return errors.New("检测到 Codex 已存在非本应用安装的同名插件，未覆盖")
+		return errors.New(i18n.T("client.err-codex-foreign-plugin"))
 	}
 	if hasMP && !sameCleanedPath(mpSource, mktDir) && r == nil {
-		return fmt.Errorf("检测到 Codex 已存在同名 marketplace (%s)，未覆盖", mpSource)
+		return errors.New(i18n.T("client.err-codex-marketplace-exists", mpSource))
 	}
 	hookBin, dataDir := m.resolveHookBinaryAndData()
 	installationID, err := workspace.NewJTI()
@@ -355,7 +356,7 @@ func (m *Manager) installCodex(endpoint string, update bool) error {
 		if r != nil && r.Digest == bundle.Digest {
 			return nil
 		}
-		return errors.New("插件已安装但需要更新，请执行更新插件")
+		return errors.New(i18n.T("client.err-plugin-needs-update"))
 	}
 	filesMap, err := writeRenderedTree(mktDir, bundle.RootFiles)
 	if err != nil {
@@ -399,10 +400,10 @@ func (m *Manager) removeCodex() error {
 		return err
 	}
 	if r == nil {
-		return errors.New("没有可卸载的 Codex 官方插件记录")
+		return errors.New(i18n.T("client.err-codex-nothing-to-remove"))
 	}
 	if _, err := m.runner.LookPath("codex"); err != nil {
-		return fmt.Errorf("未找到 codex CLI，无法卸载 Codex 插件: %w", err)
+		return fmt.Errorf(i18n.T("client.err-codex-uninstall"), err)
 	}
 	cfgDir := m.hostConfigDir(ClientCodex)
 	_, hasPlugin, _, hasMP, err := readCodexPluginState(cfgDir, m.slug, m.pluginID())
@@ -438,7 +439,7 @@ func (m *Manager) observePi(endpoint string, legacy bool) Status {
 		ID:            ClientPi,
 		Name:          clientconfig.ClientDisplayName(ClientPi),
 		Path:          filepath.Join(cfgDir, "settings.json"),
-		State:         "未安装",
+		State:         i18n.T("client.state.not-installed"),
 		TargetVersion: m.version,
 		CLIAvailable:  cliOK,
 		HasLegacyMCP:  legacy,
@@ -446,22 +447,22 @@ func (m *Manager) observePi(endpoint string, legacy bool) Status {
 	}
 	expected, renderErr := m.renderPiPackage(endpoint, hookBin, dataDir)
 	if renderErr != nil {
-		s.State = "配置异常"
+		s.State = i18n.T("client.state.config-error")
 		s.Detail = renderErr.Error()
 		s.CanInstall = false
 		return s
 	}
 	if legacy {
-		s.State = "待升级"
-		s.Detail = "当前仅配置了全局 MCP，升级为官方 Pi Package 后可自动注册并签名"
+		s.State = i18n.T("client.state.upgradable")
+		s.Detail = i18n.T("client.detail-pi-legacy")
 	}
 	if !cliOK {
-		s.Detail = "未检测到 pi CLI，请先安装 Pi"
+		s.Detail = i18n.T("client.detail-pi-cli-missing")
 	}
 
 	r, rErr := m.loadReceipt(ClientPi)
 	if rErr != nil {
-		s.State = "记录异常"
+		s.State = i18n.T("client.state.record-error")
 		s.Detail = rErr.Error()
 		s.CanInstall = false
 		return s
@@ -469,7 +470,7 @@ func (m *Manager) observePi(endpoint string, legacy bool) Status {
 
 	matchedEntry, err := findPiPackageEntry(cfgDir, pkgDir)
 	if err != nil {
-		s.State = "配置异常"
+		s.State = i18n.T("client.state.config-error")
 		s.Detail = err.Error()
 		s.CanInstall = false
 		return s
@@ -480,8 +481,8 @@ func (m *Manager) observePi(endpoint string, legacy bool) Status {
 
 	s.Path = pkgDir
 	if r == nil {
-		s.State = "已有插件"
-		s.Detail = "Pi 已加载同路径包但缺少本应用写入记录，未覆盖"
+		s.State = i18n.T("client.state.existing-plugin")
+		s.Detail = i18n.T("client.detail-pi-same-path")
 		s.CanInstall = false
 		return s
 	}
@@ -489,18 +490,18 @@ func (m *Manager) observePi(endpoint string, legacy bool) Status {
 	s.CanInstall = false
 	s.CanRemove = cliOK
 	if !verifyTreeMatches(pkgDir, r.Files) || r.Digest != expected.Digest {
-		s.State = "需要更新"
+		s.State = i18n.T("client.state.update-required")
 		s.CanUpdate = cliOK
-		s.Detail = "Gateway 地址或 Pi 包内容已变更，可更新官方包"
+		s.Detail = i18n.T("client.detail-pi-update")
 		return s
 	}
-	s.State = "已安装"
+	s.State = i18n.T("client.state.installed")
 	return s
 }
 
 func (m *Manager) installPi(endpoint string, update bool) error {
 	if _, err := m.runner.LookPath("pi"); err != nil {
-		return fmt.Errorf("未找到 pi CLI，无法安装 Pi 官方包: %w", err)
+		return fmt.Errorf(i18n.T("client.err-pi-install"), err)
 	}
 	cfgDir := m.hostConfigDir(ClientPi)
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
@@ -516,7 +517,7 @@ func (m *Manager) installPi(endpoint string, update bool) error {
 		return err
 	}
 	if matchedEntry != "" && r == nil {
-		return errors.New("检测到 Pi 已加载该路径但无本应用写入记录，未覆盖")
+		return errors.New(i18n.T("client.err-pi-path-loaded"))
 	}
 
 	hookBin, dataDir := m.resolveHookBinaryAndData()
@@ -528,7 +529,7 @@ func (m *Manager) installPi(endpoint string, update bool) error {
 		if r != nil && r.Digest == bundle.Digest && verifyTreeMatches(pkgDir, r.Files) {
 			return nil
 		}
-		return errors.New("当前 Pi 官方包需要更新，请执行更新插件")
+		return errors.New(i18n.T("client.err-pi-needs-update"))
 	}
 
 	filesMap, err := writeRenderedTree(pkgDir, bundle.RootFiles)
@@ -559,10 +560,10 @@ func (m *Manager) removePi() error {
 		return err
 	}
 	if r == nil {
-		return errors.New("没有可卸载的 Pi 官方包记录")
+		return errors.New(i18n.T("client.err-pi-nothing-to-remove"))
 	}
 	if _, err := m.runner.LookPath("pi"); err != nil {
-		return fmt.Errorf("未找到 pi CLI，无法卸载 Pi 包: %w", err)
+		return fmt.Errorf(i18n.T("client.err-pi-uninstall"), err)
 	}
 	cfgDir := m.hostConfigDir(ClientPi)
 	pkgDir := filepath.Join(m.stateDir, "pi", m.slug)
@@ -599,7 +600,7 @@ func readClaudeInstalledPlugin(cfgDir, pluginID string) (*claudeInstalledRecord,
 		Plugins map[string][]claudeInstalledRecord `json:"plugins"`
 	}
 	if err := json.Unmarshal(b, &doc); err != nil {
-		return nil, fmt.Errorf("installed_plugins.json 解析失败: %w", err)
+		return nil, fmt.Errorf(i18n.T("client.err-installed-plugins-parse"), err)
 	}
 	entries := doc.Plugins[pluginID]
 	if len(entries) == 0 {
@@ -667,7 +668,7 @@ func readCodexPluginState(cfgDir, marketplaceName, pluginID string) (enabled, ha
 		} `toml:"marketplaces"`
 	}
 	if err := toml.Unmarshal(b, &doc); err != nil {
-		return false, false, "", false, fmt.Errorf("解析 Codex config.toml 失败: %w", err)
+		return false, false, "", false, fmt.Errorf(i18n.T("client.err-codex-config-parse"), err)
 	}
 	if p, ok := doc.Plugins[pluginID]; ok {
 		hasPlugin = true
@@ -700,7 +701,7 @@ func findPiPackageEntry(cfgDir, targetPkgDir string) (string, error) {
 	}
 	var doc map[string]any
 	if err := json.Unmarshal(b, &doc); err != nil {
-		return "", fmt.Errorf("解析 Pi settings.json 失败: %w", err)
+		return "", fmt.Errorf(i18n.T("client.err-pi-settings-parse"), err)
 	}
 	rawPkgs, ok := doc["packages"].([]any)
 	if !ok {

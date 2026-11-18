@@ -10,6 +10,7 @@ import (
 
 	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
+	"gatewaylab/internal/i18n"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -82,7 +83,7 @@ func (u *DesktopUI) overviewQuickVerifyModel(ov *overviewLocalState) {
 			ov.testErrTitle = ""
 			ov.testErrDetail = ""
 		})
-		u.Notify("路由模型连通性校验通过")
+		u.Notify(i18n.T("overview.toast.model_check_passed"))
 		return nil
 	})
 }
@@ -153,11 +154,11 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 	}
 
 	// 1. Clean Page Header (pure runtime gateway actions).
-	SailSectionHeader(c, "概览", "", func() {
+	SailSectionHeader(c, i18n.T("overview.header"), "", func() {
 		sandboxBtn := SailButton(c.Key("ov-hdr-sandbox"), "").Padding(5, 11).FontSize(12.5)
 		sandboxBtn.Children(func() {
 			ui.Icon(c, IconWaypoints).Size(13.5, 13.5)
-			ui.Text(c, "路由沙盒").SingleLine()
+			ui.Text(c, i18n.T("overview.action.sandbox")).SingleLine()
 		})
 		if sandboxBtn.Clicked() {
 			u.OpenPlaygroundReplay("", "")
@@ -166,7 +167,7 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 		addSvcBtn := SailPrimaryButton(c.Key("ov-hdr-add-svc"), "").Padding(5, 12).FontSize(12.5)
 		addSvcBtn.Children(func() {
 			ui.Icon(c, ovIconPlus).Size(13.5, 13.5)
-			ui.Text(c, "添加服务").SingleLine()
+			ui.Text(c, i18n.T("overview.action.add_service")).SingleLine()
 		})
 		if addSvcBtn.Clicked() {
 			u.OpenAddServiceModal()
@@ -222,13 +223,13 @@ func (u *DesktopUI) renderOverviewSetupBanner(
 
 	var title string
 	if !setup.ToolsReady {
-		title = "尚未开放任何上游工具"
+		title = i18n.T("overview.banner.no_tools")
 	} else if !setup.ModelConfigured {
-		title = "尚未配置路由模型"
+		title = i18n.T("overview.banner.no_model")
 	} else if !state.KeyConfigured {
-		title = fmt.Sprintf("路由模型 %s 未检测到 API Key", settings.Model)
+		title = fmt.Sprintf(i18n.T("overview.banner.model_no_key"), settings.Model)
 	} else {
-		title = fmt.Sprintf("路由模型 %s 待完成连通性校验", settings.Model)
+		title = fmt.Sprintf(i18n.T("overview.banner.model_unverified"), settings.Model)
 	}
 
 	ui.Row(c).
@@ -248,9 +249,9 @@ func (u *DesktopUI) renderOverviewSetupBanner(
 
 			ui.Row(c).Shrink(0).Gap(8).AlignItems(ui.Center).Children(func() {
 				if !setup.ToolsReady {
-					label := "启用工具"
+					label := i18n.T("overview.banner.enable_tools")
 					if len(realServers) == 0 {
-						label = "接入服务"
+						label = i18n.T("overview.banner.connect_service")
 					}
 					if SailSmallButton(c.Key("ov-banner-tools-btn"), label).Clicked() {
 						if len(realServers) == 0 {
@@ -267,10 +268,10 @@ func (u *DesktopUI) renderOverviewSetupBanner(
 						Disabled(ov.testingModel)
 					verifyBtn.Children(func() {
 						if ov.testingModel {
-							ui.Spinner(c).Size(12, 12).Label("校验中")
-							ui.Text(c, "校验中…").SingleLine()
+							ui.Spinner(c).Size(12, 12).Label(i18n.T("overview.banner.checking_label"))
+							ui.Text(c, i18n.T("overview.banner.checking")).SingleLine()
 						} else {
-							ui.Text(c, "立即校验").SingleLine()
+							ui.Text(c, i18n.T("overview.banner.check_now")).SingleLine()
 						}
 					})
 					if verifyBtn.Clicked() {
@@ -279,7 +280,7 @@ func (u *DesktopUI) renderOverviewSetupBanner(
 				}
 
 				if setup.ToolsReady {
-					if SailSmallButton(c.Key("ov-banner-policy-btn"), "配置模型").Clicked() {
+					if SailSmallButton(c.Key("ov-banner-policy-btn"), i18n.T("overview.banner.configure_model")).Clicked() {
 						u.Navigate(ViewSettings)
 					}
 				}
@@ -289,7 +290,7 @@ func (u *DesktopUI) renderOverviewSetupBanner(
 					Radius(5).
 					Center().
 					Cursor(ui.CursorPointer).
-					Label("收起提示")
+					Label(i18n.T("overview.banner.dismiss"))
 				if dismissBtn.Hovered() {
 					dismissBtn.Background(ui.RGBA(180, 83, 9, 0.1))
 				}
@@ -317,7 +318,7 @@ func (u *DesktopUI) renderOverviewTestError(c *ui.Context, ov *overviewLocalStat
 			ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
 				errTitle := ov.testErrTitle
 				if errTitle == "" {
-					errTitle = "路由模型校验失败"
+					errTitle = i18n.T("overview.banner.model_check_failed")
 				}
 				ui.Text(c, errTitle).FontSize(13).FontWeight(600).TextColor(SailDangerInk).Selectable()
 				if ov.testErrDetail != "" {
@@ -329,7 +330,7 @@ func (u *DesktopUI) renderOverviewTestError(c *ui.Context, ov *overviewLocalStat
 				Radius(4).
 				Center().
 				Cursor(ui.CursorPointer).
-				Label("关闭错误提示")
+				Label(i18n.T("overview.banner.close_error"))
 			if closeBtn.Hovered() {
 				closeBtn.Background(ui.RGBA(185, 28, 28, 0.1))
 			}
@@ -359,7 +360,7 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 	ui.Grid(c).Columns(4).Gap(16).FillWidth().Children(func() {
 		// Card 1: Gateway Requests
 		ovMetricCard(c, func() {
-			ui.Text(c, "网关请求").FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+			ui.Text(c, i18n.T("overview.metric.requests")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
 
 			ui.Textf(c, "%d", telemetry.SampleSize).
 				FontSize(24).
@@ -368,9 +369,9 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 				FontFeatures("tnum").
 				SingleLine()
 
-			reqHint := fmt.Sprintf("%d 路由发现 · %d 工具执行", telemetry.DiscoverCount, telemetry.InvokeCount)
+			reqHint := fmt.Sprintf(i18n.T("overview.metric.requests_hint"), telemetry.DiscoverCount, telemetry.InvokeCount)
 			if telemetry.AgentCount > 0 {
-				reqHint += fmt.Sprintf(" · %d 连接", telemetry.AgentCount)
+				reqHint += fmt.Sprintf(i18n.T("overview.metric.requests_hint_agent"), telemetry.AgentCount)
 			}
 			ui.Text(c, reqHint).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
 		})
@@ -378,9 +379,9 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 		// Card 2: Request Success Rate
 		ovMetricCard(c, func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(6).Children(func() {
-				ui.Text(c, "请求成功率").FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+				ui.Text(c, i18n.T("overview.metric.success_rate")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
 				if telemetry.ErrorCount > 0 {
-					SailBadge(c, fmt.Sprintf("%d 失败", telemetry.ErrorCount), ToneDanger)
+					SailBadge(c, fmt.Sprintf(i18n.T("overview.metric.failures"), telemetry.ErrorCount), ToneDanger)
 				}
 			})
 
@@ -394,20 +395,20 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 			var rateHint string
 			switch {
 			case telemetry.SampleSize == 0:
-				rateHint = "暂无请求记录"
+				rateHint = i18n.T("overview.metric.no_requests")
 			case telemetry.ErrorCount > 0:
-				rateHint = fmt.Sprintf("%d 次调用异常 · %d 次未命中", telemetry.ErrorCount, unmatched)
+				rateHint = fmt.Sprintf(i18n.T("overview.metric.rate_errors"), telemetry.ErrorCount, unmatched)
 			case unmatched > 0:
-				rateHint = fmt.Sprintf("0 次失败 · %d 次未命中", unmatched)
+				rateHint = fmt.Sprintf(i18n.T("overview.metric.rate_unmatched"), unmatched)
 			default:
-				rateHint = "近 24h 无失败请求"
+				rateHint = i18n.T("overview.metric.rate_clean")
 			}
 			ui.Text(c, rateHint).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
 		})
 
 		// Card 3: Context Savings + Micro Comparison Bar
 		ovMetricCard(c, func() {
-			ui.Text(c, "上下文节省").FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+			ui.Text(c, i18n.T("overview.metric.context_savings")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
 
 			compStr := "—"
 			if telemetry.CompressionPct != nil {
@@ -426,7 +427,7 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 				ui.Column(c).FillWidth().Gap(6).Children(func() {
 					ui.Textf(
 						c,
-						"平均 %d 候选 → %.1f 个工具",
+						i18n.T("overview.metric.avg_candidates"),
 						int(math.Round(*telemetry.AvgEligible)),
 						*telemetry.AvgSelectedOnHit,
 					).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
@@ -437,13 +438,13 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 						Radius(999).
 						Background(SailBgMuted).
 						Clip().
-						Tooltip(fmt.Sprintf("%d 候选工具中仅下发约 %.0f%%", int(math.Round(*telemetry.AvgEligible)), float64(keptPct))).
+						Tooltip(fmt.Sprintf(i18n.T("overview.metric.candidates_tooltip"), int(math.Round(*telemetry.AvgEligible)), float64(keptPct))).
 						Children(func() {
 							ui.Box(c).WidthPercent(keptPct).FillHeight().Radius(999).Background(SailAccent)
 						})
 				})
 			} else {
-				ui.Textf(c, "单次上限 %d 个工具", settings.MaxTools).
+				ui.Textf(c, i18n.T("overview.metric.max_tools"), settings.MaxTools).
 					FontSize(12).
 					TextColor(SailInkMuted).
 					FontFeatures("tnum").
@@ -454,11 +455,11 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 		// Card 4: Upstream Services
 		ovMetricCard(c, func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(6).Children(func() {
-				ui.Text(c, "已接入服务").FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+				ui.Text(c, i18n.T("overview.metric.services")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
 				if errServerCount > 0 {
-					SailBadge(c, fmt.Sprintf("%d 异常", errServerCount), ToneDanger)
+					SailBadge(c, fmt.Sprintf(i18n.T("overview.metric.services_errors"), errServerCount), ToneDanger)
 				} else if pendingServerCount > 0 {
-					SailBadge(c, fmt.Sprintf("%d 待验证", pendingServerCount), ToneWarning)
+					SailBadge(c, fmt.Sprintf(i18n.T("overview.metric.services_pending"), pendingServerCount), ToneWarning)
 				}
 			})
 
@@ -469,7 +470,7 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 					TextColor(SailInkStrong).
 					FontFeatures("tnum").
 					SingleLine()
-				ui.Textf(c, "/ %d 就绪", realServerCount).
+				ui.Textf(c, i18n.T("overview.metric.services_ready"), realServerCount).
 					FontSize(13).
 					FontWeight(500).
 					TextColor(SailInkMuted).
@@ -477,11 +478,11 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 					SingleLine()
 			})
 
-			svcHint := fmt.Sprintf("%d/%d 工具可用", enabledRealToolCount, realToolCount)
+			svcHint := fmt.Sprintf(i18n.T("overview.metric.tools_available"), enabledRealToolCount, realToolCount)
 			if errServerCount > 0 {
-				svcHint += fmt.Sprintf(" · %d 需修复", errServerCount)
+				svcHint += fmt.Sprintf(i18n.T("overview.metric.tools_need_fix"), errServerCount)
 			} else if pendingServerCount > 0 {
-				svcHint += fmt.Sprintf(" · %d 待验证", pendingServerCount)
+				svcHint += fmt.Sprintf(i18n.T("overview.metric.tools_pending"), pendingServerCount)
 			}
 			ui.Text(c, svcHint).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
 		})
@@ -517,11 +518,11 @@ func (u *DesktopUI) renderOverviewPulseCard(
 		}
 	}
 
-	readout := "近 12 小时暂无请求"
+	readout := i18n.T("overview.pulse.no_requests")
 	if ov.hoveredPulseIdx >= 0 && ov.hoveredPulseIdx < len(buckets) {
 		readout = ovFormatPulseBucket(buckets[ov.hoveredPulseIdx])
 	} else if peakIdx >= 0 {
-		readout = "峰值 " + ovFormatPulseBucket(buckets[peakIdx])
+		readout = i18n.T("overview.pulse.peak", ovFormatPulseBucket(buckets[peakIdx]))
 	}
 
 	ui.Column(c).
@@ -535,8 +536,8 @@ func (u *DesktopUI) renderOverviewPulseCard(
 		Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
 				ui.Row(c).Gap(8).AlignItems(ui.Baseline).Children(func() {
-					ui.Text(c, "请求脉冲").FontSize(13.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-					ui.Text(c, "近 12 小时 · 每 15 分钟").FontSize(12).TextColor(SailInkMuted).SingleLine()
+					ui.Text(c, i18n.T("overview.pulse.title")).FontSize(13.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+					ui.Text(c, i18n.T("overview.pulse.subtitle")).FontSize(12).TextColor(SailInkMuted).SingleLine()
 				})
 				ui.Text(c, readout).
 					Font("monospace").
@@ -626,9 +627,9 @@ func (u *DesktopUI) renderOverviewPulseCard(
 			ov.hoveredPulseIdx = hoveredNow
 
 			ui.Row(c).FillWidth().Justify(ui.SpaceBetween).Children(func() {
-				ui.Text(c, "12h 前").Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine()
-				ui.Text(c, "6h 前").Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine()
-				ui.Text(c, "现在").Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine()
+				ui.Text(c, i18n.T("overview.pulse.axis_12h")).Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine()
+				ui.Text(c, i18n.T("overview.pulse.axis_6h")).Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine()
+				ui.Text(c, i18n.T("overview.pulse.axis_now")).Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine()
 			})
 		})
 }
@@ -636,16 +637,16 @@ func (u *DesktopUI) renderOverviewPulseCard(
 func ovFormatPulseBucket(b apitypes.PulseBucket) string {
 	slot := fmt.Sprintf("%s–%s", b.Start.Local().Format("15:04"), b.End.Local().Format("15:04"))
 	if b.Total == 0 {
-		return slot + " · 无请求"
+		return slot + i18n.T("overview.pulse.bucket_no_requests")
 	}
 	if b.Error > 0 {
 		ok := b.Total - b.Error
 		if ok < 0 {
 			ok = 0
 		}
-		return fmt.Sprintf("%s · %d 次（%d 成功 · %d 失败）", slot, b.Total, ok, b.Error)
+		return fmt.Sprintf(i18n.T("overview.pulse.bucket_stats"), slot, b.Total, ok, b.Error)
 	}
-	return fmt.Sprintf("%s · %d 次（全部成功）", slot, b.Total)
+	return fmt.Sprintf(i18n.T("overview.pulse.bucket_all_ok"), slot, b.Total)
 }
 
 func (u *DesktopUI) renderOverviewRecentLogsCard(
@@ -655,15 +656,15 @@ func (u *DesktopUI) renderOverviewRecentLogsCard(
 	toolByID map[string]apitypes.Tool,
 ) {
 	SailFlushCard(c, func() {
-		SailListCardHeader(c, "最近请求", "", func() {
-			if ovRenderArrowLinkBtn(c, "ov-all-logs-link", "全部日志") {
+		SailListCardHeader(c, i18n.T("overview.recent.title"), "", func() {
+			if ovRenderArrowLinkBtn(c, "ov-all-logs-link", i18n.T("overview.recent.all_logs")) {
 				u.OpenLogsEvent("")
 			}
 		})
 
 		if len(events) == 0 {
 			ui.Box(c).Padding(18, 20).FillWidth().Children(func() {
-				SailEmptyState(c, "暂无网关请求记录", "", "", nil)
+				SailEmptyState(c, i18n.T("overview.recent.empty"), "", "", nil)
 			})
 			return
 		}
@@ -748,7 +749,7 @@ func ovFormatLogSummary(ev apitypes.Event, parsed logsParsedDetail) string {
 	if sc := parsed.Scope; sc != nil {
 		agentLbl := agentDisplayName(sc.Agent)
 		if agentLbl == "" {
-			agentLbl = "客户端"
+			agentLbl = i18n.T("overview.detail.client")
 		}
 		repoLbl := sc.RepoName
 		if repoLbl == "" && sc.Root != "" {
@@ -768,18 +769,18 @@ func ovFormatLogSummary(ev apitypes.Event, parsed logsParsedDetail) string {
 			outcome = CleanDescriptionSummary(parsed.Error)
 		}
 		if outcome == "" {
-			outcome = "调用失败"
+			outcome = i18n.T("overview.event.call_failed")
 		}
 	case ev.Status == "selected":
 		if ev.Kind == "discover" {
-			outcome = fmt.Sprintf("命中 %d 个工具", len(parsed.Tools))
+			outcome = fmt.Sprintf(i18n.T("overview.event.tools_matched"), len(parsed.Tools))
 		} else {
-			outcome = "执行成功"
+			outcome = i18n.T("overview.event.executed")
 		}
 	case ev.Status == "needs_context":
-		outcome = "待补充上下文"
+		outcome = i18n.T("overview.event.needs_context")
 	case ev.Status == "no_match":
-		outcome = "未命中工具"
+		outcome = i18n.T("overview.event.no_match")
 	default:
 		outcome = ev.Status
 	}
@@ -809,15 +810,15 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 			AlignItems(ui.Center).
 			Justify(ui.SpaceBetween).
 			Children(func() {
-				ui.Segmented(c.Key("ov-right-tab"), &ov.rightTab, "服务", "高频工具").
-					Label("切换服务与高频工具")
+				ui.Segmented(c.Key("ov-right-tab"), &ov.rightTab, i18n.T("overview.right_tab.services"), i18n.T("overview.right_tab.top_tools")).
+					Label(i18n.T("overview.right_tab.switch"))
 
 				if ov.rightTab == 0 {
-					if ovRenderArrowLinkBtn(c, "ov-manage-upstreams", "管理") {
+					if ovRenderArrowLinkBtn(c, "ov-manage-upstreams", i18n.T("overview.right.manage")) {
 						u.Navigate(ViewServices)
 					}
 				} else {
-					if ovRenderArrowLinkBtn(c, "ov-top-all-catalog", "目录") {
+					if ovRenderArrowLinkBtn(c, "ov-top-all-catalog", i18n.T("overview.right.catalog")) {
 						u.OpenCatalogFilter("", "all")
 					}
 				}
@@ -828,9 +829,9 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 				ui.Box(c).Padding(18, 20).FillWidth().Children(func() {
 					SailEmptyState(
 						c,
-						"尚未接入服务",
+						i18n.T("overview.services.empty"),
 						"",
-						"添加服务",
+						i18n.T("overview.action.add_service"),
 						func() { u.OpenAddServiceModal() },
 					)
 				})
@@ -879,10 +880,10 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 							if readiness.BadgeLabel != "" {
 								SailBadge(c, readiness.BadgeLabel, readiness.BadgeTone)
 							} else if !s.Enabled {
-								ui.Text(c, "已停用").FontSize(11.5).TextColor(SailInkFaint).SingleLine()
+								ui.Text(c, i18n.T("common.disabled")).FontSize(11.5).TextColor(SailInkFaint).SingleLine()
 							}
 							if s.Enabled && openWrite > 0 {
-								SailBadge(c, fmt.Sprintf("写 ×%d", openWrite), ToneWarning)
+								SailBadge(c, fmt.Sprintf(i18n.T("common.write_badge"), openWrite), ToneWarning)
 							}
 						})
 
@@ -893,7 +894,7 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 							}
 							ui.Text(c, CleanDescriptionSummary(readiness.RowSummary)).FontSize(12).TextColor(sumColor).SingleLine()
 						} else {
-							ui.Textf(c, "%s · %d/%d 工具开放", ServerProtocolLabel(s), openTotal, srvToolTotal).
+							ui.Textf(c, i18n.T("overview.services.protocol_tools"), ServerProtocolLabel(s), openTotal, srvToolTotal).
 								FontSize(12).
 								TextColor(SailInkMuted).
 								FontFeatures("tnum").
@@ -918,7 +919,7 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 		// Right Tab 1: Top Tools
 		if len(topTools) == 0 {
 			ui.Box(c).Padding(18, 20).FillWidth().Children(func() {
-				SailEmptyState(c, "暂无工具命中统计", "", "", nil)
+				SailEmptyState(c, i18n.T("overview.top_tools.empty"), "", "", nil)
 			})
 			return
 		}
@@ -955,7 +956,7 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 						TextColor(SailInkFaint).
 						SingleLine()
 					if !t.ReadOnly {
-						SailBadge(c, "写", ToneWarning)
+						SailBadge(c, i18n.T("overview.badge.write"), ToneWarning)
 					}
 				})
 
@@ -976,7 +977,7 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 						Children(func() {
 							ui.Box(c).WidthPercent(pct).FillHeight().Radius(999).Background(SailInkBody)
 						})
-					ui.Textf(c, "%d 次", t.Hits).
+					ui.Textf(c, i18n.T("overview.top_tools.hits"), t.Hits).
 						Width(40).
 						Font("monospace").
 						FontSize(12).
@@ -1105,7 +1106,7 @@ func ovRenderSlideDrawerShell(
 			Justify(ui.SpaceBetween).
 			Children(func() {
 				ui.Row(c).Grow(1).MinWidth(0).Gap(8).AlignItems(ui.Center).Children(header)
-				if SailSmallButton(c.Key("ov-drawer-close"), "关闭").Clicked() {
+				if SailSmallButton(c.Key("ov-drawer-close"), i18n.T("common.close")).Clicked() {
 					ov.drawerOpen = false
 				}
 			})
@@ -1129,7 +1130,7 @@ func ovRenderSlideDrawerShell(
 			AlignItems(ui.Center).
 			Justify(ui.SpaceBetween).
 			Children(func() {
-				ui.Text(c, "按 Esc 关闭").FontSize(12).TextColor(SailInkMuted).SingleLine()
+				ui.Text(c, i18n.T("overview.drawer.esc_hint")).FontSize(12).TextColor(SailInkMuted).SingleLine()
 				if footerActions != nil {
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(footerActions)
 				}
@@ -1145,17 +1146,17 @@ func (u *DesktopUI) renderOverviewLogDrawer(
 	toolByID map[string]apitypes.Tool,
 ) {
 	parsed := logsParseEventDetail(ev, toolByID)
-	stText := "已命中"
+	stText := i18n.T("overview.detail.status_matched")
 	if logsIsErrorStatus(ev.Status) {
-		stText = "调用失败"
+		stText = i18n.T("overview.event.call_failed")
 	} else if logsIsUnmatchedStatus(ev.Status) {
-		stText = "未命中工具"
+		stText = i18n.T("overview.event.no_match")
 	}
-	kindText := "工具执行"
+	kindText := i18n.T("overview.detail.kind_tool")
 	if ev.Kind == "discover" {
-		kindText = "路由发现"
+		kindText = i18n.T("overview.detail.kind_discover")
 	} else if ev.Kind == "agent" || ev.Kind == "agent_tool" {
-		kindText = "MCP 连接"
+		kindText = i18n.T("overview.detail.kind_agent")
 	}
 
 	var canBind bool
@@ -1169,7 +1170,7 @@ func (u *DesktopUI) renderOverviewLogDrawer(
 		ov,
 		func() {
 			SailStatusDot(c, logsStatusDotColor(ev.Status))
-			ui.Text(c, "请求详情").FontSize(14).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+			ui.Text(c, i18n.T("overview.detail.title")).FontSize(14).FontWeight(600).TextColor(SailInkStrong).SingleLine()
 		},
 		func() {
 			ui.Column(c).FillWidth().Gap(4).Children(func() {
@@ -1185,17 +1186,17 @@ func (u *DesktopUI) renderOverviewLogDrawer(
 			})
 
 			SailSubtleCard(c, func() {
-				SailKeyValueRow(c, "状态", stText, false)
+				SailKeyValueRow(c, i18n.T("overview.detail.status"), stText, false)
 				if sc := parsed.Scope; sc != nil {
 					if sc.Agent != "" {
-						SailKeyValueRow(c, "客户端", agentDisplayName(sc.Agent), false)
+						SailKeyValueRow(c, i18n.T("overview.detail.client"), agentDisplayName(sc.Agent), false)
 					}
 					repoLbl := sc.RepoName
 					if repoLbl == "" {
 						repoLbl = sc.Root
 					}
 					if repoLbl != "" {
-						SailKeyValueRow(c, "仓库", repoLbl, true)
+						SailKeyValueRow(c, i18n.T("overview.detail.repo"), repoLbl, true)
 					}
 				}
 				if parsed.PromptTokens != nil || parsed.OutputTokens != nil {
@@ -1206,9 +1207,9 @@ func (u *DesktopUI) renderOverviewLogDrawer(
 					if parsed.OutputTokens != nil {
 						ot = *parsed.OutputTokens
 					}
-					SailKeyValueRow(c, "路由 Token", fmt.Sprintf("%d tok (%d in · %d out)", pt+ot, pt, ot), true)
+					SailKeyValueRow(c, i18n.T("overview.detail.tokens"), fmt.Sprintf("%d tok (%d in · %d out)", pt+ot, pt, ot), true)
 				} else if parsed.Model != "" {
-					SailKeyValueRow(c, "路由模型", parsed.Model, true)
+					SailKeyValueRow(c, i18n.T("overview.detail.model"), parsed.Model, true)
 				}
 			})
 
@@ -1224,7 +1225,7 @@ func (u *DesktopUI) renderOverviewLogDrawer(
 
 			if len(parsed.Tools) > 0 {
 				ui.Column(c).FillWidth().Gap(8).Children(func() {
-					ui.Text(c, "命中工具").FontSize(12).FontWeight(600).TextColor(SailInkMuted)
+					ui.Text(c, i18n.T("overview.detail.matched_tools")).FontSize(12).FontWeight(600).TextColor(SailInkMuted)
 					SailFlushCard(c, func() {
 						for idx, mt := range parsed.Tools {
 							isLast := idx == len(parsed.Tools)-1
@@ -1252,16 +1253,16 @@ func (u *DesktopUI) renderOverviewLogDrawer(
 		},
 		func() {
 			if canBind && parsed.Scope != nil {
-				lbl := "绑定此仓库"
+				lbl := i18n.T("overview.detail.bind_repo")
 				if ov.drawerBindingRepo {
-					lbl = "绑定中…"
+					lbl = i18n.T("overview.detail.binding")
 				}
 				if SailSmallButton(c.Key("ov-drawer-bind-repo"), lbl).Disabled(ov.drawerBindingRepo).Clicked() {
 					u.bindRepoFromOverviewDrawer(ov, *parsed.Scope)
 				}
 			}
 			if ev.Kind == "discover" && strings.TrimSpace(ev.Title) != "" {
-				if SailSmallButton(c.Key("ov-drawer-replay"), "沙盒重放").Clicked() {
+				if SailSmallButton(c.Key("ov-drawer-replay"), i18n.T("overview.detail.replay")).Clicked() {
 					ov.drawerOpen = false
 					if parsed.Scope != nil {
 						replayRepo := logsResolveReplayRepoKey(state, *parsed.Scope)
@@ -1271,7 +1272,7 @@ func (u *DesktopUI) renderOverviewLogDrawer(
 					}
 				}
 			}
-			if ovRenderDrawerArrowBtn(c, "ov-drawer-open-logs", "日志详情") {
+			if ovRenderDrawerArrowBtn(c, "ov-drawer-open-logs", i18n.T("overview.detail.log_details")) {
 				ov.drawerOpen = false
 				u.OpenLogsEvent(ev.ID)
 			}
@@ -1329,7 +1330,7 @@ func (u *DesktopUI) bindRepoFromOverviewDrawer(ov *overviewLocalState, sc logsPa
 			ov.drawerBindingRepo = false
 			ov.drawerOpen = false
 		})
-		u.Notify("已绑定仓库 " + saved.Name)
+		u.Notify(i18n.T("overview.toast.repo_bound", saved.Name))
 		return nil
 	})
 }
@@ -1349,9 +1350,9 @@ func (u *DesktopUI) renderOverviewServiceDrawer(
 		}
 	}
 	readiness := u.readinessForServer(srv, srvTools)
-	enableLabel := "已停用"
+	enableLabel := i18n.T("common.disabled")
 	if srv.Enabled {
-		enableLabel = "已启用"
+		enableLabel = i18n.T("common.enabled")
 	}
 
 	ovRenderSlideDrawerShell(
@@ -1367,21 +1368,21 @@ func (u *DesktopUI) renderOverviewServiceDrawer(
 			}
 
 			SailSubtleCard(c, func() {
-				SailKeyValueRow(c, "协议", ServerProtocolLabel(srv), false)
-				SailKeyValueRow(c, "当前状态", readiness.StatusLabel, false)
-				SailKeyValueRow(c, "启用开关", enableLabel, false)
+				SailKeyValueRow(c, i18n.T("common.protocol"), ServerProtocolLabel(srv), false)
+				SailKeyValueRow(c, i18n.T("overview.drawer.current_status"), readiness.StatusLabel, false)
+				SailKeyValueRow(c, i18n.T("overview.drawer.enable_switch"), enableLabel, false)
 				if readiness.CheckLabel != "" {
-					SailKeyValueRow(c, "最近检查", readiness.CheckLabel, true)
+					SailKeyValueRow(c, i18n.T("common.last_check"), readiness.CheckLabel, true)
 				}
-				SailKeyValueRow(c, "开放工具", fmt.Sprintf("%d/%d", open, total), true)
+				SailKeyValueRow(c, i18n.T("overview.drawer.open_tools"), fmt.Sprintf("%d/%d", open, total), true)
 			})
 
 			SailDescriptionDetail(c, "ov-srv-"+srv.ID, srv.Description)
 
 			ui.Column(c).FillWidth().Gap(8).Children(func() {
-				ui.Text(c, "下属工具").FontSize(12).FontWeight(600).TextColor(SailInkMuted)
+				ui.Text(c, i18n.T("overview.drawer.tools")).FontSize(12).FontWeight(600).TextColor(SailInkMuted)
 				if len(srvTools) == 0 {
-					ui.Text(c, "暂无已同步工具").FontSize(12.5).TextColor(SailInkFaint)
+					ui.Text(c, i18n.T("overview.drawer.no_tools")).FontSize(12.5).TextColor(SailInkFaint)
 					return
 				}
 				SailFlushCard(c, func() {
@@ -1401,7 +1402,7 @@ func (u *DesktopUI) renderOverviewServiceDrawer(
 						r.Children(func() {
 							ui.Text(c, t.Name).Font("monospace").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
 							if !t.ReadOnly {
-								SailBadge(c, "写", ToneWarning)
+								SailBadge(c, i18n.T("overview.badge.write"), ToneWarning)
 							}
 						})
 					}
@@ -1409,7 +1410,7 @@ func (u *DesktopUI) renderOverviewServiceDrawer(
 			})
 		},
 		func() {
-			if ovRenderDrawerArrowBtn(c, "ov-drawer-open-srv", "管理此服务") {
+			if ovRenderDrawerArrowBtn(c, "ov-drawer-open-srv", i18n.T("overview.drawer.manage_service")) {
 				ov.drawerOpen = false
 				u.OpenServiceDetail(srv.ID)
 			}
@@ -1424,28 +1425,28 @@ func (u *DesktopUI) renderOverviewToolDrawer(
 	serverName string,
 	hits int,
 ) {
-	stateStr := "已禁用"
+	stateStr := i18n.T("overview.tool.disabled")
 	if t.Enabled {
-		stateStr = "已开放"
+		stateStr = i18n.T("overview.tool.open")
 	}
 
 	ovRenderSlideDrawerShell(
 		c,
 		ov,
 		func() {
-			ui.Text(c, "工具详情").FontSize(14).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+			ui.Text(c, i18n.T("overview.tool.title")).FontSize(14).FontWeight(600).TextColor(SailInkStrong).SingleLine()
 		},
 		func() {
 			ui.Column(c).FillWidth().Gap(4).Children(func() {
 				ui.Row(c).FillWidth().Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, t.Name).Font("monospace").FontSize(15).FontWeight(600).TextColor(SailInkStrong)
 					if !t.ReadOnly {
-						SailBadge(c, "写操作", ToneWarning)
+						SailBadge(c, i18n.T("common.write_operation"), ToneWarning)
 					} else {
-						ui.Text(c, "只读").FontSize(12).TextColor(SailInkMuted)
+						ui.Text(c, i18n.T("overview.tool.read_only")).FontSize(12).TextColor(SailInkMuted)
 					}
 				})
-				ui.Textf(c, "%s · 累计调用 %d 次 · %s", serverName, hits, stateStr).
+				ui.Textf(c, i18n.T("overview.tool.meta"), serverName, hits, stateStr).
 					FontSize(12).
 					TextColor(SailInkMuted).
 					FontFeatures("tnum")
@@ -1454,15 +1455,15 @@ func (u *DesktopUI) renderOverviewToolDrawer(
 			SailDescriptionDetail(c, "ov-tool-"+t.ID, t.Description)
 
 			SailCodeBlock(c, "INPUT SCHEMA", PrettyJSON(t.InputSchema), func() {
-				u.Notify("已复制 Schema")
+				u.Notify(i18n.T("overview.tool.schema_copied"))
 			})
 		},
 		func() {
-			if SailSmallButton(c.Key("ov-drawer-tool-pg"), "沙盒测试").Clicked() {
+			if SailSmallButton(c.Key("ov-drawer-tool-pg"), i18n.T("overview.tool.sandbox")).Clicked() {
 				ov.drawerOpen = false
-				u.OpenPlaygroundReplay("使用 "+t.Name, "developer")
+				u.OpenPlaygroundReplay(i18n.T("overview.tool.replay_with", t.Name), "developer")
 			}
-			if ovRenderDrawerArrowBtn(c, "ov-drawer-open-cat", "工具目录") {
+			if ovRenderDrawerArrowBtn(c, "ov-drawer-open-cat", i18n.T("overview.tool.open_catalog")) {
 				ov.drawerOpen = false
 				u.OpenCatalogTool(t.ID, t.ServerID)
 			}

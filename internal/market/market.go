@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"gatewaylab/internal/fault"
+	"gatewaylab/internal/i18n"
 	"gatewaylab/internal/input"
 	"gatewaylab/internal/registry"
 )
@@ -132,78 +134,82 @@ func localMarketServer(id, title, publisher, icon, homepage, command string, arg
 	}
 }
 
-// curatedMarketServers focuses on remote SaaS services (17 cloud SaaS MCPs)
-// paired with 3 essential local tools (Playwright, Chrome DevTools, Filesystem).
-var curatedMarketServers = []MarketServer{
-	remoteMarketServer("notion", "Notion", "Notion", ghAvatar("makenotion"), "https://developers.notion.com/docs/mcp",
-		"https://mcp.notion.com/mcp",
-		"检索、读取并更新 Notion 工作区页面、数据库与评论上下文。", true),
-	remoteMarketServer("linear", "Linear", "Linear", ghAvatar("linear"), "https://linear.app/docs/mcp",
-		"https://mcp.linear.app/mcp",
-		"查询、创建与更新 Linear Issue、项目进度和团队迭代周期。", true),
-	remoteMarketServer("figma", "Figma", "Figma", ghAvatar("figma"), "https://help.figma.com/hc/en-us/articles/32132100833559",
-		"https://mcp.figma.com/mcp",
-		"读取 Figma 设计稿节点结构、组件规范与设计系统变量 Token。", true),
-	remoteMarketServer("github", "GitHub", "GitHub", ghAvatar("github"), "https://github.com/github/github-mcp-server",
-		"https://api.githubcopilot.com/mcp/",
-		"检索并操作 GitHub 仓库、Issue、Pull Request、Actions 与代码。", false,
-		MarketInput{Key: "Authorization", Where: "header", Label: "Personal Access Token", Description: "在 github.com/settings/personal-access-tokens 生成", Placeholder: "github_pat_...", Secret: true, Required: true, Format: "Bearer {}"}),
-	remoteMarketServer("sentry", "Sentry", "Sentry", ghAvatar("getsentry"), "https://docs.sentry.io/product/sentry-mcp/",
-		"https://mcp.sentry.dev/mcp",
-		"查看 Sentry 线上报错堆栈、Issue 状态、Trace 链路与 Seer 诊断分析。", true),
-	remoteMarketServer("atlassian", "Atlassian", "Atlassian", ghAvatar("atlassian"), "https://www.atlassian.com/platform/remote-mcp-server",
-		"https://mcp.atlassian.com/v1/mcp",
-		"访问 Atlassian Cloud 中的 Jira Issue 与 Confluence 团队知识库。", true),
-	remoteMarketServer("supabase", "Supabase", "Supabase", ghAvatar("supabase"), "https://supabase.com/docs/guides/getting-started/mcp",
-		"https://mcp.supabase.com/mcp",
-		"管理 Supabase 项目的数据表、SQL 查询、数据库迁移与 Edge Functions。", true),
-	remoteMarketServer("stripe", "Stripe", "Stripe", ghAvatar("stripe"), "https://docs.stripe.com/mcp",
-		"https://mcp.stripe.com",
-		"查询 Stripe 客户、支付订单、订阅账单以及最新官方 API 文档。", true),
-	remoteMarketServer("vercel", "Vercel", "Vercel", ghAvatar("vercel"), "https://vercel.com/docs/mcp/vercel-mcp",
-		"https://mcp.vercel.com",
-		"管理 Vercel 项目、部署状态、构建运行日志与官方开发文档。", true),
-	remoteMarketServer("neon", "Neon", "Neon", ghAvatar("neondatabase"), "https://neon.com/docs/ai/neon-mcp-server",
-		"https://mcp.neon.tech/mcp",
-		"操作 Neon Serverless Postgres 项目、数据库分支与 SQL 查询。", true),
-	remoteMarketServer("context7", "Context7", "Upstash", ghAvatar("upstash"), "https://context7.com",
-		"https://mcp.context7.com/mcp",
-		"任意库的最新官方文档与代码示例，直接注入提示词上下文。", false,
-		MarketInput{Key: "CONTEXT7_API_KEY", Where: "header", Label: "API Key（可选）", Description: "不填也可免费使用，填写后可提升限流配额", Placeholder: "ctx7_...", Secret: true, Format: "{}"}),
-	remoteMarketServer("deepwiki", "DeepWiki", "Cognition", ghAvatar("CognitionAI"), "https://deepwiki.com",
-		"https://mcp.deepwiki.com/mcp",
-		"针对任意公开 GitHub 仓库提问，并读取自动生成的代码知识库。", false),
-	remoteMarketServer("exa", "Exa", "Exa", ghAvatar("exa-labs"), "https://docs.exa.ai/reference/exa-mcp",
-		"https://mcp.exa.ai/mcp",
-		"专为 Agent 设计的网页与代码语义搜索，直接返回干净的页面正文。", false),
-	remoteMarketServer("anysearch", "AnySearch", "AnySearch", ghAvatar("anysearch-ai"), "https://github.com/anysearch-ai/anysearch-mcp-server",
-		"https://api.anysearch.com/mcp",
-		"实时网页与垂类搜索（论文、代码、安全、财经）及整页转 Markdown。", false,
-		MarketInput{Key: "Authorization", Where: "header", Label: "API Key（可选）", Description: "可留空试用，填写后提升搜索配额", Placeholder: "as_sk_...", Secret: true, Format: "Bearer {}"}),
-	remoteMarketServer("cloudflare-docs", "Cloudflare Docs", "Cloudflare", ghAvatar("cloudflare"), "https://github.com/cloudflare/mcp-server-cloudflare",
-		"https://docs.mcp.cloudflare.com/mcp",
-		"实时检索 Cloudflare Workers、Pages、R2 与网关配置文档。", false),
-	remoteMarketServer("microsoft-learn", "Microsoft Learn", "Microsoft", ghAvatar("microsoft"), "https://github.com/MicrosoftDocs/mcp",
-		"https://learn.microsoft.com/api/mcp",
-		"查询微软官方开发文档、Azure 参考架构与代码示例。", false),
-	remoteMarketServer("huggingface", "Hugging Face", "Hugging Face", ghAvatar("huggingface"), "https://huggingface.co/settings/mcp",
-		"https://huggingface.co/mcp",
-		"搜索 Hugging Face Hub 上的开源模型、数据集、Spaces 与论文。", false),
-	localMarketServer("playwright", "Playwright", "Microsoft", "https://playwright.dev/img/playwright-logo.svg", "https://github.com/microsoft/playwright-mcp",
-		"npx", []string{"-y", "@playwright/mcp@latest"},
-		"驱动真实浏览器：打开网页、点击输入，并通过无障碍树读取页面结构。"),
-	localMarketServer("chrome-devtools", "Chrome DevTools", "Google", ghAvatar("ChromeDevTools"), "https://github.com/ChromeDevTools/chrome-devtools-mcp",
-		"npx", []string{"-y", "chrome-devtools-mcp@latest"},
-		"连接并调试运行中的 Chrome：查看控制台、网络请求、性能追踪与截图。"),
-	localMarketServer("filesystem", "Filesystem", "Model Context Protocol", ghAvatar("modelcontextprotocol"), "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
-		"npx", []string{"-y", "@modelcontextprotocol/server-filesystem"},
-		"读写与搜索本地文件，权限严格限制在你显式指定的目录内。",
-		MarketInput{Key: "dir", Where: "arg", Label: "允许访问的目录路径", Description: "仅授予该目录及其子目录的访问权限", Placeholder: "/Users/username/Developer", Required: true}),
+// curatedMarketServers returns the curated catalog: 17 remote SaaS services
+// plus 3 essential local tools (Playwright, Chrome DevTools, Filesystem).
+// The catalog is rebuilt per call so descriptions and input labels follow the
+// process-wide UI language instead of freezing the language at init time.
+func curatedMarketServers() []MarketServer {
+	return []MarketServer{
+		remoteMarketServer("notion", "Notion", "Notion", ghAvatar("makenotion"), "https://developers.notion.com/docs/mcp",
+			"https://mcp.notion.com/mcp",
+			i18n.T("market.catalog.notion.description"), true),
+		remoteMarketServer("linear", "Linear", "Linear", ghAvatar("linear"), "https://linear.app/docs/mcp",
+			"https://mcp.linear.app/mcp",
+			i18n.T("market.catalog.linear.description"), true),
+		remoteMarketServer("figma", "Figma", "Figma", ghAvatar("figma"), "https://help.figma.com/hc/en-us/articles/32132100833559",
+			"https://mcp.figma.com/mcp",
+			i18n.T("market.catalog.figma.description"), true),
+		remoteMarketServer("github", "GitHub", "GitHub", ghAvatar("github"), "https://github.com/github/github-mcp-server",
+			"https://api.githubcopilot.com/mcp/",
+			i18n.T("market.catalog.github.description"), false,
+			MarketInput{Key: "Authorization", Where: "header", Label: "Personal Access Token", Description: i18n.T("market.catalog.github.token_description"), Placeholder: "github_pat_...", Secret: true, Required: true, Format: "Bearer {}"}),
+		remoteMarketServer("sentry", "Sentry", "Sentry", ghAvatar("getsentry"), "https://docs.sentry.io/product/sentry-mcp/",
+			"https://mcp.sentry.dev/mcp",
+			i18n.T("market.catalog.sentry.description"), true),
+		remoteMarketServer("atlassian", "Atlassian", "Atlassian", ghAvatar("atlassian"), "https://www.atlassian.com/platform/remote-mcp-server",
+			"https://mcp.atlassian.com/v1/mcp",
+			i18n.T("market.catalog.atlassian.description"), true),
+		remoteMarketServer("supabase", "Supabase", "Supabase", ghAvatar("supabase"), "https://supabase.com/docs/guides/getting-started/mcp",
+			"https://mcp.supabase.com/mcp",
+			i18n.T("market.catalog.supabase.description"), true),
+		remoteMarketServer("stripe", "Stripe", "Stripe", ghAvatar("stripe"), "https://docs.stripe.com/mcp",
+			"https://mcp.stripe.com",
+			i18n.T("market.catalog.stripe.description"), true),
+		remoteMarketServer("vercel", "Vercel", "Vercel", ghAvatar("vercel"), "https://vercel.com/docs/mcp/vercel-mcp",
+			"https://mcp.vercel.com",
+			i18n.T("market.catalog.vercel.description"), true),
+		remoteMarketServer("neon", "Neon", "Neon", ghAvatar("neondatabase"), "https://neon.com/docs/ai/neon-mcp-server",
+			"https://mcp.neon.tech/mcp",
+			i18n.T("market.catalog.neon.description"), true),
+		remoteMarketServer("context7", "Context7", "Upstash", ghAvatar("upstash"), "https://context7.com",
+			"https://mcp.context7.com/mcp",
+			i18n.T("market.catalog.context7.description"), false,
+			MarketInput{Key: "CONTEXT7_API_KEY", Where: "header", Label: i18n.T("market.catalog.common.api_key_optional"), Description: i18n.T("market.catalog.context7.api_key_description"), Placeholder: "ctx7_...", Secret: true, Format: "{}"}),
+		remoteMarketServer("deepwiki", "DeepWiki", "Cognition", ghAvatar("CognitionAI"), "https://deepwiki.com",
+			"https://mcp.deepwiki.com/mcp",
+			i18n.T("market.catalog.deepwiki.description"), false),
+		remoteMarketServer("exa", "Exa", "Exa", ghAvatar("exa-labs"), "https://docs.exa.ai/reference/exa-mcp",
+			"https://mcp.exa.ai/mcp",
+			i18n.T("market.catalog.exa.description"), false),
+		remoteMarketServer("anysearch", "AnySearch", "AnySearch", ghAvatar("anysearch-ai"), "https://github.com/anysearch-ai/anysearch-mcp-server",
+			"https://api.anysearch.com/mcp",
+			i18n.T("market.catalog.brave.description"), false,
+			MarketInput{Key: "Authorization", Where: "header", Label: i18n.T("market.catalog.common.api_key_optional"), Description: i18n.T("market.catalog.brave.api_key_description"), Placeholder: "as_sk_...", Secret: true, Format: "Bearer {}"}),
+		remoteMarketServer("cloudflare-docs", "Cloudflare Docs", "Cloudflare", ghAvatar("cloudflare"), "https://github.com/cloudflare/mcp-server-cloudflare",
+			"https://docs.mcp.cloudflare.com/mcp",
+			i18n.T("market.catalog.cloudflare.description"), false),
+		remoteMarketServer("microsoft-learn", "Microsoft Learn", "Microsoft", ghAvatar("microsoft"), "https://github.com/MicrosoftDocs/mcp",
+			"https://learn.microsoft.com/api/mcp",
+			i18n.T("market.catalog.microsoft.description"), false),
+		remoteMarketServer("huggingface", "Hugging Face", "Hugging Face", ghAvatar("huggingface"), "https://huggingface.co/settings/mcp",
+			"https://huggingface.co/mcp",
+			i18n.T("market.catalog.huggingface.description"), false),
+		localMarketServer("playwright", "Playwright", "Microsoft", "https://playwright.dev/img/playwright-logo.svg", "https://github.com/microsoft/playwright-mcp",
+			"npx", []string{"-y", "@playwright/mcp@latest"},
+			i18n.T("market.catalog.playwright.description")),
+		localMarketServer("chrome-devtools", "Chrome DevTools", "Google", ghAvatar("ChromeDevTools"), "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+			"npx", []string{"-y", "chrome-devtools-mcp@latest"},
+			i18n.T("market.catalog.chrome_devtools.description")),
+		localMarketServer("filesystem", "Filesystem", "Model Context Protocol", ghAvatar("modelcontextprotocol"), "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+			"npx", []string{"-y", "@modelcontextprotocol/server-filesystem"},
+			i18n.T("market.catalog.filesystem.description"),
+			MarketInput{Key: "dir", Where: "arg", Label: i18n.T("market.catalog.filesystem.dir_label"), Description: i18n.T("market.catalog.filesystem.dir_description"), Placeholder: "/Users/username/Developer", Required: true}),
+	}
 }
 
 func init() {
 	marketAllowedIcons.mu.Lock()
-	for _, m := range curatedMarketServers {
+	for _, m := range curatedMarketServers() {
 		if m.Icon != "" {
 			marketAllowedIcons.m[m.ID] = m.Icon
 		}
@@ -219,7 +225,7 @@ func registerAllowedMarketIcon(id, iconURL string) {
 	if len(marketAllowedIcons.m) > 1000 {
 		// Re-seed curated icons on overflow to prevent unbounded growth.
 		clear(marketAllowedIcons.m)
-		for _, m := range curatedMarketServers {
+		for _, m := range curatedMarketServers() {
 			if m.Icon != "" {
 				marketAllowedIcons.m[m.ID] = m.Icon
 			}
@@ -242,7 +248,7 @@ func (g *Service) MarketServers(ctx context.Context, query string) MarketSearchR
 		}
 	}
 
-	for _, item := range curatedMarketServers {
+	for _, item := range curatedMarketServers() {
 		copyItem := item
 		copyItem.Args = slices.Clone(item.Args)
 		copyItem.Inputs = slices.Clone(item.Inputs)
@@ -360,11 +366,11 @@ func fetchOfficialMCPRegistry(ctx context.Context, query string) ([]MarketServer
 	req.Header.Set("Accept", "application/json")
 	resp, err := marketHTTPClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("无法连接官方 MCP Registry: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("market.err.registry_connect"), err)
 	}
 	defer closeBody(resp)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("官方 MCP Registry 返回 HTTP %d", resp.StatusCode)
+		return nil, errors.New(i18n.T("market.err.registry_http", resp.StatusCode))
 	}
 	body, err := input.ReadBounded(resp.Body, 4<<20)
 	if err != nil {
@@ -379,7 +385,7 @@ func fetchOfficialMCPRegistry(ctx context.Context, query string) ([]MarketServer
 		} `json:"servers"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, fmt.Errorf("解析官方 MCP Registry 响应失败: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("market.err.registry_parse"), err)
 	}
 	var items []MarketServer
 	for _, entry := range payload.Servers {
@@ -557,7 +563,7 @@ func sanitizeMarketEnvName(serverID, key string) string {
 func (g *Service) InstallMarketServer(ctx context.Context, req InstallMarketRequest) (InstallMarketResult, error) {
 	var spec MarketServer
 	found := false
-	for _, item := range curatedMarketServers {
+	for _, item := range curatedMarketServers() {
 		if item.ID == req.ID {
 			spec = item
 			found = true
@@ -569,7 +575,7 @@ func (g *Service) InstallMarketServer(ctx context.Context, req InstallMarketRequ
 		found = true
 	}
 	if !found {
-		return InstallMarketResult{}, fault.New(fault.NotFound, "未在 MCP 市场中找到该服务", nil)
+		return InstallMarketResult{}, fault.New(fault.NotFound, i18n.T("market.err.not_found"), nil)
 	}
 
 	serverID := spec.ServerID
@@ -577,7 +583,7 @@ func (g *Service) InstallMarketServer(ctx context.Context, req InstallMarketRequ
 		serverID = sanitizeMarketServerID(spec.ID)
 	}
 	if !registry.ValidID(serverID) {
-		return InstallMarketResult{}, invalid("市场服务 ID 无效")
+		return InstallMarketResult{}, invalid(i18n.T("market.err.invalid_id"))
 	}
 
 	server := registry.Server{
@@ -599,7 +605,7 @@ func (g *Service) InstallMarketServer(ctx context.Context, req InstallMarketRequ
 	for _, inp := range spec.Inputs {
 		val := strings.TrimSpace(req.Inputs[inp.Key])
 		if inp.Required && val == "" {
-			return InstallMarketResult{}, invalid("请填写必填项：" + inp.Label)
+			return InstallMarketResult{}, invalid(i18n.T("market.err.required", inp.Label))
 		}
 		if val == "" {
 			continue
@@ -668,7 +674,7 @@ func (g *Service) MarketIcon(ctx context.Context, id, rawURL string) ([]byte, st
 		marketAllowedIcons.mu.RUnlock()
 	}
 	if targetURL == "" {
-		return nil, "", fault.New(fault.NotFound, "未找到该服务的图标", nil)
+		return nil, "", fault.New(fault.NotFound, i18n.T("market.err.icon_not_found"), nil)
 	}
 
 	sum := sha256.Sum256([]byte(targetURL))

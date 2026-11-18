@@ -13,6 +13,7 @@ import (
 
 	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
+	"gatewaylab/internal/i18n"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -290,44 +291,44 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(16).Children(func() {
 		ui.Row(c).Grow(1).MinWidth(0).Gap(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "服务").FontSize(21).Bold().LetterSpacing(-0.2).TextColor(SailInkStrong)
-			ui.Segmented(c.Key("svc-subtab"), &st.subtab, "已接入", "市场").
-				Label("切换已接入服务与市场")
+			ui.Text(c, i18n.T("services.page.title")).FontSize(21).Bold().LetterSpacing(-0.2).TextColor(SailInkStrong)
+			ui.Segmented(c.Key("svc-subtab"), &st.subtab, i18n.T("common.connected"), i18n.T("services.tab.market")).
+				Label(i18n.T("services.tab.switch"))
 			if st.subtab == 0 {
 				if attention := bucketCounts[triageAttention]; attention > 0 {
-					ui.Text(c, fmt.Sprintf("%d 个需处理", attention)).FontSize(12.5).FontWeight(600).TextColor(SailDangerInk).SingleLine()
+					ui.Text(c, fmt.Sprintf(i18n.T("services.summary.attention"), attention)).FontSize(12.5).FontWeight(600).TextColor(SailDangerInk).SingleLine()
 				}
-				ui.Text(c, fmt.Sprintf("%d 就绪 · %d / %d 启用", bucketCounts[triageReady], enabledCount, len(rows))).
+				ui.Text(c, fmt.Sprintf(i18n.T("services.summary.ready"), bucketCounts[triageReady], enabledCount, len(rows))).
 					FontSize(12.5).FontFeatures("tnum").TextColor(SailInkMuted).SingleLine()
 			} else {
-				SailQuietStatus(c, "精选，以及官方 MCP Registry", SailSuccessInk, SailInkMuted)
+				SailQuietStatus(c, i18n.T("services.summary.market_hint"), SailSuccessInk, SailInkMuted)
 			}
 		})
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
 			if st.subtab == 1 {
 				mktSt := u.marketState()
-				if SailSmallButton(c.Key("mkt-refresh"), "刷新").Disabled(mktSt.loading).Clicked() {
+				if SailSmallButton(c.Key("mkt-refresh"), i18n.T("common.refresh")).Disabled(mktSt.loading).Clicked() {
 					u.fetchMarket(mktSt, mktSt.registryQuery)
 				}
 			}
 			ui.Row(c).Gap(1).AlignItems(ui.Center).Shrink(0).Children(func() {
-				if SailPrimaryButton(c.Key("svc-btn-add"), "添加服务").Clicked() {
+				if SailPrimaryButton(c.Key("svc-btn-add"), i18n.T("services.action.add")).Clicked() {
 					st.openAddModal(0)
 				}
 				SailPrimaryButton(c.Key("svc-btn-add-more"), "▾").
 					Padding(0, 8).
-					Label("更多添加方式").
+					Label(i18n.T("services.action.more_add")).
 					PopoverMenuButton(func(menu *ui.Menu) {
-						if menu.Item("手动配置").Chosen() {
+						if menu.Item(i18n.T("services.add.menu.manual")).Chosen() {
 							st.openAddModal(0)
 						}
-						if menu.Item("粘贴 MCP JSON").Chosen() {
+						if menu.Item(i18n.T("services.add.menu.paste_json")).Chosen() {
 							st.openAddModal(3)
 						}
-						if menu.Item("OpenAPI 导入").Chosen() {
+						if menu.Item(i18n.T("services.add.menu.openapi")).Chosen() {
 							st.openAddModal(2)
 						}
-						if st.subtab == 0 && menu.Item("从市场添加").Chosen() {
+						if st.subtab == 0 && menu.Item(i18n.T("services.add.menu.market")).Chosen() {
 							st.subtab = 1
 						}
 					})
@@ -344,7 +345,7 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 	SailFlushCard(c, func() {
 		if len(rows) == 0 {
 			ui.Column(c).FillWidth().Padding(20).Children(func() {
-				SailEmptyState(c, "暂无服务", "", "添加服务", func() { st.openAddModal(0) })
+				SailEmptyState(c, i18n.T("services.empty.title"), "", i18n.T("services.action.add"), func() { st.openAddModal(0) })
 			})
 			return
 		}
@@ -358,26 +359,26 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 			AlignItems(ui.Center).
 			Justify(ui.SpaceBetween).
 			Children(func() {
-				labels := []string{"全部"}
+				labels := []string{i18n.T("common.all")}
 				for b := serviceTriageBucket(0); b < triageBucketCount; b++ {
 					labels = append(labels, fmt.Sprintf("%s %d", b.Label(), bucketCounts[b]))
 				}
 				SailSegmented(c.Key("svc-status-filter"), &st.listStatusFilter, labels...)
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Grow(1).MinWidth(0).Justify(ui.End).Children(func() {
 					if len(probeTargets) > 1 {
-						label := fmt.Sprintf("全部测试连接 (%d)", len(probeTargets))
+						label := fmt.Sprintf(i18n.T("services.action.test_all"), len(probeTargets))
 						if st.bulkProbeBusy {
-							label = "测试中…"
+							label = i18n.T("common.testing")
 						}
 						if SailButton(c.Key("svc-probe-all"), label).Disabled(st.bulkProbeBusy || st.connBusy).Clicked() {
 							u.probeServersBulk(st, probeTargets)
 						}
 					}
 					SailSearchField(c.Key("svc-list-search"), &st.listQuery).
-						Placeholder("搜索名称、凭据变量或地址…").
+						Placeholder(i18n.T("services.search.placeholder")).
 						Width(240)
 					if strings.TrimSpace(st.listQuery) != "" || st.listStatusFilter != 0 {
-						if SailButton(c.Key("svc-filter-reset"), "重置").Clicked() {
+						if SailButton(c.Key("svc-filter-reset"), i18n.T("common.reset")).Clicked() {
 							st.listQuery = ""
 							st.listStatusFilter = 0
 						}
@@ -405,12 +406,12 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 		}
 
 		if len(filtered) == 0 {
-			title := "无匹配服务"
+			title := i18n.T("services.list.no_match")
 			if q == "" && st.listStatusFilter == int(triageAttention)+1 {
-				title = "没有需要处理的服务"
+				title = i18n.T("services.list.nothing_to_fix")
 			}
 			ui.Column(c).FillWidth().Padding(20).Children(func() {
-				SailEmptyState(c, title, "", "查看全部", func() {
+				SailEmptyState(c, title, "", i18n.T("services.list.view_all"), func() {
 					st.listQuery = ""
 					st.listStatusFilter = 0
 				})
@@ -436,7 +437,7 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 		SailCard(c, func() {
 			ui.Collapsible(
 				c.Key("svc-demo-collapsible"),
-				fmt.Sprintf("内置演示服务 (%d)", len(demoServers)),
+				fmt.Sprintf(i18n.T("services.demo.section"), len(demoServers)),
 				&st.demoExpanded,
 				func() {
 					ui.Column(c).FillWidth().Padding(6, 0, 0, 0).Children(func() {
@@ -457,11 +458,11 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 								ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 									ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 										ui.Text(c, s.Name).FontSize(13.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-										ui.Text(c, fmt.Sprintf("%d 工具", len(srvTools))).FontSize(11.5).TextColor(SailInkFaint).FontFeatures("tnum")
+										ui.Text(c, fmt.Sprintf(i18n.T("services.row.tool_count"), len(srvTools))).FontSize(11.5).TextColor(SailInkFaint).FontFeatures("tnum")
 									})
 									SailDescSummary(c, s.Description, ServerTargetText(s), 1)
 								})
-								if SailSmallButton(c.Key("demo-view-"+s.ID), "查看工具").Clicked() {
+								if SailSmallButton(c.Key("demo-view-"+s.ID), i18n.T("services.row.view_tools")).Clicked() {
 									st.enterDetail(s.ID)
 									u.OpenServiceDetail(s.ID)
 								}
@@ -497,7 +498,7 @@ func (u *DesktopUI) renderServiceListRow(c *ui.Context, st *servicesPageState, s
 		AlignItems(ui.Center).
 		Justify(ui.SpaceBetween).
 		Cursor(ui.CursorPointer).
-		Label("打开 " + s.Name + " 详情")
+		Label(i18n.T("services.row.open_detail", s.Name))
 	if !noDivider {
 		row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
 	}
@@ -523,13 +524,13 @@ func (u *DesktopUI) renderServiceListRow(c *ui.Context, st *servicesPageState, s
 		})
 
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Shrink(0).Children(func() {
-			countText := fmt.Sprintf("%d/%d 工具", onCount, len(srvTools))
+			countText := fmt.Sprintf(i18n.T("services.row.tools_open"), onCount, len(srvTools))
 			if s.Enabled && rwCount > 0 {
-				countText += fmt.Sprintf(" · %d 可写", rwCount)
+				countText += fmt.Sprintf(i18n.T("services.row.writable"), rwCount)
 			}
-			countInk, countTip := SailInkMuted, "开放 / 已同步工具"
+			countInk, countTip := SailInkMuted, i18n.T("services.row.count_tooltip_open")
 			if !live {
-				countInk, countTip = SailInkFaint, "上次同步的工具数；服务当前不可调用"
+				countInk, countTip = SailInkFaint, i18n.T("services.row.count_tooltip_stale")
 			}
 			ui.Text(c, countText).FontSize(12).FontFeatures("tnum").TextColor(countInk).SingleLine().Tooltip(countTip)
 
@@ -547,7 +548,7 @@ func (u *DesktopUI) renderServiceListRow(c *ui.Context, st *servicesPageState, s
 
 			enabledVal := s.Enabled
 			sw := ui.Switch(c.Key("svc-sw-"+s.ID), &enabledVal).
-				Label(s.Name + " 启用开关").
+				Label(i18n.T("services.row.enable_switch", s.Name)).
 				Disabled(st.toggleBusyID == s.ID)
 			if sw.Changed() {
 				u.toggleServerEnabled(st, s, enabledVal)
@@ -581,16 +582,16 @@ func renderServiceRowStatusLine(c *ui.Context, s apitypes.Server, r serviceReadi
 	}
 	switch r.Kind {
 	case readinessMissingCreds:
-		statusWord("缺少凭据", SailDangerInk)
+		statusWord(i18n.T("common.missing_credentials"), SailDangerInk)
 		ui.Text(c, strings.Join(r.MissingVars, ", ")).Font("monospace").FontSize(12).TextColor(SailInkStrong).SingleLine().Shrink(0)
-		ui.Text(c, "· Agent 调用将失败").FontSize(12.5).TextColor(SailInkFaint).SingleLine().MinWidth(0)
+		ui.Text(c, i18n.T("services.row.agent_will_fail")).FontSize(12.5).TextColor(SailInkFaint).SingleLine().MinWidth(0)
 	case readinessConnError, readinessInvokeError:
 		statusWord(r.BadgeLabel, SailDangerInk)
 		detail(r.RowSummary, false)
 	case readinessUnverified:
 		statusWord(r.BadgeLabel, SailWarningInk)
-		if strings.HasPrefix(r.RowSummary, "尚未执行连接检查") {
-			detail("尚未执行连接检查", false)
+		if strings.HasPrefix(r.RowSummary, i18n.T("readiness.unverified.row_prefix")) {
+			detail(i18n.T("readiness.unverified.row_prefix"), false)
 		} else {
 			detail(r.RowSummary, false)
 		}
@@ -599,7 +600,7 @@ func renderServiceRowStatusLine(c *ui.Context, s apitypes.Server, r serviceReadi
 		detail(r.RowSummary, false)
 	case readinessDisabled:
 		if len(r.MissingVars) > 0 {
-			ui.Text(c, "待补充凭据").FontSize(12.5).TextColor(SailInkFaint).SingleLine().Shrink(0)
+			ui.Text(c, i18n.T("services.row.missing_creds_hint")).FontSize(12.5).TextColor(SailInkFaint).SingleLine().Shrink(0)
 			ui.Text(c, strings.Join(r.MissingVars, ", ")).Font("monospace").FontSize(12).TextColor(SailInkFaint).SingleLine().MinWidth(0)
 			return
 		}
@@ -625,7 +626,7 @@ func (u *DesktopUI) runServiceRowAction(st *servicesPageState, s apitypes.Server
 				roIDs = append(roIDs, t.ID)
 			}
 		}
-		u.applyServerToolWhitelist(st, s.ID, roIDs, "已仅开放全部只读工具")
+		u.applyServerToolWhitelist(st, s.ID, roIDs, i18n.T("services.toast.opened_read_only"))
 	}
 }
 
@@ -655,7 +656,7 @@ func (u *DesktopUI) probeServersBulk(st *servicesPageState, targets []apitypes.S
 		if syncErr != nil && apiclient.IsUnauthorized(syncErr) {
 			return syncErr
 		}
-		u.Notify(fmt.Sprintf("已测试 %d 个服务：%d 通过，%d 未通过", len(targets), passed, len(targets)-passed))
+		u.Notify(fmt.Sprintf(i18n.T("services.toast.bulk_test"), len(targets), passed, len(targets)-passed))
 		return nil
 	})
 }
@@ -707,14 +708,14 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 			backBtn.Background(SailBgHover)
 		}
 		backBtn.Children(func() {
-			ui.Text(c, "← 返回服务列表").FontSize(12.5).FontWeight(500).TextColor(SailInkBody).SingleLine()
+			ui.Text(c, i18n.T("services.detail.back")).FontSize(12.5).FontWeight(500).TextColor(SailInkBody).SingleLine()
 		})
 		if backBtn.Clicked() {
 			u.clearActiveService()
 			st.detailServerID = ""
 		}
 
-		if SailSmallButton(c.Key("detail-open-catalog-"+server.ID), "在工具目录查看").Clicked() {
+		if SailSmallButton(c.Key("detail-open-catalog-"+server.ID), i18n.T("services.detail.open_in_catalog")).Clicked() {
 			u.OpenCatalogFilter(server.ID, "")
 		}
 	})
@@ -726,7 +727,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 		func() {
 			ui.Text(c, serviceProtocolTag(server)).FontSize(12).TextColor(SailInkMuted).SingleLine()
 			if server.Demo {
-				ui.Text(c, "演示").FontSize(12).TextColor(SailInkFaint).SingleLine()
+				ui.Text(c, i18n.T("common.demo")).FontSize(12).TextColor(SailInkFaint).SingleLine()
 			} else {
 				if readiness.BadgeLabel != "" {
 					SailBadgeDot(c, readiness.BadgeLabel, readiness.BadgeTone)
@@ -736,22 +737,22 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 
 				enabledVal := server.Enabled
 				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					swLbl := "已停用"
+					swLbl := i18n.T("common.disabled")
 					if enabledVal {
-						swLbl = "已启用"
+						swLbl = i18n.T("common.enabled")
 					}
 					ui.Text(c, swLbl).FontSize(12).TextColor(SailInkMuted).SingleLine()
 					sw := ui.Switch(c.Key("detail-srv-sw-"+server.ID), &enabledVal).
-						Label("启用服务").
+						Label(i18n.T("services.detail.enable_label")).
 						Disabled(st.toggleBusyID == server.ID)
 					if sw.Changed() {
 						u.toggleServerEnabled(st, server, enabledVal)
 					}
 				})
 
-				probeLabel := "测试连接"
+				probeLabel := i18n.T("common.test_connection")
 				if st.connBusy {
-					probeLabel = "测试中…"
+					probeLabel = i18n.T("common.testing")
 				}
 				if SailSmallButton(c.Key("detail-probe-"+server.ID), probeLabel).
 					Disabled(st.connBusy || st.syncingServerID != "").
@@ -761,9 +762,9 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 			}
 
 			if server.Kind == "mcp" && !server.Demo {
-				syncLabel := "同步下游工具"
+				syncLabel := i18n.T("services.detail.sync_tools")
 				if st.syncingServerID == server.ID {
-					syncLabel = "同步中…"
+					syncLabel = i18n.T("common.syncing")
 				}
 				if SailSmallButton(c.Key("detail-sync-"+server.ID), syncLabel).
 					Disabled(st.syncingServerID != "" || st.connBusy).
@@ -773,7 +774,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 			}
 
 			if server.Kind == "http" && !server.Demo {
-				if SailPrimaryButton(c.Key("detail-add-http-tool"), "添加 HTTP 工具").
+				if SailPrimaryButton(c.Key("detail-add-http-tool"), i18n.T("services.detail.add_http_tool")).
 					Padding(5, 11).
 					FontSize(12.5).
 					Clicked() {
@@ -782,7 +783,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 			}
 
 			if !server.Demo {
-				if SailDangerButton(c.Key("detail-del-btn-"+server.ID), "停用").
+				if SailDangerButton(c.Key("detail-del-btn-"+server.ID), i18n.T("common.disable")).
 					Disabled(st.deactivateBusy).
 					Clicked() {
 					st.confirmDeactivate = true
@@ -795,10 +796,10 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 	switch ui.AlertDialog(
 		c.Key("deactivate-alert-"+server.ID),
 		&st.confirmDeactivate,
-		fmt.Sprintf("确认停用「%s」？", server.Name),
-		"停用后将关闭该服务全部开放工具，历史审计记录不受影响。",
-		"取消",
-		"确认停用",
+		fmt.Sprintf(i18n.T("services.confirm.deactivate_title"), server.Name),
+		i18n.T("services.confirm.deactivate_body"),
+		i18n.T("common.cancel"),
+		i18n.T("services.confirm.deactivate_confirm"),
 	) {
 	case 1:
 		u.deactivateService(st, server)
@@ -816,21 +817,21 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 		ui.Row(c).FillWidth().Gap(24).AlignItems(ui.Center).Justify(ui.SpaceBetween).Wrap().Children(func() {
 			ui.Row(c).Gap(24).AlignItems(ui.Center).Wrap().Children(func() {
 				ui.Column(c).Gap(3).Children(func() {
-					ui.Text(c, "服务 ID").FontSize(11.5).TextColor(SailInkMuted)
+					ui.Text(c, i18n.T("services.field.service_id")).FontSize(11.5).TextColor(SailInkMuted)
 					ui.Text(c, server.ID).Font("monospace").FontSize(12.5).TextColor(SailInkStrong).Selectable()
 				})
 
 				ui.Column(c).MinWidth(180).MaxWidth(480).Gap(3).Children(func() {
-					lbl := "连接地址"
+					lbl := i18n.T("services.field.endpoint")
 					if server.Kind == "mcp" && server.Transport == "stdio" {
-						lbl = "启动命令"
+						lbl = i18n.T("services.field.command")
 					}
 					ui.Text(c, lbl).FontSize(11.5).TextColor(SailInkMuted)
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, target).Font("monospace").FontSize(12.5).TextColor(SailInkStrong).SingleLine().TruncateMiddle().Tooltip(target).Selectable()
-						if SailSmallButton(c.Key("detail-copy-target"), "复制").Padding(2, 7).FontSize(11).Clicked() {
+						if SailSmallButton(c.Key("detail-copy-target"), i18n.T("common.copy")).Padding(2, 7).FontSize(11).Clicked() {
 							c.WriteClipboard(target)
-							u.Notify("已复制连接目标")
+							u.Notify(i18n.T("services.toast.endpoint_copied"))
 						}
 					})
 				})
@@ -839,7 +840,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 			ui.Row(c).Gap(18).AlignItems(ui.Center).Wrap().Children(func() {
 				if readiness.CredSummary != "" {
 					ui.Column(c).Gap(3).AlignItems(ui.End).Children(func() {
-						ui.Text(c, "服务凭据").FontSize(11.5).TextColor(SailInkMuted)
+						ui.Text(c, i18n.T("services.field.credentials")).FontSize(11.5).TextColor(SailInkMuted)
 						credColor := SailInkStrong
 						if readiness.CredDanger {
 							credColor = SailDangerInk
@@ -853,7 +854,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 				}
 
 				ui.Column(c).Gap(3).AlignItems(ui.End).Children(func() {
-					ui.Text(c, "开放工具").FontSize(11.5).TextColor(SailInkMuted)
+					ui.Text(c, i18n.T("services.field.open_tools")).FontSize(11.5).TextColor(SailInkMuted)
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, fmt.Sprintf("%d / %d", enabledCount, len(srvTools))).
 							FontSize(13.5).
@@ -861,14 +862,14 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 							FontFeatures("tnum").
 							TextColor(SailInkStrong)
 						if rwCount > 0 {
-							SailBadge(c, fmt.Sprintf("写 ×%d", rwCount), ToneWarning)
+							SailBadge(c, fmt.Sprintf(i18n.T("common.write_badge"), rwCount), ToneWarning)
 						}
 					})
 				})
 
 				if readiness.CheckDisplay != checkDisplayNone && readiness.CheckLabel != "" {
 					ui.Column(c).Gap(3).AlignItems(ui.End).Children(func() {
-						ui.Text(c, "最近检查").FontSize(11.5).TextColor(SailInkMuted)
+						ui.Text(c, i18n.T("common.last_check")).FontSize(11.5).TextColor(SailInkMuted)
 						switch readiness.CheckDisplay {
 						case checkDisplayDanger:
 							SailBadge(c, readiness.CheckLabel, ToneDanger)
@@ -904,7 +905,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 						roIDs = append(roIDs, t.ID)
 					}
 				}
-				u.applyServerToolWhitelist(st, server.ID, roIDs, "已仅开放全部只读工具")
+				u.applyServerToolWhitelist(st, server.ID, roIDs, i18n.T("services.toast.opened_read_only"))
 			}
 		},
 	)
@@ -915,9 +916,9 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 			ui.Segmented(
 				c.Key("detail-subtab-"+server.ID),
 				&st.detailSubtab,
-				fmt.Sprintf("工具白名单 (%d)", len(srvTools)),
-				"连接与认证配置",
-				"健康与维护概览",
+				fmt.Sprintf(i18n.T("services.tools.whitelist_tab"), len(srvTools)),
+				i18n.T("services.tabs.connection"),
+				i18n.T("services.tabs.health"),
 			)
 		})
 	} else {
@@ -951,7 +952,7 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 			Children(func() {
 				ui.Row(c).Grow(1).MinWidth(240).Gap(10).AlignItems(ui.Center).Children(func() {
 					if SailSearchField(c.Key("detail-tool-search"), &st.toolQuery).
-						Placeholder("搜索名称或描述…").
+						Placeholder(i18n.T("services.tools.search")).
 						Grow(1).
 						MinWidth(0).
 						Changed() {
@@ -960,10 +961,10 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 					if SailSegmented(
 						c.Key("detail-tool-filter"),
 						&st.toolFilter,
-						fmt.Sprintf("全部 (%d)", len(srvTools)),
-						fmt.Sprintf("已启用 (%d)", enabledCount),
-						fmt.Sprintf("未启用 (%d)", len(srvTools)-enabledCount),
-						"仅只读",
+						fmt.Sprintf(i18n.T("services.tools.filter_all"), len(srvTools)),
+						fmt.Sprintf(i18n.T("services.tools.filter_enabled"), enabledCount),
+						fmt.Sprintf(i18n.T("services.tools.filter_disabled"), len(srvTools)-enabledCount),
+						i18n.T("services.tools.filter_read_only"),
 					).Changed() {
 						st.toolPage = 1
 					}
@@ -971,7 +972,7 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 
 				if !server.Demo && len(srvTools) > 0 {
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-						if SailSmallButton(c.Key("batch-ro"), "仅开放只读").
+						if SailSmallButton(c.Key("batch-ro"), i18n.T("services.tools.batch_read_only")).
 							Disabled(st.toolBatchBusy).
 							Clicked() {
 							var roIDs []string
@@ -980,21 +981,21 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 									roIDs = append(roIDs, t.ID)
 								}
 							}
-							u.applyServerToolWhitelist(st, server.ID, roIDs, "已仅开放全部只读工具")
+							u.applyServerToolWhitelist(st, server.ID, roIDs, i18n.T("services.toast.opened_read_only"))
 						}
-						if SailSmallButton(c.Key("batch-all-on"), "全选开放").
+						if SailSmallButton(c.Key("batch-all-on"), i18n.T("services.tools.batch_open_all")).
 							Disabled(st.toolBatchBusy).
 							Clicked() {
 							allIDs := make([]string, 0, len(srvTools))
 							for _, t := range srvTools {
 								allIDs = append(allIDs, t.ID)
 							}
-							u.applyServerToolWhitelist(st, server.ID, allIDs, "已全选开放全部工具")
+							u.applyServerToolWhitelist(st, server.ID, allIDs, i18n.T("services.toast.opened_all_tools"))
 						}
-						if SailSmallButton(c.Key("batch-all-off"), "全部停用").
+						if SailSmallButton(c.Key("batch-all-off"), i18n.T("services.tools.batch_close_all")).
 							Disabled(st.toolBatchBusy).
 							Clicked() {
-							u.applyServerToolWhitelist(st, server.ID, []string{}, "已停用全部工具")
+							u.applyServerToolWhitelist(st, server.ID, []string{}, i18n.T("services.toast.closed_all_tools"))
 						}
 					})
 				}
@@ -1032,26 +1033,26 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 					if server.Kind == "http" && !server.Demo {
 						SailEmptyState(
 							c,
-							"暂无工具",
+							i18n.T("services.tools.empty"),
 							"",
-							"添加 HTTP 工具",
+							i18n.T("services.detail.add_http_tool"),
 							func() { st.openAddHTTPToolModal() },
 						)
 					} else {
 						SailEmptyState(
 							c,
-							"尚未同步下游工具",
+							i18n.T("services.tools.not_synced"),
 							"",
-							"同步下游工具",
+							i18n.T("services.detail.sync_tools"),
 							func() { u.syncServerTools(st, server) },
 						)
 					}
 				} else {
 					SailEmptyState(
 						c,
-						"无匹配工具",
+						i18n.T("services.tools.no_match"),
 						"",
-						"清空筛选",
+						i18n.T("services.tools.clear_filters"),
 						func() {
 							st.toolQuery = ""
 							st.toolFilter = 0
@@ -1109,10 +1110,10 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 							st.openToolEditModal(t)
 						}
 						if !t.ReadOnly {
-							SailBadge(c, "写操作", ToneWarning)
+							SailBadge(c, i18n.T("common.write_operation"), ToneWarning)
 						}
 					})
-					SailDescSummary(c, t.Description, "暂无描述", 1)
+					SailDescSummary(c, t.Description, i18n.T("services.tools.no_description"), 1)
 				})
 
 				// Anchor 3: Enable Switch + Edit
@@ -1120,13 +1121,13 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 					if !server.Demo {
 						swVal := t.Enabled
 						sw := ui.Switch(c.Key("tool-sw-"+t.ID), &swVal).
-							Label(t.Name + " 开关").
+							Label(i18n.T("services.tools.toggle", t.Name)).
 							Disabled(st.toolBatchBusy)
 						if sw.Changed() {
 							u.toggleSingleToolWhitelist(st, server.ID, srvTools, t.ID, swVal)
 						}
 					}
-					if SailSmallButton(c.Key("tool-edit-"+t.ID), "编辑").Clicked() {
+					if SailSmallButton(c.Key("tool-edit-"+t.ID), i18n.T("common.edit")).Clicked() {
 						st.openToolEditModal(t)
 					}
 				})
@@ -1141,14 +1142,14 @@ func (u *DesktopUI) renderServiceToolsTab(c *ui.Context, st *servicesPageState, 
 					FontFeatures("tnum").
 					TextColor(SailInkMuted)
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, fmt.Sprintf("%d / %d 页", st.toolPage, totalPages)).
+					ui.Text(c, fmt.Sprintf(i18n.T("services.tools.pager"), st.toolPage, totalPages)).
 						FontSize(12).
 						FontFeatures("tnum").
 						TextColor(SailInkMuted)
-					if SailSmallButton(c.Key("tool-prev"), "上一页").Disabled(st.toolPage <= 1).Clicked() {
+					if SailSmallButton(c.Key("tool-prev"), i18n.T("common.prev_page")).Disabled(st.toolPage <= 1).Clicked() {
 						st.toolPage--
 					}
-					if SailSmallButton(c.Key("tool-next"), "下一页").Disabled(st.toolPage >= totalPages).Clicked() {
+					if SailSmallButton(c.Key("tool-next"), i18n.T("common.next_page")).Disabled(st.toolPage >= totalPages).Clicked() {
 						st.toolPage++
 					}
 				})
@@ -1199,10 +1200,10 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 	SailCard(c, func() {
 		SailCardTitle(
 			c,
-			"连接与认证配置",
-			"配置中使用 ${ENV_VAR} 引用，凭据单独保存",
+			i18n.T("services.tabs.connection"),
+			i18n.T("services.conn.subtitle"),
 			func() {
-				if ui.Segmented(c.Key("conn-mode-seg"), &st.connMode, "表单视图", "JSON 定义").Changed() {
+				if ui.Segmented(c.Key("conn-mode-seg"), &st.connMode, i18n.T("services.conn.mode_form"), i18n.T("services.conn.mode_json")).Changed() {
 					if st.connMode == 1 {
 						if built, err := st.buildServerFromConnForm(server); err == nil {
 							st.connRawJSON = PrettyJSON(built)
@@ -1215,12 +1216,12 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 		)
 
 		if st.connError != "" {
-			SailAlertBox(c, ToneDanger, "保存或连接测试失败", st.connError)
+			SailAlertBox(c, ToneDanger, i18n.T("services.conn.error_title"), st.connError)
 		}
 
 		if st.connMode == 1 {
 			ui.Column(c).FillWidth().Gap(6).Children(func() {
-				ui.Text(c, "服务 JSON").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+				ui.Text(c, i18n.T("services.conn.json_section")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 				ui.TextArea(c.Key("conn-raw-json-"+server.ID), &st.connRawJSON).
 					Font("monospace").
 					FontSize(12).
@@ -1230,11 +1231,11 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 		} else {
 			ui.Row(c).FillWidth().Gap(14).Children(func() {
 				ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-					ui.Text(c, "显示名称").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+					ui.Text(c, i18n.T("services.field.display_name")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 					ui.TextInput(c.Key("conn-name-"+server.ID), &st.connName).FillWidth()
 				})
 				ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-					ui.Text(c, "服务描述").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+					ui.Text(c, i18n.T("services.field.description")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 					ui.TextInput(c.Key("conn-desc-"+server.ID), &st.connDesc).FillWidth()
 				})
 			})
@@ -1242,13 +1243,13 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 			if server.Kind == "mcp" && server.Transport == "stdio" {
 				ui.Row(c).FillWidth().Gap(14).Children(func() {
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-						ui.Text(c, "启动命令").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("services.field.command")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						ui.TextInput(c.Key("conn-cmd-"+server.ID), &st.connCommand).
 							Font("monospace").
 							FillWidth()
 					})
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-						ui.Text(c, "工作目录").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("services.field.workdir")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						ui.TextInput(c.Key("conn-cwd-"+server.ID), &st.connWorkDir).
 							Font("monospace").
 							FillWidth()
@@ -1257,7 +1258,7 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 
 				ui.Row(c).FillWidth().Gap(14).Children(func() {
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-						ui.Text(c, "启动参数 (JSON Array)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("services.field.args")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						ui.TextArea(c.Key("conn-args-"+server.ID), &st.connArgsText).
 							Font("monospace").
 							FontSize(12).
@@ -1265,7 +1266,7 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 							FillWidth()
 					})
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-						ui.Text(c, "环境变量 (JSON)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("services.field.env")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						ui.TextArea(c.Key("conn-env-"+server.ID), &st.connEnvText).
 							Font("monospace").
 							FontSize(12).
@@ -1286,7 +1287,7 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 				})
 
 				ui.Column(c).FillWidth().Gap(5).Children(func() {
-					ui.Text(c, "请求头 (JSON)").
+					ui.Text(c, i18n.T("services.field.headers")).
 						FontSize(12.5).
 						FontWeight(600).
 						TextColor(SailInkBody)
@@ -1300,9 +1301,9 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 
 			// Redaction controls
 			ui.Row(c).FillWidth().Gap(14).AlignItems(ui.Center).Children(func() {
-				ui.Checkbox(c.Key("conn-redact-emails-"+server.ID), &st.connRedactEmails, "自动脱敏邮箱")
+				ui.Checkbox(c.Key("conn-redact-emails-"+server.ID), &st.connRedactEmails, i18n.T("services.conn.redact_emails"))
 				ui.Row(c).Grow(1).MinWidth(0).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, "脱敏字段").FontSize(12).TextColor(SailInkMuted).Shrink(0)
+					ui.Text(c, i18n.T("services.conn.redact_fields")).FontSize(12).TextColor(SailInkMuted).Shrink(0)
 					ui.TextInput(c.Key("conn-redact-fields-"+server.ID), &st.connRedactFieldsText).
 						Placeholder("user.ssn, token").
 						Font("monospace").
@@ -1314,26 +1315,26 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 
 		// Footer buttons
 		ui.Row(c).FillWidth().Padding(6, 0, 0, 0).AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailButton(c.Key("conn-reset-"+server.ID), "重置").
+			if SailButton(c.Key("conn-reset-"+server.ID), i18n.T("common.reset")).
 				Disabled(st.connBusy).
 				Clicked() {
 				st.hydrateConnForm(server)
 			}
 			if st.connMode == 1 {
-				if SailPrimaryButton(c.Key("conn-save-json-"+server.ID), "保存 JSON").
+				if SailPrimaryButton(c.Key("conn-save-json-"+server.ID), i18n.T("services.conn.save_json")).
 					Disabled(st.connBusy).
 					Clicked() {
 					u.saveConnJSON(st, server)
 				}
 			} else {
-				if SailButton(c.Key("conn-save-only-"+server.ID), "仅保存").
+				if SailButton(c.Key("conn-save-only-"+server.ID), i18n.T("services.conn.save_only")).
 					Disabled(st.connBusy).
 					Clicked() {
 					u.saveConnForm(st, server, false)
 				}
-				btnLabel := "保存并测试连接"
+				btnLabel := i18n.T("services.conn.save_and_test")
 				if st.connBusy {
-					btnLabel = "测试连接中…"
+					btnLabel = i18n.T("services.conn.testing")
 				}
 				if SailPrimaryButton(c.Key("conn-save-test-"+server.ID), btnLabel).
 					Disabled(st.connBusy).
@@ -1360,11 +1361,11 @@ func (st *servicesPageState) buildServerFromConnForm(orig apitypes.Server) (apit
 		out.WorkDir = strings.TrimSpace(st.connWorkDir)
 		args, err := parseStringSliceJSON(st.connArgsText)
 		if err != nil {
-			return out, fmt.Errorf("启动参数格式错误: %w", err)
+			return out, fmt.Errorf("%s: %w", i18n.T("services.err.args_format"), err)
 		}
 		env, err := parseStringMapJSON(st.connEnvText)
 		if err != nil {
-			return out, fmt.Errorf("环境变量格式错误: %w", err)
+			return out, fmt.Errorf("%s: %w", i18n.T("services.err.env_format"), err)
 		}
 		out.Args = args
 		out.Env = env
@@ -1379,7 +1380,7 @@ func (st *servicesPageState) buildServerFromConnForm(orig apitypes.Server) (apit
 		out.Endpoint = strings.TrimSpace(st.connEndpoint)
 		headers, err := parseStringMapJSON(st.connHeadersText)
 		if err != nil {
-			return out, fmt.Errorf("请求头格式错误: %w", err)
+			return out, fmt.Errorf("%s: %w", i18n.T("services.err.headers_format"), err)
 		}
 		out.Headers = headers
 		out.Args = nil
@@ -1413,19 +1414,19 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 	SailCard(c, func() {
 		SailCardTitle(
 			c,
-			"运行状态与健康检查",
+			i18n.T("services.health.title"),
 			"",
 			func() {
-				refreshLabel := "刷新"
+				refreshLabel := i18n.T("common.refresh")
 				if st.maintLoading {
-					refreshLabel = "加载中…"
+					refreshLabel = i18n.T("common.loading")
 				}
 				if SailSmallButton(c.Key("maint-refresh-"+server.ID), refreshLabel).
 					Disabled(st.maintLoading).
 					Clicked() {
 					u.loadMaintenanceOverview(st, server)
 				}
-				if SailSmallButton(c.Key("health-probe-"+server.ID), "立即探活").
+				if SailSmallButton(c.Key("health-probe-"+server.ID), i18n.T("services.health.probe_now")).
 					Disabled(st.connBusy).
 					Clicked() {
 					u.probeServerConnection(st, server)
@@ -1435,7 +1436,7 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 
 		ui.Row(c).FillWidth().Gap(14).Children(func() {
 			subtlePanel(c, 220, 1, func() {
-				ui.Text(c, "当前状态与历史检查").FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
+				ui.Text(c, i18n.T("services.health.panel_title")).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
 					if readiness.BadgeLabel != "" {
 						SailBadgeDot(c, readiness.BadgeLabel, readiness.BadgeTone)
@@ -1443,9 +1444,9 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 						SailQuietStatus(c, readiness.StatusLabel, readiness.DotColor, SailInkStrong)
 					}
 					if hasCheck {
-						ui.Text(c, "最近检查 "+FormatTime(check.CheckedAt)).FontSize(12).TextColor(SailInkMuted)
+						ui.Text(c, i18n.T("services.health.last_check_at", FormatTime(check.CheckedAt))).FontSize(12).TextColor(SailInkMuted)
 					} else {
-						ui.Text(c, "尚无探活记录").FontSize(12).TextColor(SailInkMuted)
+						ui.Text(c, i18n.T("services.health.no_history")).FontSize(12).TextColor(SailInkMuted)
 					}
 				})
 				if readiness.AlertTitle != "" {
@@ -1459,7 +1460,7 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 			})
 
 			subtlePanel(c, 220, 1, func() {
-				ui.Text(c, "维护运行时").FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
+				ui.Text(c, i18n.T("services.health.runtime")).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
 				if st.maintOverview != nil && st.maintOverview.Runtime != nil {
 					avail, _ := st.maintOverview.Runtime["available"].(bool)
 					cmdStr, _ := st.maintOverview.Runtime["command"].(string)
@@ -1470,49 +1471,49 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 						}
 					}
 					if avail {
-						SailQuietStatus(c, "Pi 就绪 ("+cmdStr+")", SailSuccessInk, SailInkStrong)
+						SailQuietStatus(c, i18n.T("services.health.pi_ready", cmdStr), SailSuccessInk, SailInkStrong)
 					} else {
-						SailQuietStatus(c, "确定性同步", SailInkFaint, SailInkBody)
+						SailQuietStatus(c, i18n.T("services.health.deterministic"), SailInkFaint, SailInkBody)
 					}
 					ui.Text(c, fmt.Sprintf("%s · %s", execMode, serviceProtocolTag(server))).
 						FontSize(12).
 						TextColor(SailInkMuted)
 				} else {
-					ui.Text(c, "读取中…").FontSize(12).TextColor(SailInkMuted)
+					ui.Text(c, i18n.T("common.reading")).FontSize(12).TextColor(SailInkMuted)
 				}
 			})
 		})
 	})
 
 	if st.maintError != "" {
-		SailAlertBox(c, ToneDanger, "维护操作失败", st.maintError)
+		SailAlertBox(c, ToneDanger, i18n.T("services.health.error_title"), st.maintError)
 	}
 
 	// Maintenance Source Policy
 	SailCard(c, func() {
-		SailCardTitle(c, "自动维护策略", "", nil)
+		SailCardTitle(c, i18n.T("services.maint.policy_title"), "", nil)
 
-		modeOpt0 := "原生 MCP 同步"
+		modeOpt0 := i18n.T("services.maint.mode_native")
 		if server.Kind == "http" {
-			modeOpt0 = "OpenAPI 同步"
+			modeOpt0 = i18n.T("services.maint.mode_openapi")
 		}
 		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "维护方式").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-			ui.Segmented(c.Key("maint-fmt-"+server.ID), &st.maintFormatIdx, modeOpt0, "Pi 编程适配")
+			ui.Text(c, i18n.T("services.maint.mode")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+			ui.Segmented(c.Key("maint-fmt-"+server.ID), &st.maintFormatIdx, modeOpt0, i18n.T("services.maint.mode_pi"))
 		})
 
 		ui.Column(c).FillWidth().Gap(5).Children(func() {
-			ui.Text(c, "过滤工具 / operationId").FontSize(12).FontWeight(600).TextColor(SailInkBody)
+			ui.Text(c, i18n.T("services.maint.filter")).FontSize(12).FontWeight(600).TextColor(SailInkBody)
 			ui.TextInput(c.Key("maint-ops-"+server.ID), &st.maintOpsText).
 				Font("monospace").
-				Placeholder("可选，逗号分隔").
+				Placeholder(i18n.T("services.maint.filter_placeholder")).
 				FillWidth()
 		})
 
 		if server.Kind == "http" || st.maintFormatIdx == 1 {
 			ui.Row(c).FillWidth().Gap(14).Children(func() {
 				ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-					ui.Text(c, "本地规格路径").FontSize(12).FontWeight(600).TextColor(SailInkBody)
+					ui.Text(c, i18n.T("services.maint.spec_path")).FontSize(12).FontWeight(600).TextColor(SailInkBody)
 					ui.TextArea(c.Key("maint-files-"+server.ID), &st.maintFilesText).
 						Font("monospace").
 						FontSize(12).
@@ -1520,7 +1521,7 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 						FillWidth()
 				})
 				ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-					ui.Text(c, "在线规格 URL").FontSize(12).FontWeight(600).TextColor(SailInkBody)
+					ui.Text(c, i18n.T("services.maint.spec_url")).FontSize(12).FontWeight(600).TextColor(SailInkBody)
 					ui.TextArea(c.Key("maint-urls-"+server.ID), &st.maintURLsText).
 						Font("monospace").
 						FontSize(12).
@@ -1532,7 +1533,7 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 
 		if st.maintFormatIdx == 1 {
 			ui.Column(c).FillWidth().Gap(5).Children(func() {
-				ui.Text(c, "维护指引 (Prompt)").FontSize(12).FontWeight(600).TextColor(SailInkBody)
+				ui.Text(c, i18n.T("services.maint.prompt")).FontSize(12).FontWeight(600).TextColor(SailInkBody)
 				ui.TextArea(c.Key("maint-inst-"+server.ID), &st.maintInstructions).
 					FontSize(12.5).
 					Height(72).
@@ -1542,32 +1543,32 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 
 		ui.Row(c).FillWidth().Gap(14).Children(func() {
 			ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-				ui.Text(c, "周期 (分钟)").FontSize(12).FontWeight(600).TextColor(SailInkBody)
+				ui.Text(c, i18n.T("services.maint.period")).FontSize(12).FontWeight(600).TextColor(SailInkBody)
 				ui.TextInput(c.Key("maint-interval-"+server.ID), &st.maintIntervalStr).Font("monospace").FillWidth()
 			})
 			ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-				ui.Text(c, "超时 (秒)").FontSize(12).FontWeight(600).TextColor(SailInkBody)
+				ui.Text(c, i18n.T("services.maint.timeout")).FontSize(12).FontWeight(600).TextColor(SailInkBody)
 				ui.TextInput(c.Key("maint-timeout-"+server.ID), &st.maintTimeoutStr).Font("monospace").FillWidth()
 			})
 		})
 
 		ui.Row(c).FillWidth().Gap(16).Wrap().Children(func() {
-			ui.Checkbox(c.Key("maint-enabled-"+server.ID), &st.maintEnabled, "定期自动检查")
-			ui.Checkbox(c.Key("maint-autopub-"+server.ID), &st.maintAutoPublish, "验收通过自动发布")
+			ui.Checkbox(c.Key("maint-enabled-"+server.ID), &st.maintEnabled, i18n.T("services.maint.schedule"))
+			ui.Checkbox(c.Key("maint-autopub-"+server.ID), &st.maintAutoPublish, i18n.T("services.maint.auto_publish"))
 		})
 
 		ui.Row(c).FillWidth().Padding(6, 0, 0, 0).AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailButton(c.Key("maint-save-"+server.ID), "保存策略").
+			if SailButton(c.Key("maint-save-"+server.ID), i18n.T("services.maint.save_policy")).
 				Disabled(st.maintBusy).
 				Clicked() {
 				u.saveMaintenanceConfig(st, server, false, false)
 			}
-			if SailButton(c.Key("maint-force-run-"+server.ID), "强制重跑").
+			if SailButton(c.Key("maint-force-run-"+server.ID), i18n.T("services.maint.force_run")).
 				Disabled(st.maintBusy).
 				Clicked() {
 				u.saveMaintenanceConfig(st, server, true, true)
 			}
-			if SailPrimaryButton(c.Key("maint-save-run-"+server.ID), "保存并立即检查").
+			if SailPrimaryButton(c.Key("maint-save-run-"+server.ID), i18n.T("services.maint.save_and_run")).
 				Disabled(st.maintBusy).
 				Clicked() {
 				u.saveMaintenanceConfig(st, server, true, false)
@@ -1586,11 +1587,11 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 			}
 		}
 
-		SailListCardHeader(c, "维护运行记录", fmt.Sprintf("%d 条", len(runs)), nil)
+		SailListCardHeader(c, i18n.T("services.maint.runs_title"), fmt.Sprintf(i18n.T("services.maint.runs_count"), len(runs)), nil)
 
 		if len(runs) == 0 {
 			ui.Column(c).FillWidth().Padding(20).Children(func() {
-				SailEmptyState(c, "暂无运行记录", "", "", nil)
+				SailEmptyState(c, i18n.T("services.maint.runs_empty"), "", "", nil)
 			})
 			return
 		}
@@ -1635,28 +1636,28 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 				ui.Row(c).Gap(10).AlignItems(ui.Center).Shrink(0).Children(func() {
 					ui.Text(c, FormatTime(r.CreatedAt)).FontSize(11.5).TextColor(SailInkFaint).FontFeatures("tnum")
 					if r.Status == "ready" && r.Acceptance.Passed {
-						if SailSmallPrimaryButton(c.Key("run-pub-"+r.ID), "发布版本").
+						if SailSmallPrimaryButton(c.Key("run-pub-"+r.ID), i18n.T("services.maint.publish")).
 							Disabled(st.maintBusy).
 							Clicked() {
-							u.runMaintenanceAction(st, server, "新版本已发布", func(ctx context.Context) error {
+							u.runMaintenanceAction(st, server, i18n.T("services.toast.published"), func(ctx context.Context) error {
 								return u.Client.PublishMaintenanceRun(ctx, r.ID)
 							})
 						}
 					}
 					if r.Status == "published" {
-						if SailSmallButton(c.Key("run-rb-"+r.ID), "回退").
+						if SailSmallButton(c.Key("run-rb-"+r.ID), i18n.T("services.maint.rollback")).
 							Disabled(st.maintBusy).
 							Clicked() {
-							u.runMaintenanceAction(st, server, "已回退本次发布", func(ctx context.Context) error {
+							u.runMaintenanceAction(st, server, i18n.T("services.toast.rolled_back"), func(ctx context.Context) error {
 								return u.Client.RollbackMaintenanceRun(ctx, r.ID)
 							})
 						}
 					}
 					if r.Status == "queued" || r.Status == "running" {
-						if SailSmallButton(c.Key("run-cancel-"+r.ID), "取消").
+						if SailSmallButton(c.Key("run-cancel-"+r.ID), i18n.T("common.cancel")).
 							Disabled(st.maintBusy).
 							Clicked() {
-							u.runMaintenanceAction(st, server, "已取消任务", func(ctx context.Context) error {
+							u.runMaintenanceAction(st, server, i18n.T("services.toast.cancelled"), func(ctx context.Context) error {
 								return u.Client.CancelMaintenanceRun(ctx, r.ID)
 							})
 						}
@@ -1670,23 +1671,23 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 func maintenanceStatusLabel(status string) string {
 	switch status {
 	case "queued":
-		return "排队中"
+		return i18n.T("services.run_status.queued")
 	case "running":
-		return "运行中"
+		return i18n.T("services.run_status.running")
 	case "ready":
-		return "待确认发布"
+		return i18n.T("services.run_status.ready")
 	case "published":
-		return "已发布"
+		return i18n.T("services.run_status.published")
 	case "no_change":
-		return "无变更"
+		return i18n.T("services.run_status.no_change")
 	case "failed":
-		return "失败"
+		return i18n.T("common.failed")
 	case "cancelled":
-		return "已取消"
+		return i18n.T("services.run_status.cancelled")
 	case "interrupted":
-		return "已中断"
+		return i18n.T("services.run_status.interrupted")
 	case "rolled_back":
-		return "已回退"
+		return i18n.T("services.run_status.rolled_back")
 	default:
 		return status
 	}
@@ -1753,8 +1754,8 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 
 		// Header
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			ui.Text(c, "添加服务").FontSize(17).Bold().TextColor(SailInkStrong)
-			if SailSmallButton(c.Key("add-modal-close"), "关闭").Clicked() {
+			ui.Text(c, i18n.T("services.action.add")).FontSize(17).Bold().TextColor(SailInkStrong)
+			if SailSmallButton(c.Key("add-modal-close"), i18n.T("common.close")).Clicked() {
 				st.showAddModal = false
 			}
 		})
@@ -1762,14 +1763,14 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 		ui.Segmented(
 			c.Key("add-svc-tabs"),
 			&st.addTab,
-			"MCP Stdio 本地进程",
-			"MCP 远程 HTTP / SSE",
-			"OpenAPI / Swagger 导入",
-			"粘贴 mcpServers JSON",
+			i18n.T("services.add.tab_stdio"),
+			i18n.T("services.add.tab_remote"),
+			i18n.T("services.add.tab_openapi"),
+			i18n.T("services.add.tab_paste"),
 		).FillEqually()
 
 		if st.addError != "" {
-			SailAlertBox(c, ToneDanger, "操作失败", st.addError)
+			SailAlertBox(c, ToneDanger, i18n.T("services.add.error_title"), st.addError)
 		}
 
 		// Scrollable form body
@@ -1779,21 +1780,21 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 				u.renderAddCommonIdentityFields(c, st, "stdio")
 				ui.Row(c).FillWidth().Gap(12).Children(func() {
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-						ui.Text(c, "启动命令 *").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("services.field.command_required")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						ui.TextInput(c.Key("add-cmd"), &st.addCommand).
 							Font("monospace").
-							Placeholder("npx / uvx / 可执行路径").
+							Placeholder(i18n.T("services.add.command_placeholder")).
 							FillWidth()
 					})
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-						ui.Text(c, "工作目录").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("services.field.workdir")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						ui.TextInput(c.Key("add-cwd"), &st.addWorkDir).
 							Font("monospace").
 							FillWidth()
 					})
 				})
 				ui.Column(c).FillWidth().Gap(5).Children(func() {
-					ui.Text(c, "启动参数 (JSON Array)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+					ui.Text(c, i18n.T("services.field.args")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 					ui.TextArea(c.Key("add-args"), &st.addArgsText).
 						Font("monospace").
 						FontSize(12).
@@ -1803,8 +1804,8 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 				})
 				ui.Column(c).FillWidth().Gap(5).Children(func() {
 					ui.Row(c).FillWidth().AlignItems(ui.Baseline).Justify(ui.SpaceBetween).Children(func() {
-						ui.Text(c, "环境变量 (JSON)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-						ui.Text(c, "仅支持 ${ENV_VAR} 引用").FontSize(11.5).TextColor(SailInkMuted)
+						ui.Text(c, i18n.T("services.field.env")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("services.add.env_only")).FontSize(11.5).TextColor(SailInkMuted)
 					})
 					ui.TextArea(c.Key("add-env"), &st.addEnvText).
 						Font("monospace").
@@ -1818,25 +1819,25 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 				u.renderAddCommonIdentityFields(c, st, "remote")
 				ui.Row(c).FillWidth().Gap(12).Children(func() {
 					ui.Column(c).Grow(2).MinWidth(0).Gap(5).Children(func() {
-						ui.Text(c, "服务地址 *").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("services.field.endpoint_required")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						SailTextInput(c.Key("add-url"), &st.addEndpoint).
 							Font("monospace").
 							Placeholder("https://api.example.com/mcp").
 							FillWidth()
 					})
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-						ui.Text(c, "协议").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("common.protocol")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						SailSelect(
 							c.Key("add-remote-proto"),
 							&st.addRemoteProto,
-							[]string{"MCP Streamable HTTP", "MCP SSE (Streamable 兼容)"},
+							[]string{"MCP Streamable HTTP", i18n.T("services.add.proto_sse")},
 						).FillWidth()
 					})
 				})
 				ui.Column(c).FillWidth().Gap(5).Children(func() {
 					ui.Row(c).FillWidth().AlignItems(ui.Baseline).Justify(ui.SpaceBetween).Children(func() {
-						ui.Text(c, "请求头 (JSON)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-						ui.Text(c, "仅支持 ${ENV_VAR} 引用").FontSize(11.5).TextColor(SailInkMuted)
+						ui.Text(c, i18n.T("services.field.headers")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("services.add.env_only")).FontSize(11.5).TextColor(SailInkMuted)
 					})
 					ui.TextArea(c.Key("add-headers"), &st.addHeadersText).
 						Font("monospace").
@@ -1857,7 +1858,7 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 							FillWidth()
 					})
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-						ui.Text(c, "文档 URL").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("services.add.doc_url")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						ui.TextInput(c.Key("add-oapi-url"), &st.addOpenAPISpecURL).
 							Font("monospace").
 							Placeholder("https://api.internal.example/openapi.json").
@@ -1875,14 +1876,14 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 				})
 				ui.Row(c).FillWidth().Gap(12).Children(func() {
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-						ui.Text(c, "过滤 operationId").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("services.add.filter_operations")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						ui.TextInput(c.Key("add-oapi-ops"), &st.addOpenAPIOpsText).
 							Font("monospace").
-							Placeholder("逗号分隔，留空导入全部").
+							Placeholder(i18n.T("services.add.filter_placeholder")).
 							FillWidth()
 					})
 					ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-						ui.Text(c, "请求头 (JSON)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+						ui.Text(c, i18n.T("services.field.headers")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 						ui.TextInput(c.Key("add-oapi-hdrs"), &st.addOpenAPIHeaders).
 							Font("monospace").
 							Placeholder("{\"Authorization\": \"Bearer ${API_TOKEN}\"}").
@@ -1892,7 +1893,7 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 
 			case 3: // Paste mcpServers JSON
 				ui.Column(c).FillWidth().Gap(6).Children(func() {
-					ui.Text(c, "mcpServers 配置 JSON").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+					ui.Text(c, i18n.T("services.add.paste_label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 					ui.TextArea(c.Key("add-paste-json"), &st.addPasteText).
 						Font("monospace").
 						FontSize(12).
@@ -1906,32 +1907,32 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 		// Footer buttons
 		ui.Row(c).FillWidth().Padding(8, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(SailBorder).
 			AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			if SailButton(c.Key("add-reset"), "清空表单").Disabled(st.addBusy).Clicked() {
+			if SailButton(c.Key("add-reset"), i18n.T("services.add.clear_form")).Disabled(st.addBusy).Clicked() {
 				st.resetAddFields()
 			}
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				if SailButton(c.Key("add-cancel"), "取消").Disabled(st.addBusy).Clicked() {
+				if SailButton(c.Key("add-cancel"), i18n.T("common.cancel")).Disabled(st.addBusy).Clicked() {
 					st.showAddModal = false
 				}
 				switch st.addTab {
 				case 0, 1:
-					lbl := "连接并读取工具"
+					lbl := i18n.T("services.add.connect_and_read")
 					if st.addBusy {
-						lbl = "正在连接…"
+						lbl = i18n.T("common.connecting")
 					}
 					if SailPrimaryButton(c.Key("add-submit-mcp"), lbl).Disabled(st.addBusy).Clicked() {
 						u.submitAddMCPService(st)
 					}
 				case 2:
-					lbl := "解析并注册 OpenAPI 服务"
+					lbl := i18n.T("services.add.import_openapi")
 					if st.addBusy {
-						lbl = "正在导入…"
+						lbl = i18n.T("common.importing")
 					}
 					if SailPrimaryButton(c.Key("add-submit-oapi"), lbl).Disabled(st.addBusy).Clicked() {
 						u.submitAddOpenAPIService(st)
 					}
 				case 3:
-					if SailPrimaryButton(c.Key("add-parse-paste"), "解析并填入表单").
+					if SailPrimaryButton(c.Key("add-parse-paste"), i18n.T("services.add.parse_into_form")).
 						Disabled(strings.TrimSpace(st.addPasteText) == "").
 						Clicked() {
 						st.parsePasteJSON()
@@ -1945,19 +1946,19 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 func (u *DesktopUI) renderAddCommonIdentityFields(c *ui.Context, st *servicesPageState, keyPrefix string) {
 	ui.Row(c).FillWidth().Gap(12).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-			ui.Text(c, "服务名称 *").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+			ui.Text(c, i18n.T("services.field.name_required")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 			ui.TextInput(c.Key("add-name-"+keyPrefix), &st.addName).FillWidth()
 		})
 		ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-			ui.Text(c, "服务 ID").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+			ui.Text(c, i18n.T("services.field.service_id")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 			ui.TextInput(c.Key("add-id-"+keyPrefix), &st.addID).
 				Font("monospace").
-				Placeholder("留空自动生成").
+				Placeholder(i18n.T("services.add.id_placeholder")).
 				FillWidth()
 		})
 	})
 	ui.Column(c).FillWidth().Gap(5).Children(func() {
-		ui.Text(c, "服务描述").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+		ui.Text(c, i18n.T("services.field.description")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 		ui.TextInput(c.Key("add-desc-"+keyPrefix), &st.addDescription).FillWidth()
 	})
 }
@@ -1966,7 +1967,7 @@ func (st *servicesPageState) parsePasteJSON() {
 	st.addError = ""
 	var raw map[string]any
 	if err := json.Unmarshal([]byte(st.addPasteText), &raw); err != nil {
-		st.addError = "JSON 解析失败: " + err.Error()
+		st.addError = i18n.T("services.err.json_parse", err.Error())
 		return
 	}
 
@@ -2007,7 +2008,7 @@ func (st *servicesPageState) parsePasteJSON() {
 	var entry map[string]any
 	if mcpServers, ok := raw["mcpServers"].(map[string]any); ok {
 		if len(mcpServers) != 1 {
-			st.addError = "请一次粘贴单个 mcpServers 服务条目"
+			st.addError = i18n.T("services.add.paste_single")
 			return
 		}
 		for k, v := range mcpServers {
@@ -2019,7 +2020,7 @@ func (st *servicesPageState) parsePasteJSON() {
 		entry = raw
 	}
 	if entry == nil {
-		st.addError = "未能识别 mcpServers 服务配置对象"
+		st.addError = i18n.T("services.add.paste_unrecognized")
 		return
 	}
 
@@ -2036,7 +2037,7 @@ func (st *servicesPageState) parsePasteJSON() {
 	st.addEndpoint, _ = entry["url"].(string)
 	st.addHeadersText = marshalMapOrDefault(entry["headers"])
 	if typ, _ := entry["type"].(string); strings.EqualFold(typ, "sse") {
-		st.addRemoteProto = "MCP SSE (Streamable 兼容)"
+		st.addRemoteProto = i18n.T("services.add.proto_sse")
 	} else {
 		st.addRemoteProto = "MCP Streamable HTTP"
 	}
@@ -2077,12 +2078,12 @@ func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 				ui.Text(c, t.Name).Font("monospace").FontSize(16).Bold().TextColor(SailInkStrong)
 				ui.Text(c, t.ID).Font("monospace").FontSize(12).TextColor(SailInkMuted)
 			})
-			if SailSmallButton(c.Key("tool-modal-close"), "关闭").Clicked() {
+			if SailSmallButton(c.Key("tool-modal-close"), i18n.T("common.close")).Clicked() {
 				st.showToolModal = false
 			}
 		})
 
-		if ui.Segmented(c.Key("tool-edit-tabs"), &st.toolEditTab, "属性与 Schema", "完整 JSON").Changed() {
+		if ui.Segmented(c.Key("tool-edit-tabs"), &st.toolEditTab, i18n.T("services.tool.tab_props"), i18n.T("services.tool.tab_json")).Changed() {
 			if st.toolEditTab == 1 {
 				updated := t
 				updated.Description = st.toolEditDesc
@@ -2094,7 +2095,7 @@ func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 		}
 
 		if st.toolEditError != "" {
-			SailAlertBox(c, ToneDanger, "保存失败", st.toolEditError)
+			SailAlertBox(c, ToneDanger, i18n.T("services.tool.error_title"), st.toolEditError)
 		}
 
 		ui.Scroll(c.Key("tool-edit-scroll")).Grow(1).FillWidth().MaxHeight(460).Gap(14).Children(func() {
@@ -2108,31 +2109,31 @@ func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 				ui.Row(c).FillWidth().Gap(14).Children(func() {
 					subtlePanel(c, 160, 1, func() {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-							ui.Text(c, "开放给路由").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-							ui.Switch(c.Key("tool-edit-enabled"), &st.toolEditEnabled).Label("开放工具")
+							ui.Text(c, i18n.T("services.tool.open_section")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+							ui.Switch(c.Key("tool-edit-enabled"), &st.toolEditEnabled).Label(i18n.T("services.field.open_tools"))
 						})
 					})
 					subtlePanel(c, 160, 1, func() {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-							ui.Text(c, "只读模式").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-							ui.Switch(c.Key("tool-edit-ro"), &st.toolEditReadOnly).Label("只读工具")
+							ui.Text(c, i18n.T("services.tool.read_only_section")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+							ui.Switch(c.Key("tool-edit-ro"), &st.toolEditReadOnly).Label(i18n.T("services.tool.read_only_label"))
 						})
 					})
 				})
 
 				if t.Method != "" && t.Path != "" {
-					SailKeyValueRow(c, "HTTP 端点", t.Method+" "+t.Path, true)
+					SailKeyValueRow(c, i18n.T("services.tool.http_endpoint"), t.Method+" "+t.Path, true)
 				}
 
 				if strings.TrimSpace(st.toolEditDesc) != "" {
 					SailSubtleCard(c, func() {
-						ui.Text(c, "结构化排版预览").FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
+						ui.Text(c, i18n.T("services.tool.preview")).FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
 						SailDescriptionDetail(c, "modal-desc-"+t.ID, st.toolEditDesc)
 					})
 				}
 
 				ui.Column(c).FillWidth().Gap(5).Children(func() {
-					ui.Text(c, "功能描述").
+					ui.Text(c, i18n.T("services.tool.description")).
 						FontSize(12.5).
 						FontWeight(600).
 						TextColor(SailInkBody)
@@ -2142,7 +2143,7 @@ func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 				})
 
 				ui.Column(c).FillWidth().Gap(5).Children(func() {
-					ui.Text(c, "允许身份 (Actors)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+					ui.Text(c, i18n.T("services.tool.actors")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 					ui.TextInput(c.Key("tool-edit-actors"), &st.toolEditActors).
 						Font("monospace").
 						Placeholder("developer, observer").
@@ -2150,19 +2151,19 @@ func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 				})
 
 				SailCodeBlock(c, "INPUT SCHEMA", PrettyJSON(t.InputSchema), func() {
-					u.Notify("已复制 Input Schema")
+					u.Notify(i18n.T("services.tool.schema_copied"))
 				})
 			}
 		})
 
 		ui.Row(c).FillWidth().Padding(8, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(SailBorder).
 			AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailButton(c.Key("tool-edit-cancel"), "取消").Disabled(st.toolEditBusy).Clicked() {
+			if SailButton(c.Key("tool-edit-cancel"), i18n.T("common.cancel")).Disabled(st.toolEditBusy).Clicked() {
 				st.showToolModal = false
 			}
-			lbl := "保存更改"
+			lbl := i18n.T("services.tool.save")
 			if st.toolEditBusy {
-				lbl = "保存中…"
+				lbl = i18n.T("common.saving")
 			}
 			if SailPrimaryButton(c.Key("tool-edit-save"), lbl).Disabled(st.toolEditBusy).Clicked() {
 				u.saveEditedTool(st, t)
@@ -2196,27 +2197,27 @@ func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState,
 			Shadow(0, 12, 36, 0, SailModalShadow)
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			ui.Text(c, "添加 HTTP 工具").FontSize(17).Bold().TextColor(SailInkStrong)
-			if SailSmallButton(c.Key("http-tool-close"), "关闭").Clicked() {
+			ui.Text(c, i18n.T("services.detail.add_http_tool")).FontSize(17).Bold().TextColor(SailInkStrong)
+			if SailSmallButton(c.Key("http-tool-close"), i18n.T("common.close")).Clicked() {
 				st.showAddHTTPTool = false
 			}
 		})
 
 		if st.httpToolError != "" {
-			SailAlertBox(c, ToneDanger, "创建失败", st.httpToolError)
+			SailAlertBox(c, ToneDanger, i18n.T("services.http_tool.error_title"), st.httpToolError)
 		}
 
 		ui.Scroll(c.Key("http-tool-scroll")).Grow(1).FillWidth().MaxHeight(440).Gap(10).Children(func() {
 			ui.Row(c).FillWidth().Gap(12).Children(func() {
 				ui.Column(c).Grow(2).MinWidth(0).Gap(5).Children(func() {
-					ui.Text(c, "工具名称 *").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+					ui.Text(c, i18n.T("services.http_tool.name_required")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 					SailTextInput(c.Key("http-tool-name"), &st.httpToolName).
 						Font("monospace").
 						Placeholder("search_documents").
 						FillWidth()
 				})
 				ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-					ui.Text(c, "HTTP 方法").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+					ui.Text(c, i18n.T("services.http_tool.method")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 					if SailSelect(c.Key("http-tool-method"), &st.httpToolMethod, []string{"GET", "POST", "PUT", "PATCH", "DELETE"}).
 						FillWidth().
 						Changed() {
@@ -2226,7 +2227,7 @@ func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState,
 			})
 
 			ui.Column(c).FillWidth().Gap(5).Children(func() {
-				ui.Text(c, "相对路径 *").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+				ui.Text(c, i18n.T("services.http_tool.path_required")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 				ui.TextInput(c.Key("http-tool-path"), &st.httpToolPath).
 					Font("monospace").
 					Placeholder("/documents/search").
@@ -2234,12 +2235,12 @@ func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState,
 			})
 
 			ui.Column(c).FillWidth().Gap(5).Children(func() {
-				ui.Text(c, "功能描述 *").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+				ui.Text(c, i18n.T("services.http_tool.description_required")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 				ui.TextInput(c.Key("http-tool-desc"), &st.httpToolDesc).FillWidth()
 			})
 
 			ui.Column(c).FillWidth().Gap(5).Children(func() {
-				ui.Text(c, "输入 Schema (JSON)").FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+				ui.Text(c, i18n.T("services.http_tool.schema")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
 				ui.TextArea(c.Key("http-tool-schema"), &st.httpToolSchema).
 					Font("monospace").
 					FontSize(12).
@@ -2247,17 +2248,17 @@ func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState,
 					FillWidth()
 			})
 
-			ui.Checkbox(c.Key("http-tool-ro"), &st.httpToolReadOnly, "只读工具")
+			ui.Checkbox(c.Key("http-tool-ro"), &st.httpToolReadOnly, i18n.T("services.tool.read_only_label"))
 		})
 
 		ui.Row(c).FillWidth().Padding(8, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(SailBorder).
 			AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailButton(c.Key("http-tool-cancel"), "取消").Disabled(st.httpToolBusy).Clicked() {
+			if SailButton(c.Key("http-tool-cancel"), i18n.T("common.cancel")).Disabled(st.httpToolBusy).Clicked() {
 				st.showAddHTTPTool = false
 			}
-			lbl := "保存并启用工具"
+			lbl := i18n.T("services.http_tool.save")
 			if st.httpToolBusy {
-				lbl = "保存中…"
+				lbl = i18n.T("common.saving")
 			}
 			if SailPrimaryButton(c.Key("http-tool-submit"), lbl).Disabled(st.httpToolBusy).Clicked() {
 				u.submitAddHTTPTool(st, server.ID)
@@ -2286,9 +2287,9 @@ func (u *DesktopUI) toggleServerEnabled(st *servicesPageState, server apitypes.S
 			return err
 		}
 		if enabled {
-			u.Notify("已启用 " + server.Name)
+			u.Notify(i18n.T("services.toast.server_enabled", server.Name))
 		} else {
-			u.Notify("已停用 " + server.Name)
+			u.Notify(i18n.T("services.toast.server_disabled", server.Name))
 		}
 		return nil
 	})
@@ -2310,7 +2311,7 @@ func (u *DesktopUI) syncServerTools(st *servicesPageState, server apitypes.Serve
 		if err := u.RefreshSync(); err != nil {
 			return err
 		}
-		u.Notify(fmt.Sprintf("已同步 %d 个工具定义（新增或变更工具默认关闭）", imported))
+		u.Notify(fmt.Sprintf(i18n.T("services.toast.synced"), imported))
 		return nil
 	})
 }
@@ -2333,7 +2334,7 @@ func (u *DesktopUI) applyServerToolWhitelist(st *servicesPageState, serverID str
 		if err := u.RefreshSync(); err != nil {
 			return err
 		}
-		u.Notify(fmt.Sprintf("%s（当前开放 %d 个工具）", msg, len(ids)))
+		u.Notify(fmt.Sprintf(i18n.T("services.toast.whitelist_applied"), msg, len(ids)))
 		return nil
 	})
 }
@@ -2349,9 +2350,9 @@ func (u *DesktopUI) toggleSingleToolWhitelist(st *servicesPageState, serverID st
 			ids = append(ids, t.ID)
 		}
 	}
-	label := "已关闭工具"
+	label := i18n.T("services.toast.tools_closed")
 	if enable {
-		label = "已开放工具"
+		label = i18n.T("services.toast.tools_opened")
 	}
 	u.applyServerToolWhitelist(st, serverID, ids, label)
 }
@@ -2380,7 +2381,7 @@ func (u *DesktopUI) deactivateService(st *servicesPageState, server apitypes.Ser
 			u.clearActiveService()
 			st.detailServerID = ""
 		})
-		u.Notify("已停用服务「" + server.Name + "」并关闭全部开放工具")
+		u.Notify(i18n.T("services.toast.service_deactivated", server.Name))
 		return nil
 	})
 }
@@ -2411,17 +2412,17 @@ func (u *DesktopUI) submitAddMCPService(st *servicesPageState) {
 	if st.addTab == 0 {
 		cmd := strings.TrimSpace(st.addCommand)
 		if cmd == "" {
-			st.addError = "stdio 服务需要填写启动命令"
+			st.addError = i18n.T("services.err.command_required")
 			return
 		}
 		args, err := parseStringSliceJSON(st.addArgsText)
 		if err != nil {
-			st.addError = "启动参数格式错误: " + err.Error()
+			st.addError = i18n.T("services.err.args_format", err.Error())
 			return
 		}
 		env, err := parseStringMapJSON(st.addEnvText)
 		if err != nil {
-			st.addError = "环境变量格式错误: " + err.Error()
+			st.addError = i18n.T("services.err.env_format", err.Error())
 			return
 		}
 		payload.Transport = "stdio"
@@ -2432,12 +2433,12 @@ func (u *DesktopUI) submitAddMCPService(st *servicesPageState) {
 	} else {
 		ep := strings.TrimSpace(st.addEndpoint)
 		if ep == "" {
-			st.addError = "请填写 MCP 服务地址 URL"
+			st.addError = i18n.T("services.err.endpoint_required")
 			return
 		}
 		headers, err := parseStringMapJSON(st.addHeadersText)
 		if err != nil {
-			st.addError = "请求头格式错误: " + err.Error()
+			st.addError = i18n.T("services.err.headers_format", err.Error())
 			return
 		}
 		payload.Transport = "http"
@@ -2476,7 +2477,7 @@ func (u *DesktopUI) submitAddMCPService(st *servicesPageState) {
 		})
 		msg := check.Message
 		if msg == "" {
-			msg = "服务已连接并同步工具"
+			msg = i18n.T("services.toast.connected")
 		}
 		u.Notify(msg)
 		return nil
@@ -2499,18 +2500,18 @@ func (u *DesktopUI) submitAddOpenAPIService(st *servicesPageState) {
 	}
 	baseURL := strings.TrimSpace(st.addOpenAPIBaseURL)
 	if baseURL == "" {
-		st.addError = "请填写 API Base URL"
+		st.addError = i18n.T("services.err.base_url_required")
 		return
 	}
 	headers, err := parseStringMapJSON(st.addOpenAPIHeaders)
 	if err != nil {
-		st.addError = "请求头格式错误: " + err.Error()
+		st.addError = i18n.T("services.err.headers_format", err.Error())
 		return
 	}
 	specBytes := []byte(strings.TrimSpace(st.addOpenAPISpecText))
 	specURL := strings.TrimSpace(st.addOpenAPISpecURL)
 	if len(specBytes) == 0 && specURL == "" {
-		st.addError = "请粘贴 OpenAPI JSON/YAML 内容或填写文档 URL"
+		st.addError = i18n.T("services.err.openapi_required")
 		return
 	}
 
@@ -2555,7 +2556,7 @@ func (u *DesktopUI) submitAddOpenAPIService(st *servicesPageState) {
 			st.enterDetail(id)
 			u.OpenServiceDetail(id)
 		})
-		u.Notify(fmt.Sprintf("已从 OpenAPI 导入 %d 个工具到 %s", count, name))
+		u.Notify(fmt.Sprintf(i18n.T("services.toast.openapi_imported"), count, name))
 		return nil
 	})
 }
@@ -2590,7 +2591,7 @@ func (u *DesktopUI) saveConnForm(st *servicesPageState, orig apitypes.Server, te
 			}
 			msg = check.Message
 			if msg == "" {
-				msg = "连接配置已保存并测试通过"
+				msg = i18n.T("services.toast.conn_saved_tested")
 			}
 		} else {
 			if _, callErr := u.Client.SaveServer(ctx, payload); callErr != nil {
@@ -2604,7 +2605,7 @@ func (u *DesktopUI) saveConnForm(st *servicesPageState, orig apitypes.Server, te
 				})
 				return nil
 			}
-			msg = "连接配置已保存"
+			msg = i18n.T("services.toast.conn_saved")
 		}
 		if err := u.RefreshSync(); err != nil {
 			u.updateUI(func() { st.connBusy = false })
@@ -2629,7 +2630,7 @@ func (u *DesktopUI) saveConnJSON(st *servicesPageState, orig apitypes.Server) {
 	st.connError = ""
 	var payload apitypes.Server
 	if err := json.Unmarshal([]byte(st.connRawJSON), &payload); err != nil {
-		st.connError = "JSON 格式无效: " + err.Error()
+		st.connError = i18n.T("services.err.json_invalid", err.Error())
 		return
 	}
 	if payload.ID == "" {
@@ -2661,7 +2662,7 @@ func (u *DesktopUI) saveConnJSON(st *servicesPageState, orig apitypes.Server) {
 			st.connHydratedID = ""
 			st.credentialServerID = ""
 		})
-		u.Notify("服务 JSON 定义已保存")
+		u.Notify(i18n.T("services.toast.json_saved"))
 		return nil
 	})
 }
@@ -2681,7 +2682,7 @@ func (u *DesktopUI) probeServerConnection(st *servicesPageState, server apitypes
 				return err
 			}
 			_ = u.RefreshSync()
-			u.Notify("探活失败: " + formatAPIError(err))
+			u.Notify(i18n.T("services.err.probe_failed", formatAPIError(err)))
 			return nil
 		}
 		if syncErr := u.RefreshSync(); syncErr != nil && apiclient.IsUnauthorized(syncErr) {
@@ -2693,7 +2694,7 @@ func (u *DesktopUI) probeServerConnection(st *servicesPageState, server apitypes
 		})
 		msg := check.Message
 		if msg == "" {
-			msg = "连接探活通过"
+			msg = i18n.T("services.toast.probe_passed")
 		}
 		u.Notify(msg)
 		return nil
@@ -2708,7 +2709,7 @@ func (u *DesktopUI) saveEditedTool(st *servicesPageState, orig apitypes.Tool) {
 	var payload apitypes.Tool
 	if st.toolEditTab == 1 {
 		if err := json.Unmarshal([]byte(st.toolEditRawJSON), &payload); err != nil {
-			st.toolEditError = "JSON 格式无效: " + err.Error()
+			st.toolEditError = i18n.T("services.err.json_invalid", err.Error())
 			return
 		}
 	} else {
@@ -2744,7 +2745,7 @@ func (u *DesktopUI) saveEditedTool(st *servicesPageState, orig apitypes.Tool) {
 			st.toolEditBusy = false
 			st.showToolModal = false
 		})
-		u.Notify("工具定义已保存")
+		u.Notify(i18n.T("services.toast.tool_saved"))
 		return nil
 	})
 }
@@ -2758,12 +2759,12 @@ func (u *DesktopUI) submitAddHTTPTool(st *servicesPageState, serverID string) {
 	path := strings.TrimSpace(st.httpToolPath)
 	desc := strings.TrimSpace(st.httpToolDesc)
 	if name == "" || path == "" || desc == "" {
-		st.httpToolError = "工具名称、相对路径与描述均为必填项"
+		st.httpToolError = i18n.T("services.err.http_tool_required")
 		return
 	}
 	var schema map[string]any
 	if err := json.Unmarshal([]byte(st.httpToolSchema), &schema); err != nil {
-		st.httpToolError = "JSON Schema 格式无效: " + err.Error()
+		st.httpToolError = i18n.T("services.err.schema_invalid", err.Error())
 		return
 	}
 	payload := apitypes.Tool{
@@ -2805,7 +2806,7 @@ func (u *DesktopUI) submitAddHTTPTool(st *servicesPageState, serverID string) {
 			st.httpToolBusy = false
 			st.showAddHTTPTool = false
 		})
-		u.Notify("HTTP 工具已创建并启用")
+		u.Notify(i18n.T("services.toast.http_tool_created"))
 		return nil
 	})
 }
@@ -2939,9 +2940,9 @@ func (u *DesktopUI) saveMaintenanceConfig(st *servicesPageState, server apitypes
 			}
 		})
 		if runNow {
-			u.Notify("已保存维护策略并加入检查队列")
+			u.Notify(i18n.T("services.toast.maint_saved_run"))
 		} else {
-			u.Notify("维护策略已保存")
+			u.Notify(i18n.T("services.toast.maint_saved"))
 		}
 		return nil
 	})

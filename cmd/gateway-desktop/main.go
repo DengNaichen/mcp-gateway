@@ -17,6 +17,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"gatewaylab/internal/buildinfo"
+	"gatewaylab/internal/i18n"
 )
 
 //go:embed assets/tray.png
@@ -57,11 +58,11 @@ func (d *desktopApp) setupMenus() {
 			mygo.Separator(),
 			{Role: mygo.RoleQuit},
 		}},
-		{Label: "文件", Submenu: []*mygo.MenuItem{
-			{Label: "打开控制面窗口", Accelerator: "CmdOrCtrl+1", Click: func(*mygo.MenuItem, *mygo.Window) {
+		{Label: i18n.T("menu.file"), Submenu: []*mygo.MenuItem{
+			{Label: i18n.T("menu.open_window"), Accelerator: "CmdOrCtrl+1", Click: func(*mygo.MenuItem, *mygo.Window) {
 				d.showMainWindow()
 			}},
-			{Label: "刷新控制面数据", Accelerator: "CmdOrCtrl+R", Click: func(*mygo.MenuItem, *mygo.Window) {
+			{Label: i18n.T("menu.refresh_data"), Accelerator: "CmdOrCtrl+R", Click: func(*mygo.MenuItem, *mygo.Window) {
 				d.mu.Lock()
 				uiApp := d.ui
 				d.mu.Unlock()
@@ -69,14 +70,14 @@ func (d *desktopApp) setupMenus() {
 					uiApp.Refresh()
 				}
 			}},
-			{Label: "复制 MCP 接入地址", Accelerator: "CmdOrCtrl+Shift+C", Click: func(*mygo.MenuItem, *mygo.Window) {
+			{Label: i18n.T("menu.copy_mcp_url"), Accelerator: "CmdOrCtrl+Shift+C", Click: func(*mygo.MenuItem, *mygo.Window) {
 				d.copyMCPURL()
 			}},
 			mygo.Separator(),
 			{Role: mygo.RoleClose},
 		}},
 		{Role: mygo.RoleEditMenu},
-		{Label: "视图", Submenu: []*mygo.MenuItem{
+		{Label: i18n.T("menu.view"), Submenu: []*mygo.MenuItem{
 			{Role: mygo.RoleToggleFullScreen},
 		}},
 		{Role: mygo.RoleWindowMenu},
@@ -84,25 +85,25 @@ func (d *desktopApp) setupMenus() {
 	mygo.App.SetMenu(appMenu)
 
 	mygo.App.Dock.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-		{Label: "打开控制面窗口", Click: func(*mygo.MenuItem, *mygo.Window) { d.showMainWindow() }},
-		{Label: "复制 MCP 接入地址", Click: func(*mygo.MenuItem, *mygo.Window) { d.copyMCPURL() }},
+		{Label: i18n.T("menu.open_window"), Click: func(*mygo.MenuItem, *mygo.Window) { d.showMainWindow() }},
+		{Label: i18n.T("menu.copy_mcp_url"), Click: func(*mygo.MenuItem, *mygo.Window) { d.copyMCPURL() }},
 	}))
 }
 
 func (d *desktopApp) setupTray() {
 	menu := mygo.NewMenu([]*mygo.MenuItem{
-		{ID: "open", Label: "打开控制面窗口", Click: func(*mygo.MenuItem, *mygo.Window) {
+		{ID: "open", Label: i18n.T("menu.open_window"), Click: func(*mygo.MenuItem, *mygo.Window) {
 			d.showMainWindow()
 		}},
-		{ID: "status", Label: "状态：正在启动网关…", Disabled: true},
+		{ID: "status", Label: i18n.T("tray.status.starting"), Disabled: true},
 		mygo.Separator(),
-		{ID: "copy-mcp", Label: "复制 MCP 接入地址", Disabled: true, Click: func(*mygo.MenuItem, *mygo.Window) {
+		{ID: "copy-mcp", Label: i18n.T("menu.copy_mcp_url"), Disabled: true, Click: func(*mygo.MenuItem, *mygo.Window) {
 			d.copyMCPURL()
 		}},
 		mygo.Separator(),
 		channelUpdateMenuItem(),
 		mygo.Separator(),
-		{ID: "quit", Label: "退出 " + buildinfo.Current().Name, Accelerator: "CmdOrCtrl+Q", Click: func(*mygo.MenuItem, *mygo.Window) {
+		{ID: "quit", Label: i18n.T("menu.quit", buildinfo.Current().Name), Accelerator: "CmdOrCtrl+Q", Click: func(*mygo.MenuItem, *mygo.Window) {
 			d.requestQuit()
 		}},
 	})
@@ -125,6 +126,32 @@ func (d *desktopApp) setupTray() {
 	d.mu.Unlock()
 }
 
+func (d *desktopApp) refreshLocalizedMenus() {
+	d.setupMenus()
+
+	d.mu.Lock()
+	menu := d.trayMenu
+	rt := d.runtime
+	d.mu.Unlock()
+	if menu == nil {
+		return
+	}
+	if item := menu.ItemByID("open"); item != nil {
+		item.SetLabel(i18n.T("menu.open_window"))
+	}
+	if item := menu.ItemByID("copy-mcp"); item != nil {
+		item.SetLabel(i18n.T("menu.copy_mcp_url"))
+	}
+	if item := menu.ItemByID("quit"); item != nil {
+		item.SetLabel(i18n.T("menu.quit", buildinfo.Current().Name))
+	}
+	if rt != nil {
+		d.updateTrayReady(rt)
+	} else if item := menu.ItemByID("status"); item != nil {
+		item.SetLabel(i18n.T("tray.status.starting"))
+	}
+}
+
 func (d *desktopApp) updateTrayReady(rt *gatewayRuntime) {
 	d.mu.Lock()
 	tray := d.tray
@@ -134,9 +161,9 @@ func (d *desktopApp) updateTrayReady(rt *gatewayRuntime) {
 		return
 	}
 
-	statusLabel := fmt.Sprintf("状态：运行中 (%s)", rt.ListenAddr)
+	statusLabel := fmt.Sprintf(i18n.T("app.tray.status.running"), rt.ListenAddr)
 	if rt.Mode == modeAttached {
-		statusLabel = fmt.Sprintf("状态：复用现有实例 (%s)", rt.ListenAddr)
+		statusLabel = fmt.Sprintf(i18n.T("app.tray.status.reused"), rt.ListenAddr)
 	}
 
 	if item := menu.ItemByID("status"); item != nil {
@@ -159,7 +186,7 @@ func (d *desktopApp) copyMCPURL() {
 	}
 	mygo.Clipboard.WriteText(rt.MCPURL)
 	if uiApp != nil {
-		uiApp.Notify("已复制 MCP 接入端点")
+		uiApp.Notify(i18n.T("app.toast.mcp_endpoint_copied"))
 	}
 }
 
@@ -171,6 +198,11 @@ func (d *desktopApp) showMainWindow() {
 		uiApp := d.ui
 		if rt != nil && uiApp == nil {
 			uiApp = NewDesktopUI(rt)
+			uiApp.OnLanguageChanged = func(i18n.Lang) {
+				mygo.RunOnMain(func() {
+					d.refreshLocalizedMenus()
+				})
+			}
 			d.ui = uiApp
 		}
 		d.mu.Unlock()
@@ -231,10 +263,10 @@ func (d *desktopApp) startBackend() {
 	if conflict != nil {
 		res, dlgErr := mygo.Dialog.Message(mygo.MessageOptions{
 			Type:          mygo.MessageWarning,
-			Title:         "MCP Gateway 端口冲突",
-			Message:       fmt.Sprintf("监听地址 %s 已被其他程序占用", d.addr),
-			Detail:        "端口已占用，未找到与当前渠道、版本和数据目录匹配的 Gateway。您可以改用系统分配的本机空闲端口启动，或退出后再试。",
-			Buttons:       []string{"使用空闲端口启动", "退出"},
+			Title:         i18n.T("app.dialog.port_conflict.title"),
+			Message:       fmt.Sprintf(i18n.T("app.dialog.port_conflict.message"), d.addr),
+			Detail:        i18n.T("app.dialog.port_conflict.detail"),
+			Buttons:       []string{i18n.T("app.dialog.port_conflict.use_free_port"), i18n.T("app.action.quit")},
 			DefaultButton: 0,
 			CancelButton:  1,
 		})
@@ -246,7 +278,7 @@ func (d *desktopApp) startBackend() {
 	}
 	if err != nil {
 		slog.Error("start gateway desktop backend", "error", err)
-		mygo.Dialog.Error("MCP Gateway 启动失败", err.Error())
+		mygo.Dialog.Error(i18n.T("app.dialog.start_failed.title"), err.Error())
 		d.requestQuit()
 		return
 	}
@@ -331,6 +363,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	applyDesktopPrefs(dataDir)
 
 	if mygo.App.IsPackaged() && mygo.App.Name() != buildinfo.Current().Name {
 		return fmt.Errorf("package identity %q does not match compiled channel %q; rebuild using scripts/build-channel.mjs", mygo.App.Name(), buildinfo.Current().Channel)
@@ -421,5 +454,5 @@ func channelUpdateMenuItem() *mygo.MenuItem {
 	if buildinfo.Current().Channel == "stable" {
 		return updater.MenuItem()
 	}
-	return &mygo.MenuItem{Label: "开发版 · 自动更新已关闭", Disabled: true}
+	return &mygo.MenuItem{Label: i18n.T("app.update.dev_disabled"), Disabled: true}
 }
