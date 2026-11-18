@@ -88,13 +88,20 @@ func (u *DesktopUI) overviewQuickVerifyModel(ov *overviewLocalState) {
 	})
 }
 
-func (u *DesktopUI) renderOverview(c *ui.Context) {
-	if u.State == nil {
-		return
-	}
-	state := u.State
-	ov := u.overviewState()
+type overviewSnapshot struct {
+	realServers          []apitypes.Server
+	realTools            []apitypes.Tool
+	toolsByServer        map[string][]apitypes.Tool
+	toolByID             map[string]apitypes.Tool
+	readyServerCount     int
+	errServerCount       int
+	pendingServerCount   int
+	enabledRealToolCount int
+	modelReady           bool
+	maxTopHits           int
+}
 
+func (u *DesktopUI) buildOverviewSnapshot(state *apitypes.Bootstrap, telemetry GatewayTelemetry) overviewSnapshot {
 	realServers := make([]apitypes.Server, 0, len(state.Registry.Servers))
 	realServerMap := make(map[string]bool, len(state.Registry.Servers))
 	for _, s := range state.Registry.Servers {
@@ -132,25 +139,44 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 		}
 	}
 
-	enabledRealTools := make([]apitypes.Tool, 0, len(realTools))
+	enabledRealToolCount := 0
 	for _, t := range realTools {
 		if t.Enabled && readyServerMap[t.ServerID] {
-			enabledRealTools = append(enabledRealTools, t)
+			enabledRealToolCount++
 		}
 	}
 
 	setup := state.Setup
-	modelReady := setup.ModelReady && (setup.ModelCheck == nil || !setup.ModelCheck.Stale)
-	telemetry := u.Telemetry
-
 	maxTopHits := 1
 	if len(telemetry.TopTools) > 0 && telemetry.TopTools[0].Hits > 0 {
 		maxTopHits = telemetry.TopTools[0].Hits
 	}
 
-	// Render floating rounded slide-over drawer when active.
+	return overviewSnapshot{
+		realServers:          realServers,
+		realTools:            realTools,
+		toolsByServer:        toolsByServer,
+		toolByID:             toolByID,
+		readyServerCount:     readyServerCount,
+		errServerCount:       errServerCount,
+		pendingServerCount:   pendingServerCount,
+		enabledRealToolCount: enabledRealToolCount,
+		modelReady:           setup.ModelReady && (setup.ModelCheck == nil || !setup.ModelCheck.Stale),
+		maxTopHits:           maxTopHits,
+	}
+}
+
+func (u *DesktopUI) renderOverview(c *ui.Context) {
+	if u.State == nil {
+		return
+	}
+	state := u.State
+	ov := u.overviewState()
+	telemetry := u.Telemetry
+	snap := u.buildOverviewSnapshot(state, telemetry)
+
 	if ov.drawerOpen {
-		u.renderOverviewDrawer(c, ov, state, realTools, toolByID, telemetry)
+		u.renderOverviewDrawer(c, ov, state, snap, telemetry)
 	}
 
 	// 1. Clean Page Header (pure runtime gateway actions).
@@ -175,27 +201,15 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 	})
 
 	// 2. Day-0 / Unverified Setup Banner (native safety guard).
-	showSetupBanner := !ov.bannerDismissed && (!setup.ToolsReady || !modelReady)
-	if showSetupBanner {
-		u.renderOverviewSetupBanner(c, ov, state, realServers)
+	if !ov.bannerDismissed && (!state.Setup.ToolsReady || !snap.modelReady) {
+		u.renderOverviewSetupBanner(c, ov, state, snap.realServers)
 	}
-
 	if ov.testErrTitle != "" || ov.testErrDetail != "" {
 		u.renderOverviewTestError(c, ov)
 	}
 
 	// 3. 4-Column Runtime Signal KPI Grid.
-	u.renderOverviewKPIGrid(
-		c,
-		state,
-		telemetry,
-		readyServerCount,
-		len(realServers),
-		errServerCount,
-		pendingServerCount,
-		len(enabledRealTools),
-		len(realTools),
-	)
+	u.renderOverviewKPIGrid(c, state, telemetry, snap)
 
 	// 4. 12-Hour Request Pulse Strip (48 x 15-min buckets).
 	u.renderOverviewPulseCard(c, ov, telemetry.PulseBuckets)
@@ -207,8 +221,8 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 		Gap(20).
 		AlignItems(ui.Stretch).
 		Children(func() {
-			u.renderOverviewRecentLogsCard(c, ov, state.Events, toolByID)
-			u.renderOverviewRightSwitchCard(c, ov, state, realServers, realTools, telemetry.TopTools, maxTopHits)
+			u.renderOverviewRecentLogsCard(c, ov, state.Events, snap.toolByID)
+			u.renderOverviewRightSwitchCard(c, ov, snap, telemetry)
 		})
 }
 
@@ -348,144 +362,141 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 	c *ui.Context,
 	state *apitypes.Bootstrap,
 	telemetry GatewayTelemetry,
-	readyServerCount int,
-	realServerCount int,
-	errServerCount int,
-	pendingServerCount int,
-	enabledRealToolCount int,
-	realToolCount int,
+	snap overviewSnapshot,
 ) {
-	settings := state.Settings
-
 	ui.Grid(c).Columns(4).Gap(16).FillWidth().Children(func() {
-		// Card 1: Gateway Requests
-		ovMetricCard(c, func() {
-			ui.Text(c, i18n.T("overview.metric.requests")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+		ovRenderRequestsCard(c, telemetry)
+		ovRenderSuccessRateCard(c, telemetry)
+		ovRenderSavingsCard(c, telemetry, state.Settings.MaxTools)
+		ovRenderServicesCard(c, snap)
+	})
+}
 
-			ui.Textf(c, "%d", telemetry.SampleSize).
+func ovRenderRequestsCard(c *ui.Context, telemetry GatewayTelemetry) {
+	ovMetricCard(c, func() {
+		ui.Text(c, i18n.T("overview.metric.requests")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+
+		ui.Textf(c, "%d", telemetry.SampleSize).
+			FontSize(24).
+			Bold().
+			TextColor(SailInkStrong).
+			FontFeatures("tnum").
+			SingleLine()
+
+		reqHint := fmt.Sprintf(i18n.T("overview.metric.requests_hint"), telemetry.DiscoverCount, telemetry.InvokeCount)
+		if telemetry.AgentCount > 0 {
+			reqHint += fmt.Sprintf(i18n.T("overview.metric.requests_hint_agent"), telemetry.AgentCount)
+		}
+		ui.Text(c, reqHint).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
+	})
+}
+
+func ovRenderSuccessRateCard(c *ui.Context, telemetry GatewayTelemetry) {
+	ovMetricCard(c, func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(6).Children(func() {
+			ui.Text(c, i18n.T("overview.metric.success_rate")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+			if telemetry.ErrorCount > 0 {
+				SailBadge(c, fmt.Sprintf(i18n.T("overview.metric.failures"), telemetry.ErrorCount), ToneDanger)
+			}
+		})
+
+		rateStr := "—"
+		if telemetry.SuccessRatePct != nil {
+			rateStr = fmt.Sprintf("%.1f%%", *telemetry.SuccessRatePct)
+		}
+		ui.Text(c, rateStr).FontSize(24).Bold().TextColor(SailInkStrong).FontFeatures("tnum").SingleLine()
+
+		unmatched := telemetry.NoMatchCount + telemetry.NeedsContextCount
+		var rateHint string
+		switch {
+		case telemetry.SampleSize == 0:
+			rateHint = i18n.T("overview.metric.no_requests")
+		case telemetry.ErrorCount > 0:
+			rateHint = fmt.Sprintf(i18n.T("overview.metric.rate_errors"), telemetry.ErrorCount, unmatched)
+		case unmatched > 0:
+			rateHint = fmt.Sprintf(i18n.T("overview.metric.rate_unmatched"), unmatched)
+		default:
+			rateHint = i18n.T("overview.metric.rate_clean")
+		}
+		ui.Text(c, rateHint).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
+	})
+}
+
+func ovRenderSavingsCard(c *ui.Context, telemetry GatewayTelemetry, maxTools int) {
+	ovMetricCard(c, func() {
+		ui.Text(c, i18n.T("overview.metric.context_savings")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+
+		compStr := "—"
+		if telemetry.CompressionPct != nil {
+			compStr = fmt.Sprintf("~%.0f%%", math.Round(*telemetry.CompressionPct))
+		}
+		ui.Text(c, compStr).FontSize(24).Bold().TextColor(SailInkStrong).FontFeatures("tnum").SingleLine()
+
+		if telemetry.AvgEligible == nil || telemetry.AvgSelectedOnHit == nil {
+			ui.Textf(c, i18n.T("overview.metric.max_tools"), maxTools).
+				FontSize(12).
+				TextColor(SailInkMuted).
+				FontFeatures("tnum").
+				SingleLine()
+			return
+		}
+
+		keptPct := max(float32(4), min(float32(100), float32(math.Round(100.0-*telemetry.CompressionPct))))
+		ui.Column(c).FillWidth().Gap(6).Children(func() {
+			ui.Textf(
+				c,
+				i18n.T("overview.metric.avg_candidates"),
+				int(math.Round(*telemetry.AvgEligible)),
+				*telemetry.AvgSelectedOnHit,
+			).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
+
+			ui.Row(c).
+				FillWidth().
+				Height(4).
+				Radius(999).
+				Background(SailBgMuted).
+				Clip().
+				Tooltip(fmt.Sprintf(i18n.T("overview.metric.candidates_tooltip"), int(math.Round(*telemetry.AvgEligible)), float64(keptPct))).
+				Children(func() {
+					ui.Box(c).WidthPercent(keptPct).FillHeight().Radius(999).Background(SailAccent)
+				})
+		})
+	})
+}
+
+func ovRenderServicesCard(c *ui.Context, snap overviewSnapshot) {
+	ovMetricCard(c, func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(6).Children(func() {
+			ui.Text(c, i18n.T("overview.metric.services")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+			if snap.errServerCount > 0 {
+				SailBadge(c, fmt.Sprintf(i18n.T("overview.metric.services_errors"), snap.errServerCount), ToneDanger)
+			} else if snap.pendingServerCount > 0 {
+				SailBadge(c, fmt.Sprintf(i18n.T("overview.metric.services_pending"), snap.pendingServerCount), ToneWarning)
+			}
+		})
+
+		ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(5).Children(func() {
+			ui.Textf(c, "%d", snap.readyServerCount).
 				FontSize(24).
 				Bold().
 				TextColor(SailInkStrong).
 				FontFeatures("tnum").
 				SingleLine()
-
-			reqHint := fmt.Sprintf(i18n.T("overview.metric.requests_hint"), telemetry.DiscoverCount, telemetry.InvokeCount)
-			if telemetry.AgentCount > 0 {
-				reqHint += fmt.Sprintf(i18n.T("overview.metric.requests_hint_agent"), telemetry.AgentCount)
-			}
-			ui.Text(c, reqHint).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
+			ui.Textf(c, i18n.T("overview.metric.services_ready"), len(snap.realServers)).
+				FontSize(13).
+				FontWeight(500).
+				TextColor(SailInkMuted).
+				FontFeatures("tnum").
+				SingleLine()
 		})
 
-		// Card 2: Request Success Rate
-		ovMetricCard(c, func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(6).Children(func() {
-				ui.Text(c, i18n.T("overview.metric.success_rate")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
-				if telemetry.ErrorCount > 0 {
-					SailBadge(c, fmt.Sprintf(i18n.T("overview.metric.failures"), telemetry.ErrorCount), ToneDanger)
-				}
-			})
-
-			rateStr := "—"
-			if telemetry.SuccessRatePct != nil {
-				rateStr = fmt.Sprintf("%.1f%%", *telemetry.SuccessRatePct)
-			}
-			ui.Text(c, rateStr).FontSize(24).Bold().TextColor(SailInkStrong).FontFeatures("tnum").SingleLine()
-
-			unmatched := telemetry.NoMatchCount + telemetry.NeedsContextCount
-			var rateHint string
-			switch {
-			case telemetry.SampleSize == 0:
-				rateHint = i18n.T("overview.metric.no_requests")
-			case telemetry.ErrorCount > 0:
-				rateHint = fmt.Sprintf(i18n.T("overview.metric.rate_errors"), telemetry.ErrorCount, unmatched)
-			case unmatched > 0:
-				rateHint = fmt.Sprintf(i18n.T("overview.metric.rate_unmatched"), unmatched)
-			default:
-				rateHint = i18n.T("overview.metric.rate_clean")
-			}
-			ui.Text(c, rateHint).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
-		})
-
-		// Card 3: Context Savings + Micro Comparison Bar
-		ovMetricCard(c, func() {
-			ui.Text(c, i18n.T("overview.metric.context_savings")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
-
-			compStr := "—"
-			if telemetry.CompressionPct != nil {
-				compStr = fmt.Sprintf("~%.0f%%", math.Round(*telemetry.CompressionPct))
-			}
-			ui.Text(c, compStr).FontSize(24).Bold().TextColor(SailInkStrong).FontFeatures("tnum").SingleLine()
-
-			if telemetry.AvgEligible != nil && telemetry.AvgSelectedOnHit != nil {
-				keptPct := float32(math.Round(100.0 - *telemetry.CompressionPct))
-				if keptPct < 4 {
-					keptPct = 4
-				}
-				if keptPct > 100 {
-					keptPct = 100
-				}
-				ui.Column(c).FillWidth().Gap(6).Children(func() {
-					ui.Textf(
-						c,
-						i18n.T("overview.metric.avg_candidates"),
-						int(math.Round(*telemetry.AvgEligible)),
-						*telemetry.AvgSelectedOnHit,
-					).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
-
-					ui.Row(c).
-						FillWidth().
-						Height(4).
-						Radius(999).
-						Background(SailBgMuted).
-						Clip().
-						Tooltip(fmt.Sprintf(i18n.T("overview.metric.candidates_tooltip"), int(math.Round(*telemetry.AvgEligible)), float64(keptPct))).
-						Children(func() {
-							ui.Box(c).WidthPercent(keptPct).FillHeight().Radius(999).Background(SailAccent)
-						})
-				})
-			} else {
-				ui.Textf(c, i18n.T("overview.metric.max_tools"), settings.MaxTools).
-					FontSize(12).
-					TextColor(SailInkMuted).
-					FontFeatures("tnum").
-					SingleLine()
-			}
-		})
-
-		// Card 4: Upstream Services
-		ovMetricCard(c, func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(6).Children(func() {
-				ui.Text(c, i18n.T("overview.metric.services")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
-				if errServerCount > 0 {
-					SailBadge(c, fmt.Sprintf(i18n.T("overview.metric.services_errors"), errServerCount), ToneDanger)
-				} else if pendingServerCount > 0 {
-					SailBadge(c, fmt.Sprintf(i18n.T("overview.metric.services_pending"), pendingServerCount), ToneWarning)
-				}
-			})
-
-			ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(5).Children(func() {
-				ui.Textf(c, "%d", readyServerCount).
-					FontSize(24).
-					Bold().
-					TextColor(SailInkStrong).
-					FontFeatures("tnum").
-					SingleLine()
-				ui.Textf(c, i18n.T("overview.metric.services_ready"), realServerCount).
-					FontSize(13).
-					FontWeight(500).
-					TextColor(SailInkMuted).
-					FontFeatures("tnum").
-					SingleLine()
-			})
-
-			svcHint := fmt.Sprintf(i18n.T("overview.metric.tools_available"), enabledRealToolCount, realToolCount)
-			if errServerCount > 0 {
-				svcHint += fmt.Sprintf(i18n.T("overview.metric.tools_need_fix"), errServerCount)
-			} else if pendingServerCount > 0 {
-				svcHint += fmt.Sprintf(i18n.T("overview.metric.tools_pending"), pendingServerCount)
-			}
-			ui.Text(c, svcHint).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
-		})
+		svcHint := fmt.Sprintf(i18n.T("overview.metric.tools_available"), snap.enabledRealToolCount, len(snap.realTools))
+		if snap.errServerCount > 0 {
+			svcHint += fmt.Sprintf(i18n.T("overview.metric.tools_need_fix"), snap.errServerCount)
+		} else if snap.pendingServerCount > 0 {
+			svcHint += fmt.Sprintf(i18n.T("overview.metric.tools_pending"), snap.pendingServerCount)
+		}
+		ui.Text(c, svcHint).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
 	})
 }
 
@@ -501,28 +512,78 @@ func ovMetricCard(c *ui.Context, fn func()) {
 	).Children(fn)
 }
 
+func ovPulseStats(buckets []apitypes.PulseBucket, hoveredIdx int) (maxBucket int, readout string) {
+	maxBucket = 1
+	peakIdx := -1
+	peakTotal := 0
+	for i, b := range buckets {
+		if b.Total > maxBucket {
+			maxBucket = b.Total
+		}
+		if b.Total > 0 && b.Total >= peakTotal {
+			peakIdx = i
+			peakTotal = b.Total
+		}
+	}
+	readout = i18n.T("overview.pulse.no_requests")
+	if hoveredIdx >= 0 && hoveredIdx < len(buckets) {
+		readout = ovFormatPulseBucket(buckets[hoveredIdx])
+	} else if peakIdx >= 0 {
+		readout = i18n.T("overview.pulse.peak", ovFormatPulseBucket(buckets[peakIdx]))
+	}
+	return maxBucket, readout
+}
+
+func ovRenderPulseBar(c *ui.Context, idx int, b apitypes.PulseBucket, maxBucket int) bool {
+	slot := ui.Column(c.Key(fmt.Sprintf("ov-pulse-%d", idx))).
+		Grow(1).
+		MinWidth(0).
+		FillHeight().
+		Justify(ui.End).
+		Cursor(ui.CursorPointer).
+		Tooltip(ovFormatPulseBucket(b))
+	isHovered := slot.Hovered()
+	slot.Children(func() {
+		if b.Total == 0 {
+			col := SailBgMuted
+			if isHovered {
+				col = SailBorderStrong
+			}
+			ui.Box(c).FillWidth().Height(3).Radius(1.5).Background(col)
+			return
+		}
+
+		barH := max(float32(8), min(float32(42), float32(math.Round((float64(b.Total)/float64(maxBucket))*42.0))))
+		okCount := max(0, b.Total-b.Error)
+		if b.Error == 0 {
+			ui.Box(c).FillWidth().Height(barH).Radius(2.5, 2.5, 1.5, 1.5).Background(SailSuccessInk)
+			return
+		}
+		if okCount == 0 {
+			ui.Box(c).FillWidth().Height(barH).Radius(2.5, 2.5, 1.5, 1.5).Background(SailDangerInk)
+			return
+		}
+
+		errH := max(float32(3), min(barH-3, float32(math.Round(float64(barH)*(float64(b.Error)/float64(b.Total))))))
+		ui.Column(c).
+			FillWidth().
+			Height(barH).
+			Radius(2.5, 2.5, 1.5, 1.5).
+			Clip().
+			Children(func() {
+				ui.Box(c).FillWidth().Height(errH).Background(SailDangerInk)
+				ui.Box(c).FillWidth().Grow(1).Background(SailSuccessInk)
+			})
+	})
+	return isHovered
+}
+
 func (u *DesktopUI) renderOverviewPulseCard(
 	c *ui.Context,
 	ov *overviewLocalState,
 	buckets []apitypes.PulseBucket,
 ) {
-	maxBucket := 1
-	peakIdx := -1
-	for i, b := range buckets {
-		if b.Total > maxBucket {
-			maxBucket = b.Total
-		}
-		if b.Total > 0 && (peakIdx == -1 || b.Total >= buckets[peakIdx].Total) {
-			peakIdx = i
-		}
-	}
-
-	readout := i18n.T("overview.pulse.no_requests")
-	if ov.hoveredPulseIdx >= 0 && ov.hoveredPulseIdx < len(buckets) {
-		readout = ovFormatPulseBucket(buckets[ov.hoveredPulseIdx])
-	} else if peakIdx >= 0 {
-		readout = i18n.T("overview.pulse.peak", ovFormatPulseBucket(buckets[peakIdx]))
-	}
+	maxBucket, readout := ovPulseStats(buckets, ov.hoveredPulseIdx)
 
 	applyCardElevation(
 		ui.Column(c).
@@ -554,72 +615,9 @@ func (u *DesktopUI) renderOverviewPulseCard(
 			AlignItems(ui.End).
 			Children(func() {
 				for i, b := range buckets {
-					slot := ui.Column(c.Key(fmt.Sprintf("ov-pulse-%d", i))).
-						Grow(1).
-						MinWidth(0).
-						FillHeight().
-						Justify(ui.End).
-						Cursor(ui.CursorPointer).
-						Tooltip(ovFormatPulseBucket(b))
-					isHovered := slot.Hovered()
-					if isHovered {
+					if ovRenderPulseBar(c, i, b, maxBucket) {
 						hoveredNow = i
 					}
-					slot.Children(func() {
-						if b.Total == 0 {
-							col := SailBgMuted
-							if isHovered {
-								col = SailBorderStrong
-							}
-							ui.Box(c).FillWidth().Height(3).Radius(1.5).Background(col)
-							return
-						}
-
-						barH := float32(math.Round((float64(b.Total) / float64(maxBucket)) * 42.0))
-						if barH < 8 {
-							barH = 8
-						}
-						if barH > 42 {
-							barH = 42
-						}
-						okCount := b.Total - b.Error
-						if okCount < 0 {
-							okCount = 0
-						}
-						if b.Error == 0 {
-							ui.Box(c).
-								FillWidth().
-								Height(barH).
-								Radius(2.5, 2.5, 1.5, 1.5).
-								Background(SailSuccessInk)
-							return
-						}
-						if okCount == 0 {
-							ui.Box(c).
-								FillWidth().
-								Height(barH).
-								Radius(2.5, 2.5, 1.5, 1.5).
-								Background(SailDangerInk)
-							return
-						}
-
-						errH := float32(math.Round(float64(barH) * (float64(b.Error) / float64(b.Total))))
-						if errH < 3 {
-							errH = 3
-						}
-						if errH > barH-3 {
-							errH = barH - 3
-						}
-						ui.Column(c).
-							FillWidth().
-							Height(barH).
-							Radius(2.5, 2.5, 1.5, 1.5).
-							Clip().
-							Children(func() {
-								ui.Box(c).FillWidth().Height(errH).Background(SailDangerInk)
-								ui.Box(c).FillWidth().Grow(1).Background(SailSuccessInk)
-							})
-					})
 				}
 			})
 		ov.hoveredPulseIdx = hoveredNow
@@ -792,11 +790,8 @@ func ovFormatLogSummary(ev apitypes.Event, parsed logsParsedDetail) string {
 func (u *DesktopUI) renderOverviewRightSwitchCard(
 	c *ui.Context,
 	ov *overviewLocalState,
-	state *apitypes.Bootstrap,
-	realServers []apitypes.Server,
-	realTools []apitypes.Tool,
-	topTools []TopToolItem,
-	maxTopHits int,
+	snap overviewSnapshot,
+	telemetry GatewayTelemetry,
 ) {
 	SailFlushCard(c, func() {
 		ui.Row(c).
@@ -823,180 +818,157 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 			})
 
 		if ov.rightTab == 0 {
-			if len(realServers) == 0 {
-				ui.Box(c).Padding(18, 20).FillWidth().Children(func() {
-					SailEmptyState(
-						c,
-						i18n.T("overview.services.empty"),
-						"",
-						i18n.T("overview.action.add_service"),
-						func() { u.OpenAddServiceModal() },
-					)
-				})
-				return
-			}
-
-			for idx, srv := range realServers {
-				s := srv
-				isLast := idx == len(realServers)-1
-				srvToolTotal, openTotal, openWrite := countServerTools(s.ID, realTools)
-				var srvTools []apitypes.Tool
-				for _, t := range realTools {
-					if t.ServerID == s.ID {
-						srvTools = append(srvTools, t)
-					}
-				}
-				readiness := u.readinessForServer(s, srvTools)
-
-				row := ui.ButtonBase(c.Key("ov-srv-row-"+s.ID)).
-					FillWidth().
-					Padding(13, 20).
-					Gap(12).
-					AlignItems(ui.Center).
-					Justify(ui.SpaceBetween).
-					Cursor(ui.CursorPointer).
-					Label(s.Name)
-				if !isLast {
-					row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-				}
-				hovered := row.Hovered()
-				if hovered {
-					row.Background(SailBgHover)
-				}
-
-				row.Children(func() {
-					ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-						ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-							SailStatusDot(c, readiness.DotColor)
-
-							ui.Text(c, s.Name).
-								FontSize(13.5).
-								FontWeight(600).
-								TextColor(SailInkStrong).
-								SingleLine()
-
-							if readiness.BadgeLabel != "" {
-								SailBadge(c, readiness.BadgeLabel, readiness.BadgeTone)
-							} else if !s.Enabled {
-								ui.Text(c, i18n.T("common.disabled")).FontSize(11.5).TextColor(SailInkFaint).SingleLine()
-							}
-							if s.Enabled && openWrite > 0 {
-								SailBadge(c, fmt.Sprintf(i18n.T("common.write_badge"), openWrite), ToneWarning)
-							}
-						})
-
-						if readiness.RowSummary != "" {
-							sumColor := SailInkMuted
-							if readiness.HasError() {
-								sumColor = SailDangerInk
-							}
-							ui.Text(c, CleanDescriptionSummary(readiness.RowSummary)).FontSize(12).TextColor(sumColor).SingleLine()
-						} else {
-							ui.Textf(c, i18n.T("overview.services.protocol_tools"), ServerProtocolLabel(s), openTotal, srvToolTotal).
-								FontSize(12).
-								TextColor(SailInkMuted).
-								FontFeatures("tnum").
-								SingleLine()
-						}
-					})
-
-					arrowColor := SailInkFaint
-					if hovered {
-						arrowColor = SailAccent
-					}
-					ui.Icon(c, IconChevronRight).Size(15, 15).TextColor(arrowColor).Shrink(0)
-				})
-
-				if row.Clicked() {
-					ov.openDrawer("service", s.ID)
-				}
-			}
+			u.ovRenderServicesSwitchList(c, ov, snap)
 			return
 		}
-
-		// Right Tab 1: Top Tools
-		if len(topTools) == 0 {
-			ui.Box(c).Padding(18, 20).FillWidth().Children(func() {
-				SailEmptyState(c, i18n.T("overview.top_tools.empty"), "", "", nil)
-			})
-			return
-		}
-
-		for idx, tool := range topTools {
-			t := tool
-			isLast := idx == len(topTools)-1
-			row := ui.ButtonBase(c.Key("ov-toptool-"+t.ID)).
-				FillWidth().
-				Padding(12, 20).
-				Gap(12).
-				AlignItems(ui.Center).
-				Justify(ui.SpaceBetween).
-				Cursor(ui.CursorPointer).
-				Label(t.Name)
-			if !isLast {
-				row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-			}
-			hovered := row.Hovered()
-			if hovered {
-				row.Background(SailBgHover)
-			}
-
-			row.Children(func() {
-				ui.Row(c).Grow(1).MinWidth(0).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, t.Name).
-						Font("monospace").
-						FontSize(13).
-						FontWeight(600).
-						TextColor(SailInkStrong).
-						SingleLine()
-					ui.Text(c, t.ServerName).
-						FontSize(12).
-						TextColor(SailInkFaint).
-						SingleLine()
-					if !t.ReadOnly {
-						SailBadge(c, i18n.T("overview.badge.write"), ToneWarning)
-					}
-				})
-
-				pct := float32(math.Round((float64(t.Hits) / float64(maxTopHits)) * 100))
-				if pct < 8 {
-					pct = 8
-				}
-				if pct > 100 {
-					pct = 100
-				}
-				ui.Row(c).Shrink(0).Gap(10).AlignItems(ui.Center).Children(func() {
-					ui.Row(c).
-						Width(54).
-						Height(5).
-						Radius(999).
-						Background(SailBgMuted).
-						Clip().
-						Children(func() {
-							ui.Box(c).WidthPercent(pct).FillHeight().Radius(999).Background(SailInkBody)
-						})
-					ui.Textf(c, i18n.T("overview.top_tools.hits"), t.Hits).
-						Width(40).
-						Font("monospace").
-						FontSize(12).
-						FontWeight(600).
-						TextColor(SailInkStrong).
-						FontFeatures("tnum").
-						TextAlign(ui.End).
-						SingleLine()
-					arrowCol := SailInkFaint
-					if hovered {
-						arrowCol = SailAccent
-					}
-					ui.Icon(c, IconChevronRight).Size(14, 14).TextColor(arrowCol).Shrink(0)
-				})
-			})
-
-			if row.Clicked() {
-				ov.openDrawer("tool", t.ID)
-			}
-		}
+		ovRenderTopToolsSwitchList(c, ov, telemetry.TopTools, snap.maxTopHits)
 	}).FillHeight()
+}
+
+func (u *DesktopUI) ovRenderServicesSwitchList(c *ui.Context, ov *overviewLocalState, snap overviewSnapshot) {
+	if len(snap.realServers) == 0 {
+		ui.Box(c).Padding(18, 20).FillWidth().Children(func() {
+			SailEmptyState(c, i18n.T("overview.services.empty"), "", i18n.T("overview.action.add_service"), func() { u.OpenAddServiceModal() })
+		})
+		return
+	}
+	for idx, srv := range snap.realServers {
+		u.ovRenderServiceSwitchRow(c, ov, srv, snap, idx == len(snap.realServers)-1)
+	}
+}
+
+func (u *DesktopUI) ovRenderServiceSwitchRow(
+	c *ui.Context,
+	ov *overviewLocalState,
+	s apitypes.Server,
+	snap overviewSnapshot,
+	isLast bool,
+) {
+	srvTools := snap.toolsByServer[s.ID]
+	srvToolTotal, openTotal, openWrite := countServerTools(s.ID, srvTools)
+	readiness := u.readinessForServer(s, srvTools)
+
+	row := ui.ButtonBase(c.Key("ov-srv-row-"+s.ID)).
+		FillWidth().
+		Padding(13, 20).
+		Gap(12).
+		AlignItems(ui.Center).
+		Justify(ui.SpaceBetween).
+		Cursor(ui.CursorPointer).
+		Label(s.Name)
+	if !isLast {
+		row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+	}
+	hovered := row.Hovered()
+	if hovered {
+		row.Background(SailBgHover)
+	}
+
+	row.Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
+			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+				SailStatusDot(c, readiness.DotColor)
+				ui.Text(c, s.Name).FontSize(13.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+				if readiness.BadgeLabel != "" {
+					SailBadge(c, readiness.BadgeLabel, readiness.BadgeTone)
+				} else if !s.Enabled {
+					ui.Text(c, i18n.T("common.disabled")).FontSize(11.5).TextColor(SailInkFaint).SingleLine()
+				}
+				if s.Enabled && openWrite > 0 {
+					SailBadge(c, fmt.Sprintf(i18n.T("common.write_badge"), openWrite), ToneWarning)
+				}
+			})
+
+			if readiness.RowSummary != "" {
+				sumColor := SailInkMuted
+				if readiness.HasError() {
+					sumColor = SailDangerInk
+				}
+				ui.Text(c, CleanDescriptionSummary(readiness.RowSummary)).FontSize(12).TextColor(sumColor).SingleLine()
+			} else {
+				ui.Textf(c, i18n.T("overview.services.protocol_tools"), ServerProtocolLabel(s), openTotal, srvToolTotal).
+					FontSize(12).
+					TextColor(SailInkMuted).
+					FontFeatures("tnum").
+					SingleLine()
+			}
+		})
+
+		arrowColor := SailInkFaint
+		if hovered {
+			arrowColor = SailAccent
+		}
+		ui.Icon(c, IconChevronRight).Size(15, 15).TextColor(arrowColor).Shrink(0)
+	})
+
+	if row.Clicked() {
+		ov.openDrawer("service", s.ID)
+	}
+}
+
+func ovRenderTopToolsSwitchList(c *ui.Context, ov *overviewLocalState, topTools []TopToolItem, maxTopHits int) {
+	if len(topTools) == 0 {
+		ui.Box(c).Padding(18, 20).FillWidth().Children(func() {
+			SailEmptyState(c, i18n.T("overview.top_tools.empty"), "", "", nil)
+		})
+		return
+	}
+	for idx, t := range topTools {
+		ovRenderTopToolRow(c, ov, t, maxTopHits, idx == len(topTools)-1)
+	}
+}
+
+func ovRenderTopToolRow(c *ui.Context, ov *overviewLocalState, t TopToolItem, maxTopHits int, isLast bool) {
+	row := ui.ButtonBase(c.Key("ov-toptool-"+t.ID)).
+		FillWidth().
+		Padding(12, 20).
+		Gap(12).
+		AlignItems(ui.Center).
+		Justify(ui.SpaceBetween).
+		Cursor(ui.CursorPointer).
+		Label(t.Name)
+	if !isLast {
+		row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+	}
+	hovered := row.Hovered()
+	if hovered {
+		row.Background(SailBgHover)
+	}
+
+	row.Children(func() {
+		ui.Row(c).Grow(1).MinWidth(0).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, t.Name).Font("monospace").FontSize(13).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+			ui.Text(c, t.ServerName).FontSize(12).TextColor(SailInkFaint).SingleLine()
+			if !t.ReadOnly {
+				SailBadge(c, i18n.T("overview.badge.write"), ToneWarning)
+			}
+		})
+
+		pct := max(float32(8), min(float32(100), float32(math.Round((float64(t.Hits)/float64(maxTopHits))*100))))
+		ui.Row(c).Shrink(0).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Row(c).Width(54).Height(5).Radius(999).Background(SailBgMuted).Clip().Children(func() {
+				ui.Box(c).WidthPercent(pct).FillHeight().Radius(999).Background(SailInkBody)
+			})
+			ui.Textf(c, i18n.T("overview.top_tools.hits"), t.Hits).
+				Width(40).
+				Font("monospace").
+				FontSize(12).
+				FontWeight(600).
+				TextColor(SailInkStrong).
+				FontFeatures("tnum").
+				TextAlign(ui.End).
+				SingleLine()
+			arrowCol := SailInkFaint
+			if hovered {
+				arrowCol = SailAccent
+			}
+			ui.Icon(c, IconChevronRight).Size(14, 14).TextColor(arrowCol).Shrink(0)
+		})
+	})
+
+	if row.Clicked() {
+		ov.openDrawer("tool", t.ID)
+	}
 }
 
 func countServerTools(serverID string, realTools []apitypes.Tool) (total, open, openWrite int) {
@@ -1021,8 +993,7 @@ func (u *DesktopUI) renderOverviewDrawer(
 	c *ui.Context,
 	ov *overviewLocalState,
 	state *apitypes.Bootstrap,
-	realTools []apitypes.Tool,
-	toolByID map[string]apitypes.Tool,
+	snap overviewSnapshot,
 	telemetry GatewayTelemetry,
 ) {
 	switch ov.drawerType {
@@ -1038,7 +1009,7 @@ func (u *DesktopUI) renderOverviewDrawer(
 			ov.drawerOpen = false
 			return
 		}
-		u.renderOverviewLogDrawer(c, ov, state, *target, toolByID)
+		u.renderOverviewLogDrawer(c, ov, state, *target, snap.toolByID)
 	case "service":
 		var target *apitypes.Server
 		for i := range state.Registry.Servers {
@@ -1051,9 +1022,9 @@ func (u *DesktopUI) renderOverviewDrawer(
 			ov.drawerOpen = false
 			return
 		}
-		u.renderOverviewServiceDrawer(c, ov, state, *target, realTools)
+		u.renderOverviewServiceDrawer(c, ov, state, *target, snap.realTools)
 	case "tool":
-		t, ok := toolByID[ov.drawerID]
+		t, ok := snap.toolByID[ov.drawerID]
 		if !ok {
 			ov.drawerOpen = false
 			return
@@ -1136,6 +1107,30 @@ func ovRenderSlideDrawerShell(
 	})
 }
 
+func ovLogStatusAndKindLabels(ev apitypes.Event) (stText, kindText string) {
+	stText = i18n.T("overview.detail.status_matched")
+	if logsIsErrorStatus(ev.Status) {
+		stText = i18n.T("overview.event.call_failed")
+	} else if logsIsUnmatchedStatus(ev.Status) {
+		stText = i18n.T("overview.event.no_match")
+	}
+	kindText = i18n.T("overview.detail.kind_tool")
+	if ev.Kind == "discover" {
+		kindText = i18n.T("overview.detail.kind_discover")
+	} else if ev.Kind == "agent" || ev.Kind == "agent_tool" {
+		kindText = i18n.T("overview.detail.kind_agent")
+	}
+	return stText, kindText
+}
+
+type ovLogDrawerView struct {
+	ev       apitypes.Event
+	parsed   logsParsedDetail
+	stText   string
+	kindText string
+	canBind  bool
+}
+
 func (u *DesktopUI) renderOverviewLogDrawer(
 	c *ui.Context,
 	ov *overviewLocalState,
@@ -1144,23 +1139,19 @@ func (u *DesktopUI) renderOverviewLogDrawer(
 	toolByID map[string]apitypes.Tool,
 ) {
 	parsed := logsParseEventDetail(ev, toolByID)
-	stText := i18n.T("overview.detail.status_matched")
-	if logsIsErrorStatus(ev.Status) {
-		stText = i18n.T("overview.event.call_failed")
-	} else if logsIsUnmatchedStatus(ev.Status) {
-		stText = i18n.T("overview.event.no_match")
-	}
-	kindText := i18n.T("overview.detail.kind_tool")
-	if ev.Kind == "discover" {
-		kindText = i18n.T("overview.detail.kind_discover")
-	} else if ev.Kind == "agent" || ev.Kind == "agent_tool" {
-		kindText = i18n.T("overview.detail.kind_agent")
-	}
+	stText, kindText := ovLogStatusAndKindLabels(ev)
 
 	var canBind bool
 	if sc := parsed.Scope; sc != nil {
 		bound := logsMatchedBoundRepo(state, *sc)
 		canBind = bound == nil && (sc.RepoID == "" || sc.RepoID == "*") && (sc.Root != "" || sc.GitCommonDir != "")
+	}
+	view := ovLogDrawerView{
+		ev:       ev,
+		parsed:   parsed,
+		stText:   stText,
+		kindText: kindText,
+		canBind:  canBind,
 	}
 
 	ovRenderSlideDrawerShell(
@@ -1171,111 +1162,133 @@ func (u *DesktopUI) renderOverviewLogDrawer(
 			ui.Text(c, i18n.T("overview.detail.title")).FontSize(14).FontWeight(600).TextColor(SailInkStrong).SingleLine()
 		},
 		func() {
-			ui.Column(c).FillWidth().Gap(4).Children(func() {
-				titleText := strings.TrimSpace(ev.Title)
-				if titleText == "" {
-					titleText = ev.ID
-				}
-				ui.Text(c, titleText).FontSize(15).FontWeight(600).LineHeight(1.4).TextColor(SailInkStrong).Selectable()
-				ui.Textf(c, "%s · %s · %d ms · %s", kindText, stText, ev.DurationMS, FormatTime(ev.Time)).
-					FontSize(12).
-					TextColor(SailInkMuted).
-					FontFeatures("tnum")
-			})
-
-			SailSubtleCard(c, func() {
-				SailKeyValueRow(c, i18n.T("overview.detail.status"), stText, false)
-				if sc := parsed.Scope; sc != nil {
-					if sc.Agent != "" {
-						SailKeyValueRow(c, i18n.T("overview.detail.client"), agentDisplayName(sc.Agent), false)
-					}
-					repoLbl := sc.RepoName
-					if repoLbl == "" {
-						repoLbl = sc.Root
-					}
-					if repoLbl != "" {
-						SailKeyValueRow(c, i18n.T("overview.detail.repo"), repoLbl, true)
-					}
-				}
-				if parsed.PromptTokens != nil || parsed.OutputTokens != nil {
-					pt, ot := 0, 0
-					if parsed.PromptTokens != nil {
-						pt = *parsed.PromptTokens
-					}
-					if parsed.OutputTokens != nil {
-						ot = *parsed.OutputTokens
-					}
-					SailKeyValueRow(c, i18n.T("overview.detail.tokens"), fmt.Sprintf("%d tok (%d in · %d out)", pt+ot, pt, ot), true)
-				} else if parsed.Model != "" {
-					SailKeyValueRow(c, i18n.T("overview.detail.model"), parsed.Model, true)
-				}
-			})
-
-			if parsed.Error != "" {
-				SailAlertBox(c, ToneDanger, "", parsed.Error)
-			}
-			if parsed.Summary != "" {
-				SailAlertBox(c, ToneInfo, "", parsed.Summary)
-			}
-			if parsed.Question != "" {
-				SailAlertBox(c, ToneWarning, "", parsed.Question)
-			}
-
-			if len(parsed.Tools) > 0 {
-				ui.Column(c).FillWidth().Gap(8).Children(func() {
-					ui.Text(c, i18n.T("overview.detail.matched_tools")).FontSize(12).FontWeight(600).TextColor(SailInkMuted)
-					SailFlushCard(c, func() {
-						for idx, mt := range parsed.Tools {
-							isLast := idx == len(parsed.Tools)-1
-							r := ui.Column(c.Key(fmt.Sprintf("ov-drawer-hit-%s-%d", ev.ID, idx))).
-								FillWidth().
-								Padding(11, 14).
-								Gap(3)
-							if !isLast {
-								r.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-							}
-							r.Children(func() {
-								displayID := mt.ID
-								if displayID == "" {
-									displayID = mt.Name
-								}
-								ui.Text(c, displayID).Font("monospace").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-								if mt.Reason != "" {
-									ui.Text(c, mt.Reason).FontSize(12).TextColor(SailInkMuted).SingleLine()
-								}
-							})
-						}
-					})
-				})
-			}
+			ovRenderLogDrawerBody(c, view)
 		},
 		func() {
-			if canBind && parsed.Scope != nil {
-				lbl := i18n.T("overview.detail.bind_repo")
-				if ov.drawerBindingRepo {
-					lbl = i18n.T("overview.detail.binding")
-				}
-				if SailSmallButton(c.Key("ov-drawer-bind-repo"), lbl).Disabled(ov.drawerBindingRepo).Clicked() {
-					u.bindRepoFromOverviewDrawer(ov, *parsed.Scope)
-				}
-			}
-			if ev.Kind == "discover" && strings.TrimSpace(ev.Title) != "" {
-				if SailSmallButton(c.Key("ov-drawer-replay"), i18n.T("overview.detail.replay")).Clicked() {
-					ov.drawerOpen = false
-					if parsed.Scope != nil {
-						replayRepo := logsResolveReplayRepoKey(state, *parsed.Scope)
-						u.OpenPlaygroundReplay(ev.Title, ev.Actor, replayRepo)
-					} else {
-						u.OpenPlaygroundReplay(ev.Title, ev.Actor)
-					}
-				}
-			}
-			if ovRenderDrawerArrowBtn(c, "ov-drawer-open-logs", i18n.T("overview.detail.log_details")) {
-				ov.drawerOpen = false
-				u.OpenLogsEvent(ev.ID)
-			}
+			u.ovRenderLogDrawerFooter(c, ov, state, view)
 		},
 	)
+}
+
+func ovRenderLogDrawerBody(c *ui.Context, view ovLogDrawerView) {
+	ev, parsed := view.ev, view.parsed
+	ui.Column(c).FillWidth().Gap(4).Children(func() {
+		titleText := strings.TrimSpace(ev.Title)
+		if titleText == "" {
+			titleText = ev.ID
+		}
+		ui.Text(c, titleText).FontSize(15).FontWeight(600).LineHeight(1.4).TextColor(SailInkStrong).Selectable()
+		ui.Textf(c, "%s · %s · %d ms · %s", view.kindText, view.stText, ev.DurationMS, FormatTime(ev.Time)).
+			FontSize(12).
+			TextColor(SailInkMuted).
+			FontFeatures("tnum")
+	})
+
+	ovRenderLogDrawerMetaCard(c, parsed, view.stText)
+
+	if parsed.Error != "" {
+		SailAlertBox(c, ToneDanger, "", parsed.Error)
+	}
+	if parsed.Summary != "" {
+		SailAlertBox(c, ToneInfo, "", parsed.Summary)
+	}
+	if parsed.Question != "" {
+		SailAlertBox(c, ToneWarning, "", parsed.Question)
+	}
+
+	if len(parsed.Tools) > 0 {
+		ovRenderLogDrawerTools(c, ev.ID, parsed.Tools)
+	}
+}
+
+func ovRenderLogDrawerMetaCard(c *ui.Context, parsed logsParsedDetail, stText string) {
+	SailSubtleCard(c, func() {
+		SailKeyValueRow(c, i18n.T("overview.detail.status"), stText, false)
+		if sc := parsed.Scope; sc != nil {
+			if sc.Agent != "" {
+				SailKeyValueRow(c, i18n.T("overview.detail.client"), agentDisplayName(sc.Agent), false)
+			}
+			repoLbl := sc.RepoName
+			if repoLbl == "" {
+				repoLbl = sc.Root
+			}
+			if repoLbl != "" {
+				SailKeyValueRow(c, i18n.T("overview.detail.repo"), repoLbl, true)
+			}
+		}
+		if parsed.PromptTokens != nil || parsed.OutputTokens != nil {
+			pt, ot := 0, 0
+			if parsed.PromptTokens != nil {
+				pt = *parsed.PromptTokens
+			}
+			if parsed.OutputTokens != nil {
+				ot = *parsed.OutputTokens
+			}
+			SailKeyValueRow(c, i18n.T("overview.detail.tokens"), fmt.Sprintf("%d tok (%d in · %d out)", pt+ot, pt, ot), true)
+		} else if parsed.Model != "" {
+			SailKeyValueRow(c, i18n.T("overview.detail.model"), parsed.Model, true)
+		}
+	})
+}
+
+func ovRenderLogDrawerTools(c *ui.Context, evID string, tools []logsMatchedTool) {
+	ui.Column(c).FillWidth().Gap(8).Children(func() {
+		ui.Text(c, i18n.T("overview.detail.matched_tools")).FontSize(12).FontWeight(600).TextColor(SailInkMuted)
+		SailFlushCard(c, func() {
+			for idx, mt := range tools {
+				r := ui.Column(c.Key(fmt.Sprintf("ov-drawer-hit-%s-%d", evID, idx))).
+					FillWidth().
+					Padding(11, 14).
+					Gap(3)
+				if idx < len(tools)-1 {
+					r.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+				}
+				r.Children(func() {
+					displayID := mt.ID
+					if displayID == "" {
+						displayID = mt.Name
+					}
+					ui.Text(c, displayID).Font("monospace").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+					if mt.Reason != "" {
+						ui.Text(c, mt.Reason).FontSize(12).TextColor(SailInkMuted).SingleLine()
+					}
+				})
+			}
+		})
+	})
+}
+
+func (u *DesktopUI) ovRenderLogDrawerFooter(
+	c *ui.Context,
+	ov *overviewLocalState,
+	state *apitypes.Bootstrap,
+	view ovLogDrawerView,
+) {
+	ev, parsed := view.ev, view.parsed
+	if view.canBind && parsed.Scope != nil {
+		lbl := i18n.T("overview.detail.bind_repo")
+		if ov.drawerBindingRepo {
+			lbl = i18n.T("overview.detail.binding")
+		}
+		if SailSmallButton(c.Key("ov-drawer-bind-repo"), lbl).Disabled(ov.drawerBindingRepo).Clicked() {
+			u.bindRepoFromOverviewDrawer(ov, *parsed.Scope)
+		}
+	}
+	if ev.Kind == "discover" && strings.TrimSpace(ev.Title) != "" {
+		if SailSmallButton(c.Key("ov-drawer-replay"), i18n.T("overview.detail.replay")).Clicked() {
+			ov.drawerOpen = false
+			if parsed.Scope != nil {
+				replayRepo := logsResolveReplayRepoKey(state, *parsed.Scope)
+				u.OpenPlaygroundReplay(ev.Title, ev.Actor, replayRepo)
+			} else {
+				u.OpenPlaygroundReplay(ev.Title, ev.Actor)
+			}
+		}
+	}
+	if ovRenderDrawerArrowBtn(c, "ov-drawer-open-logs", i18n.T("overview.detail.log_details")) {
+		ov.drawerOpen = false
+		u.OpenLogsEvent(ev.ID)
+	}
 }
 
 func (u *DesktopUI) bindRepoFromOverviewDrawer(ov *overviewLocalState, sc logsParsedScope) {
