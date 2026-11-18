@@ -111,10 +111,16 @@ func TestDesktopOpsViewsRenderEnglish(t *testing.T) {
 		t.Run(view.name, func(t *testing.T) {
 			i18n.WithLang(i18n.LangEN, func() {
 				u := NewDesktopUI(&gatewayRuntime{UIURL: "http://127.0.0.1:1", Mode: modeAttached})
+				u.ClientConfigs = nil
+				u.ClientPlugins = nil
 				state := boot
 				u.State = &state
 				u.Loading = false
-				tester := ui.NewTester(view.build(u), 1400, 1600)
+				render := view.build(u)
+				tester := ui.NewTester(func(c *ui.Context) {
+					defer u.enterHeadlessFrame()()
+					render(c)
+				}, 1400, 1600)
 				if !tester.HasText(view.title) {
 					t.Fatalf("missing English anchor %q", view.title)
 				}
@@ -203,8 +209,12 @@ func TestClientConfigStatusesLocalized(t *testing.T) {
 			}
 		}
 		u.ClientStatuses = m.Statuses(u.clientEndpoint())
+		noteClientStatusLang(i18n.Current())
 		u.Loading = false
-		tester := ui.NewTester(u.renderClients, 1200, 1500)
+		tester := ui.NewTester(func(c *ui.Context) {
+			defer u.enterHeadlessFrame()()
+			u.renderClients(c)
+		}, 1200, 1500)
 		if !tester.HasText("✓ Configured") {
 			t.Fatal("missing English configured status")
 		}
@@ -212,6 +222,7 @@ func TestClientConfigStatusesLocalized(t *testing.T) {
 			t.Fatal("missing English accessible path action")
 		}
 	})
+	noteClientStatusLang(i18n.Current())
 }
 
 // TestDesktopOpsLocaleFilesTranslated guards the locale files themselves: every

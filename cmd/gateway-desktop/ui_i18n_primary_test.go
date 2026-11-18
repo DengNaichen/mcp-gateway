@@ -227,12 +227,12 @@ func TestPrimarySurfacesRenderEnglish(t *testing.T) {
 			t.Fatal("service detail still shows Chinese copy in en mode")
 		}
 
-		// Back to the list, then switch to the market sub-tab.
+		// Back to the list, then switch to the market sub-tab with preloaded items
+		// before rendering so renderMarketContent does not start a background fetch.
 		if err := tester.Click("← Back to services"); err != nil {
 			t.Fatalf("back from service detail: %v", err)
 		}
 		app.servicesState().subtab = 1
-		tester.Frame()
 		mkt := app.marketState()
 		mkt.loaded = true
 		mkt.items = []apitypes.MarketServer{
