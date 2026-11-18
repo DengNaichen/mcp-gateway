@@ -31,17 +31,6 @@ var forbiddenHeaders = []string{
 func isForbiddenHeader(name string) bool {
 	return slices.Contains(forbiddenHeaders, strings.ToLower(name))
 }
-
-func argumentGroup(in string) string {
-	switch in {
-	case "header":
-		return "headers"
-	case "cookie":
-		return "cookies"
-	default:
-		return in
-	}
-}
 func scalar(v any) (string, error) {
 	switch x := v.(type) {
 	case string:
@@ -163,7 +152,7 @@ func BuildMappedRequestWithLookup(ctx context.Context, s Server, t Tool, args ma
 		if !registry.SupportedParameterStyle(p.In, p.Style, p.Explode) {
 			return nil, invalid("HTTP 参数序列化无效")
 		}
-		group, _ := args[argumentGroup(p.In)].(map[string]any)
+		group, _ := args[registry.ArgumentGroup(p.In)].(map[string]any)
 		v, exists := group[p.Name]
 		if !exists {
 			continue

@@ -34,21 +34,12 @@ func (m *Manager) resolveHookBinaryAndData() (hookBin string, dataDir string) {
 	if m.dataDir != "" {
 		if absData, err := filepath.Abs(m.dataDir); err == nil {
 			defData, defErr := workspace.DefaultDataDir()
-			if defErr != nil || !sameCleanedPath(absData, defData) {
+			if defErr != nil || !workspace.SameFilePath(absData, defData) {
 				dataDir = absData
 			}
 		}
 	}
 	return hookBin, dataDir
-}
-
-func sameCleanedPath(a, b string) bool {
-	ra, ea := filepath.EvalSymlinks(a)
-	rb, eb := filepath.EvalSymlinks(b)
-	if ea == nil && eb == nil {
-		return filepath.Clean(ra) == filepath.Clean(rb)
-	}
-	return filepath.Clean(a) == filepath.Clean(b)
 }
 
 func mustReadAsset(rel string) []byte {

@@ -103,7 +103,7 @@ func (m *Manager) observeClaude(endpoint string, legacy bool) Status {
 	s.Path = inst.InstallPath
 	s.InstalledVersion = inst.Version
 	mktDir := filepath.Join(m.stateDir, "marketplaces", ClientClaude)
-	if r == nil || !mpKnown || !sameCleanedPath(mpSource, mktDir) {
+	if r == nil || !mpKnown || !workspace.SameFilePath(mpSource, mktDir) {
 		s.State = i18n.T("client.state.existing-plugin")
 		s.Detail = i18n.T("client.detail-claude-foreign-plugin")
 		s.CanInstall = false
@@ -151,7 +151,7 @@ func (m *Manager) installClaude(endpoint string, update bool) error {
 	if inst != nil && r == nil {
 		return errors.New(i18n.T("client.err-claude-foreign-plugin"))
 	}
-	if mpKnown && !sameCleanedPath(mpSource, mktDir) && r == nil {
+	if mpKnown && !workspace.SameFilePath(mpSource, mktDir) && r == nil {
 		return errors.New(i18n.T("client.err-claude-marketplace-exists", mpSource))
 	}
 	hookBin, dataDir := m.resolveHookBinaryAndData()
@@ -293,7 +293,7 @@ func (m *Manager) observeCodex(endpoint string, legacy bool) Status {
 	}
 
 	mktDir := filepath.Join(m.stateDir, "marketplaces", ClientCodex)
-	if r == nil || !hasMP || !sameCleanedPath(mpSource, mktDir) {
+	if r == nil || !hasMP || !workspace.SameFilePath(mpSource, mktDir) {
 		s.State = i18n.T("client.state.existing-plugin")
 		s.Detail = i18n.T("client.detail-codex-foreign-plugin")
 		s.CanInstall = false
@@ -340,7 +340,7 @@ func (m *Manager) installCodex(endpoint string, update bool) error {
 	if hasPlugin && r == nil {
 		return errors.New(i18n.T("client.err-codex-foreign-plugin"))
 	}
-	if hasMP && !sameCleanedPath(mpSource, mktDir) && r == nil {
+	if hasMP && !workspace.SameFilePath(mpSource, mktDir) && r == nil {
 		return errors.New(i18n.T("client.err-codex-marketplace-exists", mpSource))
 	}
 	hookBin, dataDir := m.resolveHookBinaryAndData()
@@ -728,7 +728,7 @@ func findPiPackageEntry(cfgDir, targetPkgDir string) (string, error) {
 		if !filepath.IsAbs(candidate) {
 			candidate = filepath.Join(cfgDir, candidate)
 		}
-		if sameCleanedPath(candidate, targetPkgDir) {
+		if workspace.SameFilePath(candidate, targetPkgDir) {
 			return src, nil
 		}
 	}

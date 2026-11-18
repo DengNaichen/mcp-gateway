@@ -320,7 +320,7 @@ func (p openAPIImporter) operation(serverID, id, name, method, path string, item
 		if !registry.SupportedParameterStyle(in, style, explode) {
 			return t, invalid("不支持的参数序列化：" + in + "/" + style)
 		}
-		group := argumentGroup(in)
+		group := registry.ArgumentGroup(in)
 		if groups[group] == nil {
 			groups[group] = objectSchema(map[string]any{})
 		}
@@ -522,15 +522,4 @@ var forbiddenHeaders = []string{
 
 func isForbiddenHeader(name string) bool {
 	return slices.Contains(forbiddenHeaders, strings.ToLower(name))
-}
-
-func argumentGroup(in string) string {
-	switch in {
-	case "header":
-		return "headers"
-	case "cookie":
-		return "cookies"
-	default:
-		return in
-	}
 }
