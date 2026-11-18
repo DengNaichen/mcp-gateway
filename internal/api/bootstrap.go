@@ -23,7 +23,7 @@ func (g *server) registerBootstrap(mux *http.ServeMux) {
 		}
 		respond(w, 200, apitypes.Bootstrap{
 			Registry:              wireRegistry(g.registry.Snapshot()),
-			Settings:              wireSettings(settings),
+			Settings:              apitypes.Settings(settings),
 			KeyConfigured:         key,
 			CredentialsPersistent: g.credentialsPersistent,
 			Profiles:              mapSlice(g.model.ModelProfiles(), wireProfile),

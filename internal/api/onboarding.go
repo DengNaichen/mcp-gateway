@@ -56,7 +56,7 @@ func (g *server) registerSetup(mux *http.ServeMux) {
 			failWithDetail(w, "模型连接测试失败", g.gw.ErrorDetail(err), err)
 			return
 		}
-		respond(w, 200, wirePing(result))
+		respond(w, 200, apitypes.PingModelResult(result))
 	})
 	mux.HandleFunc("POST /api/setup/model", func(w http.ResponseWriter, r *http.Request) {
 		var input apitypes.SetupModelRequest

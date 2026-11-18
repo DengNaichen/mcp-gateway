@@ -30,7 +30,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		repo, err := g.scope.SaveRepository(r.Context(), domainSaveRepository(in))
+		repo, err := g.scope.SaveRepository(r.Context(), scope.SaveRepositoryRequest(in))
 		if err != nil {
 			fail(w, err)
 			return
@@ -70,7 +70,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		respond(w, http.StatusOK, wireSnippet(out))
+		respond(w, http.StatusOK, apitypes.ScopeSnippetResponse(out))
 	})
 }
 
