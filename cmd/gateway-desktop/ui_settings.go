@@ -429,7 +429,7 @@ func (u *DesktopUI) renderSettingsModelSection(c *ui.Context, st *settingsState,
 				if !state.Setup.ToolsReady {
 					ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
 						SailQuietStatus(c, "尚未启用真实工具，暂不可运行路由校验", SailWarningInk, SailInkMuted)
-						if SailSmallButton(c.Key("set-goto-services"), "前往上游服务").Clicked() {
+						if SailSmallButton(c.Key("set-goto-services"), "前往服务").Clicked() {
 							u.Navigate(ViewServices)
 						}
 					})

@@ -143,7 +143,7 @@ func TestStartAttachAndPortConflict(t *testing.T) {
 	if !tester.HasText(buildinfo.Current().Name) {
 		t.Fatal("expected native UI sidebar to render MCP Gateway")
 	}
-	for _, navLabel := range []string{"上游服务", "工具目录", "访问与路由", "请求日志", "路由沙盒", "概览"} {
+	for _, navLabel := range []string{"服务", "工具目录", "访问与路由", "请求日志", "路由沙盒", "概览"} {
 		if err := tester.Click(navLabel); err != nil {
 			t.Fatalf("click nav %q: %v", navLabel, err)
 		}
@@ -503,13 +503,13 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 	}
 
 	// 2. Services list, Add Service Modal, and Service Detail tabs.
-	if err := tester.Click("上游服务"); err != nil {
+	if err := tester.Click("服务"); err != nil {
 		t.Fatalf("nav services: %v", err)
 	}
 	if !tester.HasText("Billing REST API") {
 		t.Fatal("expected services list to render Billing REST API")
 	}
-	if err := tester.Click("添加上游服务"); err != nil {
+	if err := tester.Click("添加服务"); err != nil {
 		t.Fatalf("open add service modal: %v", err)
 	}
 	for _, tab := range []string{"MCP 远程 HTTP / SSE", "OpenAPI / Swagger 导入", "粘贴 mcpServers JSON", "MCP Stdio 本地进程"} {
@@ -523,7 +523,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 	if err := tester.Click("Billing REST API"); err != nil {
 		t.Fatalf("open service detail: %v", err)
 	}
-	if !tester.HasText("← 返回上游服务列表") {
+	if !tester.HasText("← 返回服务列表") {
 		t.Fatal("expected service detail back button")
 	}
 	for _, subtab := range []string{"连接与认证配置", "健康与维护概览"} {
@@ -533,7 +533,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 	}
 	// Let any triggered async maintenance fetch settle before leaving detail view.
 	tester.Advance(50 * time.Millisecond)
-	if err := tester.Click("← 返回上游服务列表"); err != nil {
+	if err := tester.Click("← 返回服务列表"); err != nil {
 		t.Fatalf("back from service detail: %v", err)
 	}
 
@@ -597,8 +597,8 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 			},
 		},
 	}
-	if err := tester.Click("MCP 市场"); err != nil {
-		t.Fatalf("nav market: %v", err)
+	if err := tester.Click("市场"); err != nil {
+		t.Fatalf("nav market tab: %v", err)
 	}
 	if !tester.HasText("Notion") || !tester.HasText("需登录") || !tester.HasText("云端 SaaS") || !tester.HasText("Context7") || !tester.HasText("Brave Search") || !tester.HasText("需凭据") {
 		t.Fatal("expected market SaaS/local curated cards and auth tags to render")

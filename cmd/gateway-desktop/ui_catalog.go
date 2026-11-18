@@ -337,7 +337,7 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 		"工具目录",
 		"",
 		func() {
-			if SailSmallButton(c.Key("cat-nav-services"), "上游服务").Clicked() {
+			if SailSmallButton(c.Key("cat-nav-services"), "服务").Clicked() {
 				u.Navigate(ViewServices)
 			}
 			if SailSmallButton(c.Key("cat-nav-playground"), "路由沙盒").Clicked() {

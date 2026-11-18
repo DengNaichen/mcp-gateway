@@ -26,7 +26,6 @@ type ViewID string
 const (
 	ViewOverview   ViewID = "overview"
 	ViewServices   ViewID = "services"
-	ViewMarket     ViewID = "market"
 	ViewCatalog    ViewID = "catalog"
 	ViewRepos      ViewID = "repos"
 	ViewPlayground ViewID = "playground"
@@ -40,9 +39,7 @@ func viewTitle(v ViewID) string {
 	case ViewOverview:
 		return "概览"
 	case ViewServices:
-		return "上游服务"
-	case ViewMarket:
-		return "MCP 市场"
+		return "服务"
 	case ViewCatalog:
 		return "工具目录"
 	case ViewRepos:
@@ -842,7 +839,6 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 				u.renderNavGroup(c, "工作台", []navItem{
 					{id: ViewOverview, label: "概览", icon: IconHome},
 					servicesNavItem(activeRealServers, u.servicesNeedingAttention()),
-					{id: ViewMarket, label: "MCP 市场", icon: IconMarket},
 					{id: ViewCatalog, label: "工具目录", icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
 					{id: ViewRepos, label: "仓库绑定", icon: IconFolderGit, badge: reposNavBadge(state.Scopes)},
 					{id: ViewClients, label: "连接客户端", icon: IconServer, badge: clientsNavBadge(u)},
@@ -869,7 +865,7 @@ type navItem struct {
 // servicesNavItem shows how many services need action when any do, otherwise
 // how many are enabled, so the sidebar count never reads as "all healthy".
 func servicesNavItem(enabled, attention int) navItem {
-	item := navItem{id: ViewServices, label: "上游服务", icon: IconServer, badge: countBadge(enabled)}
+	item := navItem{id: ViewServices, label: "服务", icon: IconServer, badge: countBadge(enabled)}
 	if attention > 0 {
 		item.badge = countBadge(attention)
 		item.badgeDanger = true
@@ -1009,7 +1005,7 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 							svcLink.Background(SailBgHover)
 						}
 						svcLink.Children(func() {
-							ui.Text(c, "上游服务").FontSize(13).TextColor(SailInkMuted).SingleLine()
+							ui.Text(c, "服务").FontSize(13).TextColor(SailInkMuted).SingleLine()
 						})
 						if svcLink.Clicked() {
 							u.Navigate(ViewServices)
@@ -1092,8 +1088,6 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 						u.renderOverview(c)
 					case ViewServices:
 						u.renderServices(c)
-					case ViewMarket:
-						u.renderMarket(c)
 					case ViewCatalog:
 						u.renderCatalog(c)
 					case ViewRepos:

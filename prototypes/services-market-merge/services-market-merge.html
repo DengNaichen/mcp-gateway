@@ -1,0 +1,1904 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MCP Gateway — 服务与市场合并原型</title>
+  <style>
+    :root {
+      --bg-canvas: #ffffff;
+      --bg-sidebar: #f8fafc;
+      --bg-subtle: #f7f9fc;
+      --bg-muted: #eef2f6;
+      --bg-hover: #f3f6fa;
+      --ink-strong: #111827;
+      --ink-body: #374151;
+      --ink-muted: #6b7280;
+      --ink-faint: #9ca3af;
+      --border: #e5e9f0;
+      --divider: #edf1f6;
+      --border-strong: #cbd5e1;
+      --accent: #635bff;
+      --accent-hover: #5248f5;
+      --accent-pressed: #4338ca;
+      --accent-soft: #f5f6ff;
+      --accent-border: #d5d2ff;
+      --success: #15803d;
+      --success-dot: #16a34a;
+      --success-bg: #dcfce7;
+      --success-border: #bbf7d0;
+      --warning: #b45309;
+      --warning-dot: #d97706;
+      --warning-bg: #fef3c7;
+      --warning-border: #fde68a;
+      --danger: #b91c1c;
+      --danger-dot: #dc2626;
+      --danger-bg: #fee2e2;
+      --danger-border: #fecaca;
+      --neutral: #475569;
+      --neutral-bg: #f1f5f9;
+      --neutral-border: #e2e8f0;
+      --shadow-control: 0 1px 3px rgba(15, 23, 42, 0.06);
+      --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.04);
+      --shadow-floating: 0 8px 24px rgba(15, 23, 42, 0.12);
+      --shadow-modal: 0 16px 40px rgba(10, 37, 64, 0.22);
+      --backdrop-modal: rgba(15, 23, 42, 0.38);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    }
+
+    html[data-theme="dark"] {
+      --bg-canvas: #0f1626;
+      --bg-sidebar: #0b1120;
+      --bg-subtle: #131c2e;
+      --bg-muted: #1b263b;
+      --bg-hover: #18223a;
+      --ink-strong: #f1f5f9;
+      --ink-body: #cbd5e1;
+      --ink-muted: #94a3b8;
+      --ink-faint: #64748b;
+      --border: #243049;
+      --divider: #1d293c;
+      --border-strong: #34425f;
+      --accent: #7a73ff;
+      --accent-hover: #8f89ff;
+      --accent-pressed: #635bff;
+      --accent-soft: #1e1d4a;
+      --accent-border: #3b3894;
+      --success: #4ade9d;
+      --success-dot: #22c55e;
+      --success-bg: #0d2f22;
+      --success-border: #14573f;
+      --warning: #fbbf24;
+      --warning-dot: #f59e0b;
+      --warning-bg: #33260a;
+      --warning-border: #5c4413;
+      --danger: #f87171;
+      --danger-dot: #ef4444;
+      --danger-bg: #381416;
+      --danger-border: #661f24;
+      --neutral: #a3b1c6;
+      --neutral-bg: #1b263b;
+      --neutral-border: #2b3750;
+      --shadow-control: 0 2px 6px rgba(0, 0, 0, 0.32);
+      --shadow-card: 0 3px 10px rgba(0, 0, 0, 0.22);
+      --shadow-floating: 0 8px 24px rgba(0, 0, 0, 0.45);
+      --shadow-modal: 0 16px 40px rgba(0, 0, 0, 0.58);
+      --backdrop-modal: rgba(3, 7, 18, 0.62);
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      font-family: var(--sans);
+      background: var(--bg-canvas);
+      color: var(--ink-body);
+      font-size: 13.5px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .app {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 228px;
+      flex-shrink: 0;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .sidebar-top {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+    .traffic-lights {
+      display: flex;
+      gap: 7px;
+      padding: 14px 16px 6px;
+    }
+    .tl { width: 11px; height: 11px; border-radius: 50%; }
+    .tl.red { background: #ff5f57; }
+    .tl.yellow { background: #febc2e; }
+    .tl.green { background: #28c840; }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 10px 14px 12px;
+    }
+    .brand-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .brand-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink-strong);
+      letter-spacing: -0.01em;
+    }
+
+    .nav-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 10px 16px;
+    }
+    .nav-group-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--ink-faint);
+      padding: 10px 8px 4px;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 9px;
+      border-radius: 7px;
+      color: var(--ink-body);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 1px;
+      transition: background 0.12s, color 0.12s;
+      user-select: none;
+    }
+    .nav-item:hover {
+      background: var(--bg-hover);
+      color: var(--ink-strong);
+    }
+    .nav-item.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .nav-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .nav-icon {
+      width: 15px;
+      height: 15px;
+      opacity: 0.78;
+      flex-shrink: 0;
+    }
+    .nav-item.active .nav-icon {
+      opacity: 1;
+    }
+    .nav-badge {
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--ink-muted);
+    }
+    .nav-badge.danger {
+      color: var(--danger);
+      background: var(--danger-bg);
+      padding: 1px 6px;
+      border-radius: 999px;
+    }
+
+    .sidebar-foot {
+      border-top: 1px solid var(--border);
+      padding: 12px 14px;
+    }
+    .endpoint-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .endpoint-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--ink-body);
+    }
+    .dot-live {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--success-dot);
+    }
+    .copy-link {
+      font-size: 11.5px;
+      color: var(--accent);
+      cursor: pointer;
+      border: none;
+      background: none;
+      padding: 0;
+      font-weight: 500;
+    }
+    .copy-link:hover { text-decoration: underline; }
+    .endpoint-url {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--ink-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Main Workspace */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: var(--bg-canvas);
+      position: relative;
+    }
+    .topbar {
+      height: 46px;
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: var(--bg-canvas);
+    }
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ink-muted);
+    }
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Prototype Naming Switcher Pill */
+    .proto-switcher {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 2px 4px;
+      font-size: 11.5px;
+    }
+    .proto-switcher-label {
+      color: var(--ink-muted);
+      padding: 0 6px;
+      font-weight: 500;
+    }
+    .proto-opt {
+      border: none;
+      background: transparent;
+      color: var(--ink-muted);
+      padding: 3px 8px;
+      border-radius: 5px;
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .proto-opt:hover { color: var(--ink-strong); }
+    .proto-opt.active {
+      background: var(--bg-canvas);
+      color: var(--accent);
+      font-weight: 600;
+      box-shadow: var(--shadow-control);
+    }
+
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-canvas);
+      color: var(--ink-body);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      box-shadow: var(--shadow-control);
+    }
+    .icon-btn:hover { background: var(--bg-hover); color: var(--ink-strong); }
+
+    .content-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 22px 28px 40px;
+    }
+    .page-inner {
+      max-width: 1060px;
+      margin: 0 auto;
+    }
+
+    /* Page Header with Integrated Tabs */
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .page-header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .page-title {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 650;
+      color: var(--ink-strong);
+      letter-spacing: -0.02em;
+    }
+
+    .seg-tabs {
+      display: inline-flex;
+      align-items: center;
+      background: var(--bg-muted);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .seg-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: none;
+      background: transparent;
+      color: var(--ink-muted);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .seg-tab:hover { color: var(--ink-strong); }
+    .seg-tab.active {
+      background: var(--bg-canvas);
+      color: var(--ink-strong);
+      font-weight: 600;
+      box-shadow: var(--shadow-control);
+    }
+
+    /* Split Primary Button */
+    .split-btn-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+    .btn-primary {
+      height: 32px;
+      padding: 0 13px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.12s;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary.split-main {
+      border-radius: 7px 0 0 7px;
+    }
+    .btn-primary.split-caret {
+      border-radius: 0 7px 7px 0;
+      padding: 0 8px;
+      border-left: 1px solid rgba(255, 255, 255, 0.22);
+    }
+    .dropdown-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      width: 196px;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      box-shadow: var(--shadow-floating);
+      padding: 5px;
+      z-index: 40;
+      display: none;
+    }
+    .dropdown-menu.open { display: block; }
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      border: none;
+      background: transparent;
+      color: var(--ink-body);
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .dropdown-item:hover { background: var(--bg-hover); color: var(--ink-strong); }
+    .dropdown-hint {
+      font-size: 11px;
+      color: var(--ink-faint);
+    }
+
+    /* Surface Card */
+    .card {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: var(--shadow-card);
+      overflow: hidden;
+    }
+    .toolbar {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--divider);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .filter-pills {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .pill {
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--ink-muted);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .pill:hover { background: var(--bg-hover); color: var(--ink-strong); }
+    .pill.active {
+      background: var(--bg-muted);
+      color: var(--ink-strong);
+      font-weight: 600;
+      border-color: var(--border);
+    }
+    .pill-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+    .search-box {
+      position: relative;
+      width: 260px;
+      max-width: 100%;
+    }
+    .search-box input {
+      width: 100%;
+      height: 30px;
+      padding: 0 10px 0 30px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--bg-subtle);
+      color: var(--ink-strong);
+      font-size: 12.5px;
+      outline: none;
+    }
+    .search-box input:focus {
+      border-color: var(--accent);
+      background: var(--bg-canvas);
+    }
+    .search-icon {
+      position: absolute;
+      left: 9px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--ink-faint);
+      width: 14px;
+      height: 14px;
+      pointer-events: none;
+    }
+
+    /* Group Header & Service Rows */
+    .group-header {
+      padding: 7px 16px;
+      background: var(--bg-subtle);
+      border-bottom: 1px solid var(--divider);
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--ink-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .service-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--divider);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .service-row:last-child { border-bottom: none; }
+    .service-row:hover { background: var(--bg-hover); }
+    .service-row.disabled { opacity: 0.62; }
+
+    .row-left {
+      display: flex;
+      align-items: flex-start;
+      gap: 11px;
+      min-width: 0;
+      flex: 1;
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      margin-top: 6px;
+      flex-shrink: 0;
+    }
+    .status-dot.ready { background: var(--success-dot); }
+    .status-dot.needs-action { background: var(--danger-dot); }
+    .status-dot.pending { background: var(--warning-dot); }
+    .status-dot.disabled { background: var(--ink-faint); }
+
+    .svc-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--bg-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 11.5px;
+      color: var(--ink-strong);
+      flex-shrink: 0;
+    }
+    .row-main {
+      min-width: 0;
+      flex: 1;
+    }
+    .row-title-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .svc-name {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--ink-strong);
+    }
+    .svc-transport {
+      font-size: 11.5px;
+      color: var(--ink-muted);
+    }
+    .inline-status {
+      font-size: 11.5px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .inline-status.danger { color: var(--danger); }
+    .inline-status.warning { color: var(--warning); }
+    .inline-status.ready { color: var(--success); }
+
+    .row-sub {
+      margin-top: 3px;
+      font-size: 12px;
+      color: var(--ink-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .row-sub.danger { color: var(--danger); font-family: var(--mono); font-size: 11.5px; }
+
+    .row-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .meta-text {
+      width: 72px;
+      text-align: right;
+      font-size: 12px;
+      color: var(--ink-muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .meta-write {
+      width: 48px;
+      text-align: right;
+      font-size: 11.5px;
+      color: var(--warning);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .btn-inline {
+      height: 26px;
+      padding: 0 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-canvas);
+      color: var(--ink-strong);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      box-shadow: var(--shadow-control);
+    }
+    .btn-inline:hover {
+      border-color: var(--accent-border);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .btn-inline.primary-outline {
+      border-color: var(--danger-border);
+      color: var(--danger);
+      background: var(--danger-bg);
+    }
+    .btn-inline.primary-outline:hover {
+      filter: brightness(0.97);
+    }
+
+    /* Small Toggle Switch */
+    .switch {
+      position: relative;
+      width: 32px;
+      height: 18px;
+      border-radius: 999px;
+      background: var(--border-strong);
+      cursor: pointer;
+      transition: background 0.15s;
+      border: none;
+      padding: 0;
+      flex-shrink: 0;
+    }
+    .switch.on { background: var(--accent); }
+    .switch-thumb {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.15s;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+    .switch.on .switch-thumb { transform: translateX(14px); }
+
+    /* Market Grid */
+    .market-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .market-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    @media (max-width: 960px) {
+      .market-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .market-card {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 15px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 12px;
+      box-shadow: var(--shadow-card);
+      transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .market-card:hover {
+      border-color: var(--border-strong);
+      box-shadow: var(--shadow-floating);
+    }
+    .mc-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .mc-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .mc-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--ink-strong);
+    }
+    .mc-publisher {
+      font-size: 11.5px;
+      color: var(--ink-muted);
+      margin-top: 1px;
+    }
+    .mc-desc {
+      font-size: 12.5px;
+      color: var(--ink-body);
+      line-height: 1.45;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .mc-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-top: 4px;
+    }
+    .mc-tags {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tag {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: var(--neutral-bg);
+      color: var(--neutral);
+      border: 1px solid var(--neutral-border);
+      font-weight: 500;
+    }
+    .tag.auth {
+      background: var(--warning-bg);
+      color: var(--warning);
+      border-color: var(--warning-border);
+    }
+    .tag.free {
+      background: var(--success-bg);
+      color: var(--success);
+      border-color: var(--success-border);
+    }
+    .btn-add-market {
+      height: 27px;
+      padding: 0 11px;
+      border-radius: 6px;
+      border: 1px solid var(--accent-border);
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .btn-add-market:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-added-market {
+      height: 27px;
+      padding: 0 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-subtle);
+      color: var(--ink-muted);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .btn-added-market:hover {
+      color: var(--ink-strong);
+      background: var(--bg-hover);
+    }
+
+    .footer-hint {
+      padding: 12px 16px;
+      background: var(--bg-subtle);
+      border-top: 1px solid var(--divider);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--ink-muted);
+    }
+    .link-btn {
+      border: none;
+      background: none;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+    }
+    .link-btn:hover { text-decoration: underline; }
+
+    /* Inspector Drawer */
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: transparent;
+      z-index: 45;
+      display: none;
+    }
+    .drawer-backdrop.open { display: block; }
+    .drawer {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      bottom: 12px;
+      width: 390px;
+      max-width: calc(100vw - 24px);
+      background: var(--bg-canvas);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-floating);
+      z-index: 50;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .drawer.open { display: flex; }
+    .drawer-head {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--divider);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .drawer-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 18px;
+    }
+    .kv-list {
+      display: grid;
+      gap: 10px;
+      margin: 14px 0;
+    }
+    .kv-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 12.5px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--divider);
+    }
+    .kv-k { color: var(--ink-muted); }
+    .kv-v { color: var(--ink-strong); font-weight: 500; text-align: right; word-break: break-all; }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: var(--backdrop-modal);
+      z-index: 60;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: 440px;
+      max-width: 100%;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow-modal);
+      overflow: hidden;
+    }
+    .modal-head {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--divider);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--ink-strong);
+    }
+    .modal-body {
+      padding: 18px 20px;
+    }
+    .field-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink-strong);
+      margin-bottom: 6px;
+    }
+    .input-ctrl, .textarea-ctrl {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: var(--bg-subtle);
+      color: var(--ink-strong);
+      border-radius: 7px;
+      padding: 8px 10px;
+      font-size: 12.5px;
+      font-family: var(--mono);
+      outline: none;
+    }
+    .input-ctrl:focus, .textarea-ctrl:focus {
+      border-color: var(--accent);
+      background: var(--bg-canvas);
+    }
+    .modal-foot {
+      padding: 14px 20px;
+      border-top: 1px solid var(--divider);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      background: var(--bg-subtle);
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 24px;
+      background: var(--ink-strong);
+      color: var(--bg-canvas);
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 500;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      box-shadow: var(--shadow-floating);
+      z-index: 80;
+    }
+    .toast.show { display: flex; }
+    .toast-action {
+      border: none;
+      background: transparent;
+      color: #a5b4fc;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+      font-size: 12.5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="traffic-lights">
+          <span class="tl red"></span>
+          <span class="tl yellow"></span>
+          <span class="tl green"></span>
+        </div>
+        <div class="brand">
+          <div class="brand-icon">M</div>
+          <span class="brand-name">MCP Gateway</span>
+        </div>
+
+        <div class="nav-scroll">
+          <div class="nav-group-label">工作台</div>
+          <div class="nav-item" onclick="showStub('概览')">
+            <span class="nav-left">
+              <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 7.5 8 3l5.5 4.5V13a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V7.5Z"/></svg>
+              <span>概览</span>
+            </span>
+          </div>
+          <div class="nav-item active" onclick="showMain()">
+            <span class="nav-left">
+              <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2.5" width="12" height="4.5" rx="1.2"/><rect x="2" y="9" width="12" height="4.5" rx="1.2"/></svg>
+              <span id="nav-services-label">服务</span>
+            </span>
+            <span class="nav-badge danger" id="nav-services-badge">4</span>
+          </div>
+          <div class="nav-item" onclick="showStub('工具目录')">
+            <span class="nav-left">
+              <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M3 8h10M3 12h6"/></svg>
+              <span>工具目录</span>
+            </span>
+            <span class="nav-badge">563/702</span>
+          </div>
+          <div class="nav-item" onclick="showStub('仓库绑定')">
+            <span class="nav-left">
+              <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3v10M4 4.5h6.5a1.5 1.5 0 0 1 0 3H4m5 0 3 5.5"/></svg>
+              <span>仓库绑定</span>
+            </span>
+            <span class="nav-badge">5</span>
+          </div>
+          <div class="nav-item" onclick="showStub('连接客户端')">
+            <span class="nav-left">
+              <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="3" width="11" height="8" rx="1.2"/><path d="M6 13.5h4"/></svg>
+              <span>连接客户端</span>
+            </span>
+            <span class="nav-badge">6</span>
+          </div>
+          <div class="nav-item" onclick="showStub('访问与路由')">
+            <span class="nav-left">
+              <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2.2 13 4.5v3.6c0 3-2.1 5.1-5 5.9-2.9-.8-5-2.9-5-5.9V4.5L8 2.2Z"/></svg>
+              <span>访问与路由</span>
+            </span>
+          </div>
+
+          <div class="nav-group-label" style="margin-top:8px;">观测与调试</div>
+          <div class="nav-item" onclick="showStub('请求日志')">
+            <span class="nav-left">
+              <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8h2.5l1.8-4 2.8 8 1.9-4H14"/></svg>
+              <span>请求日志</span>
+            </span>
+            <span class="nav-badge">100</span>
+          </div>
+          <div class="nav-item" onclick="showStub('路由沙盒')">
+            <span class="nav-left">
+              <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="4" cy="4" r="1.5"/><circle cx="12" cy="4" r="1.5"/><circle cx="8" cy="12" r="1.5"/><path d="M5.2 5l2 5.6M10.8 5l-2 5.6"/></svg>
+              <span>路由沙盒</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-foot">
+        <div class="endpoint-row">
+          <span class="endpoint-label"><span class="dot-live"></span> MCP 端点</span>
+          <button class="copy-link" onclick="showToast('已复制 MCP 端点地址')">复制</button>
+        </div>
+        <div class="endpoint-url">http://127.0.0.1:8788/mcp</div>
+      </div>
+    </aside>
+
+    <!-- Main Area -->
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <span id="topbar-title">服务</span>
+          <span>·</span>
+          <span id="topbar-sub" style="font-size:12px;">合并原「上游服务」与「MCP 市场」（侧栏 7 项 → 6 项）</span>
+        </div>
+        <div class="topbar-right">
+          <div class="proto-switcher" title="切换不同命名方案，实时预览侧边栏与页头效果">
+            <span class="proto-switcher-label">命名试看</span>
+            <button class="proto-opt active" data-name="服务" onclick="setNaming('服务', this)">服务</button>
+            <button class="proto-opt" data-name="外部服务" onclick="setNaming('外部服务', this)">外部服务</button>
+            <button class="proto-opt" data-name="集成" onclick="setNaming('集成', this)">集成</button>
+          </div>
+          <button class="icon-btn" onclick="toggleTheme()" id="theme-btn">深色模式</button>
+          <button class="icon-btn" onclick="showToast('已刷新服务连接状态')">刷新</button>
+        </div>
+      </header>
+
+      <div class="content-scroll">
+        <div class="page-inner" id="page-services">
+          <!-- Page Header -->
+          <div class="page-header">
+            <div class="page-header-left">
+              <h1 class="page-title" id="main-page-title">服务</h1>
+              <div class="seg-tabs" role="tablist">
+                <button class="seg-tab active" id="tab-installed" onclick="switchTab('installed')">已接入</button>
+                <button class="seg-tab" id="tab-market" onclick="switchTab('market')">市场</button>
+              </div>
+            </div>
+
+            <div class="split-btn-wrap">
+              <button class="btn-primary split-main" onclick="openCustomModal('manual')">
+                <span>+ 添加服务</span>
+              </button>
+              <button class="btn-primary split-caret" onclick="toggleAddMenu(event)" aria-label="更多添加方式">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 4.5 6 7.5 9 4.5"/></svg>
+              </button>
+              <div class="dropdown-menu" id="add-dropdown">
+                <button class="dropdown-item" onclick="openCustomModal('json')">
+                  <span>粘贴 MCP JSON</span>
+                  <span class="dropdown-hint">快捷</span>
+                </button>
+                <button class="dropdown-item" onclick="openCustomModal('openapi')">
+                  <span>OpenAPI 导入</span>
+                  <span class="dropdown-hint">REST</span>
+                </button>
+                <button class="dropdown-item" onclick="openCustomModal('manual')">
+                  <span>手动配置服务</span>
+                  <span class="dropdown-hint">Stdio/HTTP</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- View 1: Installed Services -->
+          <section id="view-installed">
+            <div class="card">
+              <div class="toolbar">
+                <div class="filter-pills" id="status-filters"></div>
+                <div class="search-box">
+                  <svg class="search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+                  <input type="text" id="installed-search" placeholder="搜索已接入服务、ID 或凭据..." oninput="renderInstalled()" />
+                </div>
+              </div>
+              <div id="installed-list"></div>
+              <div class="footer-hint">
+                <span>需要接入更多第三方工具（如 Linear、Stripe、Datadog）？</span>
+                <button class="link-btn" onclick="switchTab('market')">浏览服务市场 →</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- View 2: Marketplace -->
+          <section id="view-market" style="display:none;">
+            <div class="market-toolbar">
+              <div class="filter-pills" id="market-filters"></div>
+              <div class="search-box">
+                <svg class="search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+                <input type="text" id="market-search" placeholder="搜索精选 SaaS 或官方 Registry..." oninput="renderMarket()" />
+              </div>
+            </div>
+            <div class="market-grid" id="market-grid"></div>
+          </section>
+        </div>
+
+        <!-- Stub for other pages -->
+        <div class="page-inner" id="page-stub" style="display:none;">
+          <div class="card" style="padding:36px;text-align:center;">
+            <h2 style="margin:0 0 8px;font-size:16px;color:var(--ink-strong);" id="stub-title">页面占位</h2>
+            <p style="margin:0 0 16px;color:var(--ink-muted);font-size:13px;">本原型聚焦验证「服务（已接入 + 市场）」合并后的信息架构与交互流。</p>
+            <button class="btn-primary" style="border-radius:7px;" onclick="showMain()">返回服务页</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Inspector Drawer -->
+  <div class="drawer-backdrop" id="drawer-backdrop" onclick="closeDrawer()"></div>
+  <aside class="drawer" id="inspector-drawer">
+    <div class="drawer-head">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="svc-icon" id="drawer-icon">GH</div>
+        <div>
+          <div style="font-weight:650;color:var(--ink-strong);font-size:14.5px;" id="drawer-name">GitHub</div>
+          <div style="font-size:11.5px;color:var(--ink-muted);" id="drawer-transport">MCP Streamable HTTP</div>
+        </div>
+      </div>
+      <button class="icon-btn" onclick="closeDrawer()">关闭</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </aside>
+
+  <!-- Modal -->
+  <div class="modal-backdrop" id="modal-backdrop" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+      <div class="modal-head">
+        <h3 class="modal-title" id="modal-title">配置凭据</h3>
+        <button class="icon-btn" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-foot" id="modal-foot"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">
+    <span id="toast-msg"></span>
+    <button class="toast-action" id="toast-action" style="display:none;"></button>
+  </div>
+
+  <script>
+    const state = {
+      naming: '服务',
+      activeTab: 'installed',
+      installedFilter: 'all',
+      marketCategory: 'all',
+      selectedServiceId: null,
+      services: [
+        {
+          id: 'supabase',
+          name: 'Supabase',
+          abbr: 'SB',
+          color: '#10b981',
+          transport: 'MCP Stdio',
+          status: 'needs_action',
+          reason: '缺少凭据: SUPABASE_ACCESS_TOKEN',
+          envKey: 'SUPABASE_ACCESS_TOKEN',
+          desc: 'Supabase database, auth, edge functions, storage and project management.',
+          toolsActive: 22,
+          toolsTotal: 22,
+          writableCount: 0,
+          enabled: true
+        },
+        {
+          id: 'notion',
+          name: 'Notion',
+          abbr: 'NT',
+          color: '#111827',
+          transport: 'MCP Stdio',
+          status: 'needs_action',
+          reason: '缺少凭据: NOTION_TOKEN',
+          envKey: 'NOTION_TOKEN',
+          desc: 'Search, read and update Notion pages, databases and comments.',
+          toolsActive: 13,
+          toolsTotal: 24,
+          writableCount: 1,
+          enabled: true
+        },
+        {
+          id: 'hubspot',
+          name: 'HubSpot',
+          abbr: 'HS',
+          color: '#f97316',
+          transport: 'MCP Stdio',
+          status: 'needs_action',
+          reason: '缺少凭据: HUBSPOT_ACCESS_TOKEN',
+          envKey: 'HUBSPOT_ACCESS_TOKEN',
+          desc: 'CRM contacts, companies, deals, tickets and marketing engagement.',
+          toolsActive: 14,
+          toolsTotal: 21,
+          writableCount: 0,
+          enabled: true
+        },
+        {
+          id: 'slack',
+          name: 'Slack',
+          abbr: 'SL',
+          color: '#e11d48',
+          transport: 'MCP Stdio',
+          status: 'needs_action',
+          reason: '缺少凭据: SLACK_BOT_TOKEN, SLACK_TEAM_ID',
+          envKey: 'SLACK_BOT_TOKEN',
+          desc: 'Workspace channels, messages, threads, reactions and user lookup.',
+          toolsActive: 5,
+          toolsTotal: 8,
+          writableCount: 5,
+          enabled: true
+        },
+        {
+          id: 'playwright',
+          name: 'Playwright',
+          abbr: 'PW',
+          color: '#16a34a',
+          transport: 'MCP Stdio',
+          status: 'pending',
+          reason: '尚未执行连接检查，点击测试连接确认服务可用',
+          desc: 'Browser automation, DOM inspection, screenshots and end-to-end flows.',
+          toolsActive: 7,
+          toolsTotal: 25,
+          writableCount: 0,
+          enabled: true
+        },
+        {
+          id: 'mongodb',
+          name: 'MongoDB',
+          abbr: 'MG',
+          color: '#15803d',
+          transport: 'MCP Stdio',
+          status: 'pending',
+          reason: '尚未执行连接检查，点击测试连接确认服务可用',
+          desc: 'Query MongoDB collections, indexes, aggregations and schemas.',
+          toolsActive: 20,
+          toolsTotal: 31,
+          writableCount: 0,
+          enabled: true
+        },
+        {
+          id: 'github',
+          name: 'GitHub',
+          abbr: 'GH',
+          color: '#24292f',
+          transport: 'MCP Streamable HTTP',
+          status: 'ready',
+          reason: '',
+          desc: 'GitHub repositories: issues, pull requests, commits, branches, releases, code search, teams and secret scanning',
+          toolsActive: 46,
+          toolsTotal: 46,
+          writableCount: 18,
+          enabled: true
+        },
+        {
+          id: 'vercel',
+          name: 'Vercel',
+          abbr: 'VC',
+          color: '#0f172a',
+          transport: 'MCP Stdio',
+          status: 'ready',
+          reason: '',
+          desc: 'Vercel deployments, projects, domains, DNS, environment variables, logs, analytics, Edge Config, billing and docs',
+          toolsActive: 250,
+          toolsTotal: 250,
+          writableCount: 99,
+          enabled: true
+        },
+        {
+          id: 'sentry',
+          name: 'Sentry',
+          abbr: 'ST',
+          color: '#635bff',
+          transport: 'MCP Stdio',
+          status: 'disabled',
+          reason: '已手动停用',
+          desc: 'Error tracking, stacktraces, release health and performance issues.',
+          toolsActive: 48,
+          toolsTotal: 73,
+          writableCount: 0,
+          enabled: false
+        }
+      ],
+      market: [
+        {
+          id: 'linear',
+          name: 'Linear',
+          abbr: 'LN',
+          color: '#5e6ad2',
+          publisher: 'Linear Official',
+          category: '效率协作',
+          transport: 'MCP HTTP',
+          authType: '需登录',
+          envKey: 'LINEAR_API_KEY',
+          desc: '读写 Issues、Projects、Cycles 与团队工作流状态。'
+        },
+        {
+          id: 'stripe',
+          name: 'Stripe',
+          abbr: 'SR',
+          color: '#635bff',
+          publisher: 'Stripe Official',
+          category: '精选 SaaS',
+          transport: 'MCP HTTP',
+          authType: '需凭据',
+          envKey: 'STRIPE_SECRET_KEY',
+          desc: '查询客户、订阅、账单、支付流水与官方 API 文档。'
+        },
+        {
+          id: 'context7',
+          name: 'Context7',
+          abbr: 'C7',
+          color: '#0ea5e9',
+          publisher: 'Upstash',
+          category: '开发与代码',
+          transport: 'MCP HTTP',
+          authType: '免凭据',
+          envKey: '',
+          desc: '实时拉取最新开源库文档与代码示例，减少模型幻觉。'
+        },
+        {
+          id: 'datadog',
+          name: 'Datadog',
+          abbr: 'DD',
+          color: '#7c3aed',
+          publisher: 'Datadog',
+          category: '数据与观测',
+          transport: 'MCP Stdio',
+          authType: '需凭据',
+          envKey: 'DD_API_KEY',
+          desc: '检索线上日志、APM 链路追踪、告警与监控指标。'
+        },
+        {
+          id: 'figma',
+          name: 'Figma',
+          abbr: 'FG',
+          color: '#ec4899',
+          publisher: 'Figma Official',
+          category: '效率协作',
+          transport: 'MCP HTTP',
+          authType: '需登录',
+          envKey: 'FIGMA_TOKEN',
+          desc: '读取设计稿图层结构、Token 变量与组件规范。'
+        },
+        {
+          id: 'postgres',
+          name: 'PostgreSQL',
+          abbr: 'PG',
+          color: '#2563eb',
+          publisher: 'MCP Registry',
+          category: '数据与观测',
+          transport: 'MCP Stdio',
+          authType: '需凭据',
+          envKey: 'POSTGRES_URL',
+          desc: '只读连接 PostgreSQL 实例，检查表结构并执行安全查询。'
+        },
+        {
+          id: 'github',
+          name: 'GitHub',
+          abbr: 'GH',
+          color: '#24292f',
+          publisher: 'GitHub Official',
+          category: '开发与代码',
+          transport: 'MCP Streamable HTTP',
+          authType: '需登录',
+          envKey: 'GITHUB_TOKEN',
+          desc: '管理仓库、Issue、Pull Request、Actions 与代码检索。'
+        },
+        {
+          id: 'vercel',
+          name: 'Vercel',
+          abbr: 'VC',
+          color: '#0f172a',
+          publisher: 'Vercel Official',
+          category: '精选 SaaS',
+          transport: 'MCP Stdio',
+          authType: '需登录',
+          envKey: 'VERCEL_TOKEN',
+          desc: '部署预览、环境变量、域名、日志与边缘配置管理。'
+        },
+        {
+          id: 'supabase',
+          name: 'Supabase',
+          abbr: 'SB',
+          color: '#10b981',
+          publisher: 'Supabase Official',
+          category: '数据与观测',
+          transport: 'MCP Stdio',
+          authType: '需凭据',
+          envKey: 'SUPABASE_ACCESS_TOKEN',
+          desc: '数据库迁移、Edge Functions、Auth 与项目配置管理。'
+        }
+      ]
+    };
+
+    function setNaming(name, btn) {
+      state.naming = name;
+      document.querySelectorAll('.proto-opt').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('nav-services-label').textContent = name;
+      document.getElementById('topbar-title').textContent = name;
+      document.getElementById('main-page-title').textContent = name;
+    }
+
+    function toggleTheme() {
+      const html = document.documentElement;
+      const isDark = html.getAttribute('data-theme') === 'dark';
+      html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+      document.getElementById('theme-btn').textContent = isDark ? '深色模式' : '浅色模式';
+    }
+
+    function switchTab(tab) {
+      state.activeTab = tab;
+      document.getElementById('tab-installed').classList.toggle('active', tab === 'installed');
+      document.getElementById('tab-market').classList.toggle('active', tab === 'market');
+      document.getElementById('view-installed').style.display = tab === 'installed' ? 'block' : 'none';
+      document.getElementById('view-market').style.display = tab === 'market' ? 'block' : 'none';
+    }
+
+    function showStub(title) {
+      document.getElementById('page-services').style.display = 'none';
+      document.getElementById('page-stub').style.display = 'block';
+      document.getElementById('stub-title').textContent = title;
+      document.getElementById('topbar-title').textContent = title;
+    }
+
+    function showMain() {
+      document.getElementById('page-stub').style.display = 'none';
+      document.getElementById('page-services').style.display = 'block';
+      document.getElementById('topbar-title').textContent = state.naming;
+    }
+
+    function toggleAddMenu(e) {
+      e.stopPropagation();
+      document.getElementById('add-dropdown').classList.toggle('open');
+    }
+    document.addEventListener('click', () => {
+      document.getElementById('add-dropdown').classList.remove('open');
+    });
+
+    function updateCounters() {
+      const needsCount = state.services.filter(s => s.enabled && s.status === 'needs_action').length;
+      const badge = document.getElementById('nav-services-badge');
+      if (needsCount > 0) {
+        badge.textContent = needsCount;
+        badge.classList.add('danger');
+      } else {
+        badge.textContent = state.services.filter(s => s.enabled).length;
+        badge.classList.remove('danger');
+      }
+    }
+
+    function renderInstalled() {
+      updateCounters();
+      const counts = {
+        all: state.services.length,
+        needs_action: state.services.filter(s => s.enabled && s.status === 'needs_action').length,
+        pending: state.services.filter(s => s.enabled && s.status === 'pending').length,
+        ready: state.services.filter(s => s.enabled && s.status === 'ready').length,
+        disabled: state.services.filter(s => !s.enabled).length
+      };
+
+      const filterDefs = [
+        { key: 'all', label: '全部' },
+        { key: 'needs_action', label: '需处理', dot: 'var(--danger-dot)' },
+        { key: 'pending', label: '待验证', dot: 'var(--warning-dot)' },
+        { key: 'ready', label: '就绪', dot: 'var(--success-dot)' },
+        { key: 'disabled', label: '已停用', dot: 'var(--ink-faint)' }
+      ];
+
+      document.getElementById('status-filters').innerHTML = filterDefs.map(f => `
+        <button class="pill ${state.installedFilter === f.key ? 'active' : ''}" onclick="state.installedFilter='${f.key}';renderInstalled()">
+          ${f.dot ? `<span class="pill-dot" style="background:${f.dot};"></span>` : ''}
+          <span>${f.label}</span>
+          <span style="color:var(--ink-faint);font-variant-numeric:tabular-nums;">${counts[f.key]}</span>
+        </button>
+      `).join('');
+
+      const q = document.getElementById('installed-search').value.trim().toLowerCase();
+      const filtered = state.services.filter(s => {
+        const effStatus = s.enabled ? s.status : 'disabled';
+        if (state.installedFilter !== 'all' && effStatus !== state.installedFilter) return false;
+        if (q) {
+          const hay = `${s.name} ${s.id} ${s.reason} ${s.desc}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+
+      const groups = [
+        { key: 'needs_action', title: '需处理' },
+        { key: 'pending', title: '待验证' },
+        { key: 'ready', title: '就绪' },
+        { key: 'disabled', title: '已停用' }
+      ];
+
+      const container = document.getElementById('installed-list');
+      if (filtered.length === 0) {
+        container.innerHTML = `<div style="padding:36px;text-align:center;color:var(--ink-muted);">没有匹配的服务，可以前往 <button class="link-btn" onclick="switchTab('market')">服务市场</button> 浏览或添加。</div>`;
+        return;
+      }
+
+      let html = '';
+      groups.forEach(g => {
+        const items = filtered.filter(s => (s.enabled ? s.status : 'disabled') === g.key);
+        if (items.length === 0) return;
+        html += `<div class="group-header"><span>${g.title}</span><span>${items.length}</span></div>`;
+        items.forEach(s => {
+          const eff = s.enabled ? s.status : 'disabled';
+          const dotCls = eff === 'needs_action' ? 'needs-action' : eff;
+          let actionBtn = '';
+          if (eff === 'needs_action') {
+            actionBtn = `<button class="btn-inline" onclick="event.stopPropagation();openCredModal('${s.id}')">填写凭据</button>`;
+          } else if (eff === 'pending') {
+            actionBtn = `<button class="btn-inline" onclick="event.stopPropagation();testConnection('${s.id}')">测试连接</button>`;
+          }
+          let subLine = `<div class="row-sub">${s.desc}</div>`;
+          if (eff === 'needs_action') {
+            const vars = s.reason.replace(/^缺少凭据:\s*/, '');
+            subLine = `<div class="row-sub"><span class="inline-status danger">缺少凭据</span> · <span style="font-family:var(--mono);font-size:11.5px;color:var(--ink-muted);">${vars}</span></div>`;
+          } else if (eff === 'pending') {
+            subLine = `<div class="row-sub"><span class="inline-status warning">待验证</span> · ${s.reason}</div>`;
+          }
+
+          html += `
+            <div class="service-row ${s.enabled ? '' : 'disabled'}" onclick="openDrawer('${s.id}')">
+              <div class="row-left">
+                <span class="status-dot ${dotCls}"></span>
+                <div class="row-main">
+                  <div class="row-title-line">
+                    <span class="svc-name">${s.name}</span>
+                    <span class="svc-transport">${s.transport}</span>
+                  </div>
+                  ${subLine}
+                </div>
+              </div>
+              <div class="row-right">
+                ${actionBtn}
+                <span class="meta-write">${s.writableCount > 0 ? `${s.writableCount} 可写` : ''}</span>
+                <span class="meta-text">${s.toolsActive}/${s.toolsTotal} 工具</span>
+                <button class="switch ${s.enabled ? 'on' : ''}" onclick="event.stopPropagation();toggleService('${s.id}')" aria-label="切换启用">
+                  <span class="switch-thumb"></span>
+                </button>
+              </div>
+            </div>
+          `;
+        });
+      });
+      container.innerHTML = html;
+    }
+
+    function renderMarket() {
+      const cats = ['all', '精选 SaaS', '开发与代码', '数据与观测', '效率协作'];
+      document.getElementById('market-filters').innerHTML = cats.map(c => `
+        <button class="pill ${state.marketCategory === c ? 'active' : ''}" onclick="state.marketCategory='${c}';renderMarket()">
+          ${c === 'all' ? '全部' : c}
+        </button>
+      `).join('');
+
+      const q = document.getElementById('market-search').value.trim().toLowerCase();
+      const installedIds = new Set(state.services.map(s => s.id));
+      const items = state.market.filter(m => {
+        if (state.marketCategory !== 'all' && m.category !== state.marketCategory) return false;
+        if (q && !`${m.name} ${m.publisher} ${m.desc} ${m.category}`.toLowerCase().includes(q)) return false;
+        return true;
+      });
+
+      document.getElementById('market-grid').innerHTML = items.map(m => {
+        const isInstalled = installedIds.has(m.id);
+        const authCls = m.authType === '免凭据' ? 'free' : 'auth';
+        return `
+          <div class="market-card">
+            <div>
+              <div class="mc-head">
+                <div class="mc-brand">
+                  <div class="svc-icon" style="color:${m.color};">${m.abbr}</div>
+                  <div>
+                    <div class="mc-title">${m.name}</div>
+                    <div class="mc-publisher">${m.publisher}</div>
+                  </div>
+                </div>
+                ${isInstalled
+                  ? `<button class="btn-added-market" onclick="jumpToInstalled('${m.id}')">✓ 已接入</button>`
+                  : `<button class="btn-add-market" onclick="installFromMarket('${m.id}')">+ 添加</button>`
+                }
+              </div>
+              <div class="mc-desc" style="margin-top:10px;">${m.desc}</div>
+            </div>
+            <div class="mc-foot">
+              <div class="mc-tags">
+                <span class="tag">${m.transport}</span>
+                <span class="tag ${authCls}">${m.authType}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function toggleService(id) {
+      const svc = state.services.find(s => s.id === id);
+      if (!svc) return;
+      svc.enabled = !svc.enabled;
+      renderInstalled();
+      showToast(`${svc.name} 已${svc.enabled ? '启用' : '停用'}`);
+    }
+
+    function testConnection(id) {
+      const svc = state.services.find(s => s.id === id);
+      if (!svc) return;
+      svc.status = 'ready';
+      svc.reason = '';
+      renderInstalled();
+      showToast(`${svc.name} 连接检查通过，已就绪`);
+    }
+
+    function openCredModal(id) {
+      const svc = state.services.find(s => s.id === id);
+      if (!svc) return;
+      document.getElementById('modal-title').textContent = `配置 ${svc.name} 凭据`;
+      document.getElementById('modal-body').innerHTML = `
+        <p style="margin:0 0 12px;font-size:12.5px;color:var(--ink-muted);">凭据将安全保存在本机系统钥匙串中，不写入配置文件。</p>
+        <label class="field-label">${svc.envKey || 'API_TOKEN'}</label>
+        <input class="input-ctrl" id="cred-input" type="password" placeholder="输入 ${svc.envKey || 'Token'}..." value="sk_demo_••••••••••••" />
+      `;
+      document.getElementById('modal-foot').innerHTML = `
+        <button class="icon-btn" onclick="closeModal()">取消</button>
+        <button class="btn-primary" style="border-radius:7px;" onclick="saveCred('${svc.id}')">保存并测试连接</button>
+      `;
+      document.getElementById('modal-backdrop').classList.add('open');
+    }
+
+    function saveCred(id) {
+      const svc = state.services.find(s => s.id === id);
+      if (svc) {
+        svc.status = 'ready';
+        svc.reason = '';
+      }
+      closeModal();
+      renderInstalled();
+      showToast(`${svc.name} 凭据已保存并就绪`);
+    }
+
+    function installFromMarket(marketId) {
+      const m = state.market.find(x => x.id === marketId);
+      if (!m) return;
+      if (m.authType === '免凭据') {
+        addMarketService(m, true);
+        showToast(`已添加 ${m.name} 到已接入服务`, '去查看', () => {
+          switchTab('installed');
+        });
+        return;
+      }
+
+      document.getElementById('modal-title').textContent = `添加 ${m.name}`;
+      document.getElementById('modal-body').innerHTML = `
+        <p style="margin:0 0 12px;font-size:12.5px;color:var(--ink-muted);">${m.desc}</p>
+        <label class="field-label">${m.envKey}（${m.authType}）</label>
+        <input class="input-ctrl" id="market-cred-input" type="password" placeholder="粘贴凭据即可立即就绪，或留空稍后配置..." />
+      `;
+      document.getElementById('modal-foot').innerHTML = `
+        <button class="icon-btn" onclick="confirmMarketAdd('${m.id}', false)">先添加，稍后配置</button>
+        <button class="btn-primary" style="border-radius:7px;" onclick="confirmMarketAdd('${m.id}', true)">添加并启用</button>
+      `;
+      document.getElementById('modal-backdrop').classList.add('open');
+    }
+
+    function confirmMarketAdd(marketId, withCred) {
+      const m = state.market.find(x => x.id === marketId);
+      if (!m) return;
+      const val = document.getElementById('market-cred-input')?.value.trim();
+      const readyNow = withCred && Boolean(val);
+      addMarketService(m, readyNow);
+      closeModal();
+      showToast(
+        readyNow ? `${m.name} 已添加并就绪` : `${m.name} 已添加（待补齐凭据）`,
+        '查看已接入',
+        () => switchTab('installed')
+      );
+    }
+
+    function addMarketService(m, readyNow) {
+      if (state.services.some(s => s.id === m.id)) return;
+      state.services.unshift({
+        id: m.id,
+        name: m.name,
+        abbr: m.abbr,
+        color: m.color,
+        transport: m.transport,
+        status: readyNow ? 'ready' : 'needs_action',
+        reason: readyNow ? '' : `缺少凭据: ${m.envKey}`,
+        envKey: m.envKey,
+        desc: m.desc,
+        toolsActive: 12,
+        toolsTotal: 12,
+        writableCount: 2,
+        enabled: true
+      });
+      renderInstalled();
+      renderMarket();
+    }
+
+    function jumpToInstalled(id) {
+      switchTab('installed');
+      state.installedFilter = 'all';
+      renderInstalled();
+      openDrawer(id);
+    }
+
+    function openCustomModal(mode) {
+      document.getElementById('add-dropdown').classList.remove('open');
+      const titles = {
+        json: '粘贴 MCP JSON',
+        openapi: '导入 OpenAPI 规范 (HTTP REST)',
+        manual: '手动添加自定义服务'
+      };
+      document.getElementById('modal-title').textContent = titles[mode] || '添加服务';
+      if (mode === 'json') {
+        document.getElementById('modal-body').innerHTML = `
+          <label class="field-label">mcpServers JSON 片段</label>
+          <textarea class="textarea-ctrl" rows="6">{\n  "mcpServers": {\n    "my-server": {\n      "command": "npx",\n      "args": ["-y", "@example/mcp-server"]\n    }\n  }\n}</textarea>
+        `;
+      } else if (mode === 'openapi') {
+        document.getElementById('modal-body').innerHTML = `
+          <label class="field-label">OpenAPI Spec URL</label>
+          <input class="input-ctrl" placeholder="https://api.example.com/openapi.json" />
+        `;
+      } else {
+        document.getElementById('modal-body').innerHTML = `
+          <label class="field-label">服务名称</label>
+          <input class="input-ctrl" style="margin-bottom:12px;" placeholder="例如 Internal Billing API" />
+          <label class="field-label">端点地址或启动命令</label>
+          <input class="input-ctrl" placeholder="https://mcp.internal.dev/mcp 或 npx ..." />
+        `;
+      }
+      document.getElementById('modal-foot').innerHTML = `
+        <button class="icon-btn" onclick="closeModal()">取消</button>
+        <button class="btn-primary" style="border-radius:7px;" onclick="closeModal();showToast('已模拟添加自定义服务')">确认添加</button>
+      `;
+      document.getElementById('modal-backdrop').classList.add('open');
+    }
+
+    function openDrawer(id) {
+      const svc = state.services.find(s => s.id === id);
+      if (!svc) return;
+      state.selectedServiceId = id;
+      document.getElementById('drawer-icon').textContent = svc.abbr;
+      document.getElementById('drawer-icon').style.color = svc.color;
+      document.getElementById('drawer-name').textContent = svc.name;
+      document.getElementById('drawer-transport').textContent = svc.transport;
+
+      const statusLabel = !svc.enabled ? '已停用' : svc.status === 'ready' ? '就绪' : svc.status === 'pending' ? '待验证' : '缺少凭据';
+      document.getElementById('drawer-body').innerHTML = `
+        <p style="margin:0;font-size:13px;line-height:1.55;color:var(--ink-body);">${svc.desc}</p>
+        <div class="kv-list">
+          <div class="kv-item"><span class="kv-k">当前状态</span><span class="kv-v">${statusLabel}</span></div>
+          <div class="kv-item"><span class="kv-k">传输协议</span><span class="kv-v">${svc.transport}</span></div>
+          <div class="kv-item"><span class="kv-k">可用工具</span><span class="kv-v">${svc.toolsActive} / ${svc.toolsTotal}</span></div>
+          <div class="kv-item"><span class="kv-k">写操作工具</span><span class="kv-v">${svc.writableCount} 个</span></div>
+          ${svc.envKey ? `<div class="kv-item"><span class="kv-k">所需凭据</span><span class="kv-v" style="font-family:var(--mono);font-size:11.5px;">${svc.envKey}</span></div>` : ''}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px;">
+          ${svc.status === 'needs_action' ? `<button class="btn-primary" style="border-radius:7px;" onclick="closeDrawer();openCredModal('${svc.id}')">填写凭据</button>` : ''}
+          ${svc.status === 'pending' ? `<button class="btn-primary" style="border-radius:7px;" onclick="testConnection('${svc.id}');openDrawer('${svc.id}')">测试连接</button>` : ''}
+          <button class="icon-btn" onclick="toggleService('${svc.id}');openDrawer('${svc.id}')">${svc.enabled ? '停用服务' : '启用服务'}</button>
+        </div>
+      `;
+      document.getElementById('drawer-backdrop').classList.add('open');
+      document.getElementById('inspector-drawer').classList.add('open');
+    }
+
+    function closeDrawer() {
+      document.getElementById('drawer-backdrop').classList.remove('open');
+      document.getElementById('inspector-drawer').classList.remove('open');
+    }
+
+    function closeModal() {
+      document.getElementById('modal-backdrop').classList.remove('open');
+    }
+
+    let toastTimer = null;
+    function showToast(msg, actionLabel, actionFn) {
+      const el = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg;
+      const act = document.getElementById('toast-action');
+      if (actionLabel && actionFn) {
+        act.textContent = actionLabel;
+        act.style.display = 'inline';
+        act.onclick = () => {
+          el.classList.remove('show');
+          actionFn();
+        };
+      } else {
+        act.style.display = 'none';
+      }
+      el.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove('show'), 3600);
+    }
+
+    renderInstalled();
+    renderMarket();
+  </script>
+</body>
+</html>
