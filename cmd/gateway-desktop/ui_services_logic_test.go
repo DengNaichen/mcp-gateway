@@ -86,3 +86,84 @@ func TestBuildAndFilterServiceListData(t *testing.T) {
 		t.Fatalf("unexpected search empty title: %q", title)
 	}
 }
+
+func TestCollectServerToolsAndConnFormRoundTrip(t *testing.T) {
+	allTools := []apitypes.Tool{
+		{ID: "a.1", ServerID: "a", Enabled: true, ReadOnly: true},
+		{ID: "b.1", ServerID: "b", Enabled: true, ReadOnly: false},
+		{ID: "a.2", ServerID: "a", Enabled: false, ReadOnly: true},
+	}
+	srvTools, counts := collectServerTools(allTools, "a")
+	if len(srvTools) != 2 || counts != (serviceToolCounts{total: 2, enabled: 1, readOnly: 1, writable: 0}) {
+		t.Fatalf("collectServerTools() = (%d, %+v)", len(srvTools), counts)
+	}
+
+	stdioOrig := apitypes.Server{
+		ID:           "fs",
+		Name:         "Filesystem",
+		Description:  "Local files",
+		Kind:         "mcp",
+		Transport:    "stdio",
+		Command:      "npx",
+		WorkDir:      "/tmp",
+		Args:         []string{"-y", "server-fs"},
+		Env:          map[string]string{"TOKEN": "${FS_TOKEN}"},
+		RedactEmails: true,
+		RedactFields: []string{"ssn", "secret"},
+		Enabled:      true,
+	}
+	var form serviceConnFormState
+	form.hydrateConnForm(stdioOrig)
+	form.connName = " Filesystem Renamed "
+	form.connRedactFieldsText = "ssn, api_key"
+
+	built, err := form.buildServerFromConnForm(stdioOrig)
+	if err != nil {
+		t.Fatalf("buildServerFromConnForm stdio error: %v", err)
+	}
+	if built.Name != "Filesystem Renamed" || !reflect.DeepEqual(built.RedactFields, []string{"ssn", "api_key"}) {
+		t.Fatalf("unexpected built stdio server: %+v", built)
+	}
+	if built.Command != "npx" || !reflect.DeepEqual(built.Args, stdioOrig.Args) {
+		t.Fatalf("stdio args/command mismatch: %+v", built)
+	}
+
+	form.connArgsText = "not json"
+	if _, err := form.buildServerFromConnForm(stdioOrig); err == nil {
+		t.Fatal("expected error for invalid args JSON")
+	}
+
+	httpOrig := apitypes.Server{
+		ID:       "billing",
+		Name:     "Billing",
+		Kind:     "http",
+		OAuth:    true,
+		Endpoint: "https://api.example.com",
+		Headers:  map[string]string{"Authorization": "Bearer ${KEY}"},
+	}
+	form.hydrateConnForm(httpOrig)
+	builtHTTP, err := form.buildServerFromConnForm(httpOrig)
+	if err != nil {
+		t.Fatalf("buildServerFromConnForm http error: %v", err)
+	}
+	if builtHTTP.Transport != "http" || builtHTTP.OAuth || builtHTTP.Endpoint != "https://api.example.com" || builtHTTP.Headers["Authorization"] != "Bearer ${KEY}" {
+		t.Fatalf("unexpected built http server: %+v", builtHTTP)
+	}
+
+	mcpRemote := apitypes.Server{
+		ID:        "notion",
+		Name:      "Notion",
+		Kind:      "mcp",
+		Transport: "http",
+		OAuth:     true,
+		Endpoint:  "https://mcp.notion.com/mcp",
+	}
+	form.hydrateConnForm(mcpRemote)
+	builtMCP, err := form.buildServerFromConnForm(mcpRemote)
+	if err != nil {
+		t.Fatalf("buildServerFromConnForm mcp remote error: %v", err)
+	}
+	if !builtMCP.OAuth || builtMCP.Transport != "http" {
+		t.Fatalf("expected OAuth=true preserved for mcp remote: %+v", builtMCP)
+	}
+}
