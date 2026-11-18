@@ -455,9 +455,18 @@ func SailStatusDot(c *ui.Context, color ui.Color) ui.Element {
 	return ui.Box(c).Size(6.5, 6.5).Radius(999).Background(color).Shrink(0)
 }
 
+// SailKPICardSpec configures a SailKPICard metric card.
+type SailKPICardSpec struct {
+	Label   string
+	Value   string
+	Hint    string
+	Tone    BadgeTone
+	OnClick func()
+}
+
 // SailKPICard renders a clean metric card with generous padding and optional click-to-filter state.
-func SailKPICard(c *ui.Context, label, value, hint string, tone BadgeTone, onClick func()) {
-	tc := colorsForTone(tone)
+func SailKPICard(c *ui.Context, spec SailKPICardSpec) {
+	tc := colorsForTone(spec.Tone)
 	card := applyCardElevation(
 		ui.Column(c).
 			Grow(1).
@@ -468,23 +477,23 @@ func SailKPICard(c *ui.Context, label, value, hint string, tone BadgeTone, onCli
 			Radius(10).
 			Background(SailBgSurface),
 	)
-	if onClick != nil {
+	if spec.OnClick != nil {
 		card.Cursor(ui.CursorPointer)
 		if card.Hovered() {
 			card.Background(SailBgHover).Border(1, SailBorderStrong)
 		}
-		card.OnClick(onClick)
+		card.OnClick(spec.OnClick)
 	}
 	card.Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			ui.Text(c, label).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
-			if tone == ToneWarning || tone == ToneDanger {
+			ui.Text(c, spec.Label).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+			if spec.Tone == ToneWarning || spec.Tone == ToneDanger {
 				SailStatusDot(c, tc.Ink)
 			}
 		})
-		ui.Text(c, value).FontSize(24).Bold().TextColor(SailInkStrong).FontFeatures("tnum")
-		if hint != "" {
-			ui.Text(c, hint).FontSize(11.5).TextColor(SailInkFaint).SingleLine()
+		ui.Text(c, spec.Value).FontSize(24).Bold().TextColor(SailInkStrong).FontFeatures("tnum")
+		if spec.Hint != "" {
+			ui.Text(c, spec.Hint).FontSize(11.5).TextColor(SailInkFaint).SingleLine()
 		}
 	})
 }
@@ -905,154 +914,170 @@ func SailDescSummary(c *ui.Context, raw, emptyFallback string, maxLines int) ui.
 
 // ParseStructuredDescription splits a raw description into lead prose, bullets, and parameter blocks.
 func ParseStructuredDescription(raw string) StructuredDescription {
-	var out StructuredDescription
 	norm := strings.ReplaceAll(raw, "\r\n", "\n")
 	norm = strings.ReplaceAll(norm, "\r", "\n")
 	norm = strings.TrimSpace(norm)
 	if norm == "" {
-		return out
+		return StructuredDescription{}
 	}
 
 	hasCodeFence := strings.Contains(norm, "```")
-	withoutFences := descFenceRe.ReplaceAllString(norm, "\n")
-	lines := strings.Split(withoutFences, "\n")
-
-	mode := "prose" // "prose", "params", "meta"
-	var curPara []string
-	flushPara := func() {
-		if len(curPara) == 0 {
-			return
-		}
-		p := strings.TrimSpace(strings.Join(curPara, " "))
-		curPara = nil
-		if p == "" {
-			return
-		}
-		if out.Lead == "" {
-			out.Lead = p
-		} else {
-			out.Paragraphs = append(out.Paragraphs, p)
-		}
-	}
-
+	lines := strings.Split(descFenceRe.ReplaceAllString(norm, "\n"), "\n")
+	p := descParser{mode: "prose"}
 	for idx, rawLine := range lines {
-		trimmed := strings.TrimSpace(rawLine)
-		if trimmed == "" || trimmed == "---" || trimmed == "===" {
-			flushPara()
-			continue
-		}
-
-		if secKind, rest := isDescSectionHeader(trimmed); secKind != "" {
-			flushPara()
-			mode = secKind
-			if rest != "" && secKind == "params" {
-				if m := descParamLineRe.FindStringSubmatch(rest); m != nil {
-					out.Params = append(out.Params, DescParamItem{
-						Name: m[1],
-						Type: strings.TrimSpace(m[2]),
-						Desc: stripInlineMarkdown(m[3]),
-					})
-				}
-			} else if rest != "" && secKind == "meta" {
-				out.Bullets = append(out.Bullets, rest)
-			}
-			continue
-		}
-
-		if mode == "params" {
-			if m := descParamLineRe.FindStringSubmatch(trimmed); m != nil {
-				out.Params = append(out.Params, DescParamItem{
-					Name: m[1],
-					Type: strings.TrimSpace(m[2]),
-					Desc: stripInlineMarkdown(m[3]),
-				})
-				continue
-			}
-			isIndented := strings.HasPrefix(rawLine, "  ") || strings.HasPrefix(rawLine, "\t")
-			if isIndented && len(out.Params) > 0 {
-				last := &out.Params[len(out.Params)-1]
-				last.Desc = strings.TrimSpace(last.Desc + " " + stripInlineMarkdown(trimmed))
-				continue
-			}
-			mode = "prose"
-		}
-
-		if mode == "meta" {
-			item := strings.TrimSpace(strings.TrimLeft(trimmed, "-*•+ "))
-			if item != "" {
-				out.Bullets = append(out.Bullets, item)
-			}
-			continue
-		}
-
-		// Prose / Heading / Bullet mode
-		if strings.HasPrefix(trimmed, "#") {
-			flushPara()
-			h := strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
-			if isIdentifierOnlyHeading(h) && idx+1 < len(lines) {
-				continue
-			}
-			if h != "" {
-				curPara = append(curPara, h)
-				flushPara()
-			}
-			continue
-		}
-
-		isBullet := false
-		var bulletBody string
-		for _, pfx := range []string{"- ", "* ", "+ ", "• "} {
-			if strings.HasPrefix(trimmed, pfx) {
-				isBullet = true
-				bulletBody = strings.TrimSpace(strings.TrimPrefix(trimmed, pfx))
-				break
-			}
-		}
-		if !isBullet {
-			if loc := descNumberedRe.FindStringIndex(trimmed); loc != nil {
-				isBullet = true
-				bulletBody = strings.TrimSpace(trimmed[loc[1]:])
-			}
-		}
-		if isBullet {
-			flushPara()
-			if bulletBody != "" {
-				out.Bullets = append(out.Bullets, bulletBody)
-			}
-			continue
-		}
-
-		// Check for inline "Args: ..." tail inside a single-line description
-		if loc := descInlineTailRe.FindStringIndex(trimmed); loc != nil && loc[0] > 0 {
-			head := strings.TrimSpace(trimmed[:loc[0]])
-			tail := strings.TrimSpace(trimmed[loc[0]:])
-			if head != "" {
-				curPara = append(curPara, head)
-			}
-			flushPara()
-			if _, rest := isDescSectionHeader(tail); rest != "" {
-				out.HasMoreRaw = true
-			}
-			continue
-		}
-
-		curPara = append(curPara, descLinkRe.ReplaceAllString(trimmed, "$1"))
+		p.feedLine(rawLine, idx, len(lines))
 	}
-	flushPara()
+	p.flushPara()
+	p.finalize(norm, hasCodeFence)
+	return p.out
+}
 
-	if out.Lead == "" && len(out.Bullets) > 0 {
-		out.Lead = out.Bullets[0]
-		out.Bullets = out.Bullets[1:]
+type descParser struct {
+	out     StructuredDescription
+	mode    string // "prose", "params", "meta"
+	curPara []string
+}
+
+func (p *descParser) flushPara() {
+	if len(p.curPara) == 0 {
+		return
 	}
+	para := strings.TrimSpace(strings.Join(p.curPara, " "))
+	p.curPara = nil
+	if para == "" {
+		return
+	}
+	if p.out.Lead == "" {
+		p.out.Lead = para
+	} else {
+		p.out.Paragraphs = append(p.out.Paragraphs, para)
+	}
+}
 
+func (p *descParser) feedLine(rawLine string, idx, totalLines int) {
+	trimmed := strings.TrimSpace(rawLine)
+	if trimmed == "" || trimmed == "---" || trimmed == "===" {
+		p.flushPara()
+		return
+	}
+	if secKind, rest := isDescSectionHeader(trimmed); secKind != "" {
+		p.handleSectionHeader(secKind, rest)
+		return
+	}
+	if p.mode == "params" && p.handleParamsLine(rawLine, trimmed) {
+		return
+	}
+	if p.mode == "meta" {
+		if item := strings.TrimSpace(strings.TrimLeft(trimmed, "-*•+ ")); item != "" {
+			p.out.Bullets = append(p.out.Bullets, item)
+		}
+		return
+	}
+	p.handleProseLine(trimmed, idx, totalLines)
+}
+
+func (p *descParser) handleSectionHeader(secKind, rest string) {
+	p.flushPara()
+	p.mode = secKind
+	if rest == "" {
+		return
+	}
+	if secKind == "params" {
+		if item, ok := parseDescParamLine(rest); ok {
+			p.out.Params = append(p.out.Params, item)
+		}
+		return
+	}
+	if secKind == "meta" {
+		p.out.Bullets = append(p.out.Bullets, rest)
+	}
+}
+
+func (p *descParser) handleParamsLine(rawLine, trimmed string) bool {
+	if item, ok := parseDescParamLine(trimmed); ok {
+		p.out.Params = append(p.out.Params, item)
+		return true
+	}
+	isIndented := strings.HasPrefix(rawLine, "  ") || strings.HasPrefix(rawLine, "\t")
+	if isIndented && len(p.out.Params) > 0 {
+		last := &p.out.Params[len(p.out.Params)-1]
+		last.Desc = strings.TrimSpace(last.Desc + " " + stripInlineMarkdown(trimmed))
+		return true
+	}
+	p.mode = "prose"
+	return false
+}
+
+func (p *descParser) handleProseLine(trimmed string, idx, totalLines int) {
+	if strings.HasPrefix(trimmed, "#") {
+		p.flushPara()
+		h := strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
+		if isIdentifierOnlyHeading(h) && idx+1 < totalLines {
+			return
+		}
+		if h != "" {
+			p.curPara = append(p.curPara, h)
+			p.flushPara()
+		}
+		return
+	}
+	if bulletBody, ok := parseDescBulletLine(trimmed); ok {
+		p.flushPara()
+		if bulletBody != "" {
+			p.out.Bullets = append(p.out.Bullets, bulletBody)
+		}
+		return
+	}
+	if loc := descInlineTailRe.FindStringIndex(trimmed); loc != nil && loc[0] > 0 {
+		if head := strings.TrimSpace(trimmed[:loc[0]]); head != "" {
+			p.curPara = append(p.curPara, head)
+		}
+		p.flushPara()
+		tail := strings.TrimSpace(trimmed[loc[0]:])
+		if _, rest := isDescSectionHeader(tail); rest != "" {
+			p.out.HasMoreRaw = true
+		}
+		return
+	}
+	p.curPara = append(p.curPara, descLinkRe.ReplaceAllString(trimmed, "$1"))
+}
+
+func (p *descParser) finalize(norm string, hasCodeFence bool) {
+	if p.out.Lead == "" && len(p.out.Bullets) > 0 {
+		p.out.Lead = p.out.Bullets[0]
+		p.out.Bullets = p.out.Bullets[1:]
+	}
 	if hasCodeFence ||
-		len(out.Paragraphs) > 1 ||
-		len(out.Bullets) > 5 ||
-		len(out.Params) > 0 ||
-		(strings.Contains(norm, "\n") && len([]rune(norm)) > len([]rune(out.Lead))+20) {
-		out.HasMoreRaw = true
+		len(p.out.Paragraphs) > 1 ||
+		len(p.out.Bullets) > 5 ||
+		len(p.out.Params) > 0 ||
+		(strings.Contains(norm, "\n") && len([]rune(norm)) > len([]rune(p.out.Lead))+20) {
+		p.out.HasMoreRaw = true
 	}
-	return out
+}
+
+func parseDescParamLine(line string) (DescParamItem, bool) {
+	m := descParamLineRe.FindStringSubmatch(line)
+	if m == nil {
+		return DescParamItem{}, false
+	}
+	return DescParamItem{
+		Name: m[1],
+		Type: strings.TrimSpace(m[2]),
+		Desc: stripInlineMarkdown(m[3]),
+	}, true
+}
+
+func parseDescBulletLine(trimmed string) (string, bool) {
+	for _, pfx := range []string{"- ", "* ", "+ ", "• "} {
+		if strings.HasPrefix(trimmed, pfx) {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, pfx)), true
+		}
+	}
+	if loc := descNumberedRe.FindStringIndex(trimmed); loc != nil {
+		return strings.TrimSpace(trimmed[loc[1]:]), true
+	}
+	return "", false
 }
 
 // buildInlineSpans converts inline `code` and **bold** markers into crisp RichText spans.

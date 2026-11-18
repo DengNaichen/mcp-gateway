@@ -470,58 +470,51 @@ func renderCatalogKPIRow(c *ui.Context, st *catalogPageState, stats catalogGover
 		rwTone = ToneWarning
 	}
 	ui.Row(c).FillWidth().Wrap().Gap(16).AlignItems(ui.Stretch).Children(func() {
-		SailKPICard(
-			c.Key("cat-kpi-open"),
-			i18n.T("ops.enabled-over-total"),
-			fmt.Sprintf("%d / %d", stats.enabledRealCount, stats.realToolCount),
-			i18n.T("ops.disabled-count", stats.closedRealCount),
-			ToneNeutral,
-			func() {
+		SailKPICard(c.Key("cat-kpi-open"), SailKPICardSpec{
+			Label: i18n.T("ops.enabled-over-total"),
+			Value: fmt.Sprintf("%d / %d", stats.enabledRealCount, stats.realToolCount),
+			Hint:  i18n.T("ops.disabled-count", stats.closedRealCount),
+			Tone:  ToneNeutral,
+			OnClick: func() {
 				if st.statusIdx == 1 {
 					st.statusIdx = 0
 				} else {
 					st.statusIdx = 1
 				}
 			},
-		)
-		SailKPICard(
-			c.Key("cat-kpi-ro"),
-			i18n.T("ops.read-only-tools"),
-			fmt.Sprintf("%d", stats.roEnabledCount),
-			"",
-			ToneNeutral,
-			func() {
+		})
+		SailKPICard(c.Key("cat-kpi-ro"), SailKPICardSpec{
+			Label: i18n.T("ops.read-only-tools"),
+			Value: fmt.Sprintf("%d", stats.roEnabledCount),
+			Tone:  ToneNeutral,
+			OnClick: func() {
 				if st.accessIdx == 1 {
 					st.accessIdx = 0
 				} else {
 					st.accessIdx = 1
 				}
 			},
-		)
-		SailKPICard(
-			c.Key("cat-kpi-rw"),
-			i18n.T("ops.write-tools"),
-			fmt.Sprintf("%d", stats.rwEnabledCount),
-			"",
-			rwTone,
-			func() {
+		})
+		SailKPICard(c.Key("cat-kpi-rw"), SailKPICardSpec{
+			Label: i18n.T("ops.write-tools"),
+			Value: fmt.Sprintf("%d", stats.rwEnabledCount),
+			Tone:  rwTone,
+			OnClick: func() {
 				if st.accessIdx == 2 {
 					st.accessIdx = 0
 				} else {
 					st.accessIdx = 2
 				}
 			},
-		)
-		SailKPICard(
-			c.Key("cat-kpi-hits"),
-			i18n.T("ops.recent-hits"),
-			fmt.Sprintf("%d", stats.hitRealToolCount),
-			"",
-			ToneNeutral,
-			func() {
+		})
+		SailKPICard(c.Key("cat-kpi-hits"), SailKPICardSpec{
+			Label: i18n.T("ops.recent-hits"),
+			Value: fmt.Sprintf("%d", stats.hitRealToolCount),
+			Tone:  ToneNeutral,
+			OnClick: func() {
 				st.sortIdx = 0
 			},
-		)
+		})
 	})
 }
 
