@@ -415,29 +415,29 @@ func (u *DesktopUI) renderLogsInspectorPane(
 			Radius(10).
 			Background(SailBgSurface),
 	).Children(func() {
-			u.renderLogsInspectorHeader(c, ev, parsed, toolByID)
-			renderLogsInspectorMetrics(c, ev, parsed)
-			renderLogsInspectorMetaCard(c, parsed)
+		u.renderLogsInspectorHeader(c, ev, parsed, toolByID)
+		renderLogsInspectorMetrics(c, ev, parsed)
+		renderLogsInspectorMetaCard(c, parsed)
 
-			if sc := parsed.Scope; sc != nil {
-				u.renderLogsScopeCard(c, st, ev.ID, *sc)
-			}
+		if sc := parsed.Scope; sc != nil {
+			u.renderLogsScopeCard(c, st, ev.ID, *sc)
+		}
 
-			if parsed.Summary != "" {
-				SailSubtleCard(c, func() {
-					ui.Text(c, parsed.Summary).FontSize(13).LineHeight(1.5).TextColor(SailInkStrong).Selectable()
-				})
-			}
-			if parsed.Question != "" {
-				SailAlertBox(c, ToneWarning, i18n.T("ops.needs-context"), parsed.Question)
-			}
-			if parsed.Error != "" {
-				SailAlertBox(c, ToneDanger, i18n.T("ops.execution-error"), parsed.Error)
-			}
+		if parsed.Summary != "" {
+			SailSubtleCard(c, func() {
+				ui.Text(c, parsed.Summary).FontSize(13).LineHeight(1.5).TextColor(SailInkStrong).Selectable()
+			})
+		}
+		if parsed.Question != "" {
+			SailAlertBox(c, ToneWarning, i18n.T("ops.needs-context"), parsed.Question)
+		}
+		if parsed.Error != "" {
+			SailAlertBox(c, ToneDanger, i18n.T("ops.execution-error"), parsed.Error)
+		}
 
-			u.renderLogsMatchedToolsCard(c, ev, parsed, toolByID)
-			u.renderLogsPayloadViewer(c, st, parsed)
-		})
+		u.renderLogsMatchedToolsCard(c, ev, parsed, toolByID)
+		u.renderLogsPayloadViewer(c, st, parsed)
+	})
 }
 
 func (u *DesktopUI) renderLogsInspectorHeader(
