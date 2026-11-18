@@ -124,9 +124,11 @@ func (u *DesktopUI) renderSidebarLanguageSwitcher(c *ui.Context) {
 						textColor := SailInkMuted
 						weight := 500
 						if selected {
-							btn.Background(SailBgCanvas).
-								Border(1, SailSurfaceBorder).
-								Shadow(0, 1, 2, 0, SailControlShadow)
+							applyControlElevation(
+								btn.Background(SailBgSurface).
+									Border(SailElevationBorderWidth, SailSurfaceBorder),
+								true,
+							)
 							textColor = SailInkStrong
 							weight = 600
 						} else if btn.Hovered() {

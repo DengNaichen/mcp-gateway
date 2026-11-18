@@ -698,6 +698,20 @@ func (u *DesktopUI) View(c *ui.Context) {
 	u.drainToasts(c)
 }
 
+// renderBrandLogo renders the rounded full-color brand mark.
+func renderBrandLogo(c *ui.Context, size, radius float32) {
+	ui.Box(c).
+		Size(size, size).
+		Radius(radius).
+		Border(1, SailSurfaceBorder).
+		Clip().
+		Center().
+		Shrink(0).
+		Children(func() {
+			ui.Image(c, IconLogo).Size(size, size)
+		})
+}
+
 func (u *DesktopUI) renderLoginView(c *ui.Context) {
 	bar := c.TitleBar()
 	ui.Column(c).Fill().Background(SailBgSidebar).Children(func() {
@@ -705,42 +719,39 @@ func (u *DesktopUI) renderLoginView(c *ui.Context) {
 			ui.Box(c).FillWidth().Height(bar.Height).DragWindow()
 		}
 		ui.Column(c).Grow(1).FillWidth().Center().Padding(24).Children(func() {
-			ui.Column(c).
-				Width(380).
-				Padding(28).
-				Gap(16).
-				Radius(10).
-				Background(SailBgCanvas).
-				Border(1, SailSurfaceBorder).
-				Shadow(0, 3, 10, 0, SailCardShadow).
-				Children(func() {
-					ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-						ui.Box(c).Size(32, 32).Radius(8).Background(SailAccentSoft).Border(1, SailAccentBorder).Center().Children(func() {
-							ui.Icon(c, IconLogo).Size(18, 18).TextColor(SailAccent)
-						})
-						ui.Text(c, buildinfo.Current().Name).FontSize(16).Bold().TextColor(SailInkStrong)
-					})
+			applyCardElevation(
+				ui.Column(c).
+					Width(380).
+					Padding(28).
+					Gap(16).
+					Radius(10).
+					Background(SailBgSurface),
+			).Children(func() {
+				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+					renderBrandLogo(c, 32, 8)
+					ui.Text(c, buildinfo.Current().Name).FontSize(16).Bold().TextColor(SailInkStrong)
+				})
 
-					if u.LoginError != "" {
-						SailAlertBox(c, ToneDanger, i18n.T("app.login.failed_title"), u.LoginError)
-					}
+				if u.LoginError != "" {
+					SailAlertBox(c, ToneDanger, i18n.T("app.login.failed_title"), u.LoginError)
+				}
 
-					ui.Column(c).Gap(6).FillWidth().Children(func() {
-						ui.Text(c, i18n.T("app.login.token_label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
-						if ui.TextInput(c.Key("login-token"), &u.LoginToken).
-							Password().
-							AutoFocus().
-							Placeholder(i18n.T("app.login.token_placeholder")).
-							FillWidth().
-							Submitted() {
-							u.submitLogin()
-						}
-					})
-
-					if SailPrimaryButton(c, i18n.T("app.login.submit")).FillWidth().Disabled(u.LoggingIn || strings.TrimSpace(u.LoginToken) == "").Clicked() {
+				ui.Column(c).Gap(6).FillWidth().Children(func() {
+					ui.Text(c, i18n.T("app.login.token_label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
+					if ui.TextInput(c.Key("login-token"), &u.LoginToken).
+						Password().
+						AutoFocus().
+						Placeholder(i18n.T("app.login.token_placeholder")).
+						FillWidth().
+						Submitted() {
 						u.submitLogin()
 					}
 				})
+
+				if SailPrimaryButton(c, i18n.T("app.login.submit")).FillWidth().Disabled(u.LoggingIn || strings.TrimSpace(u.LoginToken) == "").Clicked() {
+					u.submitLogin()
+				}
+			})
 		})
 	})
 }
@@ -757,13 +768,11 @@ func (u *DesktopUI) renderBootView(c *ui.Context) {
 				Padding(28).
 				Gap(14).
 				Radius(10).
-				Background(SailBgCanvas).
+				Background(SailBgSurface).
 				Border(1, SailBorder).
 				AlignItems(ui.Center).
 				Children(func() {
-					ui.Box(c).Size(36, 36).Radius(8).Background(SailAccentSoft).Border(1, SailAccentBorder).Center().Children(func() {
-						ui.Icon(c, IconLogo).Size(20, 20).TextColor(SailAccent)
-					})
+					renderBrandLogo(c, 36, 8)
 					if u.BootError != "" {
 						ui.Text(c, i18n.T("app.connect.failed_title")).FontSize(15.5).Bold().TextColor(SailInkStrong)
 						ui.Text(c, u.BootError).FontSize(12.5).TextColor(SailInkMuted).TextAlign(ui.Center)
@@ -824,15 +833,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 				AlignItems(ui.Center).
 				DragWindow().
 				Children(func() {
-					ui.Box(c).
-						Size(24, 24).
-						Radius(6).
-						Background(SailAccentSoft).
-						Border(1, SailAccentBorder).
-						Center().
-						Children(func() {
-							ui.Icon(c, IconLogo).Size(14, 14).TextColor(SailAccent)
-						})
+					renderBrandLogo(c, 24, 6)
 					ui.Text(c, buildinfo.Current().Name).FontSize(13.5).Bold().TextColor(SailInkStrong).SingleLine()
 				})
 
@@ -922,9 +923,11 @@ func (u *DesktopUI) renderNavGroup(c *ui.Context, heading string, items []navIte
 				AlignItems(ui.Center).
 				Cursor(ui.CursorPointer)
 			if active {
-				btn.Background(SailBgCanvas).
-					Border(1, SailSurfaceBorder).
-					Shadow(0, 2, 6, 0, SailControlShadow)
+				applyControlElevation(
+					btn.Background(SailBgSurface).
+						Border(SailElevationBorderWidth, SailSurfaceBorder),
+					true,
+				)
 			} else if btn.Hovered() {
 				btn.Background(SailBgMuted)
 			}

@@ -249,7 +249,7 @@ func (u *DesktopUI) renderSettingsGuardrailSection(c *ui.Context, st *settingsSt
 				FillWidth().
 				Padding(13, 20).
 				Gap(12).
-				Background(SailBgCanvas).
+				Background(SailBgSurface).
 				BorderWidth(0, 0, borderBottom, 0).
 				BorderColor(SailDivider).
 				AlignItems(ui.Center).
@@ -547,7 +547,7 @@ func (u *DesktopUI) renderSettingsProfilesSection(c *ui.Context, st *settingsSta
 			}
 			prof := p
 			isEditing := prof.ID == st.editingProfileID
-			bg := SailBgCanvas
+			bg := SailBgSurface
 			if isEditing {
 				bg = SailBgSubtle
 			}

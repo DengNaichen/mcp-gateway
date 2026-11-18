@@ -230,7 +230,7 @@ func (d *desktopApp) showMainWindow() {
 			TitleBarStyle:        mygo.TitleBarHidden,
 			TrafficLightPosition: &mygo.Point{X: 20, Y: 18},
 			TitleBarHeight:       50,
-			BackgroundColor:      "light-dark(#ffffff, #0f1626)",
+			BackgroundColor:      "light-dark(#ffffff, #1a1a1e)",
 			Content:              ui.View(uiApp.View),
 		})
 

@@ -17,6 +17,8 @@ var mcpLogoSVG []byte
 // Stripe Sail / Linear design tokens; refreshed from the system appearance each frame.
 var (
 	SailBgCanvas  = ui.Hex("#ffffff")
+	SailBgSurface = ui.Hex("#ffffff")
+	SailBgControl = ui.Hex("#ffffff")
 	SailBgSidebar = ui.Hex("#f8fafc")
 	SailBgSubtle  = ui.Hex("#f7f9fc")
 	SailBgMuted   = ui.Hex("#eef2f6")
@@ -63,17 +65,29 @@ var (
 	SailNeutralBorder = ui.Hex("#e2e8f0")
 	SailNeutralInk    = ui.Hex("#475569")
 
-	SailSurfaceBorder  = ui.RGBA(15, 23, 42, 0.065)
-	SailControlShadow  = ui.RGBA(15, 23, 42, 0.07)
-	SailCardShadow     = ui.RGBA(15, 23, 42, 0.04)
-	SailFloatingShadow = ui.RGBA(15, 23, 42, 0.12)
-	SailModalShadow    = ui.RGBA(10, 37, 64, 0.25)
+	SailSurfaceBorder                = ui.RGBA(15, 23, 42, 0.065)
+	SailElevationBorderWidth float32 = 1
+	SailDarkElevationRim             = false
+	SailCardBorderTop                = ui.Transparent
+	SailCardBorderMid                = ui.Transparent
+	SailCardBorderBottom             = ui.Transparent
+	SailControlBorderTop             = ui.Transparent
+	SailControlBorderMid             = ui.Transparent
+	SailControlBorderBottom          = ui.Transparent
+	SailControlShadow                = ui.RGBA(15, 23, 42, 0.07)
+	SailCardShadow                   = ui.RGBA(15, 23, 42, 0.04)
+	SailFloatingShadow               = ui.RGBA(15, 23, 42, 0.12)
+	SailModalShadow                  = ui.RGBA(10, 37, 64, 0.25)
+	SailModalBackdrop                = ui.RGBA(10, 37, 64, 0.42)
+	SailDrawerBackdrop               = ui.RGBA(10, 37, 64, 0.22)
 )
 
 // setSailPalette swaps the Sail tokens for the light or dark palette.
 func setSailPalette(dark bool) {
 	if !dark {
 		SailBgCanvas = ui.Hex("#ffffff")
+		SailBgSurface = ui.Hex("#ffffff")
+		SailBgControl = ui.Hex("#ffffff")
 		SailBgSidebar = ui.Hex("#f8fafc")
 		SailBgSubtle = ui.Hex("#f7f9fc")
 		SailBgMuted = ui.Hex("#eef2f6")
@@ -111,30 +125,53 @@ func setSailPalette(dark bool) {
 		SailNeutralBorder = ui.Hex("#e2e8f0")
 		SailNeutralInk = ui.Hex("#475569")
 		SailSurfaceBorder = ui.RGBA(15, 23, 42, 0.065)
+		SailElevationBorderWidth = 1
+		SailDarkElevationRim = false
+		SailCardBorderTop = ui.Transparent
+		SailCardBorderMid = ui.Transparent
+		SailCardBorderBottom = ui.Transparent
+		SailControlBorderTop = ui.Transparent
+		SailControlBorderMid = ui.Transparent
+		SailControlBorderBottom = ui.Transparent
 		SailControlShadow = ui.RGBA(15, 23, 42, 0.07)
 		SailCardShadow = ui.RGBA(15, 23, 42, 0.04)
 		SailFloatingShadow = ui.RGBA(15, 23, 42, 0.12)
 		SailModalShadow = ui.RGBA(10, 37, 64, 0.25)
+		SailModalBackdrop = ui.RGBA(10, 37, 64, 0.42)
+		SailDrawerBackdrop = ui.RGBA(10, 37, 64, 0.22)
 		return
 	}
-	SailDivider = ui.Hex("#1d293c")
-	SailBgCanvas, SailBgSidebar, SailBgSubtle = ui.Hex("#0f1626"), ui.Hex("#0b1120"), ui.Hex("#131c2e")
-	SailBgMuted, SailBgHover = ui.Hex("#1b263b"), ui.Hex("#18223a")
-	SailNavyBg, SailNavyHeader = ui.Hex("#060d1a"), ui.Hex("#0a1426")
-	SailInkStrong, SailInkBody, SailInkMuted, SailInkFaint = ui.Hex("#f1f5f9"), ui.Hex("#cbd5e1"), ui.Hex("#94a3b8"), ui.Hex("#64748b")
-	SailBorder, SailBorderStrong = ui.Hex("#243049"), ui.Hex("#34425f")
+	SailDivider = ui.Hex("#2b2b31")
+	SailBgCanvas, SailBgSurface, SailBgControl = ui.Hex("#1a1a1e"), ui.Hex("#232327"), ui.Hex("#28282d")
+	SailBgSidebar, SailBgSubtle = ui.Hex("#1a1a1e"), ui.Hex("#1c1c20")
+	SailBgMuted, SailBgHover = ui.Hex("#303037"), ui.Hex("#2c2c33")
+	SailNavyBg, SailNavyHeader = ui.Hex("#111114"), ui.Hex("#18181c")
+	SailNavyBorder = ui.RGBA(255, 255, 255, 0.10)
+	SailNavyText, SailNavyMuted = ui.Hex("#f4f4f5"), ui.Hex("#a1a1aa")
+	SailInkStrong, SailInkBody, SailInkMuted, SailInkFaint = ui.Hex("#f4f4f5"), ui.Hex("#d4d4d8"), ui.Hex("#a1a1aa"), ui.Hex("#71717a")
+	SailBorder, SailBorderStrong = ui.Hex("#303036"), ui.Hex("#43434c")
 	SailAccent, SailAccentHover, SailAccentPressed = ui.Hex("#7a73ff"), ui.Hex("#8f89ff"), ui.Hex("#635bff")
-	SailAccentSoft, SailAccentBorder = ui.Hex("#1e1d4a"), ui.Hex("#3b3894")
-	SailSuccessBg, SailSuccessBorder, SailSuccessInk = ui.Hex("#0d2f22"), ui.Hex("#14573f"), ui.Hex("#4ade9d")
-	SailWarningBg, SailWarningBorder, SailWarningInk = ui.Hex("#33260a"), ui.Hex("#5c4413"), ui.Hex("#fbbf24")
-	SailDangerBg, SailDangerBorder, SailDangerInk = ui.Hex("#381416"), ui.Hex("#661f24"), ui.Hex("#f87171")
-	SailInfoBg, SailInfoBorder, SailInfoInk = ui.Hex("#1a2150"), ui.Hex("#2f3a8a"), ui.Hex("#a5b4fc")
-	SailNeutralBg, SailNeutralBorder, SailNeutralInk = ui.Hex("#1b263b"), ui.Hex("#2b3750"), ui.Hex("#a3b1c6")
+	SailAccentSoft, SailAccentBorder = ui.Hex("#272546"), ui.Hex("#454185")
+	SailSuccessBg, SailSuccessBorder, SailSuccessInk = ui.Hex("#132b20"), ui.Hex("#1f503a"), ui.Hex("#4ade80")
+	SailWarningBg, SailWarningBorder, SailWarningInk = ui.Hex("#2c2211"), ui.Hex("#564019"), ui.Hex("#fbbf24")
+	SailDangerBg, SailDangerBorder, SailDangerInk = ui.Hex("#2e161a"), ui.Hex("#5c252c"), ui.Hex("#f87171")
+	SailInfoBg, SailInfoBorder, SailInfoInk = ui.Hex("#202139"), ui.Hex("#363a6a"), ui.Hex("#a5b4fc")
+	SailNeutralBg, SailNeutralBorder, SailNeutralInk = ui.Hex("#28282d"), ui.Hex("#36363e"), ui.Hex("#a1a1aa")
 	SailSurfaceBorder = ui.RGBA(255, 255, 255, 0.08)
-	SailControlShadow = ui.RGBA(0, 0, 0, 0.32)
-	SailCardShadow = ui.RGBA(0, 0, 0, 0.20)
-	SailFloatingShadow = ui.RGBA(0, 0, 0, 0.40)
-	SailModalShadow = ui.RGBA(0, 0, 0, 0.55)
+	SailElevationBorderWidth = 0.5
+	SailDarkElevationRim = true
+	SailCardBorderTop = ui.RGBA(255, 255, 255, 0.055)
+	SailCardBorderMid = ui.RGBA(255, 255, 255, 0.015)
+	SailCardBorderBottom = ui.Transparent
+	SailControlBorderTop = ui.RGBA(255, 255, 255, 0.06)
+	SailControlBorderMid = ui.RGBA(255, 255, 255, 0.015)
+	SailControlBorderBottom = ui.Transparent
+	SailControlShadow = ui.RGBA(0, 0, 0, 0.22)
+	SailCardShadow = ui.RGBA(0, 0, 0, 0.16)
+	SailFloatingShadow = ui.RGBA(0, 0, 0, 0.36)
+	SailModalShadow = ui.RGBA(0, 0, 0, 0.50)
+	SailModalBackdrop = ui.RGBA(0, 0, 0, 0.62)
+	SailDrawerBackdrop = ui.RGBA(0, 0, 0, 0.42)
 }
 
 // BadgeTone identifies semantic status styling for high-signal pills and alerts.
@@ -226,35 +263,70 @@ func applySailTheme(c *ui.Context) {
 	t.Focus = SailAccent
 	t.Inverse = SailNavyBg
 	t.InverseText = SailNavyText
+	if dark {
+		t.Inverse = SailBgMuted
+		t.InverseText = SailInkStrong
+	}
 	t.Radius = 6
 	t.Spacing = 4
 	t.FontSize = 13.5
 	c.SetTheme(&t)
 }
 
-// SailCard renders a spacious white surface card with single-layer border and light shadow.
+// applyCardElevation adds the surface border and outer shadow (with a top-lit border gradient in dark mode).
+func applyCardElevation(el ui.Element) ui.Element {
+	el.Border(SailElevationBorderWidth, SailSurfaceBorder).Shadow(0, 3, 10, 0, SailCardShadow)
+	if SailDarkElevationRim {
+		el.BorderLinearGradient(ui.LinearGradient{
+			Angle: 180,
+			Stops: []ui.GradientStop{
+				{Color: SailCardBorderTop, At: 0},
+				{Color: SailCardBorderMid, At: 0.14},
+				{Color: SailCardBorderBottom, At: 0.36},
+				{Color: SailCardBorderBottom, At: 1},
+			},
+		})
+	}
+	return el
+}
+
+// applyControlElevation adds the raised control outer shadow (with a top-lit border gradient in dark mode).
+func applyControlElevation(el ui.Element, withRim bool) ui.Element {
+	el.Shadow(0, 2, 6, 0, SailControlShadow)
+	if withRim && SailDarkElevationRim {
+		el.Border(SailElevationBorderWidth, SailSurfaceBorder).BorderLinearGradient(ui.LinearGradient{
+			Angle: 180,
+			Stops: []ui.GradientStop{
+				{Color: SailControlBorderTop, At: 0},
+				{Color: SailControlBorderMid, At: 0.14},
+				{Color: SailControlBorderBottom, At: 0.36},
+				{Color: SailControlBorderBottom, At: 1},
+			},
+		})
+	}
+	return el
+}
+
+// SailCard renders a spacious elevated surface card with single-layer border and light shadow.
 func SailCard(c *ui.Context, fn func()) ui.Element {
-	return ui.Column(c).
-		FillWidth().
-		Padding(20, 22).
-		Gap(16).
-		Radius(10).
-		Background(SailBgCanvas).
-		Border(1, SailSurfaceBorder).
-		Shadow(0, 3, 10, 0, SailCardShadow).
-		Children(fn)
+	return applyCardElevation(
+		ui.Column(c).
+			FillWidth().
+			Padding(20, 22).
+			Gap(16).
+			Radius(10).
+			Background(SailBgSurface),
+	).Children(fn)
 }
 
 // SailFlushCard renders a zero-padding card container for hairline-divided lists (no card-in-card borders).
 func SailFlushCard(c *ui.Context, fn func()) ui.Element {
-	return ui.Column(c).
-		FillWidth().
-		Radius(10).
-		Background(SailBgCanvas).
-		Border(1, SailSurfaceBorder).
-		Shadow(0, 3, 10, 0, SailCardShadow).
-		Clip().
-		Children(fn)
+	return applyCardElevation(
+		ui.Column(c).
+			FillWidth().
+			Radius(10).
+			Background(SailBgSurface),
+	).Clip().Children(fn)
 }
 
 // SailGroupHeader renders an in-list group label without a fill: groups are
@@ -386,16 +458,16 @@ func SailStatusDot(c *ui.Context, color ui.Color) ui.Element {
 // SailKPICard renders a clean metric card with generous padding and optional click-to-filter state.
 func SailKPICard(c *ui.Context, label, value, hint string, tone BadgeTone, onClick func()) {
 	tc := colorsForTone(tone)
-	card := ui.Column(c).
-		Grow(1).
-		FillHeight().
-		MinWidth(176).
-		Padding(18, 20).
-		Gap(6).
-		Radius(10).
-		Background(SailBgCanvas).
-		Border(1, SailSurfaceBorder).
-		Shadow(0, 3, 10, 0, SailCardShadow)
+	card := applyCardElevation(
+		ui.Column(c).
+			Grow(1).
+			FillHeight().
+			MinWidth(176).
+			Padding(18, 20).
+			Gap(6).
+			Radius(10).
+			Background(SailBgSurface),
+	)
 	if onClick != nil {
 		card.Cursor(ui.CursorPointer)
 		if card.Hovered() {
@@ -542,12 +614,12 @@ func SailButton(c *ui.Context, label string) ui.Element {
 		Height(SailControlHeightMd).
 		Padding(0, 12).
 		FontSize(12.5).
-		Background(SailBgCanvas).
+		Background(SailBgControl).
 		Border(1, SailSurfaceBorder)
 	if btn.Pressed() {
 		btn.Background(SailBgMuted)
 	} else {
-		btn.Shadow(0, 2, 6, 0, SailControlShadow)
+		applyControlElevation(btn, true)
 		if btn.Hovered() {
 			btn.Background(SailBgHover)
 		}
@@ -562,7 +634,7 @@ func SailPrimaryButton(c *ui.Context, label string) ui.Element {
 		Padding(0, 12).
 		FontSize(12.5)
 	if !btn.Pressed() {
-		btn.Shadow(0, 2, 6, 0, SailControlShadow)
+		applyControlElevation(btn, false)
 	}
 	return btn
 }

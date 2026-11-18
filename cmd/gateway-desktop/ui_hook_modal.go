@@ -93,14 +93,14 @@ func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
 	}
 
 	ui.DialogBase(c.Key("hook-snippet-dialog"), &st.show, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(10, 37, 64, 0.42))
+		backdrop.Background(SailModalBackdrop)
 		panel.Width(700).
 			MaxWidthPercent(92).
 			MaxHeightPercent(88).
 			Padding(22).
 			Gap(14).
 			Radius(10).
-			Background(SailBgCanvas).
+			Background(SailBgSurface).
 			Border(1, SailBorder).
 			Shadow(0, 12, 36, 0, SailModalShadow)
 

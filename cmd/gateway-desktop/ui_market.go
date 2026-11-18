@@ -226,75 +226,73 @@ func (u *DesktopUI) renderMarketGrid(c *ui.Context, st *marketPageState, items [
 }
 
 func (u *DesktopUI) renderMarketCard(c *ui.Context, st *marketPageState, item apitypes.MarketServer) {
-	ui.Column(c).
-		FillWidth().
-		Grow(1).
-		Padding(16).
-		Gap(12).
-		Radius(10).
-		Background(SailBgCanvas).
-		Border(1, SailSurfaceBorder).
-		Shadow(0, 3, 10, 0, SailCardShadow).
-		Justify(ui.SpaceBetween).
-		Children(func() {
-			ui.Column(c).FillWidth().Gap(10).Children(func() {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
-					u.renderMarketIcon(c, st, item)
-					ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
-						ui.Text(c, item.Title).FontSize(13.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-						ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
-							ui.Text(c, item.Publisher).FontSize(11.5).TextColor(SailInkMuted).SingleLine()
-							renderMarketChip(c, marketRunsLabel(item.Runs))
-							if chip := marketAuthChipLabel(item); chip != "" {
-								renderMarketChip(c, chip)
-							}
-						})
+	applyCardElevation(
+		ui.Column(c).
+			FillWidth().
+			Grow(1).
+			Padding(16).
+			Gap(12).
+			Radius(10).
+			Background(SailBgSurface),
+	).Justify(ui.SpaceBetween).Children(func() {
+		ui.Column(c).FillWidth().Gap(10).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
+				u.renderMarketIcon(c, st, item)
+				ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+					ui.Text(c, item.Title).FontSize(13.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+					ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+						ui.Text(c, item.Publisher).FontSize(11.5).TextColor(SailInkMuted).SingleLine()
+						renderMarketChip(c, marketRunsLabel(item.Runs))
+						if chip := marketAuthChipLabel(item); chip != "" {
+							renderMarketChip(c, chip)
+						}
 					})
 				})
-
-				ui.Text(c, item.Description).
-					FontSize(12.5).
-					LineHeight(1.45).
-					TextColor(SailInkBody).
-					MaxLines(2)
 			})
 
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
-				ui.Text(c, item.ServerID).Font("monospace").FontSize(11.5).TextColor(SailInkFaint).SingleLine().Grow(1).MinWidth(0)
-				if item.Installed {
-					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-						SailQuietStatus(c, i18n.T("common.connected"), SailSuccessInk, SailSuccessInk)
-						if SailSmallButton(c.Key("mkt-view-"+item.ID), i18n.T("common.view")).Clicked() {
-							u.OpenServiceDetail(item.ServerID)
-						}
-					})
-				} else {
-					busy := st.installingID == item.ID
-					btnLabel := i18n.T("common.add")
-					if marketHasRequiredInputs(item) {
-						btnLabel = i18n.T("market.action.add_with_inputs")
+			ui.Text(c, item.Description).
+				FontSize(12.5).
+				LineHeight(1.45).
+				TextColor(SailInkBody).
+				MaxLines(2)
+		})
+
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
+			ui.Text(c, item.ServerID).Font("monospace").FontSize(11.5).TextColor(SailInkFaint).SingleLine().Grow(1).MinWidth(0)
+			if item.Installed {
+				ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+					SailQuietStatus(c, i18n.T("common.connected"), SailSuccessInk, SailSuccessInk)
+					if SailSmallButton(c.Key("mkt-view-"+item.ID), i18n.T("common.view")).Clicked() {
+						u.OpenServiceDetail(item.ServerID)
 					}
-					if busy {
-						if item.SignIn {
-							btnLabel = i18n.T("common.signing_in")
-						} else {
-							btnLabel = i18n.T("common.adding")
-						}
-					}
-					if SailSmallButton(c.Key("mkt-add-"+item.ID), btnLabel).Disabled(st.installingID != "").Clicked() {
-						if marketHasRequiredInputs(item) {
-							copyItem := item
-							st.modalItem = &copyItem
-							st.modalInputs = map[string]string{}
-							st.modalErr = ""
-							st.showModal = true
-						} else {
-							u.installFromMarket(st, item, nil)
-						}
+				})
+			} else {
+				busy := st.installingID == item.ID
+				btnLabel := i18n.T("common.add")
+				if marketHasRequiredInputs(item) {
+					btnLabel = i18n.T("market.action.add_with_inputs")
+				}
+				if busy {
+					if item.SignIn {
+						btnLabel = i18n.T("common.signing_in")
+					} else {
+						btnLabel = i18n.T("common.adding")
 					}
 				}
-			})
+				if SailSmallButton(c.Key("mkt-add-"+item.ID), btnLabel).Disabled(st.installingID != "").Clicked() {
+					if marketHasRequiredInputs(item) {
+						copyItem := item
+						st.modalItem = &copyItem
+						st.modalInputs = map[string]string{}
+						st.modalErr = ""
+						st.showModal = true
+					} else {
+						u.installFromMarket(st, item, nil)
+					}
+				}
+			}
 		})
+	})
 }
 
 func renderMarketChip(c *ui.Context, label string) {
@@ -434,13 +432,13 @@ func (u *DesktopUI) loadMarketIconAsync(st *marketPageState, id, iconURL string)
 
 func (u *DesktopUI) renderMarketInstallModal(c *ui.Context, st *marketPageState, item apitypes.MarketServer) {
 	ui.DialogBase(c.Key("mkt-install-dialog"), &st.showModal, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(10, 37, 64, 0.42))
+		backdrop.Background(SailModalBackdrop)
 		panel.Width(500).
 			MaxWidthPercent(92).
 			Padding(22).
 			Gap(14).
 			Radius(10).
-			Background(SailBgCanvas).
+			Background(SailBgSurface).
 			Border(1, SailBorder).
 			Shadow(0, 12, 36, 0, SailModalShadow)
 

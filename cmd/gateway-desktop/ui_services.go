@@ -1774,14 +1774,14 @@ func (st *servicesPageState) hydrateMaintSource(ov apitypes.MaintenanceStatus, s
 
 func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) {
 	ui.DialogBase(c.Key("add-service-dialog"), &st.showAddModal, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(10, 37, 64, 0.42))
+		backdrop.Background(SailModalBackdrop)
 		panel.Width(680).
 			MaxWidthPercent(92).
 			MaxHeightPercent(88).
 			Padding(22).
 			Gap(14).
 			Radius(10).
-			Background(SailBgCanvas).
+			Background(SailBgSurface).
 			Border(1, SailBorder).
 			Shadow(0, 12, 36, 0, SailModalShadow)
 
@@ -2103,14 +2103,14 @@ func (st *servicesPageState) openToolEditModal(t apitypes.Tool) {
 func (u *DesktopUI) renderToolEditModal(c *ui.Context, st *servicesPageState) {
 	t := *st.editingTool
 	ui.DialogBase(c.Key("tool-edit-dialog-"+t.ID), &st.showToolModal, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(10, 37, 64, 0.42))
+		backdrop.Background(SailModalBackdrop)
 		panel.Width(640).
 			MaxWidthPercent(92).
 			MaxHeightPercent(88).
 			Padding(22).
 			Gap(14).
 			Radius(10).
-			Background(SailBgCanvas).
+			Background(SailBgSurface).
 			Border(1, SailBorder).
 			Shadow(0, 12, 36, 0, SailModalShadow)
 
@@ -2226,14 +2226,14 @@ func (st *servicesPageState) openAddHTTPToolModal() {
 
 func (u *DesktopUI) renderAddHTTPToolModal(c *ui.Context, st *servicesPageState, server apitypes.Server) {
 	ui.DialogBase(c.Key("add-http-tool-dialog-"+server.ID), &st.showAddHTTPTool, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(10, 37, 64, 0.42))
+		backdrop.Background(SailModalBackdrop)
 		panel.Width(600).
 			MaxWidthPercent(92).
 			MaxHeightPercent(88).
 			Padding(22).
 			Gap(14).
 			Radius(10).
-			Background(SailBgCanvas).
+			Background(SailBgSurface).
 			Border(1, SailBorder).
 			Shadow(0, 12, 36, 0, SailModalShadow)
 
