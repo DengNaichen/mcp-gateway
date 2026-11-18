@@ -16,6 +16,7 @@ import (
 
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
+	"gatewaylab/internal/i18n"
 )
 
 const cliCommandTimeout = 45 * time.Second
@@ -153,7 +154,7 @@ func (r execRunner) LookPath(binary string) (string, error) {
 func (r execRunner) Run(ctx context.Context, env []string, dir, binary string, args ...string) ([]byte, []byte, error) {
 	resolved, err := r.LookPath(binary)
 	if err != nil {
-		return nil, nil, fmt.Errorf("未找到 %s 命令: %w", binary, err)
+		return nil, nil, fmt.Errorf(i18n.T("client.err-command-not-found"), binary, err)
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -177,9 +178,9 @@ func (r execRunner) Run(ctx context.Context, env []string, dir, binary string, a
 			msg = strings.TrimSpace(stdout.String())
 		}
 		if msg != "" {
-			return stdout.Bytes(), stderr.Bytes(), fmt.Errorf("%s %s 失败: %s (%w)", binary, strings.Join(args, " "), msg, err)
+			return stdout.Bytes(), stderr.Bytes(), fmt.Errorf(i18n.T("client.err-command-failed-detail"), binary, strings.Join(args, " "), msg, err)
 		}
-		return stdout.Bytes(), stderr.Bytes(), fmt.Errorf("%s %s 失败: %w", binary, strings.Join(args, " "), err)
+		return stdout.Bytes(), stderr.Bytes(), fmt.Errorf(i18n.T("client.err-command-failed"), binary, strings.Join(args, " "), err)
 	}
 	return stdout.Bytes(), stderr.Bytes(), nil
 }
@@ -214,4 +215,4 @@ func (m *Manager) hostConfigDir(id string) string {
 	return clientconfig.HostConfigDir(id, m.homeDir, m.getenv)
 }
 
-var errClientUnknown = errors.New("未知客户端")
+var errClientUnknown = errors.New(i18n.T("client.err-unknown-client"))

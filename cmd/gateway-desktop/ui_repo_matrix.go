@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gatewaylab/internal/apitypes"
+	"gatewaylab/internal/i18n"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -31,15 +32,15 @@ func (u *DesktopUI) renderReposMatrix(c *ui.Context, st *reposPageState, state *
 	for i, obs := range state.Scopes.Observed {
 		ui.Row(c.Key(fmt.Sprintf("observed-%d", i))).FillWidth().Padding(10, 16).Gap(12).
 			AlignItems(ui.Center).BorderWidth(0, 0, 1, 0).BorderColor(SailDivider).Children(func() {
-			ui.Text(c, "最近请求 · 未绑定").FontSize(12).TextColor(SailInkMuted).Shrink(0)
+			ui.Text(c, i18n.T("ops.recent-request-unbound")).FontSize(12).TextColor(SailInkMuted).Shrink(0)
 			ui.Text(c, obs.Name).FontSize(13).TextColor(SailInkStrong).Grow(1).MinWidth(0).SingleLine().Tooltip(obs.Root)
-			if SailSmallButton(c, "+ 绑定并加入矩阵").Disabled(st.repoBusy).Clicked() {
+			if SailSmallButton(c, i18n.T("ops.bind-and-add")).Disabled(st.repoBusy).Clicked() {
 				u.bindObservedRepo(st, obs)
 			}
 		})
 	}
 	if len(servers) == 0 {
-		ui.Text(c, "尚未接入 MCP 服务").FontSize(13).TextColor(SailInkMuted)
+		ui.Text(c, i18n.T("ops.no-mcp-services")).FontSize(13).TextColor(SailInkMuted)
 	}
 	// Keep header and cells in one horizontal scroller so every column stays aligned.
 	const repoWidth, serviceWidth, actionWidth float32 = 240, 160, 80
@@ -55,7 +56,7 @@ func (u *DesktopUI) renderReposMatrix(c *ui.Context, st *reposPageState, state *
 			ui.Column(c).Width(width).Shrink(0).Children(func() {
 				ui.Row(c).FillWidth().Height(46).AlignItems(ui.Center).Background(SailBgSubtle).
 					BorderWidth(0, 0, 1, 0).BorderColor(SailDivider).Children(func() {
-					ui.Text(c, "仓库").Width(repoWidth).Padding(0, 16).FontSize(12).FontWeight(600).TextColor(SailInkMuted)
+					ui.Text(c, i18n.T("ops.repo-label")).Width(repoWidth).Padding(0, 16).FontSize(12).FontWeight(600).TextColor(SailInkMuted)
 					for _, s := range servers {
 						ui.Row(c.Key("header-"+s.ID)).Width(serviceWidth).Shrink(0).Padding(0, 12).Gap(7).AlignItems(ui.Center).Children(func() {
 							u.renderRepoMatrixServiceIcon(c, market, s)
@@ -78,7 +79,7 @@ func (u *DesktopUI) renderReposMatrix(c *ui.Context, st *reposPageState, state *
 								checkbox := ui.Checkbox(c, &checked, "").Label(name + " · " + s.Name).
 									Disabled(u.Client == nil || draft.saving || draft.dirty)
 								if draft.dirty {
-									checkbox.Tooltip("请先在详情保存或重置未保存的修改")
+									checkbox.Tooltip(i18n.T("ops.save-or-reset-pending"))
 								}
 								if checkbox.Changed() {
 									u.toggleRepoMatrixGrant(st, repoKey, s.ID, checked)
@@ -86,18 +87,18 @@ func (u *DesktopUI) renderReposMatrix(c *ui.Context, st *reposPageState, state *
 							})
 						}
 						ui.Row(c).Grow(1).MinWidth(actionWidth).Shrink(0).Padding(0, 12).AlignItems(ui.Center).Justify(ui.End).Children(func() {
-							if SailSmallButton(c, "详情").Label(name + " 详情").Clicked() {
+							if SailSmallButton(c, i18n.T("ops.details")).Label(i18n.T("ops.details-for", name)).Clicked() {
 								st.selectedRepoKey = repoKey
 								st.viewMode = 1
 							}
 						})
 					})
 				}
-				renderRow("*", "全局默认 *", "未绑定仓库兜底")
+				renderRow("*", i18n.T("ops.global-default-star"), i18n.T("ops.unbound-fallback"))
 				for _, repo := range state.Scopes.Repositories {
 					hint := shortRemoteHint(repo.RemoteHint)
 					if _, ok := findScopeRule(state.Scopes.Rules, repo.ID); !ok {
-						hint += " · 继承全局默认"
+						hint += i18n.T("ops.inherits-global-default")
 					}
 					renderRow(repo.ID, repo.Name, hint)
 				}
