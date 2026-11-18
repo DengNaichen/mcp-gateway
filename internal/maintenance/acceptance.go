@@ -261,10 +261,11 @@ func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir
 
 	var result any
 	var callErr error
+	target := contractInvocation{Server: server, Tool: tool, Dir: dir, Arguments: arguments, Case: c}
 	if server.Kind == "mcp" {
-		result, callErr, err = m.runMCPContract(ctx, server, tool, arguments, c)
+		result, callErr, err = m.runMCPContract(ctx, target)
 	} else {
-		result, callErr, err = m.runHTTPContract(ctx, server, tool, dir, arguments, c)
+		result, callErr, err = m.runHTTPContract(ctx, target)
 	}
 	if err != nil {
 		return err
@@ -303,51 +304,59 @@ func syntheticAcceptanceServer(base Server) Server {
 	return server
 }
 
-func (m *Maintainer) runMCPContract(ctx context.Context, server Server, tool Tool, arguments map[string]any, c ContractCase) (any, error, error) {
-	mock, calls, err := contracttest.MCP(tool.Name, tool.InputSchema, c.MCPResult, c.MCPError)
+type contractInvocation struct {
+	Server    Server
+	Tool      Tool
+	Dir       string
+	Arguments map[string]any
+	Case      ContractCase
+}
+
+func (m *Maintainer) runMCPContract(ctx context.Context, target contractInvocation) (any, error, error) {
+	mock, calls, err := contracttest.MCP(target.Tool.Name, target.Tool.InputSchema, target.Case.MCPResult, target.Case.MCPError)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer mock.Close()
-	server.Endpoint = mock.URL
-	server.Transport = "http"
-	result, callErr := m.upstream.CallMCP(ctx, server, tool, arguments)
+	target.Server.Endpoint = mock.URL
+	target.Server.Transport = "http"
+	result, callErr := m.upstream.CallMCP(ctx, target.Server, target.Tool, target.Arguments)
 	if calls() != 1 {
 		return nil, nil, fmt.Errorf("expected one native tool invocation, got %d", calls())
 	}
 	return result, callErr, nil
 }
 
-func (m *Maintainer) runHTTPContract(ctx context.Context, server Server, tool Tool, dir string, arguments map[string]any, c ContractCase) (any, error, error) {
+func (m *Maintainer) runHTTPContract(ctx context.Context, target contractInvocation) (any, error, error) {
 	var mu sync.Mutex
 	index := 0
 	failures := []string{}
 	mock := contracttest.HTTP(&mu, func(req contracttest.Request) contracttest.Response {
-		if index >= len(c.Exchanges) {
+		if index >= len(target.Case.Exchanges) {
 			failures = append(failures, "unexpected extra upstream request")
 			return contracttest.Response{Status: 500}
 		}
-		expected := c.Exchanges[index]
+		expected := target.Case.Exchanges[index]
 		index++
 		failures = append(failures, matchHTTPExchange(index, expected, req)...)
 		return contracttest.Response{Status: expected.Status, Headers: expected.ResponseHeaders, Body: expected.Response, Text: expected.Text}
 	}, func() { failures = append(failures, "write fixture response failed") })
 	defer mock.Close()
 
-	server.Endpoint = mock.URL
+	target.Server.Endpoint = mock.URL
 	var result any
 	var callErr error
-	if tool.Adapter != "" {
-		result, callErr = sandbox.CallAdapterFileWithLookup(ctx, m.execution, server, tool, arguments, filepath.Join(dir, tool.Adapter), m.lookupEnv)
+	if target.Tool.Adapter != "" {
+		result, callErr = sandbox.CallAdapterFileWithLookup(ctx, m.execution, target.Server, target.Tool, target.Arguments, filepath.Join(target.Dir, target.Tool.Adapter), m.lookupEnv)
 	} else {
-		result, callErr = m.upstream.CallHTTP(ctx, server, tool, arguments)
+		result, callErr = m.upstream.CallHTTP(ctx, target.Server, target.Tool, target.Arguments)
 	}
 	mu.Lock()
 	count := index
 	problems := slices.Clone(failures)
 	mu.Unlock()
-	if count != len(c.Exchanges) {
-		return nil, nil, fmt.Errorf("expected %d upstream requests, got %d", len(c.Exchanges), count)
+	if count != len(target.Case.Exchanges) {
+		return nil, nil, fmt.Errorf("expected %d upstream requests, got %d", len(target.Case.Exchanges), count)
 	}
 	if len(problems) > 0 {
 		return nil, nil, fmt.Errorf("contract mismatch: %s", strings.Join(problems, "; "))
