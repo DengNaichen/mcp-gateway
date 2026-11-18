@@ -14,17 +14,51 @@ import (
 )
 
 type clientsPageState struct {
+	ClientStatuses    []clientconfig.Status
+	ClientConfigError string
+	ClientsBusy       bool
+	PluginStatuses    []clientplugin.Status
+	PluginError       string
+	PluginsBusy       bool
+
 	showVerifyModal bool
 	verifyClientID  string
 }
 
 var openConfigLocation = revealClientConfig
 
-func (u *DesktopUI) clientsState() *clientsPageState {
-	if u.clients == nil {
-		u.clients = &clientsPageState{}
+func (s *clientsPageState) isBusy() bool {
+	return s.ClientsBusy || s.PluginsBusy
+}
+
+func (s *clientsPageState) setBusy(busy bool) {
+	s.ClientsBusy = busy
+	s.PluginsBusy = busy
+}
+
+func (s *clientsPageState) installedPluginCount() int {
+	n := 0
+	installedState := i18n.T("client.state.installed")
+	for _, row := range s.PluginStatuses {
+		if row.State == installedState {
+			n++
+		}
 	}
-	return u.clients
+	return n
+}
+
+func (s *clientsPageState) clientsNavBadge() string {
+	if len(s.PluginStatuses) > 0 {
+		return countBadge(len(s.PluginStatuses))
+	}
+	if len(s.ClientStatuses) > 0 {
+		return countBadge(len(s.ClientStatuses))
+	}
+	return ""
+}
+
+func (u *DesktopUI) clientsState() *clientsPageState {
+	return &u.clientsPageState
 }
 
 func (u *DesktopUI) clientEndpoint() string {
@@ -54,34 +88,65 @@ func staleClientStatusLang() bool {
 	return ok && lang != i18n.Current()
 }
 
-func (u *DesktopUI) refreshClientConfigs() {
-	if (u.ClientConfigs == nil && u.ClientPlugins == nil) || u.ClientsBusy || u.PluginsBusy {
+func (u *DesktopUI) loadClientStatuses(endpoint string) ([]clientconfig.Status, []clientplugin.Status) {
+	var clientRows []clientconfig.Status
+	if u.ClientConfigs != nil {
+		clientRows = u.ClientConfigs.Statuses(endpoint)
+	}
+	var pluginRows []clientplugin.Status
+	if u.ClientPlugins != nil {
+		pluginRows = u.ClientPlugins.Statuses(endpoint)
+	}
+	return clientRows, pluginRows
+}
+
+func (u *DesktopUI) runClientAction(isPlugin bool, op func(endpoint string) error, successToast string) {
+	st := u.clientsState()
+	if st.isBusy() {
 		return
 	}
 	endpoint := u.clientEndpoint()
 	lang := i18n.Current()
-	u.ClientsBusy = true
-	u.PluginsBusy = true
+	st.setBusy(true)
 	u.RunAsync(func() error {
-		var clientRows []clientconfig.Status
-		if u.ClientConfigs != nil {
-			clientRows = u.ClientConfigs.Statuses(endpoint)
+		var err error
+		if op != nil {
+			err = op(endpoint)
 		}
-		var pluginRows []clientplugin.Status
-		if u.ClientPlugins != nil {
-			pluginRows = u.ClientPlugins.Statuses(endpoint)
-		}
+		clientRows, pluginRows := u.loadClientStatuses(endpoint)
 		u.updateUI(func() {
-			u.ClientStatuses = clientRows
-			u.PluginStatuses = pluginRows
-			u.ClientConfigError = ""
-			u.PluginError = ""
-			u.ClientsBusy = false
-			u.PluginsBusy = false
+			st.ClientStatuses = clientRows
+			st.PluginStatuses = pluginRows
+			st.setBusy(false)
+			switch {
+			case op == nil:
+				st.ClientConfigError = ""
+				st.PluginError = ""
+			case isPlugin:
+				st.PluginError = ""
+				if err != nil {
+					st.PluginError = err.Error()
+				}
+			default:
+				st.ClientConfigError = ""
+				if err != nil {
+					st.ClientConfigError = err.Error()
+				}
+			}
 			noteClientStatusLang(lang)
 		})
+		if err == nil && successToast != "" {
+			u.Notify(successToast)
+		}
 		return nil
 	})
+}
+
+func (u *DesktopUI) refreshClientConfigs() {
+	if (u.ClientConfigs == nil && u.ClientPlugins == nil) || u.clientsState().isBusy() {
+		return
+	}
+	u.runClientAction(false, nil, "")
 }
 
 // changeClientConfig is shared by native actions and the local verification socket.
@@ -118,90 +183,38 @@ func (u *DesktopUI) changeClientPlugin(id, action, endpoint string) error {
 	}
 }
 
-func (u *DesktopUI) runClientConfig(id, action string) {
-	if u.ClientsBusy || u.PluginsBusy {
-		return
+func clientConfigSuccessToast(action string) string {
+	switch action {
+	case "write":
+		return i18n.T("ops.config-written")
+	case "update":
+		return i18n.T("ops.config-updated")
+	default:
+		return i18n.T("ops.config-revoked")
 	}
-	endpoint := u.clientEndpoint()
-	lang := i18n.Current()
-	u.ClientsBusy = true
-	u.PluginsBusy = true
-	u.RunAsync(func() error {
-		err := u.changeClientConfig(id, action, endpoint)
-		var rows []clientconfig.Status
-		if u.ClientConfigs != nil {
-			rows = u.ClientConfigs.Statuses(endpoint)
-		}
-		var pluginRows []clientplugin.Status
-		if u.ClientPlugins != nil {
-			pluginRows = u.ClientPlugins.Statuses(endpoint)
-		}
-		u.updateUI(func() {
-			u.ClientStatuses = rows
-			u.PluginStatuses = pluginRows
-			u.ClientsBusy = false
-			u.PluginsBusy = false
-			u.ClientConfigError = ""
-			if err != nil {
-				u.ClientConfigError = err.Error()
-			}
-			noteClientStatusLang(lang)
-		})
-		if err == nil {
-			switch action {
-			case "write":
-				u.Notify(i18n.T("ops.config-written"))
-			case "update":
-				u.Notify(i18n.T("ops.config-updated"))
-			default:
-				u.Notify(i18n.T("ops.config-revoked"))
-			}
-		}
-		return nil
-	})
+}
+
+func clientPluginSuccessToast(action string) string {
+	switch action {
+	case "install":
+		return i18n.T("ops.plugin-installed")
+	case "update":
+		return i18n.T("ops.plugin-updated")
+	default:
+		return i18n.T("ops.plugin-removed")
+	}
+}
+
+func (u *DesktopUI) runClientConfig(id, action string) {
+	u.runClientAction(false, func(endpoint string) error {
+		return u.changeClientConfig(id, action, endpoint)
+	}, clientConfigSuccessToast(action))
 }
 
 func (u *DesktopUI) runClientPlugin(id, action string) {
-	if u.ClientsBusy || u.PluginsBusy {
-		return
-	}
-	endpoint := u.clientEndpoint()
-	lang := i18n.Current()
-	u.ClientsBusy = true
-	u.PluginsBusy = true
-	u.RunAsync(func() error {
-		err := u.changeClientPlugin(id, action, endpoint)
-		var pluginRows []clientplugin.Status
-		if u.ClientPlugins != nil {
-			pluginRows = u.ClientPlugins.Statuses(endpoint)
-		}
-		var clientRows []clientconfig.Status
-		if u.ClientConfigs != nil {
-			clientRows = u.ClientConfigs.Statuses(endpoint)
-		}
-		u.updateUI(func() {
-			u.PluginStatuses = pluginRows
-			u.ClientStatuses = clientRows
-			u.PluginsBusy = false
-			u.ClientsBusy = false
-			noteClientStatusLang(lang)
-			u.PluginError = ""
-			if err != nil {
-				u.PluginError = err.Error()
-			}
-		})
-		if err == nil {
-			switch action {
-			case "install":
-				u.Notify(i18n.T("ops.plugin-installed"))
-			case "update":
-				u.Notify(i18n.T("ops.plugin-updated"))
-			default:
-				u.Notify(i18n.T("ops.plugin-removed"))
-			}
-		}
-		return nil
-	})
+	u.runClientAction(true, func(endpoint string) error {
+		return u.changeClientPlugin(id, action, endpoint)
+	}, clientPluginSuccessToast(action))
 }
 
 func (u *DesktopUI) renderClients(c *ui.Context) {
@@ -218,19 +231,14 @@ func (u *DesktopUI) renderClients(c *ui.Context) {
 	if u.State != nil && u.State.Access.Shared {
 		note = i18n.T("ops.shared-gateway-note")
 	}
-	installedCount := 0
-	for _, row := range u.PluginStatuses {
-		if row.State == i18n.T("client.state.installed") {
-			installedCount++
-		}
-	}
-	busy := u.ClientsBusy || u.PluginsBusy
+	installedCount := st.installedPluginCount()
+	busy := st.isBusy()
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(16).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 			ui.Row(c).Gap(12).AlignItems(ui.Baseline).Children(func() {
 				ui.Text(c, i18n.T("ops.clients-title")).FontSize(21).Bold().LetterSpacing(-0.2).TextColor(SailInkStrong)
-				if u.ClientPlugins != nil && len(u.PluginStatuses) > 0 {
-					ui.Text(c, i18n.T("ops.plugins-installed-count", installedCount, len(u.PluginStatuses))).
+				if u.ClientPlugins != nil && len(st.PluginStatuses) > 0 {
+					ui.Text(c, i18n.T("ops.plugins-installed-count", installedCount, len(st.PluginStatuses))).
 						FontSize(12).
 						TextColor(SailInkMuted).
 						FontFeatures("tnum").
@@ -248,29 +256,57 @@ func (u *DesktopUI) renderClients(c *ui.Context) {
 			}
 		})
 	})
-	if u.PluginError != "" {
-		SailAlertBox(c, ToneDanger, i18n.T("ops.plugin-action-failed"), u.PluginError)
+	if st.PluginError != "" {
+		SailAlertBox(c, ToneDanger, i18n.T("ops.plugin-action-failed"), st.PluginError)
 	}
-	if u.ClientConfigError != "" {
-		SailAlertBox(c, ToneDanger, i18n.T("ops.config-action-failed"), u.ClientConfigError)
+	if st.ClientConfigError != "" {
+		SailAlertBox(c, ToneDanger, i18n.T("ops.config-action-failed"), st.ClientConfigError)
 	}
 
 	SailFlushCard(c.Key("client-list"), func() {
 		if u.ClientPlugins != nil {
-			legacyMap := make(map[string]clientconfig.Status, len(u.ClientStatuses))
-			for _, st := range u.ClientStatuses {
-				legacyMap[st.ID] = st
+			legacyMap := make(map[string]clientconfig.Status, len(st.ClientStatuses))
+			for _, cfg := range st.ClientStatuses {
+				legacyMap[cfg.ID] = cfg
 			}
-			for i, row := range u.PluginStatuses {
+			for i, row := range st.PluginStatuses {
 				legacy, hasLegacy := legacyMap[row.ID]
 				u.renderPluginRow(c.Key("client-"+row.ID), st, row, legacy, hasLegacy, i > 0)
 			}
 			return
 		}
-		for i, row := range u.ClientStatuses {
+		for i, row := range st.ClientStatuses {
 			u.renderClientRow(c.Key("client-"+row.ID), row, i > 0)
 		}
 	})
+}
+
+func (u *DesktopUI) renderClientRowIdentity(c *ui.Context, id, name, path string, extra func()) {
+	ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
+		ui.Image(c, clientIcons[id]).Size(26, 26).TextColor(SailInkStrong)
+		ui.Text(c, name).FontSize(14).Bold().TextColor(SailInkStrong).SingleLine()
+		reveal := ui.ButtonBase(c.Key("reveal-path")).Size(28, 28).Radius(6).Center().Cursor(ui.CursorPointer).
+			Label(i18n.T("ops.open-config-location-for", name)).Tooltip(path)
+		if reveal.Hovered() {
+			reveal.Background(SailBgMuted)
+		}
+		reveal.Children(func() { ui.Icon(c, clientPathArrow).Size(17, 17).TextColor(SailInkMuted) })
+		if reveal.Clicked() {
+			u.RunAsync(func() error { return openConfigLocation(path) })
+		}
+		if extra != nil {
+			extra()
+		}
+	})
+}
+
+func renderMoreOverflowMenu(c *ui.Context, label string, disabled bool, build func(menu *ui.Menu)) {
+	more := ui.ButtonBase(c.Key("more")).Size(28, 28).Radius(6).Center().Label(label).Disabled(disabled)
+	if more.Hovered() {
+		more.Background(SailBgMuted)
+	}
+	more.Children(func() { ui.Text(c, "⋯").FontSize(18).TextColor(SailInkMuted) })
+	more.PopoverMenuButton(build)
 }
 
 func (u *DesktopUI) renderPluginRow(c *ui.Context, st *clientsPageState, row clientplugin.Status, legacy clientconfig.Status, hasLegacy, divider bool) {
@@ -278,22 +314,11 @@ func (u *DesktopUI) renderPluginRow(c *ui.Context, st *clientsPageState, row cli
 	if divider {
 		line.BorderWidth(1, 0, 0, 0).BorderColor(SailDivider)
 	}
-	busy := u.ClientsBusy || u.PluginsBusy
+	busy := st.isBusy()
 	fullDetail := buildPluginTooltip(row)
 
 	line.Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-			ui.Image(c, clientIcons[row.ID]).Size(26, 26).TextColor(SailInkStrong)
-			ui.Text(c, row.Name).FontSize(14).Bold().TextColor(SailInkStrong).SingleLine()
-			reveal := ui.ButtonBase(c.Key("reveal-path")).Size(28, 28).Radius(6).Center().Cursor(ui.CursorPointer).
-				Label(i18n.T("ops.open-config-location-for", row.Name)).Tooltip(row.Path)
-			if reveal.Hovered() {
-				reveal.Background(SailBgMuted)
-			}
-			reveal.Children(func() { ui.Icon(c, clientPathArrow).Size(17, 17).TextColor(SailInkMuted) })
-			if reveal.Clicked() {
-				u.RunAsync(func() error { return openConfigLocation(row.Path) })
-			}
+		u.renderClientRowIdentity(c, row.ID, row.Name, row.Path, func() {
 			if sub, warnTone := pluginRowSubtitle(row); sub != "" {
 				col := SailInkMuted
 				if warnTone {
@@ -308,43 +333,42 @@ func (u *DesktopUI) renderPluginRow(c *ui.Context, st *clientsPageState, row cli
 
 		ui.Row(c).AlignItems(ui.Center).Gap(8).Shrink(0).Children(func() {
 			u.renderPluginPrimaryAction(c, st, row, busy, fullDetail)
-			more := ui.ButtonBase(c.Key("more")).Size(28, 28).Radius(6).Center().Label(i18n.T("ops.more-actions-for", row.Name)).Disabled(busy)
-			if more.Hovered() {
-				more.Background(SailBgMuted)
-			}
-			more.Children(func() { ui.Text(c, "⋯").FontSize(18).TextColor(SailInkMuted) })
-			more.PopoverMenuButton(func(menu *ui.Menu) {
-				if menu.Item(i18n.T("ops.copy-verify-prompt")).Chosen() {
-					c.WriteClipboard(u.ClientPlugins.VerificationPrompt(row.ID, u.clientEndpoint()))
-					u.Notify(i18n.T("ops.copied-verify-prompt-for", row.Name))
-				}
-				if menu.Item(i18n.T("ops.view-hook-config")).Chosen() {
-					u.OpenHookSnippetModal(row.ID)
-				}
-				if hasLegacy {
-					switch {
-					case legacy.CanUpdate:
-						if menu.Item(i18n.T("ops.update-mcp-config")).Chosen() {
-							u.runClientConfig(row.ID, "update")
-						}
-					case legacy.CanWrite:
-						if menu.Item(i18n.T("ops.write-mcp-config")).Chosen() {
-							u.runClientConfig(row.ID, "write")
-						}
-					case legacy.CanRevoke:
-						if menu.Item(i18n.T("ops.revoke-mcp-config")).Chosen() {
-							u.runClientConfig(row.ID, "revoke")
-						}
-					}
-				}
-				if row.CanRemove {
-					if menu.Item(i18n.T("ops.remove-plugin")).Chosen() {
-						u.runClientPlugin(row.ID, "remove")
-					}
-				}
+			renderMoreOverflowMenu(c, i18n.T("ops.more-actions-for", row.Name), busy, func(menu *ui.Menu) {
+				u.populatePluginOverflowMenu(c, menu, row, legacy, hasLegacy)
 			})
 		})
 	})
+}
+
+func (u *DesktopUI) populatePluginOverflowMenu(c *ui.Context, menu *ui.Menu, row clientplugin.Status, legacy clientconfig.Status, hasLegacy bool) {
+	if menu.Item(i18n.T("ops.copy-verify-prompt")).Chosen() {
+		c.WriteClipboard(u.ClientPlugins.VerificationPrompt(row.ID, u.clientEndpoint()))
+		u.Notify(i18n.T("ops.copied-verify-prompt-for", row.Name))
+	}
+	if menu.Item(i18n.T("ops.view-hook-config")).Chosen() {
+		u.OpenHookSnippetModal(row.ID)
+	}
+	if hasLegacy {
+		switch {
+		case legacy.CanUpdate:
+			if menu.Item(i18n.T("ops.update-mcp-config")).Chosen() {
+				u.runClientConfig(row.ID, "update")
+			}
+		case legacy.CanWrite:
+			if menu.Item(i18n.T("ops.write-mcp-config")).Chosen() {
+				u.runClientConfig(row.ID, "write")
+			}
+		case legacy.CanRevoke:
+			if menu.Item(i18n.T("ops.revoke-mcp-config")).Chosen() {
+				u.runClientConfig(row.ID, "revoke")
+			}
+		}
+	}
+	if row.CanRemove {
+		if menu.Item(i18n.T("ops.remove-plugin")).Chosen() {
+			u.runClientPlugin(row.ID, "remove")
+		}
+	}
 }
 
 func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, st *clientsPageState, row clientplugin.Status, busy bool, fullDetail string) {
@@ -511,19 +535,7 @@ func (u *DesktopUI) renderClientRow(c *ui.Context, row clientconfig.Status, divi
 		line.BorderWidth(1, 0, 0, 0).BorderColor(SailBorder)
 	}
 	line.Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-			ui.Image(c, clientIcons[row.ID]).Size(26, 26).TextColor(SailInkStrong)
-			ui.Text(c, row.Name).FontSize(14).Bold().TextColor(SailInkStrong).SingleLine()
-			reveal := ui.ButtonBase(c.Key("reveal-path")).Size(28, 28).Radius(6).Center().Cursor(ui.CursorPointer).
-				Label(i18n.T("ops.open-config-location-for", row.Name)).Tooltip(row.Path)
-			if reveal.Hovered() {
-				reveal.Background(SailBgMuted)
-			}
-			reveal.Children(func() { ui.Icon(c, clientPathArrow).Size(17, 17).TextColor(SailInkMuted) })
-			if reveal.Clicked() {
-				u.RunAsync(func() error { return openConfigLocation(row.Path) })
-			}
-		})
+		u.renderClientRowIdentity(c, row.ID, row.Name, row.Path, nil)
 		ui.Row(c).AlignItems(ui.Center).Gap(8).Shrink(0).Children(func() {
 			if SailSmallButton(c.Key("hook-snippet"), i18n.T("ops.hook-config")).
 				Label(i18n.T("ops.hook-config-for", row.Name)).
@@ -549,12 +561,7 @@ func (u *DesktopUI) renderClientRow(c *ui.Context, row clientconfig.Status, divi
 				}
 			}
 			if row.CanRevoke {
-				more := ui.ButtonBase(c.Key("more")).Size(28, 28).Radius(6).Center().Label(i18n.T("ops.more-actions-for", row.Name)).Disabled(u.ClientsBusy)
-				if more.Hovered() {
-					more.Background(SailBgMuted)
-				}
-				more.Children(func() { ui.Text(c, "⋯").FontSize(18).TextColor(SailInkMuted) })
-				more.PopoverMenuButton(func(menu *ui.Menu) {
+				renderMoreOverflowMenu(c, i18n.T("ops.more-actions-for", row.Name), u.ClientsBusy, func(menu *ui.Menu) {
 					if menu.Item(i18n.T("ops.view-hook-config")).Chosen() {
 						u.OpenHookSnippetModal(row.ID)
 					}

@@ -17,6 +17,18 @@ import (
 	"gatewaylab/internal/i18n"
 )
 
+func writeControlJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (d *desktopApp) controlSnapshot() (*gatewayRuntime, *mygo.Window, *DesktopUI) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.runtime, d.win, d.ui
+}
+
 // startControlSocket starts an optional local Unix domain socket server when
 // GATEWAY_DESKTOP_CONTROL is explicitly set, allowing automated end-to-end
 // verification of the packaged desktop app (window visibility, native UI view,
@@ -36,19 +48,28 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 	_ = os.Chmod(sockPath, 0o600) //nolint:gosec // G703: path is the user's own local data/socket path from configuration, not remote input
 
 	mux := http.NewServeMux()
-	writeJSON := func(w http.ResponseWriter, code int, v any) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(code)
-		_ = json.NewEncoder(w).Encode(v)
-	}
+	d.registerControlStatusRoutes(mux)
+	d.registerControlClientRoutes(mux)
+	d.registerControlWindowRoutes(mux)
 
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Warn("control socket stopped", "error", err)
+		}
+	}()
+
+	return func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+		_ = os.Remove(sockPath) //nolint:gosec // G703: path is the user's own local data/socket path from configuration, not remote input
+	}, nil
+}
+
+func (d *desktopApp) registerControlStatusRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
-		d.mu.Lock()
-		rt := d.runtime
-		win := d.win
-		uiApp := d.ui
-		d.mu.Unlock()
-
+		rt, win, uiApp := d.controlSnapshot()
 		resp := map[string]any{
 			"ready":           rt != nil,
 			"window_exists":   win != nil,
@@ -73,7 +94,7 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 		if uiApp != nil {
 			resp["current_view"] = string(uiApp.CurrentView())
 		}
-		writeJSON(w, http.StatusOK, resp)
+		writeControlJSON(w, http.StatusOK, resp)
 	})
 
 	mux.HandleFunc("POST /theme", func(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +102,7 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 			Source string `json:"source"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			writeControlJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 		var source mygo.ThemeSource
@@ -93,11 +114,11 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 		case "dark":
 			source = mygo.ThemeDark
 		default:
-			writeJSON(w, 400, map[string]string{"error": "unknown theme source"})
+			writeControlJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown theme source"})
 			return
 		}
 		mygo.Theme.SetSource(source)
-		writeJSON(w, 200, map[string]any{"source": in.Source, "dark": mygo.Theme.IsDark()})
+		writeControlJSON(w, http.StatusOK, map[string]any{"source": in.Source, "dark": mygo.Theme.IsDark()})
 	})
 
 	mux.HandleFunc("POST /view", func(w http.ResponseWriter, r *http.Request) {
@@ -105,90 +126,82 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 			View string `json:"view"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeControlJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		d.mu.Lock()
-		uiApp := d.ui
-		win := d.win
-		d.mu.Unlock()
+		_, win, uiApp := d.controlSnapshot()
 		if uiApp == nil || win == nil {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "window not open"})
+			writeControlJSON(w, http.StatusConflict, map[string]string{"error": "window not open"})
 			return
 		}
 		win.Update(func() {
 			uiApp.Navigate(ViewID(in.View))
 		})
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "view": in.View})
+		writeControlJSON(w, http.StatusOK, map[string]any{"ok": true, "view": in.View})
 	})
+}
 
+func (d *desktopApp) registerControlClientRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /clients", func(w http.ResponseWriter, r *http.Request) {
-		d.mu.Lock()
-		app := d.ui
-		rt := d.runtime
-		d.mu.Unlock()
+		rt, _, app := d.controlSnapshot()
 		if app == nil || app.ClientConfigs == nil || rt == nil {
-			writeJSON(w, 409, map[string]string{"error": "not ready"})
+			writeControlJSON(w, http.StatusConflict, map[string]string{"error": "not ready"})
 			return
 		}
-		writeJSON(w, 200, app.ClientConfigs.Statuses(rt.MCPURL))
+		writeControlJSON(w, http.StatusOK, app.ClientConfigs.Statuses(rt.MCPURL))
 	})
+
 	mux.HandleFunc("POST /clients", func(w http.ResponseWriter, r *http.Request) {
 		var in struct{ ID, Action string }
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			writeControlJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		d.mu.Lock()
-		app := d.ui
-		rt := d.runtime
-		d.mu.Unlock()
-		if app == nil || rt == nil {
-			writeJSON(w, 409, map[string]string{"error": "not ready"})
+		rt, _, app := d.controlSnapshot()
+		if app == nil || app.ClientConfigs == nil || rt == nil {
+			writeControlJSON(w, http.StatusConflict, map[string]string{"error": "not ready"})
 			return
 		}
 		if err := app.changeClientConfig(in.ID, in.Action, rt.MCPURL); err != nil {
-			writeJSON(w, 409, map[string]string{"error": err.Error()})
+			writeControlJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
 		}
 		app.updateUI(func() { app.refreshClientConfigs() })
-		writeJSON(w, 200, app.ClientConfigs.Statuses(rt.MCPURL))
+		writeControlJSON(w, http.StatusOK, app.ClientConfigs.Statuses(rt.MCPURL))
 	})
+
 	mux.HandleFunc("GET /plugins", func(w http.ResponseWriter, r *http.Request) {
-		d.mu.Lock()
-		app := d.ui
-		rt := d.runtime
-		d.mu.Unlock()
+		rt, _, app := d.controlSnapshot()
 		if app == nil || app.ClientPlugins == nil || rt == nil {
-			writeJSON(w, 409, map[string]string{"error": "not ready"})
+			writeControlJSON(w, http.StatusConflict, map[string]string{"error": "not ready"})
 			return
 		}
-		writeJSON(w, 200, app.ClientPlugins.Statuses(rt.MCPURL))
+		writeControlJSON(w, http.StatusOK, app.ClientPlugins.Statuses(rt.MCPURL))
 	})
+
 	mux.HandleFunc("POST /plugins", func(w http.ResponseWriter, r *http.Request) {
 		var in struct{ ID, Action string }
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			writeControlJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		d.mu.Lock()
-		app := d.ui
-		rt := d.runtime
-		d.mu.Unlock()
+		rt, _, app := d.controlSnapshot()
 		if app == nil || app.ClientPlugins == nil || rt == nil {
-			writeJSON(w, 409, map[string]string{"error": "not ready"})
+			writeControlJSON(w, http.StatusConflict, map[string]string{"error": "not ready"})
 			return
 		}
 		if err := app.changeClientPlugin(in.ID, in.Action, rt.MCPURL); err != nil {
-			writeJSON(w, 409, map[string]string{"error": err.Error()})
+			writeControlJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
 		}
 		app.updateUI(func() { app.refreshClientConfigs() })
-		writeJSON(w, 200, app.ClientPlugins.Statuses(rt.MCPURL))
+		writeControlJSON(w, http.StatusOK, app.ClientPlugins.Statuses(rt.MCPURL))
 	})
+}
 
+func (d *desktopApp) registerControlWindowRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /clipboard", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"text": mygo.Clipboard.ReadText()})
+		writeControlJSON(w, http.StatusOK, map[string]string{"text": mygo.Clipboard.ReadText()})
 	})
 
 	mux.HandleFunc("POST /clipboard", func(w http.ResponseWriter, r *http.Request) {
@@ -196,24 +209,22 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 			Text string `json:"text"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeControlJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 		mygo.Clipboard.WriteText(in.Text)
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeControlJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
 	mux.HandleFunc("GET /screenshot", func(w http.ResponseWriter, r *http.Request) {
-		d.mu.Lock()
-		win := d.win
-		d.mu.Unlock()
+		_, win, _ := d.controlSnapshot()
 		if win == nil {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "window not open"})
+			writeControlJSON(w, http.StatusConflict, map[string]string{"error": "window not open"})
 			return
 		}
 		pngBytes, err := win.CapturePage()
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeControlJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 		w.Header().Set("Content-Type", "image/png")
@@ -222,44 +233,28 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 	})
 
 	mux.HandleFunc("POST /window/close", func(w http.ResponseWriter, r *http.Request) {
-		d.mu.Lock()
-		win := d.win
-		d.mu.Unlock()
+		_, win, _ := d.controlSnapshot()
 		if win != nil {
 			win.Close()
 		}
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeControlJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
 	mux.HandleFunc("POST /tray/open", func(w http.ResponseWriter, r *http.Request) {
 		d.showMainWindow()
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeControlJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
 	mux.HandleFunc("POST /tray/copy-mcp", func(w http.ResponseWriter, r *http.Request) {
 		d.copyMCPURL()
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeControlJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
 	mux.HandleFunc("POST /tray/quit", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeControlJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		go func() {
 			time.Sleep(30 * time.Millisecond)
 			d.requestQuit()
 		}()
 	})
-
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
-	go func() {
-		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Warn("control socket stopped", "error", err)
-		}
-	}()
-
-	return func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-		_ = os.Remove(sockPath) //nolint:gosec // G703: path is the user's own local data/socket path from configuration, not remote input
-	}, nil
 }

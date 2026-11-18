@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -58,46 +56,16 @@ func viewTitle(v ViewID) string {
 	}
 }
 
-type catalogFilterIntent struct {
-	serverID string
-	access   string // "", "all", "ro", "rw"
-}
-
-type catalogToolIntent struct {
-	toolID   string
-	serverID string
-}
-
-type playgroundReplayIntent struct {
-	intent   string
-	actor    string
-	repoKey  string
-	hasScope bool
-}
-
 // DesktopUI owns the native mygo/ui application state, API client, routing,
 // background polling, and thread-safe async updates for the desktop window.
 type DesktopUI struct {
 	ClientConfigs     *clientconfig.Manager
-	ClientStatuses    []clientconfig.Status
-	ClientConfigError string
-	ClientsBusy       bool
 	ClientPlugins     *clientplugin.Manager
-	PluginStatuses    []clientplugin.Status
-	PluginError       string
-	PluginsBusy       bool
 	Runtime           *gatewayRuntime
 	Client            *apiclient.Client
 	OnLanguageChanged func(i18n.Lang)
 
-	// Current window reference (guarded by mu for background goroutines).
-	mu        sync.Mutex
-	Win       *mygo.Window
-	stopPoll  context.CancelFunc
-	winHidden atomic.Bool
-
-	// Thread-safe view snapshot for control socket / diagnostics.
-	viewAtomic atomic.Value // stores ViewID
+	window windowHost
 
 	// Core application data (read/written on the UI thread via win.Update).
 	State     *apitypes.Bootstrap
@@ -105,50 +73,30 @@ type DesktopUI struct {
 	ViewMode  ViewID
 
 	// Encapsulated cross-page navigation & handoff intents.
-	pendingServiceID     string
-	pendingEventID       string
-	pendingRepoKey       string
-	pendingAddService    bool
-	pendingCatalogFilter *catalogFilterIntent
-	pendingCatalogTool   *catalogToolIntent
-	pendingReplay        *playgroundReplayIntent
+	nav navIntent
 
 	// Per-page UI state owned directly by this DesktopUI instance.
-	overview        *overviewLocalState
-	services        *servicesPageState
-	market          *marketPageState
-	catalog         *catalogPageState
-	repos           *reposPageState
-	playground      *playgroundState
-	logs            *logsPageState
-	settings        *settingsState
-	clients         *clientsPageState
-	hookModal       *hookSnippetModalState
-	serverCreds     map[string]apitypes.ServerCredentials
-	serverCredsSig  map[string]string
-	serverCredsBusy map[string]bool
+	overview   *overviewLocalState
+	services   *servicesPageState
+	market     *marketPageState
+	catalog    *catalogPageState
+	repos      *reposPageState
+	playground *playgroundState
+	logs       *logsPageState
+	settings   *settingsState
+	clientsPageState
+	hookModal *hookSnippetModalState
+	credCache serverCredentialCache
 
 	// Auth & bootstrap lifecycle state.
-	NeedsLogin bool
-	LoginToken string
-	LoginError string
-	LoggingIn  bool
-	Loading    bool
-	BootError  string
-	Refreshing bool
-	BusyCount  int
+	sessionState
 
 	// Per-page scroll state so switching tabs preserves scroll position.
 	scrollStates map[ViewID]*ui.ScrollState
 
-	// Pending toast messages drained on the UI thread during View().
-	toastMu       sync.Mutex
-	pendingToasts []string
-
-	// Headless synchronization when Win == nil (e.g. ui.Tester under -race).
-	headlessViewMu         sync.Mutex
-	headlessQueueMu        sync.Mutex
-	pendingHeadlessUpdates []func()
+	// Pending toast messages and headless frame synchronization.
+	toasts   toastQueue
+	headless headlessSync
 }
 
 // NewDesktopUI constructs a DesktopUI wired to the given gatewayRuntime.
@@ -161,7 +109,7 @@ func NewDesktopUI(rt *gatewayRuntime) *DesktopUI {
 		Runtime:      rt,
 		Client:       apiclient.New(uiURL),
 		ViewMode:     ViewOverview,
-		Loading:      true,
+		sessionState: sessionState{Loading: true},
 		scrollStates: make(map[ViewID]*ui.ScrollState),
 	}
 	home, err := os.UserHomeDir()
@@ -187,22 +135,14 @@ func NewDesktopUI(rt *gatewayRuntime) *DesktopUI {
 		d.ClientConfigError = err.Error()
 		d.PluginError = err.Error()
 	}
-	d.viewAtomic.Store(ViewOverview)
+	d.nav.setView(ViewOverview)
 	return d
 }
 
 // AttachWindow binds the mygo.Window to DesktopUI, triggers initial bootstrap,
 // and starts a low-overhead background refresh loop.
 func (u *DesktopUI) AttachWindow(win *mygo.Window) {
-	u.mu.Lock()
-	if u.stopPoll != nil {
-		u.stopPoll()
-		u.stopPoll = nil
-	}
-	u.Win = win
-	pollCtx, cancel := context.WithCancel(context.Background())
-	u.stopPoll = cancel
-	u.mu.Unlock()
+	pollCtx := u.window.attach(win)
 
 	u.Refresh()
 	u.refreshClientConfigs()
@@ -212,105 +152,44 @@ func (u *DesktopUI) AttachWindow(win *mygo.Window) {
 
 // DetachWindow stops background polling when the window is destroyed.
 func (u *DesktopUI) DetachWindow() {
-	u.mu.Lock()
-	if u.stopPoll != nil {
-		u.stopPoll()
-		u.stopPoll = nil
-	}
-	u.Win = nil
-	u.mu.Unlock()
+	u.window.detach()
 }
 
 // CurrentView returns the active page ID safely from any goroutine.
 func (u *DesktopUI) CurrentView() ViewID {
-	if v, ok := u.viewAtomic.Load().(ViewID); ok {
-		return v
-	}
-	return ViewOverview
+	return u.nav.currentView()
 }
 
 func (u *DesktopUI) currentWindow() *mygo.Window {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	return u.Win
+	return u.window.current()
 }
 
 // updateUI executes fn on the main UI thread and triggers a window redraw when attached.
 func (u *DesktopUI) updateUI(fn func()) {
-	win := u.currentWindow()
-	if win != nil {
+	if win := u.window.current(); win != nil {
 		win.Update(fn)
 		return
 	}
-	if u.headlessViewMu.TryLock() {
-		u.drainHeadlessUpdatesLocked()
-		fn()
-		u.drainHeadlessUpdatesLocked()
-		u.headlessViewMu.Unlock()
-		return
-	}
-	u.headlessQueueMu.Lock()
-	u.pendingHeadlessUpdates = append(u.pendingHeadlessUpdates, fn)
-	u.headlessQueueMu.Unlock()
-}
-
-func (u *DesktopUI) drainHeadlessUpdatesLocked() {
-	for {
-		u.headlessQueueMu.Lock()
-		if len(u.pendingHeadlessUpdates) == 0 {
-			u.headlessQueueMu.Unlock()
-			return
-		}
-		batch := u.pendingHeadlessUpdates
-		u.pendingHeadlessUpdates = nil
-		u.headlessQueueMu.Unlock()
-		for _, fn := range batch {
-			fn()
-		}
-	}
+	u.headless.runOrQueue(fn)
 }
 
 func (u *DesktopUI) enterHeadlessFrame() func() {
-	if u.currentWindow() != nil {
+	if u.window.current() != nil {
 		return func() {}
 	}
-	u.headlessViewMu.Lock()
-	u.drainHeadlessUpdatesLocked()
-	return func() {
-		u.drainHeadlessUpdatesLocked()
-		u.headlessViewMu.Unlock()
-	}
+	return u.headless.enterFrame()
 }
 
 // Notify queues a toast message and wakes the UI to display it.
 // Safe to call from both UI handlers and background goroutines.
 func (u *DesktopUI) Notify(msg string) {
-	msg = strings.TrimSpace(msg)
-	if msg == "" {
-		return
-	}
-	u.toastMu.Lock()
-	u.pendingToasts = append(u.pendingToasts, msg)
-	u.toastMu.Unlock()
-
-	if win := u.currentWindow(); win != nil {
-		win.Update(func() {})
+	if u.toasts.push(msg) {
+		u.window.wake()
 	}
 }
 
 func (u *DesktopUI) drainToasts(c *ui.Context) {
-	u.toastMu.Lock()
-	if len(u.pendingToasts) == 0 {
-		u.toastMu.Unlock()
-		return
-	}
-	msgs := u.pendingToasts
-	u.pendingToasts = nil
-	u.toastMu.Unlock()
-
-	for _, msg := range msgs {
-		c.Toast(msg)
-	}
+	u.toasts.drain(c)
 }
 
 // RunAsync executes fn in a background goroutine, tracks busy state,
@@ -318,22 +197,18 @@ func (u *DesktopUI) drainToasts(c *ui.Context) {
 // and triggers a thread-safe window redraw on completion.
 func (u *DesktopUI) RunAsync(fn func() error) {
 	u.updateUI(func() {
-		u.BusyCount++
+		u.beginBusy()
 	})
 	go func() {
 		err := fn()
 		u.updateUI(func() {
-			if u.BusyCount > 0 {
-				u.BusyCount--
-			}
+			u.endBusy()
 			if err != nil {
 				if apiclient.IsUnauthorized(err) {
-					u.NeedsLogin = true
+					u.markUnauthorized()
 					u.State = nil
 				} else {
-					u.toastMu.Lock()
-					u.pendingToasts = append(u.pendingToasts, err.Error())
-					u.toastMu.Unlock()
+					u.toasts.push(err.Error())
 				}
 			}
 		})
@@ -346,43 +221,26 @@ func (u *DesktopUI) Refresh() {
 		return
 	}
 	u.updateUI(func() {
-		u.Refreshing = true
-		if u.State == nil {
-			u.Loading = true
-		}
+		u.beginRefresh(u.State != nil)
 	})
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		data, err := u.Client.Bootstrap(ctx)
-		var tel GatewayTelemetry
-		var creds map[string]apitypes.ServerCredentials
-		if err == nil {
-			tel = ComputeGatewayTelemetry(data)
-			creds = u.fetchReferencedServerCredentials(ctx, data.Registry.Servers)
-		}
+		data, tel, creds, err := u.fetchBootstrapSnapshot(ctx)
 		u.updateUI(func() {
-			u.Refreshing = false
-			u.Loading = false
+			u.finishRefresh()
 			if err != nil {
 				if apiclient.IsUnauthorized(err) {
-					u.NeedsLogin = true
+					u.markUnauthorized()
 					u.State = nil
-					u.BootError = ""
 				} else if u.State == nil {
 					u.BootError = err.Error()
 				} else {
-					u.toastMu.Lock()
-					u.pendingToasts = append(u.pendingToasts, i18n.T("app.toast.refresh_failed", err.Error()))
-					u.toastMu.Unlock()
+					u.toasts.push(i18n.T("app.toast.refresh_failed", err.Error()))
 				}
 				return
 			}
-			u.State = &data
-			u.Telemetry = tel
-			u.applyServerCredentialsSnapshot(data.Registry.Servers, creds)
-			u.NeedsLogin = false
-			u.BootError = ""
+			u.applyBootstrapSnapshot(data, tel, creds)
 		})
 	}()
 }
@@ -394,21 +252,31 @@ func (u *DesktopUI) RefreshSync() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	data, err := u.Client.Bootstrap(ctx)
+	data, tel, creds, err := u.fetchBootstrapSnapshot(ctx)
 	if err != nil {
 		return err
 	}
-	tel := ComputeGatewayTelemetry(data)
-	creds := u.fetchReferencedServerCredentials(ctx, data.Registry.Servers)
 	u.updateUI(func() {
-		u.State = &data
-		u.Telemetry = tel
-		u.applyServerCredentialsSnapshot(data.Registry.Servers, creds)
-		u.NeedsLogin = false
-		u.BootError = ""
-		u.Loading = false
+		u.applyBootstrapSnapshot(data, tel, creds)
 	})
 	return nil
+}
+
+func (u *DesktopUI) fetchBootstrapSnapshot(ctx context.Context) (apitypes.Bootstrap, GatewayTelemetry, map[string]apitypes.ServerCredentials, error) {
+	data, err := u.Client.Bootstrap(ctx)
+	if err != nil {
+		return apitypes.Bootstrap{}, GatewayTelemetry{}, nil, err
+	}
+	tel := ComputeGatewayTelemetry(data)
+	creds := u.fetchReferencedServerCredentials(ctx, data.Registry.Servers)
+	return data, tel, creds, nil
+}
+
+func (u *DesktopUI) applyBootstrapSnapshot(data apitypes.Bootstrap, tel GatewayTelemetry, creds map[string]apitypes.ServerCredentials) {
+	u.State = &data
+	u.Telemetry = tel
+	u.applyServerCredentialsSnapshot(data.Registry.Servers, creds)
+	u.markAuthenticated()
 }
 
 func (u *DesktopUI) pollLoop(ctx context.Context) {
@@ -419,43 +287,38 @@ func (u *DesktopUI) pollLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if u.winHidden.Load() || u.NeedsLogin || u.Client == nil {
-				continue
-			}
-			view := u.CurrentView()
-			if view == ViewClients {
-				u.updateUI(func() { u.refreshClientConfigs() })
-				continue
-			}
-			if view != ViewOverview && view != ViewServices && view != ViewLogs && view != ViewRepos {
-				continue
-			}
-			reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			data, err := u.Client.Bootstrap(reqCtx)
-			var creds map[string]apitypes.ServerCredentials
-			if err == nil {
-				creds = u.fetchReferencedServerCredentials(reqCtx, data.Registry.Servers)
-			}
-			cancel()
-			if err != nil {
-				if apiclient.IsUnauthorized(err) {
-					u.updateUI(func() {
-						u.NeedsLogin = true
-						u.State = nil
-					})
-				}
-				continue
-			}
-			tel := ComputeGatewayTelemetry(data)
-			u.updateUI(func() {
-				u.State = &data
-				u.Telemetry = tel
-				u.applyServerCredentialsSnapshot(data.Registry.Servers, creds)
-				u.NeedsLogin = false
-				u.BootError = ""
-			})
+			u.pollOnce(ctx)
 		}
 	}
+}
+
+func (u *DesktopUI) pollOnce(ctx context.Context) {
+	if u.window.isHidden() || u.NeedsLogin || u.Client == nil {
+		return
+	}
+	view := u.CurrentView()
+	if view == ViewClients {
+		u.updateUI(func() { u.refreshClientConfigs() })
+		return
+	}
+	if view != ViewOverview && view != ViewServices && view != ViewLogs && view != ViewRepos {
+		return
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	data, tel, creds, err := u.fetchBootstrapSnapshot(reqCtx)
+	cancel()
+	if err != nil {
+		if apiclient.IsUnauthorized(err) {
+			u.updateUI(func() {
+				u.markUnauthorized()
+				u.State = nil
+			})
+		}
+		return
+	}
+	u.updateUI(func() {
+		u.applyBootstrapSnapshot(data, tel, creds)
+	})
 }
 
 // --- Cross-page navigation helpers ---
@@ -465,133 +328,83 @@ func (u *DesktopUI) Navigate(view ViewID) {
 		u.refreshClientConfigs()
 	}
 	u.ViewMode = view
-	if view != ViewServices {
-		u.pendingServiceID = ""
-	}
-	if view != ViewLogs {
-		u.pendingEventID = ""
-	}
-	u.viewAtomic.Store(view)
+	u.nav.navigate(view)
 }
 
 func (u *DesktopUI) OpenServiceDetail(serverID string) {
-	u.pendingServiceID = serverID
 	u.ViewMode = ViewServices
-	u.viewAtomic.Store(ViewServices)
+	u.nav.openService(serverID)
 }
 
 func (u *DesktopUI) activeServiceID() string {
-	return u.pendingServiceID
+	return u.nav.serviceID
 }
 
 func (u *DesktopUI) clearActiveService() {
-	u.pendingServiceID = ""
+	u.nav.serviceID = ""
 }
 
 func (u *DesktopUI) OpenAddServiceModal() {
-	u.pendingAddService = true
-	u.pendingServiceID = ""
 	u.ViewMode = ViewServices
-	u.viewAtomic.Store(ViewServices)
+	u.nav.openAddService()
 }
 
 func (u *DesktopUI) consumePendingAddService() bool {
-	if !u.pendingAddService {
-		return false
-	}
-	u.pendingAddService = false
-	return true
+	return u.nav.consumeAddService()
 }
 
 func (u *DesktopUI) OpenCatalogFilter(serverID, access string) {
-	u.pendingCatalogFilter = &catalogFilterIntent{
-		serverID: serverID,
-		access:   access,
-	}
-	u.pendingCatalogTool = nil
 	u.ViewMode = ViewCatalog
-	u.viewAtomic.Store(ViewCatalog)
+	u.nav.openCatalogFilter(serverID, access)
 }
 
 func (u *DesktopUI) consumePendingCatalogFilter() (string, string, bool) {
-	if u.pendingCatalogFilter == nil {
+	intent, ok := takeIntent(&u.nav.catalogFilter)
+	if !ok {
 		return "", "", false
 	}
-	intent := *u.pendingCatalogFilter
-	u.pendingCatalogFilter = nil
 	return intent.serverID, intent.access, true
 }
 
 // OpenCatalogTool navigates to the Catalog page focused on a specific tool and service.
 func (u *DesktopUI) OpenCatalogTool(toolID, serverID string) {
-	u.pendingCatalogTool = &catalogToolIntent{
-		toolID:   toolID,
-		serverID: serverID,
-	}
-	u.pendingCatalogFilter = nil
 	u.ViewMode = ViewCatalog
-	u.viewAtomic.Store(ViewCatalog)
+	u.nav.openCatalogTool(toolID, serverID)
 }
 
 func (u *DesktopUI) consumePendingCatalogTool() (string, string, bool) {
-	if u.pendingCatalogTool == nil {
+	intent, ok := takeIntent(&u.nav.catalogTool)
+	if !ok {
 		return "", "", false
 	}
-	intent := *u.pendingCatalogTool
-	u.pendingCatalogTool = nil
 	return intent.toolID, intent.serverID, true
 }
 
 func (u *DesktopUI) OpenPlaygroundReplay(intent, actor string, scope ...string) {
-	hasScope := len(scope) > 0
-	if intent != "" || hasScope {
-		next := &playgroundReplayIntent{
-			intent:   intent,
-			actor:    actor,
-			hasScope: hasScope,
-		}
-		if len(scope) >= 1 {
-			next.repoKey = scope[0]
-		}
-		u.pendingReplay = next
-	}
 	u.ViewMode = ViewPlayground
-	u.viewAtomic.Store(ViewPlayground)
+	u.nav.openReplay(intent, actor, scope...)
 }
 
 func (u *DesktopUI) consumePendingReplay() (playgroundReplayIntent, bool) {
-	if u.pendingReplay == nil {
-		return playgroundReplayIntent{}, false
-	}
-	intent := *u.pendingReplay
-	u.pendingReplay = nil
-	return intent, true
+	return takeIntent(&u.nav.replay)
 }
 
 func (u *DesktopUI) OpenRepos(repoKey string) {
-	if repoKey != "" {
-		u.pendingRepoKey = repoKey
-	}
 	u.ViewMode = ViewRepos
-	u.viewAtomic.Store(ViewRepos)
+	u.nav.openRepos(repoKey)
 }
 
 func (u *DesktopUI) consumePendingRepoKey() string {
-	key := u.pendingRepoKey
-	u.pendingRepoKey = ""
-	return key
+	return u.nav.consumeRepoKey()
 }
 
 func (u *DesktopUI) OpenLogsEvent(eventID string) {
-	u.pendingEventID = eventID
 	u.ViewMode = ViewLogs
-	u.viewAtomic.Store(ViewLogs)
+	u.nav.openLogsEvent(eventID)
 }
 
 func (u *DesktopUI) consumePendingEventID() string {
-	id := u.pendingEventID
-	u.pendingEventID = ""
-	return id
+	return u.nav.consumeEventID()
 }
 
 func (u *DesktopUI) OpenClients() {
@@ -611,40 +424,26 @@ func (u *DesktopUI) scrollState(view ViewID) *ui.ScrollState {
 }
 
 func (u *DesktopUI) submitLogin() {
-	token := strings.TrimSpace(u.LoginToken)
-	if token == "" || u.LoggingIn || u.Client == nil {
+	token, ok := u.prepareLogin(u.Client != nil)
+	if !ok {
 		return
 	}
-	u.LoggingIn = true
-	u.LoginError = ""
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		_, err := u.Client.Login(ctx, token)
 		if err != nil {
-			u.updateUI(func() {
-				u.LoggingIn = false
-				u.LoginError = err.Error()
-			})
+			u.updateUI(func() { u.failLogin(err) })
 			return
 		}
-		data, bootErr := u.Client.Bootstrap(ctx)
-		var tel GatewayTelemetry
-		if bootErr == nil {
-			tel = ComputeGatewayTelemetry(data)
-		}
+		data, tel, creds, bootErr := u.fetchBootstrapSnapshot(ctx)
 		u.updateUI(func() {
 			u.LoggingIn = false
 			if bootErr != nil {
 				u.LoginError = bootErr.Error()
 				return
 			}
-			u.LoginToken = ""
-			u.LoginError = ""
-			u.NeedsLogin = false
-			u.State = &data
-			u.Telemetry = tel
-			u.BootError = ""
+			u.applyBootstrapSnapshot(data, tel, creds)
 		})
 	}()
 }
@@ -673,7 +472,7 @@ func (u *DesktopUI) logout() {
 func (u *DesktopUI) View(c *ui.Context) {
 	defer u.enterHeadlessFrame()()
 	applySailTheme(c)
-	u.winHidden.Store(c.WindowHidden())
+	u.window.setHidden(c.WindowHidden())
 	u.drainToasts(c)
 
 	if u.NeedsLogin {
@@ -790,27 +589,28 @@ func (u *DesktopUI) renderBootView(c *ui.Context) {
 	})
 }
 
+func countRealRegistryStats(reg apitypes.Registry) (activeServers, totalTools int) {
+	realServerSet := make(map[string]bool)
+	for _, s := range reg.Servers {
+		if s.Demo {
+			continue
+		}
+		realServerSet[s.ID] = true
+		if s.Enabled {
+			activeServers++
+		}
+	}
+	for _, t := range reg.Tools {
+		if realServerSet[t.ServerID] {
+			totalTools++
+		}
+	}
+	return activeServers, totalTools
+}
+
 func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 	state := u.State
-	realServers := 0
-	activeRealServers := 0
-	realServerSet := make(map[string]bool)
-	for _, s := range state.Registry.Servers {
-		if !s.Demo {
-			realServers++
-			realServerSet[s.ID] = true
-			if s.Enabled {
-				activeRealServers++
-			}
-		}
-	}
-	_ = realServers
-	realToolCount := 0
-	for _, t := range state.Registry.Tools {
-		if realServerSet[t.ServerID] {
-			realToolCount++
-		}
-	}
+	activeRealServers, realToolCount := countRealRegistryStats(state.Registry)
 
 	topPad := bar.Bottom + 10
 	if topPad < 16 {
@@ -844,7 +644,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 					servicesNavItem(activeRealServers, u.servicesNeedingAttention()),
 					{id: ViewCatalog, label: i18n.T("nav.catalog"), icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
 					{id: ViewRepos, label: i18n.T("nav.repos"), icon: IconFolderGit, badge: reposNavBadge(state.Scopes)},
-					{id: ViewClients, label: i18n.T("nav.clients"), icon: IconServer, badge: clientsNavBadge(u)},
+					{id: ViewClients, label: i18n.T("nav.clients"), icon: IconServer, badge: u.clientsNavBadge()},
 					{id: ViewSettings, label: i18n.T("nav.settings"), icon: IconShield},
 				})
 				u.renderNavGroup(c, i18n.T("nav.group.observability"), []navItem{
@@ -886,16 +686,6 @@ func countBadge(n int) string {
 	return fmt.Sprintf("%d", n)
 }
 
-func clientsNavBadge(u *DesktopUI) string {
-	if len(u.PluginStatuses) > 0 {
-		return countBadge(len(u.PluginStatuses))
-	}
-	if len(u.ClientStatuses) > 0 {
-		return countBadge(len(u.ClientStatuses))
-	}
-	return ""
-}
-
 func reposNavBadge(scopes apitypes.ScopeOverview) string {
 	if len(scopes.Repositories) > 0 {
 		return countBadge(len(scopes.Repositories))
@@ -914,174 +704,77 @@ func (u *DesktopUI) renderNavGroup(c *ui.Context, heading string, items []navIte
 			FontWeight(600).
 			TextColor(SailInkFaint)
 		for _, item := range items {
-			active := u.ViewMode == item.id
-			btn := ui.ButtonBase(c.Key("nav-"+string(item.id))).
-				FillWidth().
-				Padding(7, 10).
-				Radius(6).
-				Gap(9).
-				AlignItems(ui.Center).
-				Cursor(ui.CursorPointer)
-			if active {
-				applyControlElevation(
-					btn.Background(SailBgSurface).
-						Border(SailElevationBorderWidth, SailSurfaceBorder),
-					true,
-				)
-			} else if btn.Hovered() {
-				btn.Background(SailBgMuted)
-			}
-
-			iconColor := SailInkMuted
-			textColor := SailInkBody
-			if active {
-				iconColor = SailAccent
-				textColor = SailInkStrong
-			}
-
-			btn.Children(func() {
-				ui.Icon(c, item.icon).Size(15, 15).TextColor(iconColor).Shrink(0)
-				lbl := ui.Text(c, item.label).Grow(1).FontSize(13).TextColor(textColor).SingleLine()
-				if active {
-					lbl.FontWeight(600)
-				} else {
-					lbl.FontWeight(500)
-				}
-				if item.badge != "" {
-					badgeInk := SailInkFaint
-					if active {
-						badgeInk = SailAccent
-					}
-					badgeWeight := 500
-					if item.badgeDanger {
-						badgeInk, badgeWeight = SailDangerInk, 600
-					}
-					ui.Text(c, item.badge).
-						FontSize(11.5).
-						FontWeight(badgeWeight).
-						FontFeatures("tnum").
-						TextColor(badgeInk).
-						SingleLine()
-				}
-			})
-
-			if btn.Clicked() {
-				u.Navigate(item.id)
-			}
+			u.renderNavItem(c, item)
 		}
 	})
 }
 
-func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
-	state := u.State
-	topH := bar.Height
-	if topH < 50 {
-		topH = 50
+func (u *DesktopUI) renderNavItem(c *ui.Context, item navItem) {
+	active := u.ViewMode == item.id
+	btn := ui.ButtonBase(c.Key("nav-"+string(item.id))).
+		FillWidth().
+		Padding(7, 10).
+		Radius(6).
+		Gap(9).
+		AlignItems(ui.Center).
+		Cursor(ui.CursorPointer)
+	if active {
+		applyControlElevation(
+			btn.Background(SailBgSurface).
+				Border(SailElevationBorderWidth, SailSurfaceBorder),
+			true,
+		)
+	} else if btn.Hovered() {
+		btn.Background(SailBgMuted)
 	}
 
-	var activeServerName string
-	if u.ViewMode == ViewServices && u.pendingServiceID != "" {
-		for _, s := range state.Registry.Servers {
-			if s.ID == u.pendingServiceID {
-				activeServerName = s.Name
-				break
+	iconColor, textColor := SailInkMuted, SailInkBody
+	lblWeight := 500
+	if active {
+		iconColor, textColor = SailAccent, SailInkStrong
+		lblWeight = 600
+	}
+
+	btn.Children(func() {
+		ui.Icon(c, item.icon).Size(15, 15).TextColor(iconColor).Shrink(0)
+		ui.Text(c, item.label).Grow(1).FontSize(13).FontWeight(lblWeight).TextColor(textColor).SingleLine()
+		if item.badge != "" {
+			badgeInk, badgeWeight := SailInkFaint, 500
+			if active {
+				badgeInk = SailAccent
 			}
+			if item.badgeDanger {
+				badgeInk, badgeWeight = SailDangerInk, 600
+			}
+			ui.Text(c, item.badge).
+				FontSize(11.5).
+				FontWeight(badgeWeight).
+				FontFeatures("tnum").
+				TextColor(badgeInk).
+				SingleLine()
+		}
+	})
+
+	if btn.Clicked() {
+		u.Navigate(item.id)
+	}
+}
+
+func (u *DesktopUI) activeBreadcrumbServerName(state *apitypes.Bootstrap) string {
+	if u.ViewMode != ViewServices || u.nav.serviceID == "" {
+		return ""
+	}
+	for _, s := range state.Registry.Servers {
+		if s.ID == u.nav.serviceID {
+			return s.Name
 		}
 	}
+	return ""
+}
 
-	modelReady := state.Setup.ModelReady && (state.Setup.ModelCheck == nil || !state.Setup.ModelCheck.Stale)
-
+func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 	ui.Column(c).Grow(1).MinWidth(0).FillHeight().Background(SailBgCanvas).Children(func() {
-		// Top Breadcrumb & Status Bar (draggable in empty spaces).
-		ui.Row(c).
-			FillWidth().
-			Height(topH).
-			Padding(0, 32).
-			Gap(12).
-			AlignItems(ui.Center).
-			Justify(ui.SpaceBetween).
-			Background(SailBgCanvas).
-			BorderWidth(0, 0, 1, 0).
-			BorderColor(SailDivider).
-			DragWindow().
-			Children(func() {
-				// Breadcrumbs.
-				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					if activeServerName != "" {
-						svcLink := ui.ButtonBase(c.Key("bc-services")).Padding(2, 4).Radius(4).Cursor(ui.CursorPointer)
-						if svcLink.Hovered() {
-							svcLink.Background(SailBgHover)
-						}
-						svcLink.Children(func() {
-							ui.Text(c, i18n.T("app.topbar.services")).FontSize(13).TextColor(SailInkMuted).SingleLine()
-						})
-						if svcLink.Clicked() {
-							u.Navigate(ViewServices)
-						}
-						ui.Text(c, "/").FontSize(13).TextColor(SailInkFaint)
-						ui.Text(c, activeServerName).FontSize(13).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-					} else {
-						ui.Text(c, viewTitle(u.ViewMode)).FontSize(13).FontWeight(500).TextColor(SailInkMuted).SingleLine()
-					}
-				})
-
-				// Right status & refresh controls.
-				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-					modelChip := ui.ButtonBase(c.Key("top-model-chip")).
-						Height(SailControlHeightSm).
-						Padding(0, 10).
-						Radius(6).
-						Gap(6).
-						AlignItems(ui.Center).
-						Cursor(ui.CursorPointer).
-						Tooltip(i18n.T("app.topbar.routing_tooltip"))
-					if modelChip.Hovered() {
-						modelChip.Background(SailBgHover)
-					}
-					modelChip.Children(func() {
-						dotColor := SailWarningInk
-						if modelReady {
-							dotColor = SailSuccessInk
-						}
-						SailStatusDot(c, dotColor)
-						modelName := state.Settings.Model
-						if modelName == "" {
-							modelName = i18n.T("app.topbar.no_model")
-						}
-						ui.Text(c, modelName).Font("monospace").FontSize(12).TextColor(SailInkBody).SingleLine()
-					})
-					if modelChip.Clicked() {
-						u.Navigate(ViewSettings)
-					}
-
-					refreshBtn := SailButton(c.Key("top-refresh-btn"), "").
-						Height(SailControlHeightSm).
-						Padding(0, 10).
-						Radius(6).
-						Gap(5).
-						AlignItems(ui.Center).
-						Disabled(u.Refreshing).
-						Cursor(ui.CursorPointer)
-					refreshBtn.Children(func() {
-						ui.Icon(c, IconRefresh).Size(12.5, 12.5).TextColor(SailInkMuted)
-						lbl := i18n.T("app.topbar.refresh")
-						if u.Refreshing {
-							lbl = i18n.T("app.topbar.syncing")
-						}
-						ui.Text(c, lbl).FontSize(12).TextColor(SailInkBody).SingleLine()
-					})
-					if refreshBtn.Clicked() {
-						u.Refresh()
-					}
-
-					if state.Access.Shared {
-						ui.Text(c, state.Access.Actor).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
-						if SailSmallButton(c.Key("top-logout-btn"), i18n.T("app.topbar.logout")).Clicked() {
-							u.logout()
-						}
-					}
-				})
-			})
+		u.renderTopBar(c, bar)
 
 		// Main scrollable page viewport with generous breathing room.
 		ui.Scroll(c.Key("main-scroll-"+string(u.ViewMode))).
@@ -1091,27 +784,137 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 			Padding(28, 32).
 			Children(func() {
 				ui.Column(c).FillWidth().MaxWidth(1200).Gap(24).Children(func() {
-					switch u.ViewMode {
-					case ViewOverview:
-						u.renderOverview(c)
-					case ViewServices:
-						u.renderServices(c)
-					case ViewCatalog:
-						u.renderCatalog(c)
-					case ViewRepos:
-						u.renderRepos(c)
-					case ViewPlayground:
-						u.renderPlayground(c)
-					case ViewLogs:
-						u.renderLogs(c)
-					case ViewClients:
-						u.renderClients(c)
-					case ViewSettings:
-						u.renderSettings(c)
-					default:
-						u.renderOverview(c)
-					}
+					u.renderActivePage(c)
 				})
 			})
 	})
+}
+
+func (u *DesktopUI) renderTopBar(c *ui.Context, bar ui.TitleBar) {
+	state := u.State
+	topH := bar.Height
+	if topH < 50 {
+		topH = 50
+	}
+	activeServerName := u.activeBreadcrumbServerName(state)
+
+	// Top Breadcrumb & Status Bar (draggable in empty spaces).
+	ui.Row(c).
+		FillWidth().
+		Height(topH).
+		Padding(0, 32).
+		Gap(12).
+		AlignItems(ui.Center).
+		Justify(ui.SpaceBetween).
+		Background(SailBgCanvas).
+		BorderWidth(0, 0, 1, 0).
+		BorderColor(SailDivider).
+		DragWindow().
+		Children(func() {
+			u.renderBreadcrumbs(c, activeServerName)
+			u.renderTopControls(c, state)
+		})
+}
+
+func (u *DesktopUI) renderBreadcrumbs(c *ui.Context, activeServerName string) {
+	ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+		if activeServerName == "" {
+			ui.Text(c, viewTitle(u.ViewMode)).FontSize(13).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+			return
+		}
+		svcLink := ui.ButtonBase(c.Key("bc-services")).Padding(2, 4).Radius(4).Cursor(ui.CursorPointer)
+		if svcLink.Hovered() {
+			svcLink.Background(SailBgHover)
+		}
+		svcLink.Children(func() {
+			ui.Text(c, i18n.T("app.topbar.services")).FontSize(13).TextColor(SailInkMuted).SingleLine()
+		})
+		if svcLink.Clicked() {
+			u.Navigate(ViewServices)
+		}
+		ui.Text(c, "/").FontSize(13).TextColor(SailInkFaint)
+		ui.Text(c, activeServerName).FontSize(13).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+	})
+}
+
+func (u *DesktopUI) renderTopControls(c *ui.Context, state *apitypes.Bootstrap) {
+	modelReady := state.Setup.ModelReady && (state.Setup.ModelCheck == nil || !state.Setup.ModelCheck.Stale)
+	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+		modelChip := ui.ButtonBase(c.Key("top-model-chip")).
+			Height(SailControlHeightSm).
+			Padding(0, 10).
+			Radius(6).
+			Gap(6).
+			AlignItems(ui.Center).
+			Cursor(ui.CursorPointer).
+			Tooltip(i18n.T("app.topbar.routing_tooltip"))
+		if modelChip.Hovered() {
+			modelChip.Background(SailBgHover)
+		}
+		modelChip.Children(func() {
+			dotColor := SailWarningInk
+			if modelReady {
+				dotColor = SailSuccessInk
+			}
+			SailStatusDot(c, dotColor)
+			modelName := state.Settings.Model
+			if modelName == "" {
+				modelName = i18n.T("app.topbar.no_model")
+			}
+			ui.Text(c, modelName).Font("monospace").FontSize(12).TextColor(SailInkBody).SingleLine()
+		})
+		if modelChip.Clicked() {
+			u.Navigate(ViewSettings)
+		}
+
+		refreshBtn := SailButton(c.Key("top-refresh-btn"), "").
+			Height(SailControlHeightSm).
+			Padding(0, 10).
+			Radius(6).
+			Gap(5).
+			AlignItems(ui.Center).
+			Disabled(u.Refreshing).
+			Cursor(ui.CursorPointer)
+		refreshBtn.Children(func() {
+			ui.Icon(c, IconRefresh).Size(12.5, 12.5).TextColor(SailInkMuted)
+			lbl := i18n.T("app.topbar.refresh")
+			if u.Refreshing {
+				lbl = i18n.T("app.topbar.syncing")
+			}
+			ui.Text(c, lbl).FontSize(12).TextColor(SailInkBody).SingleLine()
+		})
+		if refreshBtn.Clicked() {
+			u.Refresh()
+		}
+
+		if state.Access.Shared {
+			ui.Text(c, state.Access.Actor).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
+			if SailSmallButton(c.Key("top-logout-btn"), i18n.T("app.topbar.logout")).Clicked() {
+				u.logout()
+			}
+		}
+	})
+}
+
+func (u *DesktopUI) renderActivePage(c *ui.Context) {
+	switch u.ViewMode {
+	case ViewOverview:
+		u.renderOverview(c)
+	case ViewServices:
+		u.renderServices(c)
+	case ViewCatalog:
+		u.renderCatalog(c)
+	case ViewRepos:
+		u.renderRepos(c)
+	case ViewPlayground:
+		u.renderPlayground(c)
+	case ViewLogs:
+		u.renderLogs(c)
+	case ViewClients:
+		u.renderClients(c)
+	case ViewSettings:
+		u.renderSettings(c)
+	default:
+		u.renderOverview(c)
+	}
 }

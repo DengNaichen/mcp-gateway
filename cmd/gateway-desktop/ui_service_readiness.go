@@ -640,12 +640,21 @@ func (u *DesktopUI) fetchReferencedServerCredentials(ctx context.Context, server
 	return out
 }
 
-func (u *DesktopUI) applyServerCredentialsSnapshot(servers []apitypes.Server, fetched map[string]apitypes.ServerCredentials) {
-	if u.serverCreds == nil {
-		u.serverCreds = map[string]apitypes.ServerCredentials{}
-	}
-	if u.serverCredsSig == nil {
-		u.serverCredsSig = map[string]string{}
+type serverCredentialEntry struct {
+	creds apitypes.ServerCredentials
+	sig   string
+}
+
+// serverCredentialCache tracks fetched credential metadata per server along
+// with its referenced-env signature and in-flight fetch state.
+type serverCredentialCache struct {
+	entries map[string]serverCredentialEntry
+	busy    map[string]bool
+}
+
+func (c *serverCredentialCache) applySnapshot(servers []apitypes.Server, fetched map[string]apitypes.ServerCredentials) {
+	if c.entries == nil {
+		c.entries = map[string]serverCredentialEntry{}
 	}
 	active := map[string]bool{}
 	for _, s := range servers {
@@ -655,17 +664,60 @@ func (u *DesktopUI) applyServerCredentialsSnapshot(servers []apitypes.Server, fe
 		}
 		active[s.ID] = true
 		if cred, ok := fetched[s.ID]; ok {
-			u.serverCreds[s.ID] = cred
-			u.serverCredsSig[s.ID] = sig
-			if u.services != nil && u.services.credentialServerID == s.ID {
-				u.services.credentialState = cred
-			}
+			c.entries[s.ID] = serverCredentialEntry{creds: cred, sig: sig}
 		}
 	}
-	for id := range u.serverCreds {
+	for id := range c.entries {
 		if !active[id] {
-			delete(u.serverCreds, id)
-			delete(u.serverCredsSig, id)
+			delete(c.entries, id)
+		}
+	}
+}
+
+func (c *serverCredentialCache) get(serverID, sig string) (apitypes.ServerCredentials, bool) {
+	entry, ok := c.entries[serverID]
+	if !ok || entry.sig != sig {
+		return apitypes.ServerCredentials{}, false
+	}
+	return entry.creds, true
+}
+
+func (c *serverCredentialCache) beginFetch(serverID, sig string) bool {
+	if _, ok := c.get(serverID, sig); ok {
+		return false
+	}
+	if c.busy == nil {
+		c.busy = map[string]bool{}
+	}
+	if c.busy[serverID] {
+		return false
+	}
+	c.busy[serverID] = true
+	return true
+}
+
+func (c *serverCredentialCache) finishFetch(serverID, sig string, cred *apitypes.ServerCredentials) {
+	delete(c.busy, serverID)
+	if cred == nil {
+		return
+	}
+	if c.entries == nil {
+		c.entries = map[string]serverCredentialEntry{}
+	}
+	c.entries[serverID] = serverCredentialEntry{creds: *cred, sig: sig}
+}
+
+func (u *DesktopUI) applyServerCredentialsSnapshot(servers []apitypes.Server, fetched map[string]apitypes.ServerCredentials) {
+	u.credCache.applySnapshot(servers, fetched)
+	if u.services == nil || u.services.credentialServerID == "" {
+		return
+	}
+	if cred, ok := fetched[u.services.credentialServerID]; ok {
+		for _, s := range servers {
+			if s.ID == u.services.credentialServerID && !s.Demo && serverRefsSignature(s) != "" {
+				u.services.credentialState = cred
+				break
+			}
 		}
 	}
 }
@@ -675,11 +727,8 @@ func (u *DesktopUI) cachedServerCredentials(s apitypes.Server) *apitypes.ServerC
 	if s.Demo || sig == "" {
 		return nil
 	}
-	if u.serverCreds != nil && u.serverCredsSig[s.ID] == sig {
-		if cred, ok := u.serverCreds[s.ID]; ok {
-			copyCred := cred
-			return &copyCred
-		}
+	if cred, ok := u.credCache.get(s.ID, sig); ok {
+		return &cred
 	}
 	if u.services != nil && u.services.credentialServerID == s.ID &&
 		(len(u.services.credentialState.Credentials) > 0 || u.services.credentialState.OAuth != nil || u.services.credentialState.OAuthUpgrade != nil) {
@@ -696,16 +745,9 @@ func (u *DesktopUI) ensureServerCredentialsLoaded(s apitypes.Server) {
 	if u.Client == nil || s.Demo || sig == "" {
 		return
 	}
-	if u.serverCredsSig != nil && u.serverCredsSig[s.ID] == sig {
+	if !u.credCache.beginFetch(s.ID, sig) {
 		return
 	}
-	if u.serverCredsBusy == nil {
-		u.serverCredsBusy = map[string]bool{}
-	}
-	if u.serverCredsBusy[s.ID] {
-		return
-	}
-	u.serverCredsBusy[s.ID] = true
 	serverID := s.ID
 	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -713,7 +755,7 @@ func (u *DesktopUI) ensureServerCredentialsLoaded(s apitypes.Server) {
 		cred, err := u.Client.ServerCredentials(ctx, serverID)
 		if err != nil {
 			u.updateUI(func() {
-				delete(u.serverCredsBusy, serverID)
+				u.credCache.finishFetch(serverID, sig, nil)
 			})
 			if apiclient.IsUnauthorized(err) {
 				return err
@@ -721,15 +763,7 @@ func (u *DesktopUI) ensureServerCredentialsLoaded(s apitypes.Server) {
 			return nil
 		}
 		u.updateUI(func() {
-			delete(u.serverCredsBusy, serverID)
-			if u.serverCreds == nil {
-				u.serverCreds = map[string]apitypes.ServerCredentials{}
-			}
-			if u.serverCredsSig == nil {
-				u.serverCredsSig = map[string]string{}
-			}
-			u.serverCreds[serverID] = cred
-			u.serverCredsSig[serverID] = sig
+			u.credCache.finishFetch(serverID, sig, &cred)
 			if u.services != nil && u.services.credentialServerID == serverID {
 				u.services.credentialState = cred
 			}

@@ -133,64 +133,83 @@ func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
 			SailAlertBox(c, ToneDanger, i18n.T("ops.hook-config-failed"), st.errMsg)
 		}
 
-		ui.Scroll(c.Key("hook-modal-scroll")).Grow(1).FillWidth().MaxHeight(460).Gap(12).Children(func() {
-			if st.loadingAgent == activeAgent.ID && !hasSnip {
-				ui.Row(c).FillWidth().Padding(24).Gap(8).Center().Children(func() {
-					ui.Spinner(c).Label(i18n.T("ops.loading-snippet"))
-					ui.Text(c, i18n.T("ops.generating-hook-config")).FontSize(13).TextColor(SailInkMuted)
+		u.renderHookModalBody(c, st, activeAgent, snip, hasSnip, hookBin)
+		u.renderHookModalFooter(c, st, activeAgent, snip)
+	})
+}
+
+func (u *DesktopUI) renderHookModalBody(
+	c *ui.Context,
+	st *hookSnippetModalState,
+	activeAgent scopeAgentMeta,
+	snip apitypes.ScopeSnippetResponse,
+	hasSnip bool,
+	hookBin string,
+) {
+	ui.Scroll(c.Key("hook-modal-scroll")).Grow(1).FillWidth().MaxHeight(460).Gap(12).Children(func() {
+		if st.loadingAgent == activeAgent.ID && !hasSnip {
+			ui.Row(c).FillWidth().Padding(24).Gap(8).Center().Children(func() {
+				ui.Spinner(c).Label(i18n.T("ops.loading-snippet"))
+				ui.Text(c, i18n.T("ops.generating-hook-config")).FontSize(13).TextColor(SailInkMuted)
+			})
+			return
+		}
+
+		u.renderHookMetaCard(c, snip, hookBin)
+
+		if instr := strings.TrimSpace(snip.Instructions); instr != "" {
+			ui.Text(c, instr).FontSize(12.5).LineHeight(1.5).TextColor(SailInkBody).Selectable()
+		}
+
+		code := snip.Snippet
+		if code == "" && !hasSnip {
+			code = i18n.T("ops.no-hook-snippet")
+		}
+		SailCodeBlock(c, strings.ToUpper(activeAgent.ID)+" HOOK", code, func() {
+			u.Notify(i18n.T("ops.copied-hook-config-for", activeAgent.Name))
+		})
+	})
+}
+
+func (u *DesktopUI) renderHookMetaCard(c *ui.Context, snip apitypes.ScopeSnippetResponse, hookBin string) {
+	SailSubtleCard(c, func() {
+		if snip.ConfigPath != "" {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
+				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+					SailKeyValueRow(c, i18n.T("ops.config-file"), snip.ConfigPath, true)
 				})
-				return
-			}
-
-			SailSubtleCard(c, func() {
-				if snip.ConfigPath != "" {
-					ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
-						ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-							SailKeyValueRow(c, i18n.T("ops.config-file"), snip.ConfigPath, true)
-						})
-						if u.State == nil || !u.State.Access.Shared {
-							if SailSmallButton(c.Key("hook-reveal-cfg"), i18n.T("ops.reveal")).Clicked() {
-								cfgPath := snip.ConfigPath
-								u.RunAsync(func() error { return revealClientConfig(cfgPath) })
-							}
-						}
-					})
-				}
-				if hookBin != "" {
-					SailKeyValueRow(c, i18n.T("ops.hook-program"), hookBin, true)
-				}
-				if snip.MCPURL != "" {
-					SailKeyValueRow(c, i18n.T("ops.mcp-endpoint"), snip.MCPURL, true)
+				if u.State == nil || !u.State.Access.Shared {
+					if SailSmallButton(c.Key("hook-reveal-cfg"), i18n.T("ops.reveal")).Clicked() {
+						cfgPath := snip.ConfigPath
+						u.RunAsync(func() error { return revealClientConfig(cfgPath) })
+					}
 				}
 			})
+		}
+		if hookBin != "" {
+			SailKeyValueRow(c, i18n.T("ops.hook-program"), hookBin, true)
+		}
+		if snip.MCPURL != "" {
+			SailKeyValueRow(c, i18n.T("ops.mcp-endpoint"), snip.MCPURL, true)
+		}
+	})
+}
 
-			if strings.TrimSpace(snip.Instructions) != "" {
-				ui.Text(c, strings.TrimSpace(snip.Instructions)).
-					FontSize(12.5).
-					LineHeight(1.5).
-					TextColor(SailInkBody).
-					Selectable()
-			}
-
-			code := snip.Snippet
-			if code == "" && !hasSnip {
-				code = i18n.T("ops.no-hook-snippet")
-			}
-			SailCodeBlock(c, strings.ToUpper(activeAgent.ID)+" HOOK", code, func() {
-				u.Notify(i18n.T("ops.copied-hook-config-for", activeAgent.Name))
-			})
-		})
-
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailButton(c.Key("hook-refresh-btn"), i18n.T("ops.refetch")).Disabled(st.loadingAgent != "").Clicked() {
-				u.ensureHookSnippetLoaded(st, activeAgent.ID, true)
-			}
-			if SailPrimaryButton(c.Key("hook-copy-primary"), i18n.T("ops.copy-snippet")).
-				Disabled(strings.TrimSpace(snip.Snippet) == "").
-				Clicked() {
-				c.WriteClipboard(snip.Snippet)
-				u.Notify(i18n.T("ops.copied-hook-config-for", activeAgent.Name))
-			}
-		})
+func (u *DesktopUI) renderHookModalFooter(
+	c *ui.Context,
+	st *hookSnippetModalState,
+	activeAgent scopeAgentMeta,
+	snip apitypes.ScopeSnippetResponse,
+) {
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
+		if SailButton(c.Key("hook-refresh-btn"), i18n.T("ops.refetch")).Disabled(st.loadingAgent != "").Clicked() {
+			u.ensureHookSnippetLoaded(st, activeAgent.ID, true)
+		}
+		if SailPrimaryButton(c.Key("hook-copy-primary"), i18n.T("ops.copy-snippet")).
+			Disabled(strings.TrimSpace(snip.Snippet) == "").
+			Clicked() {
+			c.WriteClipboard(snip.Snippet)
+			u.Notify(i18n.T("ops.copied-hook-config-for", activeAgent.Name))
+		}
 	})
 }
