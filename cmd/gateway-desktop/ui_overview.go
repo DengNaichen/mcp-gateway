@@ -95,34 +95,46 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 	ov := u.overviewState()
 
 	realServers := make([]apitypes.Server, 0, len(state.Registry.Servers))
-	activeRealServers := make([]apitypes.Server, 0, len(state.Registry.Servers))
 	realServerMap := make(map[string]bool, len(state.Registry.Servers))
-	activeRealMap := make(map[string]bool, len(state.Registry.Servers))
-	errServerCount := 0
 	for _, s := range state.Registry.Servers {
 		if !s.Demo {
 			realServers = append(realServers, s)
 			realServerMap[s.ID] = true
-			if s.Enabled {
-				activeRealServers = append(activeRealServers, s)
-				activeRealMap[s.ID] = true
-			}
-			if chk, ok := state.Setup.SourceChecks[s.ID]; ok && chk.Status == "error" {
-				errServerCount++
-			}
 		}
 	}
 
 	realTools := make([]apitypes.Tool, 0, len(state.Registry.Tools))
-	enabledRealTools := make([]apitypes.Tool, 0, len(state.Registry.Tools))
+	toolsByServer := make(map[string][]apitypes.Tool, len(realServers))
 	toolByID := make(map[string]apitypes.Tool, len(state.Registry.Tools))
 	for _, t := range state.Registry.Tools {
 		toolByID[t.ID] = t
 		if realServerMap[t.ServerID] {
 			realTools = append(realTools, t)
-			if t.Enabled && activeRealMap[t.ServerID] {
-				enabledRealTools = append(enabledRealTools, t)
-			}
+			toolsByServer[t.ServerID] = append(toolsByServer[t.ServerID], t)
+		}
+	}
+
+	readyServerCount := 0
+	readyServerMap := make(map[string]bool, len(realServers))
+	errServerCount := 0
+	pendingServerCount := 0
+	for _, s := range realServers {
+		r := u.readinessForServer(s, toolsByServer[s.ID])
+		switch {
+		case r.IsHealthyReady():
+			readyServerCount++
+			readyServerMap[s.ID] = true
+		case r.HasError():
+			errServerCount++
+		case r.NeedsAttention():
+			pendingServerCount++
+		}
+	}
+
+	enabledRealTools := make([]apitypes.Tool, 0, len(realTools))
+	for _, t := range realTools {
+		if t.Enabled && readyServerMap[t.ServerID] {
+			enabledRealTools = append(enabledRealTools, t)
 		}
 	}
 
@@ -176,9 +188,10 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 		c,
 		state,
 		telemetry,
-		len(activeRealServers),
+		readyServerCount,
 		len(realServers),
 		errServerCount,
+		pendingServerCount,
 		len(enabledRealTools),
 		len(realTools),
 	)
@@ -333,9 +346,10 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 	c *ui.Context,
 	state *apitypes.Bootstrap,
 	telemetry GatewayTelemetry,
-	activeServerCount int,
+	readyServerCount int,
 	realServerCount int,
 	errServerCount int,
+	pendingServerCount int,
 	enabledRealToolCount int,
 	realToolCount int,
 ) {
@@ -438,16 +452,23 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 
 		// Card 4: Upstream Services
 		ovMetricCard(c, func() {
-			ui.Text(c, "上游服务").FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(6).Children(func() {
+				ui.Text(c, "上游服务").FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+				if errServerCount > 0 {
+					SailBadge(c, fmt.Sprintf("%d 异常", errServerCount), ToneDanger)
+				} else if pendingServerCount > 0 {
+					SailBadge(c, fmt.Sprintf("%d 待验证", pendingServerCount), ToneWarning)
+				}
+			})
 
 			ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(5).Children(func() {
-				ui.Textf(c, "%d", activeServerCount).
+				ui.Textf(c, "%d", readyServerCount).
 					FontSize(24).
 					Bold().
 					TextColor(SailInkStrong).
 					FontFeatures("tnum").
 					SingleLine()
-				ui.Textf(c, "/ %d 在线", realServerCount).
+				ui.Textf(c, "/ %d 就绪", realServerCount).
 					FontSize(13).
 					FontWeight(500).
 					TextColor(SailInkMuted).
@@ -457,7 +478,9 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 
 			svcHint := fmt.Sprintf("%d/%d 工具可用", enabledRealToolCount, realToolCount)
 			if errServerCount > 0 {
-				svcHint += fmt.Sprintf(" · %d 连接异常", errServerCount)
+				svcHint += fmt.Sprintf(" · %d 需修复", errServerCount)
+			} else if pendingServerCount > 0 {
+				svcHint += fmt.Sprintf(" · %d 待验证", pendingServerCount)
 			}
 			ui.Text(c, svcHint).FontSize(12).TextColor(SailInkMuted).FontFeatures("tnum").SingleLine()
 		})
@@ -817,8 +840,13 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 				s := srv
 				isLast := idx == len(realServers)-1
 				srvToolTotal, openTotal, openWrite := countServerTools(s.ID, realTools)
-				check, hasCheck := state.Setup.SourceChecks[s.ID]
-				hasErr := hasCheck && check.Status == "error"
+				var srvTools []apitypes.Tool
+				for _, t := range realTools {
+					if t.ServerID == s.ID {
+						srvTools = append(srvTools, t)
+					}
+				}
+				readiness := u.readinessForServer(s, srvTools)
 
 				row := ui.ButtonBase(c.Key("ov-srv-row-"+s.ID)).
 					FillWidth().
@@ -839,13 +867,7 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 				row.Children(func() {
 					ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
 						ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-							dotColor := SailInkFaint
-							if hasErr {
-								dotColor = SailDangerInk
-							} else if s.Enabled {
-								dotColor = SailSuccessInk
-							}
-							SailStatusDot(c, dotColor)
+							SailStatusDot(c, readiness.DotColor)
 
 							ui.Text(c, s.Name).
 								FontSize(13.5).
@@ -853,17 +875,22 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 								TextColor(SailInkStrong).
 								SingleLine()
 
-							if hasErr {
-								SailBadge(c, "连接异常", ToneDanger)
-							} else if openWrite > 0 {
-								SailBadge(c, fmt.Sprintf("写 ×%d", openWrite), ToneWarning)
+							if readiness.BadgeLabel != "" {
+								SailBadge(c, readiness.BadgeLabel, readiness.BadgeTone)
 							} else if !s.Enabled {
 								ui.Text(c, "已停用").FontSize(11.5).TextColor(SailInkFaint).SingleLine()
 							}
+							if s.Enabled && openWrite > 0 {
+								SailBadge(c, fmt.Sprintf("写 ×%d", openWrite), ToneWarning)
+							}
 						})
 
-						if hasErr && check.Message != "" {
-							ui.Text(c, CleanDescriptionSummary(check.Message)).FontSize(12).TextColor(SailDangerInk).SingleLine()
+						if readiness.RowSummary != "" {
+							sumColor := SailInkMuted
+							if readiness.HasError() {
+								sumColor = SailDangerInk
+							}
+							ui.Text(c, CleanDescriptionSummary(readiness.RowSummary)).FontSize(12).TextColor(sumColor).SingleLine()
 						} else {
 							ui.Textf(c, "%s · %d/%d 工具开放", ServerProtocolLabel(s), openTotal, srvToolTotal).
 								FontSize(12).
@@ -1314,41 +1341,37 @@ func (u *DesktopUI) renderOverviewServiceDrawer(
 	realTools []apitypes.Tool,
 ) {
 	total, open, _ := countServerTools(srv.ID, realTools)
-	check, hasCheck := state.Setup.SourceChecks[srv.ID]
-	hasErr := hasCheck && check.Status == "error"
-
-	statusDot := SailInkFaint
-	statusText := "已停用"
-	if hasErr {
-		statusDot = SailDangerInk
-		statusText = "连接异常"
-	} else if srv.Enabled {
-		statusDot = SailSuccessInk
-		statusText = "在线"
-	}
-
 	var srvTools []apitypes.Tool
 	for _, t := range realTools {
 		if t.ServerID == srv.ID {
 			srvTools = append(srvTools, t)
 		}
 	}
+	readiness := u.readinessForServer(srv, srvTools)
+	enableLabel := "已停用"
+	if srv.Enabled {
+		enableLabel = "已启用"
+	}
 
 	ovRenderSlideDrawerShell(
 		c,
 		ov,
 		func() {
-			SailStatusDot(c, statusDot)
+			SailStatusDot(c, readiness.DotColor)
 			ui.Text(c, srv.Name).FontSize(14).FontWeight(600).TextColor(SailInkStrong).SingleLine()
 		},
 		func() {
-			if hasErr && check.Message != "" {
-				SailAlertBox(c, ToneDanger, "", check.Message)
+			if readiness.AlertTitle != "" || readiness.AlertDetail != "" {
+				SailAlertBox(c, readiness.AlertTone, readiness.AlertTitle, readiness.AlertDetail)
 			}
 
 			SailSubtleCard(c, func() {
 				SailKeyValueRow(c, "协议", ServerProtocolLabel(srv), false)
-				SailKeyValueRow(c, "运行状态", statusText, false)
+				SailKeyValueRow(c, "当前状态", readiness.StatusLabel, false)
+				SailKeyValueRow(c, "启用开关", enableLabel, false)
+				if readiness.CheckLabel != "" {
+					SailKeyValueRow(c, "最近检查", readiness.CheckLabel, true)
+				}
 				SailKeyValueRow(c, "开放工具", fmt.Sprintf("%d/%d", open, total), true)
 			})
 

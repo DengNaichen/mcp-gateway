@@ -116,16 +116,19 @@ type DesktopUI struct {
 	pendingReplay        *playgroundReplayIntent
 
 	// Per-page UI state owned directly by this DesktopUI instance.
-	overview   *overviewLocalState
-	services   *servicesPageState
-	market     *marketPageState
-	catalog    *catalogPageState
-	repos      *reposPageState
-	playground *playgroundState
-	logs       *logsPageState
-	settings   *settingsState
-	clients    *clientsPageState
-	hookModal  *hookSnippetModalState
+	overview        *overviewLocalState
+	services        *servicesPageState
+	market          *marketPageState
+	catalog         *catalogPageState
+	repos           *reposPageState
+	playground      *playgroundState
+	logs            *logsPageState
+	settings        *settingsState
+	clients         *clientsPageState
+	hookModal       *hookSnippetModalState
+	serverCreds     map[string]apitypes.ServerCredentials
+	serverCredsSig  map[string]string
+	serverCredsBusy map[string]bool
 
 	// Auth & bootstrap lifecycle state.
 	NeedsLogin bool
@@ -355,8 +358,10 @@ func (u *DesktopUI) Refresh() {
 		defer cancel()
 		data, err := u.Client.Bootstrap(ctx)
 		var tel GatewayTelemetry
+		var creds map[string]apitypes.ServerCredentials
 		if err == nil {
 			tel = ComputeGatewayTelemetry(data)
+			creds = u.fetchReferencedServerCredentials(ctx, data.Registry.Servers)
 		}
 		u.updateUI(func() {
 			u.Refreshing = false
@@ -377,6 +382,7 @@ func (u *DesktopUI) Refresh() {
 			}
 			u.State = &data
 			u.Telemetry = tel
+			u.applyServerCredentialsSnapshot(data.Registry.Servers, creds)
 			u.NeedsLogin = false
 			u.BootError = ""
 		})
@@ -395,9 +401,11 @@ func (u *DesktopUI) RefreshSync() error {
 		return err
 	}
 	tel := ComputeGatewayTelemetry(data)
+	creds := u.fetchReferencedServerCredentials(ctx, data.Registry.Servers)
 	u.updateUI(func() {
 		u.State = &data
 		u.Telemetry = tel
+		u.applyServerCredentialsSnapshot(data.Registry.Servers, creds)
 		u.NeedsLogin = false
 		u.BootError = ""
 		u.Loading = false
@@ -421,11 +429,15 @@ func (u *DesktopUI) pollLoop(ctx context.Context) {
 				u.updateUI(func() { u.refreshClientConfigs() })
 				continue
 			}
-			if view != ViewOverview && view != ViewLogs && view != ViewRepos {
+			if view != ViewOverview && view != ViewServices && view != ViewLogs && view != ViewRepos {
 				continue
 			}
 			reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			data, err := u.Client.Bootstrap(reqCtx)
+			var creds map[string]apitypes.ServerCredentials
+			if err == nil {
+				creds = u.fetchReferencedServerCredentials(reqCtx, data.Registry.Servers)
+			}
 			cancel()
 			if err != nil {
 				if apiclient.IsUnauthorized(err) {
@@ -440,6 +452,7 @@ func (u *DesktopUI) pollLoop(ctx context.Context) {
 			u.updateUI(func() {
 				u.State = &data
 				u.Telemetry = tel
+				u.applyServerCredentialsSnapshot(data.Registry.Servers, creds)
 				u.NeedsLogin = false
 				u.BootError = ""
 			})
