@@ -490,16 +490,15 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 }
 
 func ovMetricCard(c *ui.Context, fn func()) {
-	ui.Column(c).
-		FillWidth().
-		MinWidth(0).
-		Padding(18, 20).
-		Gap(8).
-		Radius(10).
-		Background(SailBgCanvas).
-		Border(1, SailSurfaceBorder).
-		Shadow(0, 3, 10, 0, SailCardShadow).
-		Children(fn)
+	applyCardElevation(
+		ui.Column(c).
+			FillWidth().
+			MinWidth(0).
+			Padding(18, 20).
+			Gap(8).
+			Radius(10).
+			Background(SailBgSurface),
+	).Children(fn)
 }
 
 func (u *DesktopUI) renderOverviewPulseCard(
@@ -525,113 +524,112 @@ func (u *DesktopUI) renderOverviewPulseCard(
 		readout = i18n.T("overview.pulse.peak", ovFormatPulseBucket(buckets[peakIdx]))
 	}
 
-	ui.Column(c).
-		FillWidth().
-		Padding(14, 20).
-		Gap(10).
-		Radius(10).
-		Background(SailBgCanvas).
-		Border(1, SailSurfaceBorder).
-		Shadow(0, 3, 10, 0, SailCardShadow).
-		Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
-				ui.Row(c).Gap(8).AlignItems(ui.Baseline).Children(func() {
-					ui.Text(c, i18n.T("overview.pulse.title")).FontSize(13.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-					ui.Text(c, i18n.T("overview.pulse.subtitle")).FontSize(12).TextColor(SailInkMuted).SingleLine()
-				})
-				ui.Text(c, readout).
-					Font("monospace").
-					FontSize(11.5).
-					TextColor(SailInkMuted).
-					FontFeatures("tnum").
-					SingleLine()
+	applyCardElevation(
+		ui.Column(c).
+			FillWidth().
+			Padding(14, 20).
+			Gap(10).
+			Radius(10).
+			Background(SailBgSurface),
+	).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Baseline).Children(func() {
+				ui.Text(c, i18n.T("overview.pulse.title")).FontSize(13.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+				ui.Text(c, i18n.T("overview.pulse.subtitle")).FontSize(12).TextColor(SailInkMuted).SingleLine()
 			})
+			ui.Text(c, readout).
+				Font("monospace").
+				FontSize(11.5).
+				TextColor(SailInkMuted).
+				FontFeatures("tnum").
+				SingleLine()
+		})
 
-			hoveredNow := -1
-			ui.Row(c).
-				FillWidth().
-				Height(46).
-				Padding(4, 0, 0, 0).
-				Gap(3).
-				AlignItems(ui.End).
-				Children(func() {
-					for i, b := range buckets {
-						slot := ui.Column(c.Key(fmt.Sprintf("ov-pulse-%d", i))).
-							Grow(1).
-							MinWidth(0).
-							FillHeight().
-							Justify(ui.End).
-							Cursor(ui.CursorPointer).
-							Tooltip(ovFormatPulseBucket(b))
-						isHovered := slot.Hovered()
-						if isHovered {
-							hoveredNow = i
+		hoveredNow := -1
+		ui.Row(c).
+			FillWidth().
+			Height(46).
+			Padding(4, 0, 0, 0).
+			Gap(3).
+			AlignItems(ui.End).
+			Children(func() {
+				for i, b := range buckets {
+					slot := ui.Column(c.Key(fmt.Sprintf("ov-pulse-%d", i))).
+						Grow(1).
+						MinWidth(0).
+						FillHeight().
+						Justify(ui.End).
+						Cursor(ui.CursorPointer).
+						Tooltip(ovFormatPulseBucket(b))
+					isHovered := slot.Hovered()
+					if isHovered {
+						hoveredNow = i
+					}
+					slot.Children(func() {
+						if b.Total == 0 {
+							col := SailBgMuted
+							if isHovered {
+								col = SailBorderStrong
+							}
+							ui.Box(c).FillWidth().Height(3).Radius(1.5).Background(col)
+							return
 						}
-						slot.Children(func() {
-							if b.Total == 0 {
-								col := SailBgMuted
-								if isHovered {
-									col = SailBorderStrong
-								}
-								ui.Box(c).FillWidth().Height(3).Radius(1.5).Background(col)
-								return
-							}
 
-							barH := float32(math.Round((float64(b.Total) / float64(maxBucket)) * 42.0))
-							if barH < 8 {
-								barH = 8
-							}
-							if barH > 42 {
-								barH = 42
-							}
-							okCount := b.Total - b.Error
-							if okCount < 0 {
-								okCount = 0
-							}
-							if b.Error == 0 {
-								ui.Box(c).
-									FillWidth().
-									Height(barH).
-									Radius(2.5, 2.5, 1.5, 1.5).
-									Background(SailSuccessInk)
-								return
-							}
-							if okCount == 0 {
-								ui.Box(c).
-									FillWidth().
-									Height(barH).
-									Radius(2.5, 2.5, 1.5, 1.5).
-									Background(SailDangerInk)
-								return
-							}
-
-							errH := float32(math.Round(float64(barH) * (float64(b.Error) / float64(b.Total))))
-							if errH < 3 {
-								errH = 3
-							}
-							if errH > barH-3 {
-								errH = barH - 3
-							}
-							ui.Column(c).
+						barH := float32(math.Round((float64(b.Total) / float64(maxBucket)) * 42.0))
+						if barH < 8 {
+							barH = 8
+						}
+						if barH > 42 {
+							barH = 42
+						}
+						okCount := b.Total - b.Error
+						if okCount < 0 {
+							okCount = 0
+						}
+						if b.Error == 0 {
+							ui.Box(c).
 								FillWidth().
 								Height(barH).
 								Radius(2.5, 2.5, 1.5, 1.5).
-								Clip().
-								Children(func() {
-									ui.Box(c).FillWidth().Height(errH).Background(SailDangerInk)
-									ui.Box(c).FillWidth().Grow(1).Background(SailSuccessInk)
-								})
-						})
-					}
-				})
-			ov.hoveredPulseIdx = hoveredNow
+								Background(SailSuccessInk)
+							return
+						}
+						if okCount == 0 {
+							ui.Box(c).
+								FillWidth().
+								Height(barH).
+								Radius(2.5, 2.5, 1.5, 1.5).
+								Background(SailDangerInk)
+							return
+						}
 
-			ui.Row(c).FillWidth().Justify(ui.SpaceBetween).Children(func() {
-				ui.Text(c, i18n.T("overview.pulse.axis_12h")).Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine()
-				ui.Text(c, i18n.T("overview.pulse.axis_6h")).Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine()
-				ui.Text(c, i18n.T("overview.pulse.axis_now")).Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine()
+						errH := float32(math.Round(float64(barH) * (float64(b.Error) / float64(b.Total))))
+						if errH < 3 {
+							errH = 3
+						}
+						if errH > barH-3 {
+							errH = barH - 3
+						}
+						ui.Column(c).
+							FillWidth().
+							Height(barH).
+							Radius(2.5, 2.5, 1.5, 1.5).
+							Clip().
+							Children(func() {
+								ui.Box(c).FillWidth().Height(errH).Background(SailDangerInk)
+								ui.Box(c).FillWidth().Grow(1).Background(SailSuccessInk)
+							})
+					})
+				}
 			})
+		ov.hoveredPulseIdx = hoveredNow
+
+		ui.Row(c).FillWidth().Justify(ui.SpaceBetween).Children(func() {
+			ui.Text(c, i18n.T("overview.pulse.axis_12h")).Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine()
+			ui.Text(c, i18n.T("overview.pulse.axis_6h")).Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine()
+			ui.Text(c, i18n.T("overview.pulse.axis_now")).Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine()
 		})
+	})
 }
 
 func ovFormatPulseBucket(b apitypes.PulseBucket) string {
@@ -1081,7 +1079,7 @@ func ovRenderSlideDrawerShell(
 	footerActions func(),
 ) {
 	ui.DialogBase(c.Key("ov-slide-drawer"), &ov.drawerOpen, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(10, 37, 64, 0.22)).
+		backdrop.Background(SailDrawerBackdrop).
 			Padding(12).
 			AlignItems(ui.End).
 			Justify(ui.Start)
@@ -1090,7 +1088,7 @@ func ovRenderSlideDrawerShell(
 			MaxWidthPercent(100).
 			FillHeight().
 			Radius(10).
-			Background(SailBgCanvas).
+			Background(SailBgSurface).
 			Border(1, SailBorder).
 			Shadow(0, 12, 36, 0, SailModalShadow).
 			Clip()

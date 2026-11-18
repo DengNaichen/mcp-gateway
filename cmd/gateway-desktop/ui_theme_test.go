@@ -14,13 +14,13 @@ func TestSailThemeTracksAppearance(t *testing.T) {
 		dark = c.Theme().Dark
 		ui.Column(c).Size(100, 80).Background(SailBgCanvas).Children(func() { ui.Text(c, "Theme").TextColor(SailInkStrong) })
 	}, 100, 80)
-	lightCanvas, lightInk, lightDivider := SailBgCanvas, SailInkStrong, SailDivider
+	lightCanvas, lightSurface, lightControl, lightInk, lightDivider := SailBgCanvas, SailBgSurface, SailBgControl, SailInkStrong, SailDivider
 	tester.SetDark(true)
-	if !dark || SailBgCanvas == lightCanvas || SailInkStrong == lightInk || SailDivider == lightDivider {
+	if !dark || SailBgCanvas == lightCanvas || SailBgSurface == lightSurface || SailBgControl == lightControl || SailInkStrong == lightInk || SailDivider == lightDivider {
 		t.Fatal("dark theme not applied")
 	}
 	tester.SetDark(false)
-	if dark || SailBgCanvas != lightCanvas || SailInkStrong != lightInk || SailDivider != lightDivider {
+	if dark || SailBgCanvas != lightCanvas || SailBgSurface != lightSurface || SailBgControl != lightControl || SailInkStrong != lightInk || SailDivider != lightDivider {
 		t.Fatal("light palette was not restored")
 	}
 }

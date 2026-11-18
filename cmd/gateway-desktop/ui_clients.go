@@ -416,11 +416,11 @@ func (u *DesktopUI) renderClientVerifyModal(c *ui.Context, st *clientsPageState)
 	promptText := u.ClientPlugins.VerificationPrompt(st.verifyClientID, u.clientEndpoint())
 
 	ui.DialogBase(c.Key("client-verify-dialog"), &st.showVerifyModal, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(10, 37, 64, 0.42)).Padding(24)
+		backdrop.Background(SailModalBackdrop).Padding(24)
 		panel.Width(560).
 			MaxWidthPercent(94).
 			Radius(10).
-			Background(SailBgCanvas).
+			Background(SailBgSurface).
 			Border(1, SailBorder).
 			Shadow(0, 12, 36, 0, SailModalShadow).
 			Clip()

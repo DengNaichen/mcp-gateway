@@ -7,6 +7,8 @@
   <style>
     :root {
       --bg-canvas: #ffffff;
+      --bg-surface: #ffffff;
+      --bg-control: #ffffff;
       --bg-sidebar: #f8fafc;
       --bg-subtle: #f7f9fc;
       --bg-muted: #eef2f6;
@@ -56,49 +58,51 @@
     }
 
     html[data-theme="dark"] {
-      --bg-canvas: #0f1626;
-      --bg-sidebar: #0b1120;
-      --bg-subtle: #131c2e;
-      --bg-muted: #1b263b;
-      --bg-hover: #18223a;
-      --navy-bg: #060d1a;
-      --navy-hdr: #0a1426;
-      --navy-border: rgba(255, 255, 255, 0.14);
-      --navy-text: #e6edf5;
-      --navy-muted: #93a7be;
-      --ink-strong: #f1f5f9;
-      --ink-body: #cbd5e1;
-      --ink-muted: #94a3b8;
-      --ink-faint: #64748b;
-      --border: #243049;
-      --divider: #1d293c;
-      --border-strong: #34425f;
+      --bg-canvas: #1a1a1e;
+      --bg-surface: #232327;
+      --bg-control: #28282d;
+      --bg-sidebar: #1a1a1e;
+      --bg-subtle: #1c1c20;
+      --bg-muted: #303037;
+      --bg-hover: #2c2c33;
+      --navy-bg: #111114;
+      --navy-hdr: #18181c;
+      --navy-border: rgba(255, 255, 255, 0.10);
+      --navy-text: #f4f4f5;
+      --navy-muted: #a1a1aa;
+      --ink-strong: #f4f4f5;
+      --ink-body: #d4d4d8;
+      --ink-muted: #a1a1aa;
+      --ink-faint: #71717a;
+      --border: #303036;
+      --divider: #2b2b31;
+      --border-strong: #43434c;
       --accent: #7a73ff;
       --accent-hover: #8f89ff;
       --accent-pressed: #635bff;
-      --accent-soft: #1e1d4a;
-      --accent-border: #3b3894;
-      --success: #4ade9d;
-      --success-bg: #0d2f22;
-      --success-border: #14573f;
+      --accent-soft: #272546;
+      --accent-border: #454185;
+      --success: #4ade80;
+      --success-bg: #132b20;
+      --success-border: #1f503a;
       --warning: #fbbf24;
-      --warning-bg: #33260a;
-      --warning-border: #5c4413;
+      --warning-bg: #2c2211;
+      --warning-border: #564019;
       --danger: #f87171;
-      --danger-bg: #381416;
-      --danger-border: #661f24;
+      --danger-bg: #2e161a;
+      --danger-border: #5c252c;
       --info: #a5b4fc;
-      --info-bg: #1a2150;
-      --info-border: #2f3a8a;
-      --neutral: #a3b1c6;
-      --neutral-bg: #1b263b;
-      --neutral-border: #2b3750;
+      --info-bg: #202139;
+      --info-border: #363a6a;
+      --neutral: #a1a1aa;
+      --neutral-bg: #2b2b30;
+      --neutral-border: #383840;
       --surface-border: rgba(255, 255, 255, 0.08);
-      --shadow-control: 0 2px 6px rgba(0, 0, 0, 0.32);
-      --shadow-card: 0 3px 10px rgba(0, 0, 0, 0.20);
-      --shadow-floating: 0 6px 18px rgba(0, 0, 0, 0.40);
-      --shadow-modal: 0 12px 36px rgba(0, 0, 0, 0.55);
-      --backdrop-modal: rgba(3, 7, 18, 0.6);
+      --shadow-control: 0 2px 6px rgba(0, 0, 0, 0.22);
+      --shadow-card: 0 3px 10px rgba(0, 0, 0, 0.16);
+      --shadow-floating: 0 6px 18px rgba(0, 0, 0, 0.36);
+      --shadow-modal: 0 12px 36px rgba(0, 0, 0, 0.50);
+      --backdrop-modal: rgba(0, 0, 0, 0.62);
     }
 
     * { box-sizing: border-box; }
@@ -191,7 +195,7 @@
     }
     .nav-item:hover { background: var(--bg-muted); }
     .nav-item.active {
-      background: var(--bg-canvas);
+      background: var(--bg-surface);
       border-color: var(--surface-border);
       color: var(--ink-strong);
       font-weight: 600;
@@ -324,7 +328,7 @@
       margin: 0;
     }
     .card {
-      background: var(--bg-canvas);
+      background: var(--bg-surface);
       border: 1px solid var(--surface-border);
       border-radius: 10px;
       padding: 20px 22px;
@@ -334,7 +338,7 @@
       gap: 16px;
     }
     .card-flush {
-      background: var(--bg-canvas);
+      background: var(--bg-surface);
       border: 1px solid var(--surface-border);
       border-radius: 10px;
       box-shadow: var(--shadow-card);
@@ -515,7 +519,7 @@
       height: var(--ctrl-h-md);
       border: 1px solid var(--surface-border);
       box-shadow: var(--shadow-control);
-      background: var(--bg-canvas);
+      background: var(--bg-control);
       color: var(--ink-body);
       border-radius: 6px;
       padding: 0 12px;
@@ -599,7 +603,7 @@
       right: 0;
       top: calc(100% + 4px);
       min-width: 154px;
-      background: var(--bg-canvas);
+      background: var(--bg-surface);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 4px;
@@ -656,7 +660,7 @@
       justify-content: center;
     }
     .seg-btn.active {
-      background: var(--bg-canvas);
+      background: var(--bg-surface);
       color: var(--ink-strong);
       font-weight: 600;
       box-shadow: var(--shadow-card);
@@ -736,7 +740,7 @@
       gap: 16px;
     }
     .kpi-card {
-      background: var(--bg-canvas);
+      background: var(--bg-surface);
       border: 1px solid var(--surface-border);
       border-radius: 10px;
       padding: 18px 20px;
@@ -754,7 +758,7 @@
     .kpi-hint { font-size: 12px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 
     .pulse-card {
-      background: var(--bg-canvas);
+      background: var(--bg-surface);
       border: 1px solid var(--surface-border);
       border-radius: 10px;
       padding: 14px 20px;
@@ -975,7 +979,7 @@
       max-width: 660px;
       max-height: 86vh;
       overflow-y: auto;
-      background: var(--bg-canvas);
+      background: var(--bg-surface);
       border: 1px solid var(--border);
       border-radius: 10px;
       box-shadow: var(--shadow-modal);
@@ -986,7 +990,7 @@
       position: fixed;
       inset: 0;
       padding: 12px;
-      background: rgba(10, 37, 64, 0.22);
+      background: var(--backdrop-modal);
       backdrop-filter: blur(1.5px);
       display: flex;
       justify-content: flex-end;
@@ -995,7 +999,7 @@
     .slide-drawer {
       width: min(460px, 100%);
       height: 100%;
-      background: var(--bg-canvas);
+      background: var(--bg-surface);
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow: hidden;
@@ -1246,7 +1250,7 @@
       .market-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     .market-card {
-      background: var(--bg-canvas);
+      background: var(--bg-surface);
       border: 1px solid var(--surface-border);
       border-radius: 10px;
       padding: 16px 18px;

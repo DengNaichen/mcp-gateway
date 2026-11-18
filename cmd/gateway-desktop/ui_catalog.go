@@ -504,160 +504,158 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 
 	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(22).Children(func() {
 		// Left Column: Hairline-divided Tool List Card (max 3 anchors per row).
-		ui.Column(c.Key("cat-table-card")).
-			Grow(1).
-			MinWidth(0).
-			Radius(10).
-			Background(SailBgCanvas).
-			Border(1, SailSurfaceBorder).
-			Shadow(0, 3, 10, 0, SailCardShadow).
-			Clip().
-			Children(func() {
-				SailListCardHeader(c, i18n.T("ops.tool-list"), i18n.T("ops.items-count", len(filtered)), nil)
+		applyCardElevation(
+			ui.Column(c.Key("cat-table-card")).
+				Grow(1).
+				MinWidth(0).
+				Radius(10).
+				Background(SailBgSurface),
+		).Clip().Children(func() {
+			SailListCardHeader(c, i18n.T("ops.tool-list"), i18n.T("ops.items-count", len(filtered)), nil)
 
-				maxDescLines := 1
-				if selectedTool == nil {
-					maxDescLines = 2
+			maxDescLines := 1
+			if selectedTool == nil {
+				maxDescLines = 2
+			}
+
+			seenRowKeys := make(map[string]int, len(pagedTools))
+			for idx, tool := range pagedTools {
+				t := tool
+				rowKey := t.ID
+				if rowKey == "" || seenRowKeys[rowKey] > 0 {
+					rowKey = fmt.Sprintf("%s#%d", t.ID, idx)
+				}
+				seenRowKeys[t.ID]++
+				srv := serverByID[t.ServerID]
+				hits := hitCounts[t.ID]
+				isSelected := selectedTool != nil && selectedTool.ID == t.ID
+				isLast := idx == len(pagedTools)-1 && totalPages <= 1
+
+				rowBg := SailBgSurface
+				if isSelected {
+					rowBg = SailAccentSoft
 				}
 
-				seenRowKeys := make(map[string]int, len(pagedTools))
-				for idx, tool := range pagedTools {
-					t := tool
-					rowKey := t.ID
-					if rowKey == "" || seenRowKeys[rowKey] > 0 {
-						rowKey = fmt.Sprintf("%s#%d", t.ID, idx)
-					}
-					seenRowKeys[t.ID]++
-					srv := serverByID[t.ServerID]
-					hits := hitCounts[t.ID]
-					isSelected := selectedTool != nil && selectedTool.ID == t.ID
-					isLast := idx == len(pagedTools)-1 && totalPages <= 1
+				row := ui.Row(c.Key("cat-row-"+rowKey)).
+					FillWidth().
+					Padding(13, 20).
+					Gap(14).
+					AlignItems(ui.Center).
+					Justify(ui.SpaceBetween).
+					Background(rowBg)
+				if !isLast {
+					row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+				}
+				if row.Hovered() && !isSelected {
+					row.Background(SailBgHover)
+				}
 
-					rowBg := SailBgCanvas
-					if isSelected {
-						rowBg = SailAccentSoft
-					}
+				row.Children(func() {
+					// Anchor 1 & 2: Primary Identity + Cleaned 1–2 line Summary.
+					infoBtn := ui.ButtonBase(c.Key("cat-info-" + rowKey)).
+						Column().
+						Grow(1).
+						MinWidth(0).
+						Gap(4).
+						AlignItems(ui.Start).
+						Cursor(ui.CursorPointer)
+					infoBtn.Children(func() {
+						ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+							nameColor := SailInkStrong
+							if isSelected {
+								nameColor = SailAccent
+							}
+							ui.Text(c, t.Name).
+								Font("monospace").
+								FontSize(13).
+								FontWeight(600).
+								TextColor(nameColor).
+								SingleLine()
 
-					row := ui.Row(c.Key("cat-row-"+rowKey)).
-						FillWidth().
-						Padding(13, 20).
-						Gap(14).
-						AlignItems(ui.Center).
-						Justify(ui.SpaceBetween).
-						Background(rowBg)
-					if !isLast {
-						row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-					}
-					if row.Hovered() && !isSelected {
-						row.Background(SailBgHover)
-					}
+							srvName := srv.Name
+							if srvName == "" {
+								srvName = t.ServerID
+							}
+							ui.Text(c, srvName).
+								FontSize(11.5).
+								TextColor(SailInkFaint).
+								SingleLine()
 
-					row.Children(func() {
-						// Anchor 1 & 2: Primary Identity + Cleaned 1–2 line Summary.
-						infoBtn := ui.ButtonBase(c.Key("cat-info-" + rowKey)).
-							Column().
-							Grow(1).
-							MinWidth(0).
-							Gap(4).
-							AlignItems(ui.Start).
-							Cursor(ui.CursorPointer)
-						infoBtn.Children(func() {
-							ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-								nameColor := SailInkStrong
-								if isSelected {
-									nameColor = SailAccent
-								}
-								ui.Text(c, t.Name).
-									Font("monospace").
-									FontSize(13).
-									FontWeight(600).
-									TextColor(nameColor).
-									SingleLine()
-
-								srvName := srv.Name
-								if srvName == "" {
-									srvName = t.ServerID
-								}
-								ui.Text(c, srvName).
-									FontSize(11.5).
-									TextColor(SailInkFaint).
-									SingleLine()
-
-								if !t.ReadOnly {
-									SailBadge(c, i18n.T("ops.write-access"), ToneWarning)
-								}
-							})
-
-							SailDescSummary(c, t.Description, i18n.T("ops.no-description"), maxDescLines).FillWidth()
+							if !t.ReadOnly {
+								SailBadge(c, i18n.T("ops.write-access"), ToneWarning)
+							}
 						})
-						if infoBtn.Clicked() {
-							st.selectedToolID = t.ID
-							st.panelCollapsed = false
+
+						SailDescSummary(c, t.Description, i18n.T("ops.no-description"), maxDescLines).FillWidth()
+					})
+					if infoBtn.Clicked() {
+						st.selectedToolID = t.ID
+						st.panelCollapsed = false
+					}
+
+					// Anchor 3: Quiet hit count + Enable Switch + Detail toggle.
+					ui.Row(c).Shrink(0).Gap(12).AlignItems(ui.Center).Children(func() {
+						if hits > 0 {
+							ui.Text(c, i18n.T("ops.hits-count", hits)).
+								FontSize(12).
+								TextColor(SailInkMuted).
+								FontFeatures("tnum").
+								SingleLine()
 						}
 
-						// Anchor 3: Quiet hit count + Enable Switch + Detail toggle.
-						ui.Row(c).Shrink(0).Gap(12).AlignItems(ui.Center).Children(func() {
-							if hits > 0 {
-								ui.Text(c, i18n.T("ops.hits-count", hits)).
-									FontSize(12).
-									TextColor(SailInkMuted).
-									FontFeatures("tnum").
-									SingleLine()
-							}
+						enabledVal := t.Enabled
+						busy := st.togglingIDs[t.ID]
+						if ui.Switch(c.Key("cat-sw-"+rowKey), &enabledVal).
+							Disabled(busy).
+							Label(i18n.T("ops.open-state-for", t.Name)).
+							Changed() {
+							u.catalogToggleToolWhitelist(st, t)
+						}
 
-							enabledVal := t.Enabled
-							busy := st.togglingIDs[t.ID]
-							if ui.Switch(c.Key("cat-sw-"+rowKey), &enabledVal).
-								Disabled(busy).
-								Label(i18n.T("ops.open-state-for", t.Name)).
-								Changed() {
-								u.catalogToggleToolWhitelist(st, t)
-							}
-
-							btnLabel := i18n.T("ops.details")
+						btnLabel := i18n.T("ops.details")
+						if isSelected {
+							btnLabel = i18n.T("ops.collapse")
+						}
+						if SailSmallButton(c.Key("cat-inspect-"+rowKey), btnLabel).Clicked() {
 							if isSelected {
-								btnLabel = i18n.T("ops.collapse")
+								st.panelCollapsed = true
+							} else {
+								st.selectedToolID = t.ID
+								st.panelCollapsed = false
 							}
-							if SailSmallButton(c.Key("cat-inspect-"+rowKey), btnLabel).Clicked() {
-								if isSelected {
-									st.panelCollapsed = true
-								} else {
-									st.selectedToolID = t.ID
-									st.panelCollapsed = false
-								}
-							}
-						})
+						}
 					})
-				}
+				})
+			}
 
-				// Pagination Footer (shown only when multi-page).
-				if totalPages > 1 {
-					ui.Row(c).
-						FillWidth().
-						Padding(12, 20).
-						AlignItems(ui.Center).
-						Justify(ui.SpaceBetween).
-						Children(func() {
-							ui.Textf(c, "%d–%d / %d", startIdx+1, endIdx, len(filtered)).
+			// Pagination Footer (shown only when multi-page).
+			if totalPages > 1 {
+				ui.Row(c).
+					FillWidth().
+					Padding(12, 20).
+					AlignItems(ui.Center).
+					Justify(ui.SpaceBetween).
+					Children(func() {
+						ui.Textf(c, "%d–%d / %d", startIdx+1, endIdx, len(filtered)).
+							FontSize(12).
+							TextColor(SailInkMuted).
+							FontFeatures("tnum")
+
+						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+							ui.Text(c, i18n.T("ops.page-indicator", st.page, totalPages)).
 								FontSize(12).
 								TextColor(SailInkMuted).
 								FontFeatures("tnum")
-
-							ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-								ui.Text(c, i18n.T("ops.page-indicator", st.page, totalPages)).
-									FontSize(12).
-									TextColor(SailInkMuted).
-									FontFeatures("tnum")
-								if SailSmallButton(c.Key("cat-prev-page"), i18n.T("ops.prev-page")).Disabled(st.page <= 1).Clicked() {
-									st.page--
-								}
-								if SailSmallButton(c.Key("cat-next-page"), i18n.T("ops.next-page")).Disabled(st.page >= totalPages).Clicked() {
-									st.page++
-								}
-							})
+							if SailSmallButton(c.Key("cat-prev-page"), i18n.T("ops.prev-page")).Disabled(st.page <= 1).Clicked() {
+								st.page--
+							}
+							if SailSmallButton(c.Key("cat-next-page"), i18n.T("ops.next-page")).Disabled(st.page >= totalPages).Clicked() {
+								st.page++
+							}
 						})
-				}
-			})
+					})
+			}
+		})
 
 		// Right Column: Tool Detail Panel / Inspector.
 		if selectedTool != nil {
@@ -675,106 +673,105 @@ func (u *DesktopUI) renderCatalogDetailPanel(
 ) {
 	st.syncEditForm(tool)
 
-	ui.Column(c.Key("cat-detail-"+tool.ID)).
-		Width(420).
-		Shrink(0).
-		Padding(20, 22).
-		Gap(16).
-		Radius(10).
-		Background(SailBgCanvas).
-		Border(1, SailSurfaceBorder).
-		Shadow(0, 3, 10, 0, SailCardShadow).
-		Children(func() {
-			// Top Status Row + Collapse Button (Badge Diet).
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
-				ui.Row(c).Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
-					if tool.Enabled {
-						SailQuietStatus(c, i18n.T("ops.filter-enabled"), SailSuccessInk, SailInkStrong)
-					} else {
-						SailQuietStatus(c, i18n.T("ops.filter-disabled"), SailInkFaint, SailInkMuted)
-					}
-					if tool.ReadOnly {
-						ui.Text(c, i18n.T("ops.read-only")).FontSize(12).TextColor(SailInkMuted).SingleLine()
-					} else {
-						SailBadge(c, i18n.T("ops.write-access"), ToneWarning)
-					}
-					if srv.Demo {
-						ui.Text(c, i18n.T("ops.demo-badge")).FontSize(12).TextColor(SailInkFaint).SingleLine()
-					}
-				})
-
-				if SailSmallButton(c.Key("cat-detail-close"), i18n.T("ops.collapse")).Clicked() {
-					st.panelCollapsed = true
+	applyCardElevation(
+		ui.Column(c.Key("cat-detail-"+tool.ID)).
+			Width(420).
+			Shrink(0).
+			Padding(20, 22).
+			Gap(16).
+			Radius(10).
+			Background(SailBgSurface),
+	).Children(func() {
+		// Top Status Row + Collapse Button (Badge Diet).
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
+			ui.Row(c).Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
+				if tool.Enabled {
+					SailQuietStatus(c, i18n.T("ops.filter-enabled"), SailSuccessInk, SailInkStrong)
+				} else {
+					SailQuietStatus(c, i18n.T("ops.filter-disabled"), SailInkFaint, SailInkMuted)
+				}
+				if tool.ReadOnly {
+					ui.Text(c, i18n.T("ops.read-only")).FontSize(12).TextColor(SailInkMuted).SingleLine()
+				} else {
+					SailBadge(c, i18n.T("ops.write-access"), ToneWarning)
+				}
+				if srv.Demo {
+					ui.Text(c, i18n.T("ops.demo-badge")).FontSize(12).TextColor(SailInkFaint).SingleLine()
 				}
 			})
 
-			// Tool Name & Copy ID.
-			ui.Column(c).FillWidth().Gap(4).Children(func() {
-				ui.Text(c, tool.Name).
-					Font("monospace").
-					FontSize(16).
-					Bold().
-					TextColor(SailInkStrong).
-					Selectable()
-
-				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-					ui.Text(c, tool.ID).
-						Grow(1).
-						MinWidth(0).
-						Font("monospace").
-						FontSize(12).
-						TextColor(SailInkMuted).
-						Selectable().
-						SingleLine()
-
-					if SailSmallButton(c.Key("cat-copy-id-"+tool.ID), i18n.T("ops.copy-id")).Padding(2, 8).FontSize(11).Clicked() {
-						c.WriteClipboard(tool.ID)
-						u.Notify(i18n.T("ops.copied-tool-id", tool.ID))
-					}
-				})
-			})
-
-			// Borderless Quick Governance Switch + Sandbox Jump Surface.
-			SailSubtleCard(c, func() {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(10).Children(func() {
-					ui.Text(c, i18n.T("ops.allowlist")).FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
-					enabledVal := tool.Enabled
-					if ui.Switch(c.Key("cat-detail-sw-"+tool.ID), &enabledVal).
-						Disabled(st.togglingIDs[tool.ID]).
-						Label(i18n.T("ops.toggle-allowlist")).
-						Changed() {
-						u.catalogToggleToolWhitelist(st, tool)
-					}
-				})
-
-				ui.Row(c).FillWidth().Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
-					if SailSmallPrimaryButton(c.Key("cat-sandbox-jump-"+tool.ID), i18n.T("ops.sandbox-test")).Grow(1).Clicked() {
-						intent := catalogBuildTestIntent(tool)
-						actor := catalogPickTestActor(tool)
-						u.OpenPlaygroundReplay(intent, actor)
-					}
-					if SailSmallButton(c.Key("cat-open-srv-"+tool.ID), i18n.T("ops.owning-service")).Clicked() {
-						u.OpenServiceDetail(tool.ServerID)
-					}
-				})
-			})
-
-			// Detail Sub-tabs: 属性与 Schema | 编辑契约 | 完整 JSON.
-			ui.Segmented(c.Key("cat-detail-tab"), &st.detailTab, i18n.T("ops.props-schema"), i18n.T("ops.edit-contract"), i18n.T("ops.raw-json")).
-				FillEqually().
-				Label(i18n.T("ops.tool-detail-view"))
-
-			switch st.detailTab {
-			case 1:
-				u.renderCatalogEditTab(c, st, tool)
-			case 2:
-				SailCodeBlock(c, "TOOL CONTRACT JSON", PrettyJSON(tool), func() {
-					u.Notify(i18n.T("ops.copied-contract-json"))
-				})
-			default:
-				u.renderCatalogOverviewTab(c, tool, srv, hits)
+			if SailSmallButton(c.Key("cat-detail-close"), i18n.T("ops.collapse")).Clicked() {
+				st.panelCollapsed = true
 			}
 		})
+
+		// Tool Name & Copy ID.
+		ui.Column(c).FillWidth().Gap(4).Children(func() {
+			ui.Text(c, tool.Name).
+				Font("monospace").
+				FontSize(16).
+				Bold().
+				TextColor(SailInkStrong).
+				Selectable()
+
+			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+				ui.Text(c, tool.ID).
+					Grow(1).
+					MinWidth(0).
+					Font("monospace").
+					FontSize(12).
+					TextColor(SailInkMuted).
+					Selectable().
+					SingleLine()
+
+				if SailSmallButton(c.Key("cat-copy-id-"+tool.ID), i18n.T("ops.copy-id")).Padding(2, 8).FontSize(11).Clicked() {
+					c.WriteClipboard(tool.ID)
+					u.Notify(i18n.T("ops.copied-tool-id", tool.ID))
+				}
+			})
+		})
+
+		// Borderless Quick Governance Switch + Sandbox Jump Surface.
+		SailSubtleCard(c, func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(10).Children(func() {
+				ui.Text(c, i18n.T("ops.allowlist")).FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
+				enabledVal := tool.Enabled
+				if ui.Switch(c.Key("cat-detail-sw-"+tool.ID), &enabledVal).
+					Disabled(st.togglingIDs[tool.ID]).
+					Label(i18n.T("ops.toggle-allowlist")).
+					Changed() {
+					u.catalogToggleToolWhitelist(st, tool)
+				}
+			})
+
+			ui.Row(c).FillWidth().Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
+				if SailSmallPrimaryButton(c.Key("cat-sandbox-jump-"+tool.ID), i18n.T("ops.sandbox-test")).Grow(1).Clicked() {
+					intent := catalogBuildTestIntent(tool)
+					actor := catalogPickTestActor(tool)
+					u.OpenPlaygroundReplay(intent, actor)
+				}
+				if SailSmallButton(c.Key("cat-open-srv-"+tool.ID), i18n.T("ops.owning-service")).Clicked() {
+					u.OpenServiceDetail(tool.ServerID)
+				}
+			})
+		})
+
+		// Detail Sub-tabs: 属性与 Schema | 编辑契约 | 完整 JSON.
+		ui.Segmented(c.Key("cat-detail-tab"), &st.detailTab, i18n.T("ops.props-schema"), i18n.T("ops.edit-contract"), i18n.T("ops.raw-json")).
+			FillEqually().
+			Label(i18n.T("ops.tool-detail-view"))
+
+		switch st.detailTab {
+		case 1:
+			u.renderCatalogEditTab(c, st, tool)
+		case 2:
+			SailCodeBlock(c, "TOOL CONTRACT JSON", PrettyJSON(tool), func() {
+				u.Notify(i18n.T("ops.copied-contract-json"))
+			})
+		default:
+			u.renderCatalogOverviewTab(c, tool, srv, hits)
+		}
+	})
 }
 
 func (u *DesktopUI) renderCatalogOverviewTab(c *ui.Context, tool apitypes.Tool, srv apitypes.Server, hits int) {
@@ -1024,7 +1021,7 @@ func catalogRenderSelect(c *ui.Context, key string, selected *string, options []
 		Radius(6).
 		AlignItems(ui.Center).
 		Justify(ui.SpaceBetween).
-		Background(SailBgCanvas).
+		Background(SailBgSurface).
 		Border(1, SailBorder).
 		Cursor(ui.CursorPointer)
 	if sel.Trigger.Hovered() {
@@ -1040,7 +1037,7 @@ func catalogRenderSelect(c *ui.Context, key string, selected *string, options []
 			Margin(4, 0, 0, 0).
 			Padding(4).
 			Radius(8).
-			Background(SailBgCanvas).
+			Background(SailBgSurface).
 			Border(1, SailBorder).
 			Shadow(0, 6, 18, 0, SailFloatingShadow)
 		for _, opt := range options {
