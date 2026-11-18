@@ -520,7 +520,7 @@ func TestNativeUIRealisticDataAllPagesAndModals(t *testing.T) {
 	if err := tester.Click("关闭"); err != nil {
 		t.Fatalf("close add service modal: %v", err)
 	}
-	if err := tester.Click("管理详情"); err != nil {
+	if err := tester.Click("Billing REST API"); err != nil {
 		t.Fatalf("open service detail: %v", err)
 	}
 	if !tester.HasText("← 返回上游服务列表") {

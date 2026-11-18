@@ -709,3 +709,76 @@ func renderReadinessActionBanner(c *ui.Context, keyPrefix string, r serviceReadi
 			}
 		})
 }
+
+// serviceTriageBucket groups the readiness kinds into the four buckets the
+// services list sorts and filters by, ordered by how urgently they need action.
+type serviceTriageBucket uint8
+
+const (
+	triageAttention serviceTriageBucket = iota
+	triagePending
+	triageReady
+	triageDisabled
+	triageBucketCount
+)
+
+var triageBucketLabels = [triageBucketCount]string{"需处理", "待验证", "就绪", "已停用"}
+
+func (b serviceTriageBucket) Label() string { return triageBucketLabels[b] }
+
+func (r serviceReadiness) TriageBucket() serviceTriageBucket {
+	switch {
+	case r.Kind == readinessDisabled || r.Kind == readinessDemo:
+		return triageDisabled
+	case r.HasError():
+		return triageAttention
+	case r.NeedsAttention():
+		return triagePending
+	default:
+		return triageReady
+	}
+}
+
+// RowAction is the single in-row fix offered by the services list, or
+// readinessActionNone when the service needs nothing.
+func (r serviceReadiness) RowAction() (readinessActionKind, string) {
+	switch r.Kind {
+	case readinessMissingCreds:
+		return readinessActionFillCreds, "填写凭据"
+	case readinessConnError, readinessInvokeError:
+		return readinessActionProbe, "重新测试"
+	case readinessUnverified:
+		return readinessActionProbe, "测试连接"
+	case readinessNoOpenTools:
+		if r.AlertAction == readinessActionEnableReadOnly {
+			return readinessActionEnableReadOnly, "开放只读"
+		}
+	}
+	return readinessActionNone, ""
+}
+
+// Probeable reports whether a bulk "test all" should include this service.
+func (r serviceReadiness) Probeable() bool {
+	return r.Kind == readinessUnverified || r.Kind == readinessConnError || r.Kind == readinessInvokeError
+}
+
+// servicesNeedingAttention counts real services in the 需处理 bucket.
+func (u *DesktopUI) servicesNeedingAttention() int {
+	if u.State == nil {
+		return 0
+	}
+	toolsByServer := map[string][]apitypes.Tool{}
+	for _, t := range u.State.Registry.Tools {
+		toolsByServer[t.ServerID] = append(toolsByServer[t.ServerID], t)
+	}
+	n := 0
+	for _, s := range u.State.Registry.Servers {
+		if s.Demo {
+			continue
+		}
+		if u.readinessForServer(s, toolsByServer[s.ID]).TriageBucket() == triageAttention {
+			n++
+		}
+	}
+	return n
+}

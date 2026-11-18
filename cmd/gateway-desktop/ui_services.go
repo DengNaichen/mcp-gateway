@@ -23,11 +23,12 @@ var nonServiceIDRe = regexp.MustCompile(`[^a-z0-9._-]+`)
 
 type servicesPageState struct {
 	// List view state
-	listQuery       string
-	listProtoFilter int // 0=全部, 1=MCP Stdio, 2=MCP HTTP, 3=HTTP REST
-	demoExpanded    bool
-	syncingServerID string
-	toggleBusyID    string
+	listQuery        string
+	listStatusFilter int // 0=全部, else serviceTriageBucket+1
+	bulkProbeBusy    bool
+	demoExpanded     bool
+	syncingServerID  string
+	toggleBusyID     string
 
 	// Add / Import Service modal
 	showAddModal       bool
@@ -252,62 +253,82 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 	servers := u.State.Registry.Servers
 	tools := u.State.Registry.Tools
 
-	var realServers []apitypes.Server
-	var demoServers []apitypes.Server
-	onlineCount := 0
-	for _, s := range servers {
-		if s.Demo {
-			demoServers = append(demoServers, s)
-			continue
-		}
-		realServers = append(realServers, s)
-		if s.Enabled {
-			onlineCount++
-		}
-	}
-
 	toolsByServer := map[string][]apitypes.Tool{}
 	for _, t := range tools {
 		toolsByServer[t.ServerID] = append(toolsByServer[t.ServerID], t)
 	}
 
-	readinessByServer := make(map[string]serviceReadiness, len(realServers))
-	readyCount := 0
-	for _, s := range realServers {
+	type serviceListRow struct {
+		server    apitypes.Server
+		readiness serviceReadiness
+		bucket    serviceTriageBucket
+	}
+	var rows []serviceListRow
+	var demoServers []apitypes.Server
+	var probeTargets []apitypes.Server
+	var bucketCounts [triageBucketCount]int
+	enabledCount := 0
+	for _, s := range servers {
+		if s.Demo {
+			demoServers = append(demoServers, s)
+			continue
+		}
 		r := u.readinessForServer(s, toolsByServer[s.ID])
-		readinessByServer[s.ID] = r
-		if r.IsHealthyReady() {
-			readyCount++
+		b := r.TriageBucket()
+		rows = append(rows, serviceListRow{server: s, readiness: r, bucket: b})
+		bucketCounts[b]++
+		if s.Enabled {
+			enabledCount++
+		}
+		if r.Probeable() {
+			probeTargets = append(probeTargets, s)
 		}
 	}
+	// Stable sort keeps registry order inside each bucket.
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].bucket < rows[j].bucket })
 
-	SailSectionHeader(
-		c,
-		"上游服务",
-		"",
-		func() {
-			if SailSmallButton(c.Key("svc-btn-paste"), "粘贴 MCP JSON").Clicked() {
-				st.openAddModal(3)
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(16).Children(func() {
+		ui.Row(c).Grow(1).MinWidth(0).Gap(12).AlignItems(ui.Baseline).Children(func() {
+			ui.Text(c, "上游服务").FontSize(21).Bold().LetterSpacing(-0.2).TextColor(SailInkStrong)
+			if attention := bucketCounts[triageAttention]; attention > 0 {
+				ui.Text(c, fmt.Sprintf("%d 个需处理", attention)).FontSize(12.5).FontWeight(600).TextColor(SailDangerInk).SingleLine()
 			}
-			if SailSmallButton(c.Key("svc-btn-openapi"), "OpenAPI 导入").Clicked() {
-				st.openAddModal(2)
-			}
+			ui.Text(c, fmt.Sprintf("%d 就绪 · %d / %d 启用", bucketCounts[triageReady], enabledCount, len(rows))).
+				FontSize(12.5).FontFeatures("tnum").TextColor(SailInkMuted).SingleLine()
+		})
+		ui.Row(c).Gap(1).AlignItems(ui.Center).Shrink(0).Children(func() {
 			if SailPrimaryButton(c.Key("svc-btn-add"), "添加上游服务").Padding(6, 13).FontSize(12.5).Clicked() {
 				st.openAddModal(0)
 			}
-		},
-	)
+			SailPrimaryButton(c.Key("svc-btn-add-more"), "▾").
+				Padding(6, 8).
+				FontSize(12.5).
+				Label("更多添加方式").
+				PopoverMenuButton(func(menu *ui.Menu) {
+					if menu.Item("手动配置").Chosen() {
+						st.openAddModal(0)
+					}
+					if menu.Item("粘贴 MCP JSON").Chosen() {
+						st.openAddModal(3)
+					}
+					if menu.Item("OpenAPI 导入").Chosen() {
+						st.openAddModal(2)
+					}
+					if menu.Item("从 MCP 市场添加").Chosen() {
+						u.Navigate(ViewMarket)
+					}
+				})
+		})
+	})
 
-	// Hairline-divided service list card
+	// Hairline-divided service list card, triaged by readiness.
 	SailFlushCard(c, func() {
-		SailListCardHeader(
-			c,
-			"已接入服务",
-			fmt.Sprintf("%d 就绪 · %d / %d 启用", readyCount, onlineCount, len(realServers)),
-			func() {
-				ui.Segmented(c.Key("svc-proto-filter"), &st.listProtoFilter, "全部", "MCP Stdio", "MCP HTTP", "HTTP REST")
-			},
-		)
+		if len(rows) == 0 {
+			ui.Column(c).FillWidth().Padding(20).Children(func() {
+				SailEmptyState(c, "暂无上游服务", "", "添加上游服务", func() { st.openAddModal(0) })
+			})
+			return
+		}
 
 		ui.Row(c).
 			FillWidth().
@@ -316,167 +337,86 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 			BorderWidth(0, 0, 1, 0).
 			BorderColor(SailDivider).
 			AlignItems(ui.Center).
+			Justify(ui.SpaceBetween).
 			Children(func() {
-				ui.SearchField(c.Key("svc-list-search"), &st.listQuery).
-					Placeholder("搜索名称、ID 或地址…").
-					Grow(1)
-				if strings.TrimSpace(st.listQuery) != "" || st.listProtoFilter != 0 {
-					if SailSmallButton(c.Key("svc-filter-reset"), "重置").Clicked() {
-						st.listQuery = ""
-						st.listProtoFilter = 0
-					}
+				labels := []string{"全部"}
+				for b := serviceTriageBucket(0); b < triageBucketCount; b++ {
+					labels = append(labels, fmt.Sprintf("%s %d", b.Label(), bucketCounts[b]))
 				}
+				ui.Segmented(c.Key("svc-status-filter"), &st.listStatusFilter, labels...)
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Grow(1).MinWidth(0).Justify(ui.End).Children(func() {
+					if len(probeTargets) > 1 {
+						label := fmt.Sprintf("全部测试连接 (%d)", len(probeTargets))
+						if st.bulkProbeBusy {
+							label = "测试中…"
+						}
+						if SailSmallButton(c.Key("svc-probe-all"), label).Disabled(st.bulkProbeBusy || st.connBusy).Clicked() {
+							u.probeServersBulk(st, probeTargets)
+						}
+					}
+					ui.SearchField(c.Key("svc-list-search"), &st.listQuery).
+						Placeholder("搜索名称、凭据变量或地址…").
+						Width(240)
+					if strings.TrimSpace(st.listQuery) != "" || st.listStatusFilter != 0 {
+						if SailSmallButton(c.Key("svc-filter-reset"), "重置").Clicked() {
+							st.listQuery = ""
+							st.listStatusFilter = 0
+						}
+					}
+				})
 			})
-
-		if len(realServers) == 0 {
-			ui.Column(c).FillWidth().Padding(20).Children(func() {
-				SailEmptyState(
-					c,
-					"暂无上游服务",
-					"",
-					"添加上游服务",
-					func() { st.openAddModal(0) },
-				)
-			})
-			return
-		}
 
 		q := strings.ToLower(strings.TrimSpace(st.listQuery))
-		var filtered []apitypes.Server
-		for _, s := range realServers {
-			switch st.listProtoFilter {
-			case 1:
-				if !(s.Kind == "mcp" && s.Transport == "stdio") {
-					continue
-				}
-			case 2:
-				if !(s.Kind == "mcp" && s.Transport != "stdio") {
-					continue
-				}
-			case 3:
-				if s.Kind != "http" {
-					continue
-				}
+		var filtered []serviceListRow
+		for _, row := range rows {
+			if st.listStatusFilter > 0 && int(row.bucket) != st.listStatusFilter-1 {
+				continue
 			}
 			if q != "" {
-				hay := strings.ToLower(s.Name + " " + s.ID + " " + s.Description + " " + ServerTargetText(s))
+				s := row.server
+				hay := strings.ToLower(strings.Join([]string{
+					s.Name, s.ID, s.Description, ServerTargetText(s), serviceProtocolTag(s),
+					strings.Join(row.readiness.MissingVars, " "),
+				}, " "))
 				if !strings.Contains(hay, q) {
 					continue
 				}
 			}
-			filtered = append(filtered, s)
+			filtered = append(filtered, row)
 		}
 
 		if len(filtered) == 0 {
+			title := "无匹配服务"
+			if q == "" && st.listStatusFilter == int(triageAttention)+1 {
+				title = "没有需要处理的服务"
+			}
 			ui.Column(c).FillWidth().Padding(20).Children(func() {
-				SailEmptyState(
-					c,
-					"无匹配服务",
-					"",
-					"清空筛选",
-					func() {
-						st.listQuery = ""
-						st.listProtoFilter = 0
-					},
-				)
+				SailEmptyState(c, title, "", "查看全部", func() {
+					st.listQuery = ""
+					st.listStatusFilter = 0
+				})
 			})
 			return
 		}
 
-		for idx, srv := range filtered {
-			s := srv
-			isLast := idx == len(filtered)-1
-			srvTools := toolsByServer[s.ID]
-			onCount, roCount := 0, 0
-			for _, t := range srvTools {
-				if t.Enabled {
-					onCount++
-					if t.ReadOnly {
-						roCount++
-					}
-				}
-			}
-			rwCount := onCount - roCount
-			readiness := readinessByServer[s.ID]
-
-			row := ui.Row(c.Key("svc-card-"+s.ID)).
-				FillWidth().
-				Padding(15, 20).
-				Gap(16).
-				AlignItems(ui.Center).
-				Justify(ui.SpaceBetween)
-			if !isLast {
-				row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-			}
-			if row.Hovered() {
-				row.Background(SailBgHover)
-			}
-			row.Children(func() {
-				// Anchor 1 & 2: Primary Identity + Readiness / Cleaned 1-sentence Summary
-				ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
-					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-						SailStatusDot(c, readiness.DotColor)
-
-						nameBtn := ui.ButtonBase(c.Key("svc-open-" + s.ID)).Cursor(ui.CursorPointer)
-						nameBtn.Children(func() {
-							ui.Text(c, s.Name).FontSize(14).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-						})
-						if nameBtn.Clicked() {
-							st.enterDetail(s.ID)
-							u.OpenServiceDetail(s.ID)
-						}
-
-						ui.Text(c, serviceProtocolTag(s)).FontSize(11.5).TextColor(SailInkFaint).SingleLine()
-
-						if readiness.BadgeLabel != "" {
-							SailBadge(c, readiness.BadgeLabel, readiness.BadgeTone)
-						}
-						if s.Enabled && rwCount > 0 {
-							SailBadge(c, fmt.Sprintf("写 ×%d", rwCount), ToneWarning)
-						}
+		showGroups := st.listStatusFilter == 0
+		for idx, item := range filtered {
+			s := item.server
+			readiness := item.readiness
+			if showGroups && (idx == 0 || filtered[idx-1].bucket != item.bucket) {
+				ui.Row(c).
+					FillWidth().
+					Padding(12, 20, 6, 20).
+					Gap(6).
+					Background(SailBgMuted).
+					BorderWidth(0, 0, 1, 0).
+					BorderColor(SailDivider).
+					Children(func() {
+						ui.Text(c, item.bucket.Label()).FontSize(11.5).FontWeight(600).TextColor(SailInkFaint)
+						ui.Text(c, fmt.Sprintf("%d", bucketCounts[item.bucket])).FontSize(11.5).FontFeatures("tnum").TextColor(SailInkFaint)
 					})
-
-					ui.Row(c).Padding(0, 0, 0, 14.5).MinWidth(0).Children(func() {
-						if readiness.RowSummary != "" {
-							sumColor := SailInkMuted
-							if readiness.HasError() {
-								sumColor = SailDangerInk
-							}
-							ui.Text(c, readiness.RowSummary).
-								FontSize(12.5).
-								LineHeight(1.42).
-								TextColor(sumColor).
-								SingleLine().
-								Grow(1).
-								MinWidth(0)
-						} else {
-							SailDescSummary(c, s.Description, ServerTargetText(s), 1).Grow(1).MinWidth(0)
-						}
-					})
-				})
-
-				// Anchor 3: Quiet tool count + Enable Switch + Detail action
-				ui.Row(c).Gap(12).AlignItems(ui.Center).Shrink(0).Children(func() {
-					ui.Text(c, fmt.Sprintf("%d/%d 工具", onCount, len(srvTools))).
-						FontSize(12).
-						FontFeatures("tnum").
-						TextColor(SailInkMuted).
-						SingleLine()
-
-					enabledVal := s.Enabled
-					sw := ui.Switch(c.Key("svc-sw-"+s.ID), &enabledVal).
-						Label(s.Name + " 启用开关").
-						Disabled(st.toggleBusyID == s.ID)
-					if sw.Changed() {
-						u.toggleServerEnabled(st, s, enabledVal)
-					}
-
-					if SailSmallButton(c.Key("svc-detail-"+s.ID), "管理详情").Clicked() {
-						st.enterDetail(s.ID)
-						u.OpenServiceDetail(s.ID)
-					}
-				})
-			})
+			}
+			u.renderServiceListRow(c, st, s, readiness, toolsByServer[s.ID], idx == len(filtered)-1)
 		}
 	})
 
@@ -521,6 +461,192 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 			)
 		})
 	}
+}
+
+// renderServiceListRow renders one triaged service row: identity, a single
+// readiness line (status word + variables or reason), quiet tool counts, the
+// state-specific fix action, the enable switch, and a whole-row detail link.
+func (u *DesktopUI) renderServiceListRow(c *ui.Context, st *servicesPageState, s apitypes.Server, readiness serviceReadiness, srvTools []apitypes.Tool, isLast bool) {
+	onCount, roCount := 0, 0
+	for _, t := range srvTools {
+		if t.Enabled {
+			onCount++
+			if t.ReadOnly {
+				roCount++
+			}
+		}
+	}
+	rwCount := onCount - roCount
+	live := readiness.Kind == readinessReady || readiness.Kind == readinessNoOpenTools
+
+	row := ui.Row(c.Key("svc-card-"+s.ID)).
+		FillWidth().
+		Padding(13, 20).
+		Gap(14).
+		AlignItems(ui.Center).
+		Justify(ui.SpaceBetween).
+		Cursor(ui.CursorPointer).
+		Label("打开 " + s.Name + " 详情")
+	if !isLast {
+		row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+	}
+	hovered := row.Hovered()
+	if hovered {
+		row.Background(SailBgHover)
+	}
+	nameInk, bodyInk := SailInkStrong, SailInkMuted
+	if !s.Enabled {
+		nameInk, bodyInk = SailInkFaint, SailInkFaint
+	}
+
+	row.Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				SailStatusDot(c, readiness.DotColor)
+				ui.Text(c, s.Name).FontSize(13.5).FontWeight(600).TextColor(nameInk).SingleLine()
+				ui.Text(c, serviceProtocolTag(s)).FontSize(11.5).TextColor(SailInkFaint).SingleLine()
+			})
+			ui.Row(c).Padding(0, 0, 0, 14.5).Gap(6).AlignItems(ui.Baseline).MinWidth(0).Children(func() {
+				renderServiceRowStatusLine(c, s, readiness, bodyInk)
+			})
+		})
+
+		ui.Row(c).Gap(10).AlignItems(ui.Center).Shrink(0).Children(func() {
+			countText := fmt.Sprintf("%d/%d 工具", onCount, len(srvTools))
+			if s.Enabled && rwCount > 0 {
+				countText += fmt.Sprintf(" · %d 可写", rwCount)
+			}
+			countInk, countTip := SailInkMuted, "开放 / 已同步工具"
+			if !live {
+				countInk, countTip = SailInkFaint, "上次同步的工具数；服务当前不可调用"
+			}
+			ui.Text(c, countText).FontSize(12).FontFeatures("tnum").TextColor(countInk).SingleLine().Tooltip(countTip)
+
+			// Fixed-width slot keeps switches aligned whether or not a row has an action.
+			ui.Row(c).Width(84).Justify(ui.End).Children(func() {
+				action, label := readiness.RowAction()
+				if action == readinessActionNone {
+					return
+				}
+				busy := st.connBusy || st.toolBatchBusy || st.bulkProbeBusy
+				if SailSmallButton(c.Key("svc-act-"+s.ID), label).Disabled(busy).Clicked() {
+					u.runServiceRowAction(st, s, srvTools, action)
+				}
+			})
+
+			enabledVal := s.Enabled
+			sw := ui.Switch(c.Key("svc-sw-"+s.ID), &enabledVal).
+				Label(s.Name + " 启用开关").
+				Disabled(st.toggleBusyID == s.ID)
+			if sw.Changed() {
+				u.toggleServerEnabled(st, s, enabledVal)
+			}
+
+			chevronInk := SailInkFaint
+			if hovered {
+				chevronInk = SailInkMuted
+			}
+			ui.Icon(c, IconChevronRight).Size(14, 14).TextColor(chevronInk).Shrink(0)
+		})
+	})
+
+	if row.Clicked() {
+		st.enterDetail(s.ID)
+		u.OpenServiceDetail(s.ID)
+	}
+}
+
+// renderServiceRowStatusLine expresses readiness once: a colored status word
+// plus the missing variables or failure reason, instead of dot + badge + red text.
+func renderServiceRowStatusLine(c *ui.Context, s apitypes.Server, r serviceReadiness, bodyInk ui.Color) {
+	statusWord := func(label string, ink ui.Color) {
+		ui.Text(c, label).FontSize(12.5).FontWeight(600).TextColor(ink).SingleLine().Shrink(0)
+	}
+	detail := func(text string, mono bool) {
+		t := ui.Text(c, text).FontSize(12.5).LineHeight(1.42).TextColor(bodyInk).SingleLine().Grow(1).MinWidth(0)
+		if mono {
+			t.Font("monospace").FontSize(12).TextColor(SailInkStrong)
+		}
+	}
+	switch r.Kind {
+	case readinessMissingCreds:
+		statusWord("缺少凭据", SailDangerInk)
+		ui.Text(c, strings.Join(r.MissingVars, ", ")).Font("monospace").FontSize(12).TextColor(SailInkStrong).SingleLine().Shrink(0)
+		ui.Text(c, "· Agent 调用将失败").FontSize(12.5).TextColor(SailInkFaint).SingleLine().MinWidth(0)
+	case readinessConnError, readinessInvokeError:
+		statusWord(r.BadgeLabel, SailDangerInk)
+		detail(r.RowSummary, false)
+	case readinessUnverified:
+		statusWord(r.BadgeLabel, SailWarningInk)
+		if strings.HasPrefix(r.RowSummary, "尚未执行连接检查") {
+			detail("尚未执行连接检查", false)
+		} else {
+			detail(r.RowSummary, false)
+		}
+	case readinessNoOpenTools:
+		statusWord(r.BadgeLabel, SailWarningInk)
+		detail(r.RowSummary, false)
+	case readinessDisabled:
+		if len(r.MissingVars) > 0 {
+			ui.Text(c, "待补充凭据").FontSize(12.5).TextColor(SailInkFaint).SingleLine().Shrink(0)
+			ui.Text(c, strings.Join(r.MissingVars, ", ")).Font("monospace").FontSize(12).TextColor(SailInkFaint).SingleLine().MinWidth(0)
+			return
+		}
+		SailDescSummary(c, s.Description, ServerTargetText(s), 1).Grow(1).MinWidth(0)
+	default:
+		SailDescSummary(c, s.Description, ServerTargetText(s), 1).Grow(1).MinWidth(0)
+	}
+}
+
+func (u *DesktopUI) runServiceRowAction(st *servicesPageState, s apitypes.Server, srvTools []apitypes.Tool, action readinessActionKind) {
+	switch action {
+	case readinessActionFillCreds:
+		st.enterDetail(s.ID)
+		u.OpenServiceDetail(s.ID)
+		st.detailSubtab = 1
+		st.connMode = 0
+	case readinessActionProbe:
+		u.probeServerConnection(st, s)
+	case readinessActionEnableReadOnly:
+		var roIDs []string
+		for _, t := range srvTools {
+			if t.ReadOnly {
+				roIDs = append(roIDs, t.ID)
+			}
+		}
+		u.applyServerToolWhitelist(st, s.ID, roIDs, "已仅开放全部只读工具")
+	}
+}
+
+// probeServersBulk tests every given service sequentially, refreshes once,
+// and reports a single summary instead of one notification per service.
+func (u *DesktopUI) probeServersBulk(st *servicesPageState, targets []apitypes.Server) {
+	if u.Client == nil || st.bulkProbeBusy || len(targets) == 0 {
+		return
+	}
+	st.bulkProbeBusy = true
+	u.RunAsync(func() error {
+		passed := 0
+		for _, s := range targets {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			check, err := u.Client.TestSource(ctx, s)
+			cancel()
+			if err != nil && apiclient.IsUnauthorized(err) {
+				u.updateUI(func() { st.bulkProbeBusy = false })
+				return err
+			}
+			if err == nil && check.Status != "error" {
+				passed++
+			}
+		}
+		syncErr := u.RefreshSync()
+		u.updateUI(func() { st.bulkProbeBusy = false })
+		if syncErr != nil && apiclient.IsUnauthorized(syncErr) {
+			return syncErr
+		}
+		u.Notify(fmt.Sprintf("已测试 %d 个服务：%d 通过，%d 未通过", len(targets), passed, len(targets)-passed))
+		return nil
+	})
 }
 
 func (st *servicesPageState) enterDetail(serverID string) {
