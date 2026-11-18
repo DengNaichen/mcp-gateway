@@ -37,16 +37,33 @@ func (m apiRouteMatcher) lookup(r *http.Request) (route, bool) {
 	return rt, ok
 }
 
+func checkLoopbackHost(rawHost string) bool {
+	host := rawHost
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	} else if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1] // bracketed IPv6 literal without a port
+	}
+	return access.LoopbackHost(host)
+}
+
+func (g *server) authenticateRequest(r *http.Request) (access.Principal, bool) {
+	authorization := r.Header.Get("Authorization")
+	if strings.HasPrefix(authorization, "Bearer ") {
+		return g.access.Authenticate(strings.TrimPrefix(authorization, "Bearer "))
+	}
+	if authorization == "" {
+		if cookie, err := r.Cookie("gateway_session"); err == nil {
+			return g.access.Session(cookie.Value)
+		}
+	}
+	return access.Principal{}, false
+}
+
 func (g *server) protectAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if g.access == nil {
-			host := r.Host
-			if h, _, err := net.SplitHostPort(host); err == nil {
-				host = h
-			} else if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
-				host = host[1 : len(host)-1] // bracketed IPv6 literal without a port
-			}
-			if !access.LoopbackHost(host) {
+			if !checkLoopbackHost(r.Host) {
 				fail(w, problem(403, "本机模式不接受外部 Host，请配置认证后共享", nil))
 				return
 			}
@@ -62,16 +79,7 @@ func (g *server) protectAccess(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		var principal access.Principal
-		authenticated := false
-		authorization := r.Header.Get("Authorization")
-		if strings.HasPrefix(authorization, "Bearer ") {
-			principal, authenticated = g.access.Authenticate(strings.TrimPrefix(authorization, "Bearer "))
-		} else if authorization == "" {
-			if cookie, err := r.Cookie("gateway_session"); err == nil {
-				principal, authenticated = g.access.Session(cookie.Value)
-			}
-		}
+		principal, authenticated := g.authenticateRequest(r)
 		if !authenticated {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="gateway"`)
 			fail(w, problem(401, "需要有效的 Gateway 访问令牌", nil))

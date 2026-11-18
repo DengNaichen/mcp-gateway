@@ -43,6 +43,6 @@ func (g *server) registerExecute(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, apitypes.InvokeResult(out))
+		respond(w, 200, wireInvokeResult(out))
 	})
 }

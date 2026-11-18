@@ -70,7 +70,7 @@ func (g *server) registerScopes(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		respond(w, http.StatusOK, apitypes.ScopeSnippetResponse(out))
+		respond(w, http.StatusOK, wireSnippet(out))
 	})
 }
 

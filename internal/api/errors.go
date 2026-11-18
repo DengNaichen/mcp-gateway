@@ -44,6 +44,46 @@ func problem(status int, message string, cause error) error {
 }
 func invalid(message string) error { return problem(http.StatusBadRequest, message, nil) }
 
+var faultHTTPStatus = map[fault.Kind]int{
+	fault.Invalid:      http.StatusBadRequest,
+	fault.NotFound:     http.StatusNotFound,
+	fault.Forbidden:    http.StatusForbidden,
+	fault.Conflict:     http.StatusConflict,
+	fault.Upstream:     http.StatusBadGateway,
+	fault.Internal:     http.StatusInternalServerError,
+	fault.Unauthorized: http.StatusUnauthorized,
+	fault.RateLimited:  http.StatusTooManyRequests,
+	fault.TooLarge:     http.StatusRequestEntityTooLarge,
+	fault.Timeout:      http.StatusGatewayTimeout,
+	fault.Unavailable:  http.StatusServiceUnavailable,
+}
+
+var maintenanceHTTPStatus = map[error]int{
+	maintenance.ErrInvalid:      http.StatusBadRequest,
+	maintenance.ErrNotFound:     http.StatusNotFound,
+	maintenance.ErrConflict:     http.StatusConflict,
+	maintenance.ErrUnavailable:  http.StatusServiceUnavailable,
+	maintenance.ErrUnauthorized: http.StatusUnauthorized,
+	maintenance.ErrForbidden:    http.StatusForbidden,
+}
+
+func modelHTTPStatus(err error) int {
+	for _, entry := range []struct {
+		target error
+		status int
+	}{
+		{model.ErrNotFound, http.StatusNotFound},
+		{model.ErrRateLimited, http.StatusTooManyRequests},
+		{model.ErrTimeout, http.StatusGatewayTimeout},
+		{model.ErrUpstream, http.StatusBadGateway},
+	} {
+		if errors.Is(err, entry.target) {
+			return entry.status
+		}
+	}
+	return http.StatusBadRequest
+}
+
 func httpError(err error) *appError {
 	var app *appError
 	if errors.As(err, &app) {
@@ -51,19 +91,7 @@ func httpError(err error) *appError {
 	}
 	var cross *fault.Error
 	if errors.As(err, &cross) {
-		status := map[fault.Kind]int{
-			fault.Invalid:      http.StatusBadRequest,
-			fault.NotFound:     http.StatusNotFound,
-			fault.Forbidden:    http.StatusForbidden,
-			fault.Conflict:     http.StatusConflict,
-			fault.Upstream:     http.StatusBadGateway,
-			fault.Internal:     http.StatusInternalServerError,
-			fault.Unauthorized: http.StatusUnauthorized,
-			fault.RateLimited:  http.StatusTooManyRequests,
-			fault.TooLarge:     http.StatusRequestEntityTooLarge,
-			fault.Timeout:      http.StatusGatewayTimeout,
-			fault.Unavailable:  http.StatusServiceUnavailable,
-		}[cross.Kind]
+		status := faultHTTPStatus[cross.Kind]
 		if status == 0 {
 			status = http.StatusInternalServerError
 		}
@@ -71,62 +99,39 @@ func httpError(err error) *appError {
 	}
 	var modelErr *model.Error
 	if errors.As(err, &modelErr) {
-		status := 400
-		switch {
-		case errors.Is(modelErr, model.ErrNotFound):
-			status = 404
-		case errors.Is(modelErr, model.ErrRateLimited):
-			status = 429
-		case errors.Is(modelErr, model.ErrTimeout):
-			status = 504
-		case errors.Is(modelErr, model.ErrUpstream):
-			status = 502
-		}
-		return &appError{status: status, code: modelErr.Code, message: modelErr.Message, cause: modelErr.Cause, retryAfter: modelErr.RetryAfter}
+		return &appError{status: modelHTTPStatus(modelErr), code: modelErr.Code, message: modelErr.Message, cause: modelErr.Cause, retryAfter: modelErr.RetryAfter}
 	}
 	var scopeErr *scope.Error
 	if errors.As(err, &scopeErr) {
-		status := 400
+		status := http.StatusBadRequest
 		if errors.Is(scopeErr, scope.ErrForbidden) {
-			status = 403
-		}
-		if errors.Is(scopeErr, scope.ErrConflict) {
-			status = 409
+			status = http.StatusForbidden
+		} else if errors.Is(scopeErr, scope.ErrConflict) {
+			status = http.StatusConflict
 		}
 		return &appError{status: status, code: scopeErr.Code, message: scopeErr.Message, cause: scopeErr.Cause}
 	}
 	var routingErr *routing.Error
 	if errors.As(err, &routingErr) {
-		status := 502
+		status := http.StatusBadGateway
 		if errors.Is(routingErr, routing.ErrInvalid) {
-			status = 400
+			status = http.StatusBadRequest
 		}
 		return &appError{status: status, message: routingErr.Message, cause: routingErr.Cause}
 	}
 	var upstreamErr *upstream.Error
 	if errors.As(err, &upstreamErr) {
-		status := 502
+		status := http.StatusBadGateway
 		if errors.Is(upstreamErr, upstream.ErrInvalid) {
-			status = 400
+			status = http.StatusBadRequest
 		}
 		return &appError{status: status, message: upstreamErr.Message, cause: upstreamErr.Cause}
 	}
 	var domain *maintenance.Error
 	if errors.As(err, &domain) {
-		status := 500
-		switch domain.Kind {
-		case maintenance.ErrInvalid:
-			status = 400
-		case maintenance.ErrNotFound:
-			status = 404
-		case maintenance.ErrConflict:
-			status = 409
-		case maintenance.ErrUnavailable:
-			status = 503
-		case maintenance.ErrUnauthorized:
-			status = 401
-		case maintenance.ErrForbidden:
-			status = 403
+		status := maintenanceHTTPStatus[domain.Kind]
+		if status == 0 {
+			status = http.StatusInternalServerError
 		}
 		return &appError{status: status, message: domain.Message, cause: domain.Cause}
 	}
@@ -134,18 +139,17 @@ func httpError(err error) *appError {
 	if errors.As(err, &credentialErr) {
 		return &appError{status: http.StatusServiceUnavailable, message: credentialErr.Message}
 	}
-
 	var validation *registry.ValidationError
 	if errors.As(err, &validation) {
-		return &appError{status: 400, message: validation.Message, cause: validation.Cause}
+		return &appError{status: http.StatusBadRequest, message: validation.Message, cause: validation.Cause}
 	}
 	var openapiValidation *openapi.ValidationError
 	if errors.As(err, &openapiValidation) {
-		return &appError{status: 400, message: openapiValidation.Message}
+		return &appError{status: http.StatusBadRequest, message: openapiValidation.Message}
 	}
 	var sandboxValidation *sandbox.ValidationError
 	if errors.As(err, &sandboxValidation) {
-		return &appError{status: 400, message: sandboxValidation.Message}
+		return &appError{status: http.StatusBadRequest, message: sandboxValidation.Message}
 	}
 	return nil
 }

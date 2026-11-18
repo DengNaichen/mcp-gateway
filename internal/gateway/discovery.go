@@ -43,19 +43,7 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, cat
 		return result, invalid("任务和上下文合计不能超过 24 KB")
 	}
 	s, key := g.model.RuntimeConfig()
-	r := catalog
-	servers := map[string]registry.Server{}
-	for _, server := range r.Servers {
-		if server.Enabled && (!server.Demo || req.IncludeDemo) {
-			servers[server.ID] = server
-		}
-	}
-	eligible := []registry.Tool{}
-	for _, t := range r.Tools {
-		if _, ok := servers[t.ServerID]; ok && g.authorizedTool(ctx, t, req.Actor) && (len(req.Services) == 0 || slices.Contains(req.Services, t.ServerID)) {
-			eligible = append(eligible, t)
-		}
-	}
+	servers, eligible := g.eligibleTools(ctx, catalog, req)
 	result = DiscoverResult{ID: newID(), Status: "no_match", Tools: []Selection{}, Eligible: len(eligible)}
 	if len(eligible) == 0 {
 		result.Summary = "当前身份下没有已启用的可用工具"
@@ -80,4 +68,20 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, cat
 	}
 	result.DurationMS = time.Since(started).Milliseconds()
 	return result, nil
+}
+
+func (g *Gateway) eligibleTools(ctx context.Context, catalog registry.Registry, req DiscoverRequest) (map[string]registry.Server, []registry.Tool) {
+	servers := map[string]registry.Server{}
+	for _, server := range catalog.Servers {
+		if server.Enabled && (!server.Demo || req.IncludeDemo) {
+			servers[server.ID] = server
+		}
+	}
+	eligible := []registry.Tool{}
+	for _, t := range catalog.Tools {
+		if _, ok := servers[t.ServerID]; ok && g.authorizedTool(ctx, t, req.Actor) && (len(req.Services) == 0 || slices.Contains(req.Services, t.ServerID)) {
+			eligible = append(eligible, t)
+		}
+	}
+	return servers, eligible
 }
