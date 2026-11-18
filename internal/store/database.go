@@ -134,6 +134,72 @@ CREATE INDEX IF NOT EXISTS scope_observations_by_last_seen ON scope_observations
 		}); err != nil {
 			return fmt.Errorf("migrate v7: %w", err)
 		}
+		version = 7
+	}
+	if version < 8 {
+		if err := RunTx(db, func(tx DBTX) error {
+			if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS scope_rules_v8 (
+	repo_key TEXT PRIMARY KEY,
+	definition TEXT NOT NULL CHECK(json_valid(definition))
+);`); err != nil {
+				return fmt.Errorf("create v8 scope_rules table: %w", err)
+			}
+			rows, err := tx.Query("SELECT repo_key, agent_key, definition FROM scope_rules")
+			if err != nil {
+				return fmt.Errorf("read legacy scope_rules: %w", err)
+			}
+			type legacyRow struct {
+				repoKey, agentKey, definition string
+			}
+			var legacy []legacyRow
+			for rows.Next() {
+				var row legacyRow
+				if err := rows.Scan(&row.repoKey, &row.agentKey, &row.definition); err != nil {
+					_ = rows.Close()
+					return fmt.Errorf("scan legacy scope_rule: %w", err)
+				}
+				legacy = append(legacy, row)
+			}
+			if err := rows.Err(); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("iterate legacy scope_rules: %w", err)
+			}
+			_ = rows.Close()
+
+			for _, row := range legacy {
+				if row.agentKey != "*" {
+					continue
+				}
+				var def map[string]any
+				if err := json.Unmarshal([]byte(row.definition), &def); err != nil {
+					return fmt.Errorf("decode legacy scope_rule %s: %w", row.repoKey, err)
+				}
+				if ak, ok := def["agent_key"].(string); ok && ak != "" && ak != "*" {
+					continue
+				}
+				delete(def, "agent_key")
+				cleaned, err := json.Marshal(def)
+				if err != nil {
+					return fmt.Errorf("encode migrated scope_rule %s: %w", row.repoKey, err)
+				}
+				if _, err := tx.Exec(`INSERT INTO scope_rules_v8(repo_key, definition) VALUES(?, ?) ON CONFLICT(repo_key) DO UPDATE SET definition=excluded.definition`, row.repoKey, string(cleaned)); err != nil {
+					return fmt.Errorf("insert migrated scope_rule %s: %w", row.repoKey, err)
+				}
+			}
+			defaultRule, err := json.Marshal(map[string]any{"repo_key": "*", "grants": []any{}, "updated_at": time.Now().UTC().Format(time.RFC3339)})
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO scope_rules_v8(repo_key, definition) VALUES('*', ?)`, string(defaultRule)); err != nil {
+				return fmt.Errorf("seed default v8 scope rule: %w", err)
+			}
+			if _, err := tx.Exec(`DROP TABLE scope_rules; ALTER TABLE scope_rules_v8 RENAME TO scope_rules; PRAGMA user_version=8`); err != nil {
+				return fmt.Errorf("finalize v8 scope_rules migration: %w", err)
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("migrate v8: %w", err)
+		}
 	}
 	return nil
 }

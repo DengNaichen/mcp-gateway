@@ -141,7 +141,7 @@ func TestRateLimitAndErrorMetadata(t *testing.T) {
 	}
 
 	// Nil Grants must marshal as [] rather than null.
-	saved, err := c.SaveScopeRule(ctx, apitypes.ScopeRule{RepoKey: "*", AgentKey: "*"})
+	saved, err := c.SaveScopeRule(ctx, apitypes.ScopeRule{RepoKey: "*"})
 	if err != nil || saved.Grants == nil || len(saved.Grants) != 0 {
 		t.Fatalf("unexpected SaveScopeRule result: saved=%+v err=%v", saved, err)
 	}

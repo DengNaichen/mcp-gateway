@@ -36,8 +36,6 @@ type playgroundState struct {
 	selectedServiceID string
 	simRepoLabel      string
 	simRepoKey        string // "": 管理员全量, "*": 未绑定新仓库, or repo.ID
-	simAgentLabel     string
-	simAgentKey       string // "": 不限 ("*" when simulating repo), or codex/claude/cursor/opencode/pi/antigravity
 	includeDemo       bool
 	summaryOnly       bool
 
@@ -61,7 +59,6 @@ func (u *DesktopUI) playgroundState() *playgroundState {
 			actor:             "developer",
 			serviceScopeLabel: "全部已启用服务",
 			simRepoLabel:      "管理员全量",
-			simAgentLabel:     "不限",
 			argsText:          "{}",
 		}
 	}
@@ -160,28 +157,13 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 		st.simRepoLabel = "管理员全量"
 	}
 
-	agentOptions := []string{"不限"}
-	agentLabelToKey := map[string]string{"不限": ""}
-	agentKeyToLabel := map[string]string{"": "不限", "*": "不限"}
-	for _, ag := range scopeAgents {
-		agentOptions = append(agentOptions, ag.Name)
-		agentLabelToKey[ag.Name] = ag.ID
-		agentKeyToLabel[ag.ID] = ag.Name
-	}
-	if lbl, ok := agentKeyToLabel[st.simAgentKey]; ok {
-		st.simAgentLabel = lbl
-	} else {
-		st.simAgentKey = ""
-		st.simAgentLabel = "不限"
-	}
-
 	simScope := activePlaygroundSimScope(st)
 	var simGrants []apitypes.ServiceGrant
 	if simScope != nil {
-		simGrants, _, _, _ = resolveEffectiveScopeRule(state.Scopes, simScope.RepoKey, simScope.AgentKey)
+		simGrants, _, _ = resolveEffectiveScopeRule(state.Scopes, simScope.RepoKey)
 	}
 
-	// Count eligible tools under current actor, demo toggle, service scope, and simulated repo/agent scope.
+	// Count eligible tools under current actor, demo toggle, service scope, and simulated repo scope.
 	eligibleCount := 0
 	toolsByID := make(map[string]apitypes.Tool, len(state.Registry.Tools))
 	for _, t := range state.Registry.Tools {
@@ -232,7 +214,7 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 	ui.Row(c).FillWidth().Gap(24).AlignItems(ui.Start).Children(func() {
 		// Left Column: Intent Composer + Discovery Results.
 		ui.Column(c).Grow(1).MinWidth(0).Gap(24).Children(func() {
-			u.renderPlaygroundComposer(c, st, state, effectiveActor, scopeOptions, scopeLabelToID, repoOptions, repoLabelToKey, agentOptions, agentLabelToKey)
+			u.renderPlaygroundComposer(c, st, state, effectiveActor, scopeOptions, scopeLabelToID, repoOptions, repoLabelToKey)
 			u.renderPlaygroundResults(c, st, serversByID, toolsByID, effectiveActor)
 		})
 
@@ -246,35 +228,17 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 func applyPlaygroundReplayScope(st *playgroundState, replay playgroundReplayIntent) {
 	if replay.hasScope {
 		st.simRepoKey = replay.repoKey
-		if replay.agentKey == "*" {
-			st.simAgentKey = ""
-		} else {
-			st.simAgentKey = replay.agentKey
-		}
-		if st.simRepoKey == "" && st.simAgentKey != "" {
-			st.simRepoKey = "*"
-		}
 	} else {
 		st.simRepoKey = ""
-		st.simAgentKey = ""
 	}
 }
 
 func activePlaygroundSimScope(st *playgroundState) *apitypes.SimScope {
-	if st.simRepoKey == "" && st.simAgentKey == "" {
+	if st.simRepoKey == "" {
 		return nil
 	}
-	repoKey := st.simRepoKey
-	if repoKey == "" {
-		repoKey = "*"
-	}
-	agentKey := st.simAgentKey
-	if agentKey == "" {
-		agentKey = "*"
-	}
 	return &apitypes.SimScope{
-		RepoKey:  repoKey,
-		AgentKey: agentKey,
+		RepoKey: st.simRepoKey,
 	}
 }
 
@@ -287,8 +251,6 @@ func (u *DesktopUI) renderPlaygroundComposer(
 	scopeLabelToID map[string]string,
 	repoOptions []string,
 	repoLabelToKey map[string]string,
-	agentOptions []string,
-	agentLabelToKey map[string]string,
 ) {
 	SailCard(c, func() {
 		SailCardTitle(c, "任务意图", "", func() {
@@ -338,8 +300,6 @@ func (u *DesktopUI) renderPlaygroundComposer(
 						st.serviceScopeLabel = "全部已启用服务"
 						st.simRepoKey = ""
 						st.simRepoLabel = "管理员全量"
-						st.simAgentKey = ""
-						st.simAgentLabel = "不限"
 						st.result = nil
 						st.selectedTool = nil
 						st.invocation = nil
@@ -381,24 +341,6 @@ func (u *DesktopUI) renderPlaygroundComposer(
 				ui.Text(c, "仓库").FontSize(12).TextColor(SailInkMuted).SingleLine()
 				if ui.Select(c.Key("pg-sim-repo"), &st.simRepoLabel, repoOptions).MinWidth(156).Changed() {
 					st.simRepoKey = repoLabelToKey[st.simRepoLabel]
-					if st.simRepoKey == "" {
-						st.simAgentKey = ""
-						st.simAgentLabel = "不限"
-					}
-					st.result = nil
-					st.selectedTool = nil
-					st.invocation = nil
-				}
-			})
-
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "客户端").FontSize(12).TextColor(SailInkMuted).SingleLine()
-				if ui.Select(c.Key("pg-sim-agent"), &st.simAgentLabel, agentOptions).MinWidth(128).Changed() {
-					st.simAgentKey = agentLabelToKey[st.simAgentLabel]
-					if st.simAgentKey != "" && st.simRepoKey == "" {
-						st.simRepoKey = "*"
-						st.simRepoLabel = "未绑定新仓库 (*)"
-					}
 					st.result = nil
 					st.selectedTool = nil
 					st.invocation = nil

@@ -11,9 +11,9 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Matrix cells describe repository defaults, never client-specific overrides.
+// Matrix cells resolve the effective repository rule (explicit repo rule or global default).
 func repoMatrixGrants(scopes apitypes.ScopeOverview, repoKey string) []apitypes.ServiceGrant {
-	grants, _, _, _ := resolveEffectiveScopeRule(scopes, repoKey, "*")
+	grants, _, _ := resolveEffectiveScopeRule(scopes, repoKey)
 	return grants
 }
 
@@ -64,7 +64,7 @@ func (u *DesktopUI) renderReposMatrix(c *ui.Context, st *reposPageState, state *
 					}
 				})
 				renderRow := func(repoKey, name, hint string) {
-					draft := st.ensureDraft(state.Scopes.Rules, repoKey, "*")
+					draft := st.ensureDraft(state.Scopes.Rules, repoKey)
 					grants := repoMatrixGrants(state.Scopes, repoKey)
 					ui.Row(c.Key("row-"+repoKey)).FillWidth().Height(64).AlignItems(ui.Center).
 						BorderWidth(0, 0, 1, 0).BorderColor(SailDivider).Children(func() {
@@ -96,7 +96,7 @@ func (u *DesktopUI) renderReposMatrix(c *ui.Context, st *reposPageState, state *
 				renderRow("*", "全局默认 *", "未绑定仓库兜底")
 				for _, repo := range state.Scopes.Repositories {
 					hint := shortRemoteHint(repo.RemoteHint)
-					if _, ok := findScopeRule(state.Scopes.Rules, repo.ID, "*"); !ok {
+					if _, ok := findScopeRule(state.Scopes.Rules, repo.ID); !ok {
 						hint += " · 继承全局默认"
 					}
 					renderRow(repo.ID, repo.Name, hint)
@@ -133,7 +133,7 @@ func (u *DesktopUI) toggleRepoMatrixGrant(st *reposPageState, repoKey, serverID 
 	if u.Client == nil || u.State == nil {
 		return
 	}
-	draft := st.ensureDraft(u.State.Scopes.Rules, repoKey, "*")
+	draft := st.ensureDraft(u.State.Scopes.Rules, repoKey)
 	if draft.saving || draft.dirty {
 		return
 	}
@@ -148,11 +148,11 @@ func (u *DesktopUI) toggleRepoMatrixGrant(st *reposPageState, repoKey, serverID 
 	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		_, err := u.Client.SaveScopeRule(ctx, apitypes.ScopeRule{RepoKey: repoKey, AgentKey: "*", Grants: grants})
+		_, err := u.Client.SaveScopeRule(ctx, apitypes.ScopeRule{RepoKey: repoKey, Grants: grants})
 		if err == nil {
 			err = u.RefreshSync()
 		}
-		u.updateUI(func() { draft.saving = false; st.previewKey = "" })
+		u.updateUI(func() { draft.saving = false })
 		return err
 	})
 }

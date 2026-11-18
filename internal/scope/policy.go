@@ -7,33 +7,23 @@ import (
 )
 
 // resolvePrecedenceRule evaluates whole-rule replacement precedence:
-// - Matched repo R: (R, agent) > (R, *) > (*, agent) > (*, *)
-// - Unconfigured repo: (*, agent) > (*, *)
-func resolvePrecedenceRule(rules []ScopeRule, matchedRepo bool, repoID, agent string) ScopeRule {
-	if agent == "" {
-		agent = "*"
-	}
-	type coord struct{ repo, agent string }
-	var candidates []coord
+// - Matched repo R: R > *
+// - Unconfigured repo: *
+func resolvePrecedenceRule(rules []ScopeRule, matchedRepo bool, repoID string) ScopeRule {
+	var candidates []string
 	if matchedRepo && repoID != "" && repoID != "*" {
-		if agent != "*" {
-			candidates = append(candidates, coord{repoID, agent})
-		}
-		candidates = append(candidates, coord{repoID, "*"})
+		candidates = append(candidates, repoID)
 	}
-	if agent != "*" {
-		candidates = append(candidates, coord{"*", agent})
-	}
-	candidates = append(candidates, coord{"*", "*"})
+	candidates = append(candidates, "*")
 
-	for _, c := range candidates {
+	for _, repoKey := range candidates {
 		for _, r := range rules {
-			if r.RepoKey == c.repo && r.AgentKey == c.agent {
+			if r.RepoKey == repoKey {
 				return r
 			}
 		}
 	}
-	return ScopeRule{RepoKey: "*", AgentKey: "*", Grants: []ServiceGrant{}}
+	return ScopeRule{RepoKey: "*", Grants: []ServiceGrant{}}
 }
 
 func grantAllowsTool(rule ScopeRule, t Tool) bool {

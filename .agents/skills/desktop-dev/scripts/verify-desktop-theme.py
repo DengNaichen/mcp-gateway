@@ -32,9 +32,9 @@ try:
    put('/tools',{'id':'github.'+name,'server_id':'github','name':name,'description':'Disposable matrix fixture','enabled':True,'read_only':name=='read','actors':['developer'],'input_schema':{'type':'object'},'method':'GET','path':'/'})
   for index,name in enumerate(['mcp-gateway','billing-platform-with-a-very-long-repository-name','docs']):
    repo=put('/scopes/repositories',{'name':name,'root_paths':[str(root/name)],'remote_hint':'https://github.com/example/'+name+'.git'})
-   if index==0:put('/scopes/rules',{'repo_key':repo['id'],'agent_key':'*','grants':[{'server_id':'github','access':'rw','tool_ids':['github.read','github.write']},{'server_id':'linear','access':'ro'}]})
-   if index==2:put('/scopes/rules',{'repo_key':repo['id'],'agent_key':'*','grants':[]})
-  put('/scopes/rules',{'repo_key':'*','agent_key':'*','grants':[{'server_id':'github','access':'ro'}]})
+   if index==0:put('/scopes/rules',{'repo_key':repo['id'],'grants':[{'server_id':'github','access':'rw','tool_ids':['github.read','github.write']},{'server_id':'linear','access':'ro'}]})
+   if index==2:put('/scopes/rules',{'repo_key':repo['id'],'grants':[]})
+  put('/scopes/rules',{'repo_key':'*','grants':[{'server_id':'github','access':'ro'}]})
   # The app polls bootstrap every four seconds; allow that real refresh path.
   time.sleep(5)
  for mode in ['light','dark']:

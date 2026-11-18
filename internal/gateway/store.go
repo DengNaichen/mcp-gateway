@@ -122,7 +122,7 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, error) {
 	g.scope, err = scope.New(scope.Options{
 		DB: db, Dir: dir, BaseURL: baseURL, Key: scopeKey,
 		Clock: time.Now, Shared: g.access != nil, Snapshot: g.Snapshot,
-		AdminCaller: g.isAdminCaller, IdentityAllowsTool: g.identityAllowsTool,
+		AdminCaller: g.isAdminCaller,
 	})
 	if err != nil {
 		return nil, err

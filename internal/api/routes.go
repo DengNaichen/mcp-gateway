@@ -49,8 +49,7 @@ var apiRoutes = []route{
 	{Method: "PUT", Path: "/api/scopes/repositories", Summary: "Create or update a repository", Request: apitypes.SaveRepositoryRequest{}, Responses: ok(apitypes.Repository{})},
 	{Method: "DELETE", Path: "/api/scopes/repositories/{id}", Summary: "Delete a repository", Responses: ok(apitypes.Deleted{})},
 	{Method: "PUT", Path: "/api/scopes/rules", Summary: "Create or replace a scope rule", Request: apitypes.ScopeRule{}, Responses: ok(apitypes.ScopeRule{})},
-	{Method: "DELETE", Path: "/api/scopes/rules", Summary: "Delete a scope rule", Query: []query{{"repo_key", "string", "Rule repository key"}, {"agent_key", "string", "Rule agent key"}}, Responses: ok(apitypes.Deleted{})},
-	{Method: "POST", Path: "/api/scopes/preview", Summary: "Preview what each agent can reach in a repository", Request: apitypes.ScopePreviewRequest{}, Responses: ok(apitypes.ScopePreviewResponse{})},
+	{Method: "DELETE", Path: "/api/scopes/rules", Summary: "Delete a scope rule", Query: []query{{"repo_key", "string", "Rule repository key"}}, Responses: ok(apitypes.Deleted{})},
 	{Method: "GET", Path: "/api/scopes/snippets", Summary: "Hook configuration snippet for an agent", Query: []query{{"agent", "string", "Agent key"}}, Responses: ok(apitypes.ScopeSnippetResponse{})},
 
 	{Method: "GET", Path: "/api/maintenance", Summary: "Maintenance runtime, sources and recent runs", Responses: ok(apitypes.MaintenanceStatus{})},

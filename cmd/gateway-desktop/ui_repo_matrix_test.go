@@ -25,8 +25,7 @@ func TestRepoMatrixSavesDefaults(t *testing.T) {
 	boot.Scopes.Observed = []apitypes.ObservedRepo{{Fingerprint: "observed", Name: "new-project", Root: "/work/new-project"}}
 	boot.Scopes.Repositories = []apitypes.Repository{{ID: "repo", Name: "project"}}
 	boot.Scopes.Rules = []apitypes.ScopeRule{
-		{RepoKey: "*", AgentKey: "*", Grants: []apitypes.ServiceGrant{{ServerID: "github", Access: "rw", ToolIDs: []string{"read", "write"}}}},
-		{RepoKey: "repo", AgentKey: "codex", Grants: []apitypes.ServiceGrant{{ServerID: "github", Access: "ro"}}},
+		{RepoKey: "*", Grants: []apitypes.ServiceGrant{{ServerID: "github", Access: "rw", ToolIDs: []string{"read", "write"}}}},
 	}
 	var writes []apitypes.ScopeRule
 	fail := false
@@ -45,7 +44,7 @@ func TestRepoMatrixSavesDefaults(t *testing.T) {
 				t.Error(err)
 			}
 			writes = append(writes, rule)
-			boot.Scopes.Rules = slices.DeleteFunc(boot.Scopes.Rules, func(old apitypes.ScopeRule) bool { return old.RepoKey == rule.RepoKey && old.AgentKey == rule.AgentKey })
+			boot.Scopes.Rules = slices.DeleteFunc(boot.Scopes.Rules, func(old apitypes.ScopeRule) bool { return old.RepoKey == rule.RepoKey })
 			boot.Scopes.Rules = append(boot.Scopes.Rules, rule)
 			_ = json.NewEncoder(w).Encode(rule)
 		case r.Method == http.MethodPut && r.URL.Path == "/api/scopes/repositories":
@@ -73,7 +72,7 @@ func TestRepoMatrixSavesDefaults(t *testing.T) {
 	tester := ui.NewTester(app.View, 1400, 920)
 	waitAsyncIdle(t, tester, app)
 	if !tester.HasText("全局默认 *") || !tester.HasText("Linear") || tester.HasText("Demo") || tester.HasText("六端生效预览") {
-		t.Fatal("expected default matrix with real services, including disabled upstream")
+		t.Fatal("expected default matrix with real services, including disabled upstream and excluding preview")
 	}
 	click := func(label string) {
 		t.Helper()
@@ -85,14 +84,11 @@ func TestRepoMatrixSavesDefaults(t *testing.T) {
 	// First edit materializes inherited RW/tool restrictions and adds only RO.
 	click("project · Linear")
 	mu.Lock()
-	if len(writes) != 1 || writes[0].RepoKey != "repo" || writes[0].AgentKey != "*" || len(writes[0].Grants) != 2 {
+	if len(writes) != 1 || writes[0].RepoKey != "repo" || len(writes[0].Grants) != 2 {
 		t.Fatalf("unexpected saved rule: %+v", writes)
 	}
 	if writes[0].Grants[0].Access != "rw" || len(writes[0].Grants[0].ToolIDs) != 2 || writes[0].Grants[1].Access != "ro" {
 		t.Fatalf("permissions changed: %+v", writes[0])
-	}
-	if _, ok := findScopeRule(boot.Scopes.Rules, "repo", "codex"); !ok {
-		t.Fatal("client override removed")
 	}
 	mu.Unlock()
 	click("project · GitHub")
@@ -104,7 +100,7 @@ func TestRepoMatrixSavesDefaults(t *testing.T) {
 	fail = true
 	mu.Unlock()
 	click("project · GitHub")
-	if app.reposState().ensureDraft(app.State.Scopes.Rules, "repo", "*").saving {
+	if app.reposState().ensureDraft(app.State.Scopes.Rules, "repo").saving {
 		t.Fatal("failed save left row locked")
 	}
 	if len(repoMatrixGrants(app.State.Scopes, "repo")) != 0 {
@@ -128,11 +124,14 @@ func TestRepoMatrixSavesDefaults(t *testing.T) {
 		t.Fatal("global change must update inherited rows and preserve explicit defaults")
 	}
 	click("project 详情")
-	if app.reposState().viewMode != 1 || app.reposState().selectedRepoKey != "repo" || !tester.HasText("客户端例外") {
+	if app.reposState().viewMode != 1 || app.reposState().selectedRepoKey != "repo" || !tester.HasText("仓库默认服务") {
 		t.Fatal("details did not open selected repository")
 	}
+	if tester.HasText("客户端例外") || tester.HasText("六端生效预览") {
+		t.Fatal("details should not render removed 客户端例外 or 六端生效预览")
+	}
 	// Uncommitted detail edits cannot be silently saved by a matrix click.
-	draft := app.reposState().ensureDraft(app.State.Scopes.Rules, "repo", "*")
+	draft := app.reposState().ensureDraft(app.State.Scopes.Rules, "repo")
 	draft.dirty = true
 	click("矩阵视图")
 	tester.Frame()

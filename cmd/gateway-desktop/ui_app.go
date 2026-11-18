@@ -74,7 +74,6 @@ type playgroundReplayIntent struct {
 	intent   string
 	actor    string
 	repoKey  string
-	agentKey string
 	hasScope bool
 }
 
@@ -555,20 +554,7 @@ func (u *DesktopUI) OpenPlaygroundReplay(intent, actor string, scope ...string) 
 		if len(scope) >= 1 {
 			next.repoKey = scope[0]
 		}
-		if len(scope) >= 2 {
-			next.agentKey = scope[1]
-		}
 		u.pendingReplay = next
-	}
-	u.ViewMode = ViewPlayground
-	u.viewAtomic.Store(ViewPlayground)
-}
-
-func (u *DesktopUI) OpenPlaygroundScope(repoKey, agentKey string) {
-	u.pendingReplay = &playgroundReplayIntent{
-		repoKey:  repoKey,
-		agentKey: agentKey,
-		hasScope: true,
 	}
 	u.ViewMode = ViewPlayground
 	u.viewAtomic.Store(ViewPlayground)

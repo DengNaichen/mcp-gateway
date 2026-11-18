@@ -447,7 +447,7 @@ func (u *DesktopUI) renderLogsInspectorPane(
 						if SailSmallButton(c.Key("logs-replay-"+ev.ID), "沙盒重放").Clicked() {
 							if parsed.Scope != nil {
 								replayRepo := logsResolveReplayRepoKey(u.State, *parsed.Scope)
-								u.OpenPlaygroundReplay(ev.Title, ev.Actor, replayRepo, parsed.Scope.Agent)
+								u.OpenPlaygroundReplay(ev.Title, ev.Actor, replayRepo)
 							} else {
 								u.OpenPlaygroundReplay(ev.Title, ev.Actor)
 							}

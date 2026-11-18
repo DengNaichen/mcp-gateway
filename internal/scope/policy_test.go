@@ -4,29 +4,26 @@ import "testing"
 
 func TestRulePrecedenceReplacesWholeRule(t *testing.T) {
 	rules := []ScopeRule{
-		{RepoKey: "*", AgentKey: "*", Grants: []ServiceGrant{{ServerID: "global", Access: "rw"}}},
-		{RepoKey: "*", AgentKey: "codex", Grants: []ServiceGrant{{ServerID: "agent", Access: "rw"}}},
-		{RepoKey: "repo", AgentKey: "*", Grants: []ServiceGrant{{ServerID: "repo", Access: "rw"}}},
-		{RepoKey: "repo", AgentKey: "codex", Grants: []ServiceGrant{}},
+		{RepoKey: "*", Grants: []ServiceGrant{{ServerID: "global", Access: "rw"}}},
+		{RepoKey: "repo", Grants: []ServiceGrant{{ServerID: "repo", Access: "rw"}}},
+		{RepoKey: "empty-repo", Grants: []ServiceGrant{}},
 	}
 	for _, tc := range []struct {
-		repo, agent, wantRepo, wantAgent string
-		matched                          bool
+		repo, wantRepo string
+		matched        bool
+		wantGrants     int
 	}{
-		{"repo", "codex", "repo", "codex", true},
-		{"repo", "claude", "repo", "*", true},
-		{"other", "codex", "*", "codex", false},
-		{"other", "claude", "*", "*", false},
+		{"repo", "repo", true, 1},
+		{"empty-repo", "empty-repo", true, 0},
+		{"unbound-rule", "*", true, 1},
+		{"other", "*", false, 1},
 	} {
-		got := resolvePrecedenceRule(rules, tc.matched, tc.repo, tc.agent)
-		if got.RepoKey != tc.wantRepo || got.AgentKey != tc.wantAgent {
+		got := resolvePrecedenceRule(rules, tc.matched, tc.repo)
+		if got.RepoKey != tc.wantRepo || len(got.Grants) != tc.wantGrants {
 			t.Fatalf("%+v: %+v", tc, got)
 		}
-		if got.RepoKey == "repo" && got.AgentKey == "codex" && len(got.Grants) != 0 {
-			t.Fatal("empty rule inherited parent grants")
-		}
 	}
-	if got := resolvePrecedenceRule(nil, true, "repo", "codex"); got.Grants == nil || len(got.Grants) != 0 {
+	if got := resolvePrecedenceRule(nil, true, "repo"); got.Grants == nil || len(got.Grants) != 0 {
 		t.Fatal("missing default must deny with empty grants")
 	}
 }

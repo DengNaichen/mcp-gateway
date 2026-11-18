@@ -142,7 +142,7 @@ func TestSaveMaintenanceConfigPreservesRepositoryProviderAndModel(t *testing.T) 
 	}
 }
 
-func TestServicesAndPreviewScope401TransitionToNeedsLogin(t *testing.T) {
+func TestServicesAndRepos401TransitionToNeedsLogin(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -180,16 +180,20 @@ func TestServicesAndPreviewScope401TransitionToNeedsLogin(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	// 2. Repos PreviewScope 401 -> NeedsLogin=true, BusyCount=0.
+	// 2. Repos mutation 401 -> NeedsLogin=true, BusyCount=0.
 	uiRepos := NewDesktopUI(&gatewayRuntime{UIURL: srv.URL, MCPURL: boot.MCPURL, Mode: modeAttached})
 	uiRepos.State = &boot
 	uiRepos.Loading = false
 	uiRepos.ViewMode = ViewRepos
+	uiRepos.marketState().loaded = true
 
 	tester := ui.NewTester(uiRepos.View, 1280, 820)
+	if err := tester.Click("启用仓库隔离拦截"); err != nil {
+		t.Fatalf("click enforce toggle: %v", err)
+	}
 	waitAsyncIdle(t, tester, uiRepos)
-	if !uiRepos.NeedsLogin {
-		t.Fatal("expected PreviewScope HTTP 401 to transition DesktopUI to NeedsLogin=true")
+	if !uiRepos.NeedsLogin || uiRepos.BusyCount != 0 {
+		t.Fatal("expected Repos HTTP 401 to transition DesktopUI to NeedsLogin=true with BusyCount=0")
 	}
 }
 
