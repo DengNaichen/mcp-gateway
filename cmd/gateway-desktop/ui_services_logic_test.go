@@ -304,3 +304,73 @@ func TestAddServiceFormParseAndPayloads(t *testing.T) {
 		t.Fatalf("unexpected reset state: %+v", add)
 	}
 }
+
+func TestMaintenanceHelpersAndStateMapping(t *testing.T) {
+	ov := &apitypes.MaintenanceStatus{
+		Runtime: map[string]any{
+			"available": true,
+			"command":   "pi",
+			"execution": map[string]any{"mode": "sandbox"},
+		},
+		Sources: []apitypes.MaintenanceSource{
+			{
+				ServerID:        "svc-1",
+				Format:          "pi",
+				Files:           []string{"api/spec.yaml"},
+				URLs:            []string{"https://example.com/spec.yaml"},
+				OperationIDs:    []string{"opA", "opB"},
+				Instructions:    "Keep schemas strict.",
+				IntervalMinutes: 15,
+				TimeoutSeconds:  120,
+				Enabled:         true,
+				AutoPublish:     false,
+				Repository:      &apitypes.RepositorySource{URL: "https://github.com/acme/repo", Files: []string{"spec.yaml"}},
+			},
+		},
+		Runs: []apitypes.MaintenanceRun{
+			{ID: "r1", ServerID: "svc-1", Status: "failed", Error: "timeout", Summary: "ignored"},
+			{ID: "r2", ServerID: "svc-2", Status: "published", Summary: "ok"},
+			{ID: "r3", ServerID: "svc-1", Status: "ready", Summary: "2 tools added"},
+		},
+	}
+
+	rt := parseMaintenanceRuntimeInfo(ov)
+	if !rt.ready || !rt.available || rt.command != "pi" || rt.execMode != "sandbox" {
+		t.Fatalf("unexpected runtime info: %+v", rt)
+	}
+	if rtNil := parseMaintenanceRuntimeInfo(nil); rtNil.ready {
+		t.Fatalf("expected non-ready runtime info for nil overview: %+v", rtNil)
+	}
+
+	runs := filterMaintenanceRunsForServer(ov, "svc-1")
+	if len(runs) != 2 || runs[0].ID != "r1" || runs[1].ID != "r3" {
+		t.Fatalf("unexpected filtered runs: %+v", runs)
+	}
+	if maintenanceRunSummary(runs[0]) != "timeout" || maintenanceRunSummary(runs[1]) != "2 tools added" {
+		t.Fatalf("unexpected run summaries: %q, %q", maintenanceRunSummary(runs[0]), maintenanceRunSummary(runs[1]))
+	}
+	if maintenanceStatusLabel("ready") != i18n.T("services.run_status.ready") || maintenanceStatusLabel("custom") != "custom" {
+		t.Fatalf("unexpected status labels")
+	}
+
+	srv := apitypes.Server{ID: "svc-1", Kind: "http"}
+	st := defaultServiceMaintState()
+	st.maintOverview = ov
+	st.hydrateMaintSource(*ov, srv)
+	if st.maintFormatIdx != 1 || st.maintIntervalStr != "15" || st.maintTimeoutStr != "120" || !st.maintEnabled || st.maintAutoPublish {
+		t.Fatalf("unexpected hydrated maint state: %+v", st)
+	}
+
+	// Verify invalid numeric inputs fall back to defaults and repository slice is cloned.
+	st.maintIntervalStr = "0"
+	st.maintTimeoutStr = "10"
+	st.maintFormatIdx = 0
+	built := st.buildMaintenanceSource(srv)
+	if built.Format != "openapi" || built.IntervalMinutes != 60 || built.TimeoutSeconds != 900 {
+		t.Fatalf("unexpected built maint source: %+v", built)
+	}
+	built.Repository.Files[0] = "mutated"
+	if ov.Sources[0].Repository.Files[0] != "spec.yaml" {
+		t.Fatal("expected Repository.Files to be cloned, not aliased")
+	}
+}
