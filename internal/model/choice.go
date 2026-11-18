@@ -16,11 +16,25 @@ type ChoiceAnswer struct {
 // AskChoice sends one choice question over input and returns the pick and, when
 // the provider reports it, the probability of every option.
 func AskChoice(ctx context.Context, s Settings, key, input, instructions string, choices []Choice) (ChoiceAnswer, Usage, error) {
-	return defaultClient().askChoice(ctx, s, key, input, instructions, choices)
+	return defaultClient().askChoice(ctx, choiceRequest{
+		Settings:     s,
+		Key:          key,
+		Input:        input,
+		Instructions: instructions,
+		Choices:      choices,
+	})
 }
 
-func (c decisionsClient) askChoice(ctx context.Context, s Settings, key, input, instructions string, choices []Choice) (ChoiceAnswer, Usage, error) {
-	proto, endpoint, err := resolveDecisionProtocol(s)
+type choiceRequest struct {
+	Settings     Settings
+	Key          string
+	Input        string
+	Instructions string
+	Choices      []Choice
+}
+
+func (c decisionsClient) askChoice(ctx context.Context, req choiceRequest) (ChoiceAnswer, Usage, error) {
+	proto, endpoint, err := resolveDecisionProtocol(req.Settings)
 	if err != nil {
 		return ChoiceAnswer{}, Usage{}, err
 	}
@@ -28,21 +42,21 @@ func (c decisionsClient) askChoice(ctx context.Context, s Settings, key, input, 
 	var parse func([]byte) (ChoiceAnswer, Usage, error)
 	switch proto {
 	case protocolGemini:
-		call, err = geminiChoiceCall(endpoint, s.Model, input, instructions, choices)
+		call, err = geminiChoiceCall(endpoint, req.Settings.Model, req.Input, req.Instructions, req.Choices)
 		parse = func(b []byte) (ChoiceAnswer, Usage, error) { return parseMapChoice(b, true) }
 	case protocolSystemOne:
-		call, err = systemOneChoiceCall(endpoint, s.Model, input, instructions, choices)
+		call, err = systemOneChoiceCall(endpoint, req.Settings.Model, req.Input, req.Instructions, req.Choices)
 		parse = func(b []byte) (ChoiceAnswer, Usage, error) { return parseMapChoice(b, false) }
 	default:
-		call, err = openAIChoiceCall(endpoint, s.Model, input, instructions, choices)
+		call, err = openAIChoiceCall(endpoint, req.Settings.Model, req.Input, req.Instructions, req.Choices)
 		parse = parseOpenAIChoice
 	}
 	if err != nil {
 		return ChoiceAnswer{}, Usage{}, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.TimeoutSeconds)*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(req.Settings.TimeoutSeconds)*time.Second)
 	defer cancel()
-	b, err := c.post(ctx, call, key)
+	b, err := c.post(ctx, call, req.Key)
 	if err != nil {
 		return ChoiceAnswer{}, Usage{}, err
 	}
@@ -50,7 +64,7 @@ func (c decisionsClient) askChoice(ctx context.Context, s Settings, key, input, 
 	if err != nil {
 		return answer, usage, err
 	}
-	if !slices.ContainsFunc(choices, func(c Choice) bool { return c.Value == answer.Choice }) {
+	if !slices.ContainsFunc(req.Choices, func(ch Choice) bool { return ch.Value == answer.Choice }) {
 		return answer, usage, badResponse("Decisions 精选返回了候选之外的选项", nil)
 	}
 	return answer, usage, nil

@@ -219,36 +219,44 @@ func survivors(a Answers, tools []Tool, limit int) []scoredTool {
 	return result
 }
 
+type refineRequest struct {
+	Client     Client
+	MaxTools   int
+	Req        Request
+	Candidates []scoredTool
+	Opts       Options
+}
+
 // refineSelection asks the choice question over the survivors and keeps the
 // winner plus survivors with at least refineShare of its share. When "none"
 // wins and no survivor is confidently relevant, nothing is selected.
-func refineSelection(ctx context.Context, client Client, maxTools int, req Request, candidates []scoredTool, opts Options) (Decision, Usage, error) {
+func refineSelection(ctx context.Context, in refineRequest) (Decision, Usage, error) {
 	var decision Decision
-	tools := make([]Tool, len(candidates))
-	for i, c := range candidates {
+	tools := make([]Tool, len(in.Candidates))
+	for i, c := range in.Candidates {
 		tools[i] = c.Tool
 	}
 	input, err := json.Marshal(struct {
 		Intent     string             `json:"intent"`
 		Context    string             `json:"context"`
 		Candidates []routingCandidate `json:"candidates"`
-	}{req.Intent, req.Context, routingCandidates(tools, opts.Params)})
+	}{in.Req.Intent, in.Req.Context, routingCandidates(tools, in.Opts.Params)})
 	if err != nil {
 		return decision, Usage{}, fmt.Errorf("encode refinement context: %w", err)
 	}
-	criteria := make([]Choice, 0, len(candidates)+1)
-	for _, c := range candidates {
+	criteria := make([]Choice, 0, len(in.Candidates)+1)
+	for _, c := range in.Candidates {
 		criteria = append(criteria, Choice{Value: c.ID, Description: strings.SplitN(strings.TrimSpace(c.Description), "\n", 2)[0]})
 	}
 	criteria = append(criteria, Choice{Value: refineNone, Description: "No candidate directly performs the task; a candidate that only looks up or prepares data for it does not count."})
-	answer, usage, err := client.Choose(ctx, string(input), refineInstructions(), criteria)
+	answer, usage, err := in.Client.Choose(ctx, string(input), refineInstructions(), criteria)
 	if err != nil {
 		return decision, usage, err
 	}
 	winner, winnerShare := answer.Choice, answer.Probabilities[answer.Choice]
 	if winner == refineNone {
 		winner, winnerShare = "", 0
-		for _, c := range candidates {
+		for _, c := range in.Candidates {
 			if share := answer.Probabilities[c.ID]; c.relevance >= refineOverride && share > winnerShare {
 				winner, winnerShare = c.ID, share
 			}
@@ -257,7 +265,7 @@ func refineSelection(ctx context.Context, client Client, maxTools int, req Reque
 			// Survivors from several services and no winner: the task fits each service
 			// about equally, so the caller has to say which one it means.
 			services := []string{}
-			for _, c := range candidates {
+			for _, c := range in.Candidates {
 				if !slices.Contains(services, c.ServerID) {
 					services = append(services, c.ServerID)
 				}
@@ -273,12 +281,12 @@ func refineSelection(ctx context.Context, client Client, maxTools int, req Reque
 			return decision, usage, nil
 		}
 	}
-	for _, c := range candidates {
+	for _, c := range in.Candidates {
 		share, known := answer.Probabilities[c.ID]
 		if c.ID != winner && (!known || share < refineShare*winnerShare) {
 			continue
 		}
-		if len(decision.Tools) >= maxTools {
+		if len(decision.Tools) >= in.MaxTools {
 			break
 		}
 		reason := fmt.Sprintf("Decisions 相关性概率 %.1f%%", c.relevance*100)
@@ -332,7 +340,13 @@ func SelectTools(ctx context.Context, client Client, maxTools int, req Request, 
 	}
 	if opts.Refine {
 		if candidates := survivors(answers, tools, refineCandidates); len(candidates) > 0 {
-			decision, refineUsage, err := refineSelection(ctx, client, maxTools, req, candidates, opts)
+			decision, refineUsage, err := refineSelection(ctx, refineRequest{
+				Client:     client,
+				MaxTools:   maxTools,
+				Req:        req,
+				Candidates: candidates,
+				Opts:       opts,
+			})
 			usage.PromptTokens += refineUsage.PromptTokens
 			usage.CompletionTokens += refineUsage.CompletionTokens
 			return decision, usage, err
