@@ -24,6 +24,7 @@ const (
 	readinessDisabled
 	readinessDemo
 	readinessMissingCreds
+	readinessOAuthRequired
 	readinessConnError
 	readinessInvokeError
 	readinessUnverified
@@ -45,6 +46,7 @@ type readinessActionKind uint8
 const (
 	readinessActionNone readinessActionKind = iota
 	readinessActionFillCreds
+	readinessActionOAuthSignIn
 	readinessActionProbe
 	readinessActionEnableReadOnly
 )
@@ -66,6 +68,7 @@ type serviceReadiness struct {
 	MissingVars      []string
 	CredSummary      string
 	CredDanger       bool
+	OAuthUpgrade     *apitypes.OAuthUpgradeInfo
 	CheckLabel       string
 	CheckDisplay     serviceCheckDisplay
 	AlertTone        BadgeTone
@@ -80,7 +83,7 @@ func (r serviceReadiness) IsHealthyReady() bool {
 }
 
 func (r serviceReadiness) HasError() bool {
-	return r.Kind == readinessMissingCreds || r.Kind == readinessConnError || r.Kind == readinessInvokeError
+	return r.Kind == readinessMissingCreds || r.Kind == readinessOAuthRequired || r.Kind == readinessConnError || r.Kind == readinessInvokeError
 }
 
 func (r serviceReadiness) NeedsAttention() bool {
@@ -111,12 +114,24 @@ func serverReferencedEnvVars(s apitypes.Server) []string {
 	return names
 }
 
+func serverUsesOAuth(s apitypes.Server) bool {
+	return s.Kind == "mcp" && s.Transport != "stdio" && s.OAuth && strings.TrimSpace(s.Headers["Authorization"]) == ""
+}
+
+func serverNeedsCredentialCheck(s apitypes.Server) bool {
+	if s.Demo {
+		return false
+	}
+	return len(serverReferencedEnvVars(s)) > 0 || serverUsesOAuth(s) || (s.Kind == "mcp" && s.Transport == "stdio")
+}
+
 func serverRefsSignature(s apitypes.Server) string {
-	refs := serverReferencedEnvVars(s)
-	if len(refs) == 0 {
+	if !serverNeedsCredentialCheck(s) {
 		return ""
 	}
-	return strings.Join(refs, ",")
+	refs := strings.Join(serverReferencedEnvVars(s), ",")
+	return fmt.Sprintf("t=%s|ep=%s|cmd=%s|args=%s|oauth=%v|refs=%s",
+		s.Transport, s.Endpoint, s.Command, strings.Join(s.Args, "\x00"), serverUsesOAuth(s), refs)
 }
 
 const missingEnvErrorMarker = "gateway process environment is missing:"
@@ -314,6 +329,10 @@ func evaluateServiceReadiness(
 
 	credSummary := ""
 	credDanger := false
+	var oauthUpgrade *apitypes.OAuthUpgradeInfo
+	if creds != nil {
+		oauthUpgrade = creds.OAuthUpgrade
+	}
 	if len(refs) > 0 {
 		switch {
 		case len(missingVars) > 0:
@@ -323,6 +342,17 @@ func evaluateServiceReadiness(
 			credSummary = fmt.Sprintf(i18n.T("readiness.cred.ready"), len(refs), len(refs))
 		default:
 			credSummary = fmt.Sprintf(i18n.T("readiness.cred.referenced"), len(refs))
+		}
+	} else if serverUsesOAuth(s) {
+		if creds != nil && creds.OAuth != nil && creds.OAuth.Enabled {
+			if creds.OAuth.Authorized {
+				credSummary = i18n.T("readiness.oauth.authorized")
+			} else {
+				credSummary = i18n.T("readiness.oauth.unauthorized")
+				credDanger = true
+			}
+		} else {
+			credSummary = i18n.T("readiness.oauth.enabled")
 		}
 	}
 
@@ -346,6 +376,7 @@ func evaluateServiceReadiness(
 			MissingVars:    missingVars,
 			CredSummary:    credSummary,
 			CredDanger:     credDanger,
+			OAuthUpgrade:   oauthUpgrade,
 			CheckLabel:     chkLabel,
 			CheckDisplay:   chkDisp,
 		}
@@ -376,6 +407,14 @@ func evaluateServiceReadiness(
 				FormatTime(invFail.Time),
 			)
 		}
+		if oauthUpgrade != nil {
+			detailMsg = i18n.T(
+				"readiness.oauth.detail_upgrade",
+				joined,
+				oauthUpgrade.Title,
+				oauthUpgrade.Endpoint,
+			)
+		}
 		return serviceReadiness{
 			Kind:             readinessMissingCreds,
 			DotColor:         SailDangerInk,
@@ -387,6 +426,7 @@ func evaluateServiceReadiness(
 			MissingVars:      missingVars,
 			CredSummary:      credSummary,
 			CredDanger:       true,
+			OAuthUpgrade:     oauthUpgrade,
 			CheckLabel:       chkLabel,
 			CheckDisplay:     checkDisplaySubtle,
 			AlertTone:        ToneDanger,
@@ -394,6 +434,46 @@ func evaluateServiceReadiness(
 			AlertDetail:      detailMsg,
 			AlertAction:      readinessActionFillCreds,
 			AlertActionLabel: i18n.T("readiness.action.fill_creds"),
+		}
+	}
+
+	// 1b. OAuth enabled on remote HTTP MCP but not authorized yet.
+	if serverUsesOAuth(s) && creds != nil && creds.OAuth != nil && creds.OAuth.Enabled && !creds.OAuth.Authorized {
+		dot := SailWarningInk
+		tone := ToneWarning
+		badge := i18n.T("readiness.oauth.status_unauthorized")
+		chkLabel := i18n.T("readiness.check.unauthorized")
+		chkDisp := checkDisplaySubtle
+		alertTitle := i18n.T("readiness.alert.oauth_required")
+		alertDetail := i18n.T("readiness.oauth.detail_required", s.Name)
+		if hasCheck && check.Status == "error" {
+			dot = SailDangerInk
+			tone = ToneDanger
+			badge = i18n.T("readiness.oauth.status_failed")
+			chkLabel = i18n.T("readiness.check.error_at", FormatTime(check.CheckedAt))
+			chkDisp = checkDisplayDanger
+			alertTitle = i18n.T("readiness.alert.oauth_failed")
+			if strings.TrimSpace(check.Detail) != "" {
+				alertDetail = i18n.T("readiness.oauth.detail_failed", strings.TrimSpace(check.Detail))
+			}
+		}
+		return serviceReadiness{
+			Kind:             readinessOAuthRequired,
+			DotColor:         dot,
+			BadgeLabel:       badge,
+			BadgeTone:        tone,
+			StatusLabel:      badge,
+			RowSummary:       i18n.T("readiness.oauth.row_summary"),
+			ReferencedVars:   refs,
+			CredSummary:      credSummary,
+			CredDanger:       true,
+			CheckLabel:       chkLabel,
+			CheckDisplay:     chkDisp,
+			AlertTone:        tone,
+			AlertTitle:       alertTitle,
+			AlertDetail:      alertDetail,
+			AlertAction:      readinessActionOAuthSignIn,
+			AlertActionLabel: i18n.T("readiness.action.oauth_sign_in"),
 		}
 	}
 
@@ -548,7 +628,7 @@ func (u *DesktopUI) fetchReferencedServerCredentials(ctx context.Context, server
 	}
 	out := map[string]apitypes.ServerCredentials{}
 	for _, s := range servers {
-		if s.Demo || len(serverReferencedEnvVars(s)) == 0 {
+		if !serverNeedsCredentialCheck(s) {
 			continue
 		}
 		cred, err := u.Client.ServerCredentials(ctx, s.ID)
@@ -577,6 +657,9 @@ func (u *DesktopUI) applyServerCredentialsSnapshot(servers []apitypes.Server, fe
 		if cred, ok := fetched[s.ID]; ok {
 			u.serverCreds[s.ID] = cred
 			u.serverCredsSig[s.ID] = sig
+			if u.services != nil && u.services.credentialServerID == s.ID {
+				u.services.credentialState = cred
+			}
 		}
 	}
 	for id := range u.serverCreds {
@@ -598,7 +681,8 @@ func (u *DesktopUI) cachedServerCredentials(s apitypes.Server) *apitypes.ServerC
 			return &copyCred
 		}
 	}
-	if u.services != nil && u.services.credentialServerID == s.ID && len(u.services.credentialState.Credentials) > 0 {
+	if u.services != nil && u.services.credentialServerID == s.ID &&
+		(len(u.services.credentialState.Credentials) > 0 || u.services.credentialState.OAuth != nil || u.services.credentialState.OAuthUpgrade != nil) {
 		copyCred := u.services.credentialState
 		return &copyCred
 	}
@@ -666,7 +750,7 @@ func (u *DesktopUI) readinessForServer(s apitypes.Server, srvTools []apitypes.To
 	return evaluateServiceReadiness(s, srvTools, check, hasCheck, u.cachedServerCredentials(s), events)
 }
 
-func renderReadinessActionBanner(c *ui.Context, keyPrefix string, r serviceReadiness, busy bool, onAction func()) {
+func renderReadinessActionBanner(c *ui.Context, keyPrefix string, r serviceReadiness, busy bool, onAction func(), onSwitchOAuth func(apitypes.OAuthUpgradeInfo)) {
 	if r.AlertTitle == "" && r.AlertDetail == "" {
 		return
 	}
@@ -689,25 +773,37 @@ func renderReadinessActionBanner(c *ui.Context, keyPrefix string, r serviceReadi
 					ui.Text(c, r.AlertDetail).FontSize(12).LineHeight(1.45).TextColor(tc.Ink).Selectable()
 				}
 			})
-			if r.AlertAction != readinessActionNone && r.AlertActionLabel != "" && onAction != nil {
-				if r.AlertTone == ToneDanger {
-					if SailPrimaryButton(c.Key(keyPrefix+"-act"), r.AlertActionLabel).
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
+				if r.OAuthUpgrade != nil && onSwitchOAuth != nil {
+					if SailPrimaryButton(c.Key(keyPrefix+"-oauth-switch"), i18n.T("readiness.action.switch_oauth")).
 						Padding(5, 11).
 						FontSize(12).
 						Disabled(busy).
 						Shrink(0).
 						Clicked() {
-						onAction()
-					}
-				} else {
-					if SailSmallButton(c.Key(keyPrefix+"-act"), r.AlertActionLabel).
-						Disabled(busy).
-						Shrink(0).
-						Clicked() {
-						onAction()
+						onSwitchOAuth(*r.OAuthUpgrade)
 					}
 				}
-			}
+				if r.AlertAction != readinessActionNone && r.AlertActionLabel != "" && onAction != nil {
+					if r.AlertTone == ToneDanger && r.OAuthUpgrade == nil {
+						if SailPrimaryButton(c.Key(keyPrefix+"-act"), r.AlertActionLabel).
+							Padding(5, 11).
+							FontSize(12).
+							Disabled(busy).
+							Shrink(0).
+							Clicked() {
+							onAction()
+						}
+					} else {
+						if SailSmallButton(c.Key(keyPrefix+"-act"), r.AlertActionLabel).
+							Disabled(busy).
+							Shrink(0).
+							Clicked() {
+							onAction()
+						}
+					}
+				}
+			})
 		})
 }
 
@@ -752,6 +848,8 @@ func (r serviceReadiness) RowAction() (readinessActionKind, string) {
 	switch r.Kind {
 	case readinessMissingCreds:
 		return readinessActionFillCreds, i18n.T("readiness.row_action.fill_creds")
+	case readinessOAuthRequired:
+		return readinessActionOAuthSignIn, i18n.T("readiness.row_action.oauth_sign_in")
 	case readinessConnError, readinessInvokeError:
 		return readinessActionProbe, i18n.T("readiness.row_action.retest")
 	case readinessUnverified:

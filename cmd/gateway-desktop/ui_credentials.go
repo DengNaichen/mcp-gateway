@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -71,7 +72,72 @@ func (u *DesktopUI) renderServerCredentials(c *ui.Context, st *servicesPageState
 		if st.credentialError != "" {
 			SailAlertBox(c, ToneDanger, i18n.T("ops.credential-action-failed"), st.credentialError)
 		}
-		if len(st.credentialState.Credentials) == 0 && !st.credentialBusy {
+		isOAuthServer := server.Kind == "mcp" && server.Transport != "stdio" && server.OAuth
+		if upg := st.credentialState.OAuthUpgrade; upg != nil {
+			ui.Row(c).
+				FillWidth().
+				Padding(10, 12).
+				Gap(12).
+				Radius(7).
+				Background(SailBgSubtle).
+				Border(1, SailBorder).
+				AlignItems(ui.Center).
+				Justify(ui.SpaceBetween).
+				Children(func() {
+					ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+						ui.Text(c, i18n.T("ops.oauth-switch-title", upg.Title)).FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
+						ui.Text(c, i18n.T("ops.oauth-switch-desc", upg.Endpoint)).FontSize(11.5).TextColor(SailInkMuted)
+					})
+					btnLabel := i18n.T("ops.oauth-switch-btn")
+					if st.connBusy {
+						btnLabel = i18n.T("ops.oauth-switch-busy")
+					}
+					if SailPrimaryButton(c.Key("credential-oauth-upgrade-"+server.ID), btnLabel).
+						Padding(5, 11).
+						FontSize(12).
+						Disabled(st.credentialBusy || st.connBusy).
+						Shrink(0).
+						Clicked() {
+						u.switchServerToOAuth(st, server, *upg)
+					}
+				})
+		}
+		if isOAuthServer {
+			hasAuthHeader := strings.TrimSpace(server.Headers["Authorization"]) != ""
+			oauthAuthorized := st.credentialState.OAuth != nil && st.credentialState.OAuth.Authorized
+			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "OAuth 2.0").Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).Width(220).SingleLine()
+				ui.Row(c).Grow(1).MinWidth(0).AlignItems(ui.Center).Children(func() {
+					switch {
+					case hasAuthHeader:
+						SailQuietStatus(c, i18n.T("ops.oauth-header-override"), SailWarningInk, SailInkMuted)
+					case oauthAuthorized:
+						SailQuietStatus(c, i18n.T("ops.oauth-authorized"), SailSuccessInk, SailInkMuted)
+					default:
+						SailQuietStatus(c, i18n.T("ops.oauth-unauthorized"), SailDangerInk, SailDangerInk)
+					}
+				})
+				if !hasAuthHeader {
+					if oauthAuthorized {
+						if SailButton(c.Key("oauth-reauth-"+server.ID), i18n.T("ops.oauth-reauth")).Disabled(st.credentialBusy || st.connBusy).Clicked() {
+							u.clearServerOAuth(st, server, true)
+						}
+						if SailButton(c.Key("oauth-clear-"+server.ID), i18n.T("ops.oauth-clear")).Disabled(st.credentialBusy || st.connBusy).Clicked() {
+							u.clearServerOAuth(st, server, false)
+						}
+					} else {
+						loginLabel := i18n.T("ops.oauth-login")
+						if st.connBusy {
+							loginLabel = i18n.T("ops.oauth-waiting")
+						}
+						if SailPrimaryButton(c.Key("oauth-login-"+server.ID), loginLabel).Disabled(st.credentialBusy || st.connBusy).Clicked() {
+							u.probeServerConnection(st, server)
+						}
+					}
+				}
+			})
+		}
+		if len(st.credentialState.Credentials) == 0 && !st.credentialBusy && !isOAuthServer && st.credentialState.OAuthUpgrade == nil {
 			ui.Text(c, i18n.T("ops.credentials-not-referenced")).FontSize(12).TextColor(SailInkMuted)
 		}
 		for _, entry := range st.credentialState.Credentials {
@@ -216,6 +282,150 @@ func (u *DesktopUI) saveServerCredentialValues(st *servicesPageState, server api
 				u.Notify(i18n.T("ops.service-credentials-saved"))
 			}
 		}
+		return nil
+	})
+}
+
+func (u *DesktopUI) clearServerOAuth(st *servicesPageState, server apitypes.Server, reauthorizeAfter bool) {
+	if u.Client == nil || st.credentialBusy || st.connBusy {
+		return
+	}
+	id := server.ID
+	st.credentialBusy = true
+	if reauthorizeAfter {
+		st.connBusy = true
+	}
+	st.credentialError = ""
+	u.RunAsync(func() error {
+		timeout := 20 * time.Second
+		if reauthorizeAfter {
+			timeout = 305 * time.Second
+			u.Notify(i18n.T("services.toast.oauth_opened", server.Name))
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		err := u.Client.ClearServerOAuth(ctx, id)
+		var probeCheck apitypes.ConnectionCheck
+		var probeErr error
+		if err == nil && reauthorizeAfter {
+			probeCheck, probeErr = u.Client.TestSource(ctx, server)
+			if probeErr != nil && apiclient.IsUnauthorized(probeErr) {
+				u.updateUI(func() {
+					st.credentialBusy = false
+					st.connBusy = false
+				})
+				return probeErr
+			}
+		}
+		var state apitypes.ServerCredentials
+		if err == nil {
+			state, _ = u.Client.ServerCredentials(ctx, id)
+			if syncErr := u.RefreshSync(); syncErr != nil && apiclient.IsUnauthorized(syncErr) {
+				u.updateUI(func() {
+					st.credentialBusy = false
+					st.connBusy = false
+				})
+				return syncErr
+			}
+		}
+		if err != nil && apiclient.IsUnauthorized(err) {
+			u.updateUI(func() {
+				st.credentialBusy = false
+				st.connBusy = false
+			})
+			return err
+		}
+		u.updateUI(func() {
+			st.connBusy = false
+			if st.credentialServerID != id {
+				return
+			}
+			st.credentialBusy = false
+			if err != nil {
+				st.credentialError = formatAPIError(err)
+				return
+			}
+			st.credentialState = state
+			if probeErr != nil {
+				st.credentialError = i18n.T("ops.oauth-reauth-incomplete", formatAPIError(probeErr))
+			}
+		})
+		if err == nil {
+			if reauthorizeAfter {
+				if probeErr == nil {
+					msg := probeCheck.Message
+					if msg == "" {
+						msg = i18n.T("ops.oauth-reauth-ok")
+					}
+					u.Notify(msg)
+				} else {
+					u.Notify(i18n.T("ops.oauth-incomplete", formatAPIError(probeErr)))
+				}
+			} else {
+				u.Notify(i18n.T("ops.oauth-cleared"))
+			}
+		}
+		return nil
+	})
+}
+
+func (u *DesktopUI) switchServerToOAuth(st *servicesPageState, server apitypes.Server, upg apitypes.OAuthUpgradeInfo) {
+	if u.Client == nil || st.connBusy || st.credentialBusy {
+		return
+	}
+	updated := server
+	updated.Kind = "mcp"
+	updated.Transport = "http"
+	updated.Endpoint = upg.Endpoint
+	updated.OAuth = true
+	updated.Enabled = true
+	updated.Command = ""
+	updated.Args = nil
+	updated.Env = nil
+	updated.WorkDir = ""
+	updated.Headers = nil
+
+	st.connBusy = true
+	st.credentialBusy = true
+	st.connError = ""
+	st.credentialError = ""
+	u.RunAsync(func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 305*time.Second)
+		defer cancel()
+		u.Notify(i18n.T("ops.oauth-switch-started", upg.Title))
+		check, err := u.Client.TestSource(ctx, updated)
+		if err != nil && apiclient.IsUnauthorized(err) {
+			u.updateUI(func() {
+				st.connBusy = false
+				st.credentialBusy = false
+			})
+			return err
+		}
+		if syncErr := u.RefreshSync(); syncErr != nil && apiclient.IsUnauthorized(syncErr) {
+			u.updateUI(func() {
+				st.connBusy = false
+				st.credentialBusy = false
+			})
+			return syncErr
+		}
+		u.updateUI(func() {
+			st.connBusy = false
+			st.credentialBusy = false
+			st.connHydratedID = ""
+			st.credentialServerID = ""
+			if err != nil {
+				st.connError = formatAPIError(err)
+			}
+		})
+		if err != nil {
+			u.Notify(i18n.T("ops.oauth-switch-failed", formatAPIError(err)))
+			return nil
+		}
+		msg := check.Message
+		if msg == "" {
+			msg = i18n.T("ops.oauth-switch-ok", upg.Title)
+		}
+		u.Notify(msg)
 		return nil
 	})
 }

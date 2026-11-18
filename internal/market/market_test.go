@@ -188,6 +188,50 @@ func TestMarketIconCacheAndAllowlist(t *testing.T) {
 	}
 }
 
+func TestMatchOAuthRemoteAndMarketInstalledForStdioNotion(t *testing.T) {
+	g, err := testMarket(t)
+	if err != nil {
+		t.Fatalf("new gateway: %v", err)
+	}
+	defer g.Close()
+
+	stdioNotion := registry.Server{
+		ID:        "notion",
+		Name:      "Notion",
+		Kind:      "mcp",
+		Transport: "stdio",
+		Command:   "npx",
+		Args:      []string{"-y", "@notionhq/notion-mcp-server"},
+		Env:       map[string]string{"NOTION_TOKEN": "${NOTION_TOKEN}"},
+		Enabled:   true,
+	}
+	match := MatchOAuthRemote(stdioNotion)
+	if match == nil || match.Endpoint != "https://mcp.notion.com/mcp" {
+		t.Fatalf("expected Notion OAuth remote match, got %+v", match)
+	}
+	// Package-based match works even under a custom server ID.
+	customIDNotion := stdioNotion
+	customIDNotion.ID = "team-notion"
+	if m2 := MatchOAuthRemote(customIDNotion); m2 == nil || m2.Endpoint != "https://mcp.notion.com/mcp" {
+		t.Fatalf("expected package-based Notion OAuth remote match, got %+v", m2)
+	}
+	// Non-matching stdio server returns nil.
+	if m3 := MatchOAuthRemote(registry.Server{ID: "playwright", Kind: "mcp", Transport: "stdio", Command: "npx", Args: []string{"-y", "@playwright/mcp@latest"}}); m3 != nil {
+		t.Fatalf("expected nil for playwright stdio, got %+v", m3)
+	}
+
+	// Installing stdio notion must not mask the remote OAuth Notion entry in Market.
+	if err := g.SaveCredentials(stdioNotion, nil); err != nil {
+		t.Fatalf("save stdio notion: %v", err)
+	}
+	listed := g.MarketServers(context.Background(), "notion")
+	for _, item := range listed.Items {
+		if item.ID == "notion" && item.Installed {
+			t.Fatalf("expected remote OAuth notion market item to remain installable when only stdio notion exists")
+		}
+	}
+}
+
 type testService struct {
 	*Service
 	secrets *secrets.Store

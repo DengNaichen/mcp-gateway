@@ -499,3 +499,6 @@ func (c *Client) ServerCredentials(ctx context.Context, id string) (apitypes.Ser
 func (c *Client) SaveServerCredentials(ctx context.Context, id string, values map[string]string) error {
 	return c.doJSON(ctx, http.MethodPut, "/servers/"+url.PathEscape(id)+"/credentials", apitypes.SaveCredentialsRequest{Values: values}, nil)
 }
+func (c *Client) ClearServerOAuth(ctx context.Context, id string) error {
+	return c.doJSON(ctx, http.MethodDelete, "/servers/"+url.PathEscape(id)+"/oauth", nil, nil)
+}

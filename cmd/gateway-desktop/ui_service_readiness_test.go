@@ -281,4 +281,170 @@ func TestEvaluateServiceReadinessStates(t *testing.T) {
 	if !r.IsHealthyReady() {
 		t.Fatalf("expected subsequent successful invoke to restore Ready, got kind=%v", r.Kind)
 	}
+
+	// 7. Remote HTTP OAuth service without active session -> readinessOAuthRequired.
+	oauthSrv := apitypes.Server{
+		ID:        "notion",
+		Name:      "Notion",
+		Kind:      "mcp",
+		Transport: "http",
+		Endpoint:  "https://mcp.notion.com/mcp",
+		OAuth:     true,
+		Enabled:   true,
+	}
+	unauthCreds := &apitypes.ServerCredentials{
+		Persistent: true,
+		OAuth:      &apitypes.OAuthStatus{Enabled: true, Authorized: false},
+	}
+	r = evaluateServiceReadiness(oauthSrv, openTools, apitypes.ConnectionCheck{}, false, unauthCreds, nil)
+	if r.Kind != readinessOAuthRequired || r.BadgeLabel != "未授权" || r.AlertActionLabel != "浏览器 OAuth 登录" {
+		t.Fatalf("expected readinessOAuthRequired for unauthorized OAuth service, got %+v", r)
+	}
+	if r.Probeable() {
+		t.Fatal("unauthorized OAuth service must not be auto-probed in bulk")
+	}
+
+	// Authorized OAuth service with passing check and open tools -> Ready.
+	authCreds := &apitypes.ServerCredentials{
+		Persistent: true,
+		OAuth:      &apitypes.OAuthStatus{Enabled: true, Authorized: true},
+	}
+	r = evaluateServiceReadiness(oauthSrv, openTools, freshCheck, true, authCreds, nil)
+	if !r.IsHealthyReady() || r.CredSummary != "OAuth 已授权" {
+		t.Fatalf("expected authorized OAuth service to be Ready, got %+v", r)
+	}
+}
+
+func TestNotionStdioOneClickSwitchToRemoteOAuth(t *testing.T) {
+	var (
+		mu            sync.Mutex
+		currentServer = apitypes.Server{
+			ID:        "notion",
+			Name:      "Notion",
+			Kind:      "mcp",
+			Transport: "stdio",
+			Command:   "npx",
+			Args:      []string{"-y", "@notionhq/notion-mcp-server"},
+			Env:       map[string]string{"NOTION_TOKEN": "${NOTION_TOKEN}"},
+			Enabled:   true,
+		}
+		oauthAuthorized bool
+		switchedPayload *apitypes.Server
+		clearCalled     int
+	)
+	now := time.Date(2026, 11, 18, 16, 0, 0, 0, time.Local)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bootstrap":
+			mu.Lock()
+			s := currentServer
+			auth := oauthAuthorized
+			mu.Unlock()
+			checks := map[string]apitypes.ConnectionCheck{}
+			if auth {
+				checks["notion"] = apitypes.ConnectionCheck{Status: "success", Message: "MCP 已连接，读取到 1 个工具。", CheckedAt: now, ToolCount: 1}
+			}
+			_ = json.NewEncoder(w).Encode(apitypes.Bootstrap{
+				MCPURL:                "http://127.0.0.1:8789/mcp",
+				KeyConfigured:         true,
+				CredentialsPersistent: true,
+				Registry: apitypes.Registry{
+					Servers: []apitypes.Server{s},
+					Tools: []apitypes.Tool{
+						{ID: "notion.search", ServerID: "notion", Name: "search", Enabled: true, ReadOnly: true, Actors: []string{"developer"}, InputSchema: map[string]any{"type": "object"}},
+					},
+				},
+				Setup: apitypes.SetupStatus{Sources: 1, EnabledTools: 1, ToolsReady: true, ModelConfigured: true, ModelReady: true, SourceChecks: checks},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/servers/notion/credentials":
+			mu.Lock()
+			s := currentServer
+			auth := oauthAuthorized
+			mu.Unlock()
+			if s.Transport == "stdio" {
+				_ = json.NewEncoder(w).Encode(apitypes.ServerCredentials{
+					Persistent:   true,
+					Credentials:  []apitypes.CredentialStatus{{Name: "NOTION_TOKEN", Configured: false}},
+					OAuthUpgrade: &apitypes.OAuthUpgradeInfo{Title: "Notion", Endpoint: "https://mcp.notion.com/mcp"},
+				})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(apitypes.ServerCredentials{
+				Persistent: true,
+				OAuth:      &apitypes.OAuthStatus{Enabled: true, Authorized: auth},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/setup/source":
+			var req apitypes.Server
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode setup source: %v", err)
+			}
+			mu.Lock()
+			cp := req
+			switchedPayload = &cp
+			currentServer = req
+			oauthAuthorized = true
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(apitypes.ConnectionCheck{Status: "success", Message: "MCP 已连接，读取到 1 个工具。", CheckedAt: now, ToolCount: 1})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/servers/notion/oauth":
+			mu.Lock()
+			clearCalled++
+			oauthAuthorized = false
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(apitypes.Deleted{Deleted: true})
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	defer srv.Close()
+
+	app := NewDesktopUI(&gatewayRuntime{UIURL: srv.URL, MCPURL: "http://127.0.0.1:8789/mcp", Mode: modeAttached})
+	if err := app.RefreshSync(); err != nil {
+		t.Fatalf("RefreshSync: %v", err)
+	}
+	app.OpenServiceDetail("notion")
+	tester := ui.NewTester(app.View, 1360, 860)
+	waitAsyncIdle(t, tester, app)
+
+	if !tester.HasText("改用 OAuth 登录") {
+		t.Fatal("expected one-click OAuth switch button on stdio Notion detail banner")
+	}
+	if err := tester.Click("改用 OAuth 登录"); err != nil {
+		t.Fatalf("click 改用 OAuth 登录: %v", err)
+	}
+	waitAsyncIdle(t, tester, app)
+
+	mu.Lock()
+	got := switchedPayload
+	mu.Unlock()
+	if got == nil || got.Transport != "http" || got.Endpoint != "https://mcp.notion.com/mcp" || !got.OAuth || got.Command != "" {
+		t.Fatalf("expected switched payload to be remote OAuth Notion, got %+v", got)
+	}
+	if !tester.HasText("OAuth 已授权") || !tester.HasText("就绪") {
+		t.Fatal("expected Notion detail to update to OAuth 已授权 and 就绪")
+	}
+
+	// Switch to Connection & Auth tab and clear OAuth session.
+	if err := tester.Click("连接与认证配置"); err != nil {
+		t.Fatalf("click 连接与认证配置: %v", err)
+	}
+	waitAsyncIdle(t, tester, app)
+	if !tester.HasText("已通过浏览器授权") {
+		t.Fatal("expected OAuth authorized status in Connection & Auth tab")
+	}
+	if err := tester.Click("清除授权"); err != nil {
+		t.Fatalf("click 清除授权: %v", err)
+	}
+	waitAsyncIdle(t, tester, app)
+
+	mu.Lock()
+	cleared := clearCalled
+	mu.Unlock()
+	if cleared != 1 {
+		t.Fatalf("expected DELETE /oauth to be called once, got %d", cleared)
+	}
+	if !tester.HasText("未授权") || !tester.HasText("浏览器 OAuth 登录") {
+		t.Fatal("expected UI to revert to 未授权 and show 浏览器 OAuth 登录 after clearing OAuth")
+	}
 }

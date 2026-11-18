@@ -25,6 +25,22 @@ func oauthSessionKey(s Server) string {
 	return fmt.Sprintf("oauth/%s/%x", s.ID, sha256.Sum256([]byte(s.Endpoint)))
 }
 
+// HasOAuthSession reports whether a cached or persisted OAuth session exists
+// for s's current ID and endpoint.
+func (u *Service) HasOAuthSession(s Server) bool {
+	if u == nil {
+		return false
+	}
+	key := oauthSessionKey(s)
+	u.oauthMu.RLock()
+	hasMem := u.oauthTokens[key] != nil
+	u.oauthMu.RUnlock()
+	if hasMem {
+		return true
+	}
+	return u.loadOAuth != nil && u.loadOAuth(key) != ""
+}
+
 func (u *Service) clearOAuth(key string) error {
 	if u.saveOAuth != nil {
 		if err := u.saveOAuth(key, ""); err != nil {

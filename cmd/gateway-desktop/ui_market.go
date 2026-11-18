@@ -575,7 +575,8 @@ func (u *DesktopUI) installFromMarket(st *marketPageState, item apitypes.MarketS
 	u.RunAsync(func() error {
 		timeout := 35 * time.Second
 		if item.SignIn {
-			timeout = 125 * time.Second
+			timeout = 305 * time.Second
+			u.Notify(i18n.T("services.toast.oauth_opened", item.Title))
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()

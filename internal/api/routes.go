@@ -25,6 +25,7 @@ var apiRoutes = []route{
 	{Method: "POST", Path: "/api/servers/openapi", Summary: "Register an HTTP source and the tools generated from its OpenAPI document", Request: apitypes.ImportOpenAPIRequest{}, Responses: ok(apitypes.ImportOpenAPIResult{})},
 	{Method: "GET", Path: "/api/servers/{id}/credentials", Summary: "Read credential availability without secret values", Responses: ok(apitypes.ServerCredentials{})},
 	{Method: "PUT", Path: "/api/servers/{id}/credentials", Summary: "Save or clear service credentials", Request: apitypes.SaveCredentialsRequest{}, Responses: ok(apitypes.Saved{})},
+	{Method: "DELETE", Path: "/api/servers/{id}/oauth", Summary: "Clear a service's cached and saved OAuth session", Responses: ok(apitypes.Deleted{})},
 	{Method: "DELETE", Path: "/api/servers/{id}", Summary: "Delete a service, its tools and saved credentials", Responses: ok(apitypes.Deleted{})},
 
 	{Method: "POST", Path: "/api/servers/{id}/sync", Summary: "Re-read an MCP source's tools/list", Responses: ok(apitypes.SyncServerResult{})},
