@@ -404,19 +404,11 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 			s := item.server
 			readiness := item.readiness
 			if showGroups && (idx == 0 || filtered[idx-1].bucket != item.bucket) {
-				ui.Row(c).
-					FillWidth().
-					Padding(12, 20, 6, 20).
-					Gap(6).
-					Background(SailBgMuted).
-					BorderWidth(0, 0, 1, 0).
-					BorderColor(SailDivider).
-					Children(func() {
-						ui.Text(c, item.bucket.Label()).FontSize(11.5).FontWeight(600).TextColor(SailInkFaint)
-						ui.Text(c, fmt.Sprintf("%d", bucketCounts[item.bucket])).FontSize(11.5).FontFeatures("tnum").TextColor(SailInkFaint)
-					})
+				SailGroupHeader(c, item.bucket.Label(), bucketCounts[item.bucket], 20, idx == 0)
 			}
-			u.renderServiceListRow(c, st, s, readiness, toolsByServer[s.ID], idx == len(filtered)-1)
+			// No divider under the last row of a group: whitespace + the next header separate groups.
+			endsGroup := idx == len(filtered)-1 || (showGroups && filtered[idx+1].bucket != item.bucket)
+			u.renderServiceListRow(c, st, s, readiness, toolsByServer[s.ID], endsGroup)
 		}
 	})
 
@@ -466,7 +458,7 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 // renderServiceListRow renders one triaged service row: identity, a single
 // readiness line (status word + variables or reason), quiet tool counts, the
 // state-specific fix action, the enable switch, and a whole-row detail link.
-func (u *DesktopUI) renderServiceListRow(c *ui.Context, st *servicesPageState, s apitypes.Server, readiness serviceReadiness, srvTools []apitypes.Tool, isLast bool) {
+func (u *DesktopUI) renderServiceListRow(c *ui.Context, st *servicesPageState, s apitypes.Server, readiness serviceReadiness, srvTools []apitypes.Tool, noDivider bool) {
 	onCount, roCount := 0, 0
 	for _, t := range srvTools {
 		if t.Enabled {
@@ -487,7 +479,7 @@ func (u *DesktopUI) renderServiceListRow(c *ui.Context, st *servicesPageState, s
 		Justify(ui.SpaceBetween).
 		Cursor(ui.CursorPointer).
 		Label("打开 " + s.Name + " 详情")
-	if !isLast {
+	if !noDivider {
 		row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
 	}
 	hovered := row.Hovered()
