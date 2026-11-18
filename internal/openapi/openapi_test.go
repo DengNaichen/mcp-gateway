@@ -109,6 +109,151 @@ func TestOpenAPIRejectsForbiddenHeadersAndMapsGroups(t *testing.T) {
 	}
 }
 
+func TestOpenAPIOperationCharacterization(t *testing.T) {
+	doc := `{
+  "openapi": "3.0.3",
+  "paths": {
+    "/items/{id}": {
+      "parameters": [
+        {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}},
+        {"name": "q", "in": "query", "schema": {"type": "string"}}
+      ],
+      "get": {
+        "tags": ["items", 123],
+        "parameters": [
+          {"name": "q", "in": "query", "required": true, "description": "override", "schema": {"type": "integer"}},
+          {"name": "sid", "in": "cookie", "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "404": {"description": "not found"},
+          "200": {"description": "ok", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Node"}}}},
+          "default": {"description": "fallback", "content": {"text/plain": {"schema": {"type": "string"}}}}
+        }
+      },
+      "delete": {
+        "operationId": "delete_item",
+        "responses": {
+          "204": {"description": "deleted"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Node": {
+        "type": "object",
+        "properties": {
+          "score": {"type": "number", "minimum": 0, "exclusiveMinimum": true},
+          "tags": {"type": "array", "items": {"type": "string"}},
+          "meta": {"type": "object", "additionalProperties": {"type": "string"}},
+          "alt": {"oneOf": [{"type": "string"}, {"type": "integer"}]}
+        }
+      }
+    }
+  }
+}`
+	tools, err := ImportOpenAPI("svc", []byte(doc), nil)
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(tools))
+	}
+
+	var getTool, delTool Tool
+	for _, tool := range tools {
+		if tool.Method == "GET" {
+			getTool = tool
+		} else {
+			delTool = tool
+		}
+	}
+	if getTool.ID != "svc.get_items_id" || !getTool.ReadOnly || getTool.Description != "GET /items/{id}" {
+		t.Fatalf("unexpected GET tool metadata: %+v", getTool)
+	}
+	if !reflect.DeepEqual(getTool.Tags, []string{"items"}) {
+		t.Fatalf("unexpected tags: %+v", getTool.Tags)
+	}
+	props := getTool.InputSchema["properties"].(map[string]any)
+	queryProps := props["query"].(map[string]any)["properties"].(map[string]any)
+	if queryProps["q"].(map[string]any)["type"] != "integer" || queryProps["q"].(map[string]any)["description"] != "override" {
+		t.Fatalf("expected operation query parameter to override path parameter: %+v", queryProps["q"])
+	}
+	if _, ok := props["cookies"].(map[string]any)["properties"].(map[string]any)["sid"]; !ok {
+		t.Fatalf("expected cookie parameter under cookies group: %+v", props)
+	}
+	if getTool.HTTP.Responses["200"].MediaType != "application/json" || getTool.HTTP.Responses["default"].MediaType != "text/plain" {
+		t.Fatalf("unexpected responses: %+v", getTool.HTTP.Responses)
+	}
+	if _, has404 := getTool.HTTP.Responses["404"]; has404 {
+		t.Fatalf("unexpected 404 response mapped: %+v", getTool.HTTP.Responses)
+	}
+	scoreProp := getTool.OutputSchema["$defs"].(map[string]any)["Node"].(map[string]any)["properties"].(map[string]any)["score"].(map[string]any)
+	if scoreProp["exclusiveMinimum"] != float64(0) {
+		t.Fatalf("expected OpenAPI 3.0 boolean exclusiveMinimum to convert to numeric 0, got %+v", scoreProp)
+	}
+
+	if delTool.ID != "svc.delete_item" || delTool.ReadOnly {
+		t.Fatalf("unexpected DELETE tool metadata: %+v", delTool)
+	}
+	if delTool.HTTP.Responses["204"].MediaType != "empty" || delTool.OutputSchema != nil {
+		t.Fatalf("unexpected 204 response mapping: %+v", delTool.HTTP.Responses)
+	}
+}
+
+func TestOpenAPIErrorAndSchemaEdgeCases(t *testing.T) {
+	cases := []struct {
+		name string
+		doc  string
+	}{
+		{
+			name: "callbacks unsupported",
+			doc:  `{"openapi":"3.0.3","paths":{"/a":{"post":{"callbacks":{"cb":{}},"responses":{"200":{"description":"ok"}}}}}}`,
+		},
+		{
+			name: "path param not required",
+			doc:  `{"openapi":"3.0.3","paths":{"/a/{id}":{"get":{"parameters":[{"name":"id","in":"path","schema":{"type":"string"}}],"responses":{"200":{"description":"ok"}}}}}}`,
+		},
+		{
+			name: "missing path template param",
+			doc:  `{"openapi":"3.0.3","paths":{"/a/{id}":{"get":{"responses":{"200":{"description":"ok"}}}}}}`,
+		},
+		{
+			name: "extra unused path param",
+			doc:  `{"openapi":"3.0.3","paths":{"/a":{"get":{"parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"ok"}}}}}}`,
+		},
+		{
+			name: "parameter content unsupported",
+			doc:  `{"openapi":"3.0.3","paths":{"/a":{"get":{"parameters":[{"name":"q","in":"query","content":{"application/json":{}}}],"responses":{"200":{"description":"ok"}}}}}}`,
+		},
+		{
+			name: "missing responses",
+			doc:  `{"openapi":"3.0.3","paths":{"/a":{"get":{}}}}`,
+		},
+		{
+			name: "unsupported response media type",
+			doc:  `{"openapi":"3.0.3","paths":{"/a":{"get":{"responses":{"200":{"description":"ok","content":{"application/xml":{}}}}}}}}`,
+		},
+		{
+			name: "subpath ref unsupported",
+			doc:  `{"openapi":"3.0.3","paths":{"/a":{"get":{"responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/A/properties/x"}}}}}}}}}`,
+		},
+		{
+			name: "invalid properties map",
+			doc:  `{"openapi":"3.0.3","paths":{"/a":{"get":{"responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object","properties":[]}}}}}}}}}`,
+		},
+		{
+			name: "invalid anyOf array",
+			doc:  `{"openapi":"3.0.3","paths":{"/a":{"get":{"responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"anyOf":{}}}}}}}}}`,
+		},
+	}
+	for _, tc := range cases {
+		if _, err := ImportOpenAPI("svc", []byte(tc.doc), nil); err == nil {
+			t.Errorf("%s: expected error, got nil", tc.name)
+		}
+	}
+}
+
 // FuzzImportOpenAPI feeds arbitrary JSON/YAML to the importer. Errors are
 // expected; panics are not. Accepted documents must import deterministically
 // and every path template variable must have a path parameter mapping.
