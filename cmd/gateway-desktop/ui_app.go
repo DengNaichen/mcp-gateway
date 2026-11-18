@@ -841,7 +841,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 			ui.Scroll(c).Grow(1).FillWidth().Padding(4, 10, 10, 10).Gap(18).Children(func() {
 				u.renderNavGroup(c, "工作台", []navItem{
 					{id: ViewOverview, label: "概览", icon: IconHome},
-					{id: ViewServices, label: "上游服务", icon: IconServer, badge: countBadge(activeRealServers)},
+					servicesNavItem(activeRealServers, u.servicesNeedingAttention()),
 					{id: ViewMarket, label: "MCP 市场", icon: IconMarket},
 					{id: ViewCatalog, label: "工具目录", icon: IconLayers, badge: fmt.Sprintf("%d/%d", state.Setup.EnabledTools, realToolCount)},
 					{id: ViewRepos, label: "仓库绑定", icon: IconFolderGit, badge: reposNavBadge(state.Scopes)},
@@ -893,6 +893,19 @@ type navItem struct {
 	label string
 	icon  *ui.SVG
 	badge string
+	// badgeDanger renders the badge in danger ink, e.g. services needing action.
+	badgeDanger bool
+}
+
+// servicesNavItem shows how many services need action when any do, otherwise
+// how many are enabled, so the sidebar count never reads as "all healthy".
+func servicesNavItem(enabled, attention int) navItem {
+	item := navItem{id: ViewServices, label: "上游服务", icon: IconServer, badge: countBadge(enabled)}
+	if attention > 0 {
+		item.badge = countBadge(attention)
+		item.badgeDanger = true
+	}
+	return item
 }
 
 func countBadge(n int) string {
@@ -966,9 +979,13 @@ func (u *DesktopUI) renderNavGroup(c *ui.Context, heading string, items []navIte
 					if active {
 						badgeInk = SailAccent
 					}
+					badgeWeight := 500
+					if item.badgeDanger {
+						badgeInk, badgeWeight = SailDangerInk, 600
+					}
 					ui.Text(c, item.badge).
 						FontSize(11.5).
-						FontWeight(500).
+						FontWeight(badgeWeight).
 						FontFeatures("tnum").
 						TextColor(badgeInk).
 						SingleLine()
