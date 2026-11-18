@@ -70,11 +70,24 @@ func (u *DesktopUI) playgroundState() *playgroundState {
 	return u.playground
 }
 
-func (u *DesktopUI) renderPlayground(c *ui.Context) {
-	state := u.State
-	st := u.playgroundState()
+func (st *playgroundState) clearSelection() {
+	st.result = nil
+	st.selectedTool = nil
+	st.invocation = nil
+}
 
-	// Initialize default actor once State is available.
+type playgroundViewModel struct {
+	effectiveActor string
+	serversByID    map[string]apitypes.Server
+	toolsByID      map[string]apitypes.Tool
+	scopeOptions   []string
+	scopeLabelToID map[string]string
+	repoOptions    []string
+	repoLabelToKey map[string]string
+	eligibleCount  int
+}
+
+func pgResolveEffectiveActor(state *apitypes.Bootstrap, st *playgroundState) string {
 	if !st.initialized {
 		st.initialized = true
 		if state.Access.Shared && state.Access.Actor != "" {
@@ -83,39 +96,26 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 			st.actor = "developer"
 		}
 	}
-
-	// Sync handoff when navigating from Overview, Logs, or Repos preview.
-	if replay, ok := u.consumePendingReplay(); ok {
-		if replay.intent != "" {
-			st.intent = replay.intent
-		}
-		if !state.Access.Shared && replay.actor != "" {
-			st.actor = replay.actor
-		}
-		applyPlaygroundReplayScope(st, replay)
-		st.includeDemo = false
-		st.selectedServiceID = ""
-		st.serviceScopeLabel = i18n.T("ops.all-enabled-services")
-		st.result = nil
-		st.selectedTool = nil
-		st.invocation = nil
-		st.routeError = ""
-		st.invokeError = ""
-	}
-
-	effectiveActor := st.actor
+	effective := st.actor
 	if state.Access.Shared && state.Access.Actor != "" {
-		effectiveActor = state.Access.Actor
+		effective = state.Access.Actor
 	}
-	if effectiveActor == "" {
-		effectiveActor = "developer"
+	if effective == "" {
+		effective = "developer"
 	}
+	return effective
+}
 
-	// Build active server lookup & scope selector options.
-	serversByID := make(map[string]apitypes.Server, len(state.Registry.Servers))
-	scopeOptions := []string{i18n.T("ops.all-enabled-services")}
-	scopeLabelToID := map[string]string{i18n.T("ops.all-enabled-services"): ""}
-	for _, srv := range state.Registry.Servers {
+func pgBuildScopeOptions(servers []apitypes.Server, st *playgroundState) (
+	serversByID map[string]apitypes.Server,
+	scopeOptions []string,
+	scopeLabelToID map[string]string,
+) {
+	serversByID = make(map[string]apitypes.Server, len(servers))
+	allLabel := i18n.T("ops.all-enabled-services")
+	scopeOptions = []string{allLabel}
+	scopeLabelToID = map[string]string{allLabel: ""}
+	for _, srv := range servers {
 		serversByID[srv.ID] = srv
 		if !srv.Enabled || (srv.Demo && !st.includeDemo) {
 			continue
@@ -133,18 +133,22 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 	} else {
 		st.selectedServiceID = scopeLabelToID[st.serviceScopeLabel]
 	}
+	return serversByID, scopeOptions, scopeLabelToID
+}
 
-	// Build repository & coding agent simulation options.
-	repoOptions := []string{i18n.T("ops.admin-all"), i18n.T("ops.unbound-new-repo")}
-	repoLabelToKey := map[string]string{
-		i18n.T("ops.admin-all"):        "",
-		i18n.T("ops.unbound-new-repo"): "*",
+func pgBuildRepoOptions(repos []apitypes.Repository, st *playgroundState) (repoOptions []string, repoLabelToKey map[string]string) {
+	adminAll := i18n.T("ops.admin-all")
+	unboundRepo := i18n.T("ops.unbound-new-repo")
+	repoOptions = []string{adminAll, unboundRepo}
+	repoLabelToKey = map[string]string{
+		adminAll:    "",
+		unboundRepo: "*",
 	}
 	repoKeyToLabel := map[string]string{
 		"":  i18n.T("ops.admin-all"),
 		"*": i18n.T("ops.unbound-new-repo"),
 	}
-	for _, repo := range state.Scopes.Repositories {
+	for _, repo := range repos {
 		lbl := repo.Name
 		if lbl == "" {
 			lbl = repo.ID
@@ -161,14 +165,21 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 		st.simRepoKey = ""
 		st.simRepoLabel = i18n.T("ops.admin-all")
 	}
+	return repoOptions, repoLabelToKey
+}
 
+func pgCountEligibleTools(
+	state *apitypes.Bootstrap,
+	st *playgroundState,
+	serversByID map[string]apitypes.Server,
+	effectiveActor string,
+) (map[string]apitypes.Tool, int) {
 	simScope := activePlaygroundSimScope(st)
 	var simGrants []apitypes.ServiceGrant
 	if simScope != nil {
 		simGrants, _, _ = resolveEffectiveScopeRule(state.Scopes, simScope.RepoKey)
 	}
 
-	// Count eligible tools under current actor, demo toggle, service scope, and simulated repo scope.
 	eligibleCount := 0
 	toolsByID := make(map[string]apitypes.Tool, len(state.Registry.Tools))
 	for _, t := range state.Registry.Tools {
@@ -177,10 +188,7 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 			continue
 		}
 		srv, ok := serversByID[t.ServerID]
-		if !ok || !srv.Enabled {
-			continue
-		}
-		if srv.Demo && !st.includeDemo {
+		if !ok || !srv.Enabled || (srv.Demo && !st.includeDemo) {
 			continue
 		}
 		if st.selectedServiceID != "" && t.ServerID != st.selectedServiceID {
@@ -194,14 +202,43 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 		}
 		eligibleCount++
 	}
+	return toolsByID, eligibleCount
+}
 
-	// Page Header.
+func buildPlaygroundViewModel(state *apitypes.Bootstrap, st *playgroundState) playgroundViewModel {
+	effectiveActor := pgResolveEffectiveActor(state, st)
+	serversByID, scopeOptions, scopeLabelToID := pgBuildScopeOptions(state.Registry.Servers, st)
+	repoOptions, repoLabelToKey := pgBuildRepoOptions(state.Scopes.Repositories, st)
+	toolsByID, eligibleCount := pgCountEligibleTools(state, st, serversByID, effectiveActor)
+
+	return playgroundViewModel{
+		effectiveActor: effectiveActor,
+		serversByID:    serversByID,
+		toolsByID:      toolsByID,
+		scopeOptions:   scopeOptions,
+		scopeLabelToID: scopeLabelToID,
+		repoOptions:    repoOptions,
+		repoLabelToKey: repoLabelToKey,
+		eligibleCount:  eligibleCount,
+	}
+}
+
+func (u *DesktopUI) renderPlayground(c *ui.Context) {
+	state := u.State
+	st := u.playgroundState()
+
+	if replay, ok := u.consumePendingReplay(); ok {
+		pgApplyReplayHandoff(st, state, replay)
+	}
+
+	vm := buildPlaygroundViewModel(state, st)
+
 	modelDisplay := state.Settings.Model
 	if modelDisplay == "" {
 		modelDisplay = i18n.T("ops.no-model-configured")
 	}
 	SailSectionHeader(c, i18n.T("ops.playground"), "", func() {
-		ui.Text(c, i18n.T("ops.model-with-candidates", modelDisplay, eligibleCount)).
+		ui.Text(c, i18n.T("ops.model-with-candidates", modelDisplay, vm.eligibleCount)).
 			FontSize(12.5).
 			FontFeatures("tnum").
 			TextColor(SailInkMuted).
@@ -215,19 +252,31 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 		SailAlertBox(c, ToneWarning, i18n.T("ops.routing-model-missing"), i18n.T("ops.routing-model-missing-detail"))
 	}
 
-	// Two-column Workbench Split.
 	ui.Row(c).FillWidth().Gap(24).AlignItems(ui.Start).Children(func() {
-		// Left Column: Intent Composer + Discovery Results.
 		ui.Column(c).Grow(1).MinWidth(0).Gap(24).Children(func() {
-			u.renderPlaygroundComposer(c, st, state, effectiveActor, scopeOptions, scopeLabelToID, repoOptions, repoLabelToKey)
-			u.renderPlaygroundResults(c, st, serversByID, toolsByID, effectiveActor)
+			u.renderPlaygroundComposer(c, st, state, vm)
+			u.renderPlaygroundResults(c, st, vm)
 		})
-
-		// Right Column: Tool Schema & Direct Invoke Inspector.
 		ui.Column(c).Grow(1).MinWidth(0).Gap(24).Children(func() {
-			u.renderPlaygroundInspector(c, st, toolsByID, effectiveActor)
+			u.renderPlaygroundInspector(c, st, vm.toolsByID, vm.effectiveActor)
 		})
 	})
+}
+
+func pgApplyReplayHandoff(st *playgroundState, state *apitypes.Bootstrap, replay playgroundReplayIntent) {
+	if replay.intent != "" {
+		st.intent = replay.intent
+	}
+	if !state.Access.Shared && replay.actor != "" {
+		st.actor = replay.actor
+	}
+	applyPlaygroundReplayScope(st, replay)
+	st.includeDemo = false
+	st.selectedServiceID = ""
+	st.serviceScopeLabel = i18n.T("ops.all-enabled-services")
+	st.clearSelection()
+	st.routeError = ""
+	st.invokeError = ""
 }
 
 func applyPlaygroundReplayScope(st *playgroundState, replay playgroundReplayIntent) {
@@ -251,11 +300,7 @@ func (u *DesktopUI) renderPlaygroundComposer(
 	c *ui.Context,
 	st *playgroundState,
 	state *apitypes.Bootstrap,
-	effectiveActor string,
-	scopeOptions []string,
-	scopeLabelToID map[string]string,
-	repoOptions []string,
-	repoLabelToKey map[string]string,
+	vm playgroundViewModel,
 ) {
 	SailCard(c, func() {
 		SailCardTitle(c, i18n.T("ops.task-intent"), "", func() {
@@ -270,7 +315,7 @@ func (u *DesktopUI) renderPlaygroundComposer(
 				if k.Key == ui.KeyEnter && (k.Mods == ui.Cmd || k.Mods == ui.Ctrl) {
 					intent := k.Text()
 					st.intent = intent
-					u.runPlaygroundDiscover(st, intent, effectiveActor)
+					u.runPlaygroundDiscover(st, intent, vm.effectiveActor)
 					return true
 				}
 				return false
@@ -286,138 +331,102 @@ func (u *DesktopUI) renderPlaygroundComposer(
 			})
 		}
 
-		// Context toggle + quick demo examples.
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Wrap().Children(func() {
-			ctxLabel := i18n.T("ops.context-open")
-			if st.showContext {
-				ctxLabel = i18n.T("ops.context-close")
-			}
-			if SailSmallButton(c.Key("pg-toggle-context"), ctxLabel).Clicked() {
-				st.showContext = !st.showContext
-			}
-
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Wrap().Children(func() {
-				for i, ex := range playgroundDemoExamples() {
-					if SailSmallButton(c.Key(fmt.Sprintf("pg-demo-%d", i)), ex.Short).Clicked() {
-						st.intent = ex.Intent
-						st.includeDemo = true
-						st.selectedServiceID = ""
-						st.serviceScopeLabel = i18n.T("ops.all-enabled-services")
-						st.simRepoKey = ""
-						st.simRepoLabel = i18n.T("ops.admin-all")
-						st.result = nil
-						st.selectedTool = nil
-						st.invocation = nil
-						st.routeError = ""
-						st.invokeError = ""
-					}
-				}
-			})
-		})
-
+		pgRenderComposerDemoRow(c, st)
 		ui.Box(c).FillWidth().Height(1).Background(SailDivider)
+		pgRenderComposerScopeSelectors(c, st, state, vm)
+		u.pgRenderComposerFooter(c, st, vm.effectiveActor)
+	})
+}
 
-		// Actor, Service Scope, Include Demo, Summary Only controls + Primary Discover action.
-		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Wrap().Children(func() {
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, i18n.T("ops.actor")).FontSize(12).TextColor(SailInkMuted).SingleLine()
-				if state.Access.Shared {
-					ui.Text(c, effectiveActor).Font("monospace").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-				} else {
-					if ui.Select(c.Key("pg-actor"), &st.actor, []string{"developer", "observer"}).MinWidth(116).Changed() {
-						st.result = nil
-						st.selectedTool = nil
-						st.invocation = nil
-					}
+func pgRenderComposerDemoRow(c *ui.Context, st *playgroundState) {
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Wrap().Children(func() {
+		ctxLabel := i18n.T("ops.context-open")
+		if st.showContext {
+			ctxLabel = i18n.T("ops.context-close")
+		}
+		if SailSmallButton(c.Key("pg-toggle-context"), ctxLabel).Clicked() {
+			st.showContext = !st.showContext
+		}
+
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Wrap().Children(func() {
+			for i, ex := range playgroundDemoExamples() {
+				if SailSmallButton(c.Key(fmt.Sprintf("pg-demo-%d", i)), ex.Short).Clicked() {
+					st.intent = ex.Intent
+					st.includeDemo = true
+					st.selectedServiceID = ""
+					st.serviceScopeLabel = i18n.T("ops.all-enabled-services")
+					st.simRepoKey = ""
+					st.simRepoLabel = i18n.T("ops.admin-all")
+					st.clearSelection()
+					st.routeError = ""
+					st.invokeError = ""
 				}
-			})
-
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, i18n.T("ops.services")).FontSize(12).TextColor(SailInkMuted).SingleLine()
-				if ui.Select(c.Key("pg-scope"), &st.serviceScopeLabel, scopeOptions).MinWidth(164).Changed() {
-					st.selectedServiceID = scopeLabelToID[st.serviceScopeLabel]
-					st.result = nil
-					st.selectedTool = nil
-					st.invocation = nil
-				}
-			})
-
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, i18n.T("ops.repo-label")).FontSize(12).TextColor(SailInkMuted).SingleLine()
-				if ui.Select(c.Key("pg-sim-repo"), &st.simRepoLabel, repoOptions).MinWidth(156).Changed() {
-					st.simRepoKey = repoLabelToKey[st.simRepoLabel]
-					st.result = nil
-					st.selectedTool = nil
-					st.invocation = nil
-				}
-			})
-		})
-
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Wrap().Children(func() {
-			ui.Row(c).Gap(16).AlignItems(ui.Center).Wrap().Children(func() {
-				if ui.Checkbox(c.Key("pg-include-demo"), &st.includeDemo, i18n.T("ops.demo-tools")).Changed() {
-					st.result = nil
-					st.selectedTool = nil
-					st.invocation = nil
-				}
-
-				if ui.Checkbox(c.Key("pg-summary-only"), &st.summaryOnly, i18n.T("ops.summary-only")).Changed() {
-					st.result = nil
-					st.selectedTool = nil
-					st.invocation = nil
-				}
-			})
-
-			btnLabel := i18n.T("ops.start-routing")
-			if st.routing {
-				btnLabel = i18n.T("ops.routing-in-progress")
-			}
-			if SailPrimaryButton(c.Key("pg-discover-btn"), btnLabel).
-				Disabled(strings.TrimSpace(st.intent) == "" || st.routing).
-				Clicked() {
-				u.runPlaygroundDiscover(st, st.intent, effectiveActor)
 			}
 		})
 	})
 }
 
-func (u *DesktopUI) renderPlaygroundResults(
-	c *ui.Context,
-	st *playgroundState,
-	serversByID map[string]apitypes.Server,
-	toolsByID map[string]apitypes.Tool,
-	effectiveActor string,
-) {
-	SailFlushCard(c, func() {
-		var headerNote string
-		if res := st.result; res != nil {
-			headerNote = i18n.T("ops.candidates-with-latency", res.Eligible, res.DurationMS)
-			if res.PromptTokens+res.OutputTokens > 0 {
-				headerNote += fmt.Sprintf(" · %d tok", res.PromptTokens+res.OutputTokens)
-			}
-		}
-
-		SailListCardHeader(c, i18n.T("ops.routing-result"), headerNote, func() {
-			if res := st.result; res != nil {
-				switch res.Status {
-				case "selected":
-					SailQuietStatus(c, i18n.T("ops.routing-matched"), SailSuccessInk, SailInkStrong)
-				case "needs_context":
-					SailBadge(c, i18n.T("ops.routing-needs-more"), ToneWarning)
-				case "error", "failed":
-					SailBadge(c, discoveryStatusLabel(res.Status), ToneDanger)
-				default:
-					SailQuietStatus(c, discoveryStatusLabel(res.Status), SailInkFaint, SailInkMuted)
-				}
+func pgRenderComposerScopeSelectors(c *ui.Context, st *playgroundState, state *apitypes.Bootstrap, vm playgroundViewModel) {
+	ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Wrap().Children(func() {
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, i18n.T("ops.actor")).FontSize(12).TextColor(SailInkMuted).SingleLine()
+			if state.Access.Shared {
+				ui.Text(c, vm.effectiveActor).Font("monospace").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+			} else if ui.Select(c.Key("pg-actor"), &st.actor, []string{"developer", "observer"}).MinWidth(116).Changed() {
+				st.clearSelection()
 			}
 		})
+
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, i18n.T("ops.services")).FontSize(12).TextColor(SailInkMuted).SingleLine()
+			if ui.Select(c.Key("pg-scope"), &st.serviceScopeLabel, vm.scopeOptions).MinWidth(164).Changed() {
+				st.selectedServiceID = vm.scopeLabelToID[st.serviceScopeLabel]
+				st.clearSelection()
+			}
+		})
+
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, i18n.T("ops.repo-label")).FontSize(12).TextColor(SailInkMuted).SingleLine()
+			if ui.Select(c.Key("pg-sim-repo"), &st.simRepoLabel, vm.repoOptions).MinWidth(156).Changed() {
+				st.simRepoKey = vm.repoLabelToKey[st.simRepoLabel]
+				st.clearSelection()
+			}
+		})
+	})
+}
+
+func (u *DesktopUI) pgRenderComposerFooter(c *ui.Context, st *playgroundState, effectiveActor string) {
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Wrap().Children(func() {
+		ui.Row(c).Gap(16).AlignItems(ui.Center).Wrap().Children(func() {
+			if ui.Checkbox(c.Key("pg-include-demo"), &st.includeDemo, i18n.T("ops.demo-tools")).Changed() {
+				st.clearSelection()
+			}
+			if ui.Checkbox(c.Key("pg-summary-only"), &st.summaryOnly, i18n.T("ops.summary-only")).Changed() {
+				st.clearSelection()
+			}
+		})
+
+		btnLabel := i18n.T("ops.start-routing")
+		if st.routing {
+			btnLabel = i18n.T("ops.routing-in-progress")
+		}
+		if SailPrimaryButton(c.Key("pg-discover-btn"), btnLabel).
+			Disabled(strings.TrimSpace(st.intent) == "" || st.routing).
+			Clicked() {
+			u.runPlaygroundDiscover(st, st.intent, effectiveActor)
+		}
+	})
+}
+
+func (u *DesktopUI) renderPlaygroundResults(c *ui.Context, st *playgroundState, vm playgroundViewModel) {
+	SailFlushCard(c, func() {
+		pgRenderResultsHeader(c, st.result)
 
 		if st.routeError != "" {
 			ui.Column(c).FillWidth().Padding(16, 20).Children(func() {
 				SailAlertBox(c, ToneDanger, i18n.T("ops.routing-failed"), st.routeError)
 			})
 		}
-
 		if st.routing {
 			ui.Column(c).FillWidth().Padding(32, 20).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Spinner(c).Label(i18n.T("ops.requesting-routing-model"))
@@ -437,23 +446,8 @@ func (u *DesktopUI) renderPlaygroundResults(
 		}
 
 		if res.Summary != "" || res.Question != "" {
-			ui.Column(c).
-				FillWidth().
-				Padding(14, 20).
-				Gap(4).
-				Background(SailBgSubtle).
-				BorderWidth(0, 0, 1, 0).
-				BorderColor(SailDivider).
-				Children(func() {
-					if res.Summary != "" {
-						ui.Text(c, res.Summary).FontSize(13).LineHeight(1.48).FontWeight(500).TextColor(SailInkStrong)
-					}
-					if res.Question != "" {
-						ui.Text(c, i18n.T("ops.suggested-followup", res.Question)).FontSize(12.5).TextColor(SailWarningInk)
-					}
-				})
+			pgRenderResultsSummaryBanner(c, res)
 		}
-
 		if len(res.Tools) == 0 {
 			ui.Column(c).FillWidth().Padding(20).Children(func() {
 				SailEmptyState(c, i18n.T("ops.no-tool-matched"), "", "", nil)
@@ -461,62 +455,122 @@ func (u *DesktopUI) renderPlaygroundResults(
 			return
 		}
 
-		for idx, item := range res.Tools {
-			sel := item
-			isSelected := st.selectedTool != nil && st.selectedTool.ID == sel.ID
-			isLast := idx == len(res.Tools)-1
+		for idx, sel := range res.Tools {
 			srvName := sel.ServerID
-			if srv, ok := serversByID[sel.ServerID]; ok && srv.Name != "" {
+			if srv, ok := vm.serversByID[sel.ServerID]; ok && srv.Name != "" {
 				srvName = srv.Name
 			}
-
-			rowBtn := ui.ButtonBase(c.Key("pg-hit-"+sel.ID)).
-				FillWidth().
-				Padding(13, 20).
-				Gap(14).
-				AlignItems(ui.Center).
-				Justify(ui.SpaceBetween).
-				Cursor(ui.CursorPointer)
-			if !isLast {
-				rowBtn.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-			}
-			if isSelected {
-				rowBtn.Background(SailAccentSoft)
-			} else if rowBtn.Hovered() {
-				rowBtn.Background(SailBgHover)
-			}
-
-			rowBtn.Children(func() {
-				// Anchor 1 & 2: Rank + Name + Service, plus 1–2 line Reason/Summary
-				ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-						ui.Textf(c, "#%d", idx+1).Font("monospace").FontSize(11.5).FontWeight(600).TextColor(SailInkFaint).SingleLine()
-						nameCol := SailInkStrong
-						if isSelected {
-							nameCol = SailAccent
-						}
-						ui.Text(c, sel.Name).Font("monospace").FontSize(13).FontWeight(600).TextColor(nameCol).SingleLine()
-						ui.Text(c, srvName).FontSize(11.5).TextColor(SailInkFaint).SingleLine()
-					})
-
-					if sel.Reason != "" {
-						ui.Text(c, sel.Reason).FontSize(12.5).LineHeight(1.42).TextColor(SailInkMuted).MaxLines(2)
-					} else {
-						SailDescSummary(c, sel.Description, "", 1)
-					}
-				})
-
-				// Anchor 3: RW risk badge only when write-capable
-				if !sel.ReadOnly {
-					SailBadge(c, i18n.T("ops.write-access"), ToneWarning).Shrink(0)
-				}
+			u.pgRenderResultRow(c, st, pgResultRowProps{
+				idx:        idx,
+				sel:        sel,
+				srvName:    srvName,
+				isSelected: st.selectedTool != nil && st.selectedTool.ID == sel.ID,
+				isLast:     idx == len(res.Tools)-1,
+				toolsByID:  vm.toolsByID,
+				actor:      vm.effectiveActor,
 			})
-
-			if rowBtn.Clicked() {
-				u.selectPlaygroundTool(st, sel, toolsByID, effectiveActor)
-			}
 		}
 	})
+}
+
+func pgRenderResultsHeader(c *ui.Context, res *apitypes.DiscoverResult) {
+	var headerNote string
+	if res != nil {
+		headerNote = i18n.T("ops.candidates-with-latency", res.Eligible, res.DurationMS)
+		if res.PromptTokens+res.OutputTokens > 0 {
+			headerNote += fmt.Sprintf(" · %d tok", res.PromptTokens+res.OutputTokens)
+		}
+	}
+	SailListCardHeader(c, i18n.T("ops.routing-result"), headerNote, func() {
+		if res == nil {
+			return
+		}
+		switch res.Status {
+		case "selected":
+			SailQuietStatus(c, i18n.T("ops.routing-matched"), SailSuccessInk, SailInkStrong)
+		case "needs_context":
+			SailBadge(c, i18n.T("ops.routing-needs-more"), ToneWarning)
+		case "error", "failed":
+			SailBadge(c, discoveryStatusLabel(res.Status), ToneDanger)
+		default:
+			SailQuietStatus(c, discoveryStatusLabel(res.Status), SailInkFaint, SailInkMuted)
+		}
+	})
+}
+
+func pgRenderResultsSummaryBanner(c *ui.Context, res *apitypes.DiscoverResult) {
+	ui.Column(c).
+		FillWidth().
+		Padding(14, 20).
+		Gap(4).
+		Background(SailBgSubtle).
+		BorderWidth(0, 0, 1, 0).
+		BorderColor(SailDivider).
+		Children(func() {
+			if res.Summary != "" {
+				ui.Text(c, res.Summary).FontSize(13).LineHeight(1.48).FontWeight(500).TextColor(SailInkStrong)
+			}
+			if res.Question != "" {
+				ui.Text(c, i18n.T("ops.suggested-followup", res.Question)).FontSize(12.5).TextColor(SailWarningInk)
+			}
+		})
+}
+
+type pgResultRowProps struct {
+	idx        int
+	sel        apitypes.Selection
+	srvName    string
+	isSelected bool
+	isLast     bool
+	toolsByID  map[string]apitypes.Tool
+	actor      string
+}
+
+func (u *DesktopUI) pgRenderResultRow(c *ui.Context, st *playgroundState, p pgResultRowProps) {
+	sel := p.sel
+	rowBtn := ui.ButtonBase(c.Key("pg-hit-"+sel.ID)).
+		FillWidth().
+		Padding(13, 20).
+		Gap(14).
+		AlignItems(ui.Center).
+		Justify(ui.SpaceBetween).
+		Cursor(ui.CursorPointer)
+	if !p.isLast {
+		rowBtn.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+	}
+	if p.isSelected {
+		rowBtn.Background(SailAccentSoft)
+	} else if rowBtn.Hovered() {
+		rowBtn.Background(SailBgHover)
+	}
+
+	rowBtn.Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Textf(c, "#%d", p.idx+1).Font("monospace").FontSize(11.5).FontWeight(600).TextColor(SailInkFaint).SingleLine()
+				nameCol := SailInkStrong
+				if p.isSelected {
+					nameCol = SailAccent
+				}
+				ui.Text(c, sel.Name).Font("monospace").FontSize(13).FontWeight(600).TextColor(nameCol).SingleLine()
+				ui.Text(c, p.srvName).FontSize(11.5).TextColor(SailInkFaint).SingleLine()
+			})
+
+			if sel.Reason != "" {
+				ui.Text(c, sel.Reason).FontSize(12.5).LineHeight(1.42).TextColor(SailInkMuted).MaxLines(2)
+			} else {
+				SailDescSummary(c, sel.Description, "", 1)
+			}
+		})
+
+		if !sel.ReadOnly {
+			SailBadge(c, i18n.T("ops.write-access"), ToneWarning).Shrink(0)
+		}
+	})
+
+	if rowBtn.Clicked() {
+		u.selectPlaygroundTool(st, sel, p.toolsByID, p.actor)
+	}
 }
 
 func (u *DesktopUI) renderPlaygroundInspector(

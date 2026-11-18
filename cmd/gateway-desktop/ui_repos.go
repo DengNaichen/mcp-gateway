@@ -343,190 +343,211 @@ func (u *DesktopUI) renderReposLeftColumn(c *ui.Context, st *reposPageState, sta
 			Radius(10).
 			Background(SailBgSurface),
 	).Clip().Children(func() {
-		// 1. Pinned First Row: 全局默认 (repo_key = "*")
-		globalSelected := st.selectedRepoKey == "*"
-		globalBtn := ui.ButtonBase(c.Key("repos-sel-global")).
-			FillWidth().
-			Padding(13, 16).
-			Gap(10).
-			AlignItems(ui.Center).
-			Justify(ui.SpaceBetween).
-			Cursor(ui.CursorPointer)
-		if globalSelected {
-			globalBtn.Background(SailAccentSoft)
-		} else if globalBtn.Hovered() {
-			globalBtn.Background(SailBgHover)
-		}
-		globalBtn.Children(func() {
-			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-				titleCol := SailInkStrong
-				if globalSelected {
-					titleCol = SailAccent
-				}
-				ui.Text(c, i18n.T("ops.global-default")).FontSize(13.5).FontWeight(600).TextColor(titleCol).SingleLine()
-				ui.Text(c, i18n.T("ops.unbound-fallback")).FontSize(11.5).TextColor(SailInkMuted).SingleLine()
-			})
-			sum := globalDefaultServiceSummary(state.Scopes.Rules)
-			sumCol := SailInkMuted
-			if sum == i18n.T("ops.no-default-service") {
-				sumCol = SailInkFaint
-			}
-			ui.Text(c, sum).FontSize(11.5).FontFeatures("tnum").TextColor(sumCol).Shrink(0).SingleLine()
-		})
-		if globalBtn.Clicked() {
-			st.selectedRepoKey = "*"
-		}
+		renderReposGlobalRow(c, st, state)
 
-		// 2. Section Header: 已绑定仓库
 		SailGroupHeader(c, i18n.T("ops.bound-repos"), len(state.Scopes.Repositories), 16, false)
-
 		if len(state.Scopes.Repositories) == 0 {
-			emptyRow := ui.Column(c).FillWidth().Padding(6, 16, 14, 16)
-			emptyRow.Children(func() {
+			ui.Column(c).FillWidth().Padding(6, 16, 14, 16).Children(func() {
 				ui.Text(c, i18n.T("ops.no-bound-repos")).FontSize(12.5).TextColor(SailInkFaint)
 			})
 		} else {
-			for idx, repoItem := range state.Scopes.Repositories {
-				repo := repoItem
-				selected := st.selectedRepoKey == repo.ID
-				hasMoreBelow := idx < len(state.Scopes.Repositories)-1
-
-				rowWrap := ui.Row(c.Key("repos-row-"+repo.ID)).
-					FillWidth().
-					Padding(10, 12, 10, 16).
-					Gap(6).
-					AlignItems(ui.Center)
-				if hasMoreBelow {
-					rowWrap.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-				}
-				if selected {
-					rowWrap.Background(SailAccentSoft)
-				} else if rowWrap.Hovered() {
-					rowWrap.Background(SailBgHover)
-				}
-
-				rowWrap.Children(func() {
-					selBtn := ui.ButtonBase(c.Key("repos-sel-" + repo.ID)).
-						Grow(1).
-						MinWidth(0).
-						Gap(8).
-						AlignItems(ui.Center).
-						Justify(ui.SpaceBetween).
-						Cursor(ui.CursorPointer)
-					selBtn.Children(func() {
-						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-							nameCol := SailInkStrong
-							if selected {
-								nameCol = SailAccent
-							}
-							ui.Text(c, repo.Name).FontSize(13).FontWeight(600).TextColor(nameCol).SingleLine()
-							ui.Text(c, shortRemoteHint(repo.RemoteHint)).FontSize(11.5).TextColor(SailInkMuted).SingleLine()
-						})
-						ui.Text(c, repoBoundServiceSummary(repo.ID, state.Scopes.Rules)).
-							FontSize(11.5).
-							FontFeatures("tnum").
-							TextColor(SailInkMuted).
-							Shrink(0).
-							SingleLine()
-					})
-					if selBtn.Clicked() {
-						st.selectedRepoKey = repo.ID
-					}
-
-					repoPath := primaryRepoPath(repo)
-					if repoPath != "" && !state.Access.Shared {
-						revBtn := ui.ButtonBase(c.Key("repos-reveal-"+repo.ID)).
-							Size(24, 24).
-							Radius(5).
-							Center().
-							Cursor(ui.CursorPointer).
-							Label(i18n.T("ops.reveal-in-finder-for", repo.Name)).
-							Tooltip(repoPath)
-						if revBtn.Hovered() {
-							revBtn.Background(SailBgMuted)
-						}
-						revBtn.Children(func() {
-							ui.Icon(c, clientPathArrow).Size(14, 14).TextColor(SailInkMuted)
-						})
-						if revBtn.Clicked() {
-							u.RunAsync(func() error { return revealClientConfig(repoPath) })
-						}
-					}
-
-					moreBtn := ui.ButtonBase(c.Key("repos-more-"+repo.ID)).
-						Size(24, 24).
-						Radius(5).
-						Center().
-						Cursor(ui.CursorPointer).
-						Label(i18n.T("ops.more-actions-for", repo.Name))
-					if moreBtn.Hovered() {
-						moreBtn.Background(SailBgMuted)
-					}
-					moreBtn.Children(func() {
-						ui.Text(c, "⋯").FontSize(15).TextColor(SailInkMuted)
-					})
-					moreBtn.PopoverMenuButton(func(menu *ui.Menu) {
-						if repoPath != "" && !state.Access.Shared {
-							if menu.Item(i18n.T("ops.reveal-in-finder")).Chosen() {
-								u.RunAsync(func() error { return revealClientConfig(repoPath) })
-							}
-						}
-						if menu.Item(i18n.T("ops.remove-repo-binding")).Chosen() {
-							st.confirmDeleteRepoID = repo.ID
-							st.confirmDeleteRepoName = repo.Name
-							st.showDeleteConfirm = true
-						}
-					})
-				})
+			for idx, repo := range state.Scopes.Repositories {
+				u.renderReposBoundRow(c, st, state, repo, idx < len(state.Scopes.Repositories)-1)
 			}
 		}
 
-		// 3. Observed Unbound Section: 最近请求 · 未绑定
 		if len(state.Scopes.Observed) > 0 {
 			SailGroupHeader(c, i18n.T("ops.recent-request-unbound"), len(state.Scopes.Observed), 16, false)
-
-			for idx, obsItem := range state.Scopes.Observed {
-				obs := obsItem
-				obsKey := obs.Fingerprint
-				if obsKey == "" {
-					obsKey = fmt.Sprintf("obs-%d", idx)
-				}
-				isLast := idx == len(state.Scopes.Observed)-1
-				obsRow := ui.Row(c.Key("repos-obs-"+obsKey)).
-					FillWidth().
-					Padding(10, 16).
-					Gap(8).
-					AlignItems(ui.Center).
-					Justify(ui.SpaceBetween)
-				if !isLast {
-					obsRow.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-				}
-				obsRow.Children(func() {
-					ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-						obsName := strings.TrimSpace(obs.Name)
-						if obsName == "" && obs.Root != "" {
-							obsName = filepath.Base(obs.Root)
-						}
-						if obsName == "" {
-							obsName = i18n.T("ops.untitled-directory")
-						}
-						ui.Text(c, obsName).FontSize(12.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
-
-						sub := shortRemoteHint(obs.RemoteHint)
-						if obs.RemoteHint == "" && obs.Root != "" {
-							sub = obs.Root
-						}
-						if obs.LastAgent != "" {
-							sub = obs.LastAgent + " · " + sub
-						}
-						ui.Text(c, sub).TruncateMiddle().Tooltip(obs.Root).FontSize(11).TextColor(SailInkMuted).SingleLine()
-					})
-
-					if SailSmallButton(c.Key("repos-bind-btn-"+obsKey), i18n.T("ops.bind")).Disabled(st.repoBusy).Clicked() {
-						u.bindObservedRepo(st, obs)
-					}
-				})
+			for idx, obs := range state.Scopes.Observed {
+				u.renderReposObservedRow(c, st, idx, obs)
 			}
+		}
+	})
+}
+
+func renderReposGlobalRow(c *ui.Context, st *reposPageState, state *apitypes.Bootstrap) {
+	globalSelected := st.selectedRepoKey == "*"
+	globalBtn := ui.ButtonBase(c.Key("repos-sel-global")).
+		FillWidth().
+		Padding(13, 16).
+		Gap(10).
+		AlignItems(ui.Center).
+		Justify(ui.SpaceBetween).
+		Cursor(ui.CursorPointer)
+	if globalSelected {
+		globalBtn.Background(SailAccentSoft)
+	} else if globalBtn.Hovered() {
+		globalBtn.Background(SailBgHover)
+	}
+	globalBtn.Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+			titleCol := SailInkStrong
+			if globalSelected {
+				titleCol = SailAccent
+			}
+			ui.Text(c, i18n.T("ops.global-default")).FontSize(13.5).FontWeight(600).TextColor(titleCol).SingleLine()
+			ui.Text(c, i18n.T("ops.unbound-fallback")).FontSize(11.5).TextColor(SailInkMuted).SingleLine()
+		})
+		sum := globalDefaultServiceSummary(state.Scopes.Rules)
+		sumCol := SailInkMuted
+		if sum == i18n.T("ops.no-default-service") {
+			sumCol = SailInkFaint
+		}
+		ui.Text(c, sum).FontSize(11.5).FontFeatures("tnum").TextColor(sumCol).Shrink(0).SingleLine()
+	})
+	if globalBtn.Clicked() {
+		st.selectedRepoKey = "*"
+	}
+}
+
+func (u *DesktopUI) renderReposBoundRow(
+	c *ui.Context,
+	st *reposPageState,
+	state *apitypes.Bootstrap,
+	repo apitypes.Repository,
+	hasMoreBelow bool,
+) {
+	selected := st.selectedRepoKey == repo.ID
+	rowWrap := ui.Row(c.Key("repos-row-"+repo.ID)).
+		FillWidth().
+		Padding(10, 12, 10, 16).
+		Gap(6).
+		AlignItems(ui.Center)
+	if hasMoreBelow {
+		rowWrap.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+	}
+	if selected {
+		rowWrap.Background(SailAccentSoft)
+	} else if rowWrap.Hovered() {
+		rowWrap.Background(SailBgHover)
+	}
+
+	rowWrap.Children(func() {
+		selBtn := ui.ButtonBase(c.Key("repos-sel-" + repo.ID)).
+			Grow(1).
+			MinWidth(0).
+			Gap(8).
+			AlignItems(ui.Center).
+			Justify(ui.SpaceBetween).
+			Cursor(ui.CursorPointer)
+		selBtn.Children(func() {
+			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+				nameCol := SailInkStrong
+				if selected {
+					nameCol = SailAccent
+				}
+				ui.Text(c, repo.Name).FontSize(13).FontWeight(600).TextColor(nameCol).SingleLine()
+				ui.Text(c, shortRemoteHint(repo.RemoteHint)).FontSize(11.5).TextColor(SailInkMuted).SingleLine()
+			})
+			ui.Text(c, repoBoundServiceSummary(repo.ID, state.Scopes.Rules)).
+				FontSize(11.5).
+				FontFeatures("tnum").
+				TextColor(SailInkMuted).
+				Shrink(0).
+				SingleLine()
+		})
+		if selBtn.Clicked() {
+			st.selectedRepoKey = repo.ID
+		}
+
+		repoPath := primaryRepoPath(repo)
+		if repoPath != "" && !state.Access.Shared {
+			u.renderRepoRevealButton(c, repo.ID, repo.Name, repoPath)
+		}
+		u.renderRepoMoreMenuButton(c, st, state.Access.Shared, repo, repoPath)
+	})
+}
+
+func (u *DesktopUI) renderRepoRevealButton(c *ui.Context, repoID, repoName, repoPath string) {
+	revBtn := ui.ButtonBase(c.Key("repos-reveal-"+repoID)).
+		Size(24, 24).
+		Radius(5).
+		Center().
+		Cursor(ui.CursorPointer).
+		Label(i18n.T("ops.reveal-in-finder-for", repoName)).
+		Tooltip(repoPath)
+	if revBtn.Hovered() {
+		revBtn.Background(SailBgMuted)
+	}
+	revBtn.Children(func() {
+		ui.Icon(c, clientPathArrow).Size(14, 14).TextColor(SailInkMuted)
+	})
+	if revBtn.Clicked() {
+		u.RunAsync(func() error { return revealClientConfig(repoPath) })
+	}
+}
+
+func (u *DesktopUI) renderRepoMoreMenuButton(
+	c *ui.Context,
+	st *reposPageState,
+	sharedAccess bool,
+	repo apitypes.Repository,
+	repoPath string,
+) {
+	moreBtn := ui.ButtonBase(c.Key("repos-more-"+repo.ID)).
+		Size(24, 24).
+		Radius(5).
+		Center().
+		Cursor(ui.CursorPointer).
+		Label(i18n.T("ops.more-actions-for", repo.Name))
+	if moreBtn.Hovered() {
+		moreBtn.Background(SailBgMuted)
+	}
+	moreBtn.Children(func() {
+		ui.Text(c, "⋯").FontSize(15).TextColor(SailInkMuted)
+	})
+	moreBtn.PopoverMenuButton(func(menu *ui.Menu) {
+		if repoPath != "" && !sharedAccess {
+			if menu.Item(i18n.T("ops.reveal-in-finder")).Chosen() {
+				u.RunAsync(func() error { return revealClientConfig(repoPath) })
+			}
+		}
+		if menu.Item(i18n.T("ops.remove-repo-binding")).Chosen() {
+			st.confirmDeleteRepoID = repo.ID
+			st.confirmDeleteRepoName = repo.Name
+			st.showDeleteConfirm = true
+		}
+	})
+}
+
+func (u *DesktopUI) renderReposObservedRow(c *ui.Context, st *reposPageState, idx int, obs apitypes.ObservedRepo) {
+	obsKey := obs.Fingerprint
+	if obsKey == "" {
+		obsKey = fmt.Sprintf("obs-%d", idx)
+	}
+	isLast := idx == len(u.State.Scopes.Observed)-1
+	obsRow := ui.Row(c.Key("repos-obs-"+obsKey)).
+		FillWidth().
+		Padding(10, 16).
+		Gap(8).
+		AlignItems(ui.Center).
+		Justify(ui.SpaceBetween)
+	if !isLast {
+		obsRow.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+	}
+	obsRow.Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+			obsName := strings.TrimSpace(obs.Name)
+			if obsName == "" && obs.Root != "" {
+				obsName = filepath.Base(obs.Root)
+			}
+			if obsName == "" {
+				obsName = i18n.T("ops.untitled-directory")
+			}
+			ui.Text(c, obsName).FontSize(12.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+
+			sub := shortRemoteHint(obs.RemoteHint)
+			if obs.RemoteHint == "" && obs.Root != "" {
+				sub = obs.Root
+			}
+			if obs.LastAgent != "" {
+				sub = obs.LastAgent + " · " + sub
+			}
+			ui.Text(c, sub).TruncateMiddle().Tooltip(obs.Root).FontSize(11).TextColor(SailInkMuted).SingleLine()
+		})
+
+		if SailSmallButton(c.Key("repos-bind-btn-"+obsKey), i18n.T("ops.bind")).Disabled(st.repoBusy).Clicked() {
+			u.bindObservedRepo(st, obs)
 		}
 	})
 }

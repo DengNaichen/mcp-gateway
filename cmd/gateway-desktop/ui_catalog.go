@@ -23,6 +23,34 @@ type catalogSelectOption struct {
 	Label string
 }
 
+type catalogEditFormState struct {
+	loadedID       string
+	loadedRev      string
+	desc           string
+	readOnly       bool
+	actors         string
+	tags           string
+	savingContract bool
+}
+
+func (f *catalogEditFormState) sync(t apitypes.Tool) {
+	sig := fmt.Sprintf("%s|%s|%t|%s|%s", t.Revision, t.Description, t.ReadOnly, strings.Join(t.Actors, ","), strings.Join(t.Tags, ","))
+	if f.loadedID == t.ID && f.loadedRev == sig {
+		return
+	}
+	f.loadedID = t.ID
+	f.loadedRev = sig
+	f.desc = t.Description
+	f.readOnly = t.ReadOnly
+	f.actors = strings.Join(t.Actors, ", ")
+	f.tags = strings.Join(t.Tags, ", ")
+}
+
+func (f *catalogEditFormState) reset(t apitypes.Tool) {
+	f.loadedID = ""
+	f.sync(t)
+}
+
 type catalogPageState struct {
 	query          string
 	serverFilter   string // "all" or server.ID
@@ -36,16 +64,8 @@ type catalogPageState struct {
 	panelCollapsed bool
 	lastFilterSig  string
 
-	// Detail panel sub-tab & contract edit state.
-	detailTab      int // 0: 属性与 Schema, 1: 编辑契约, 2: 完整 JSON
-	editLoadedID   string
-	editLoadedRev  string
-	editDesc       string
-	editReadOnly   bool
-	editActors     string
-	editTags       string
-	savingContract bool
-
+	detailTab   int // 0: 属性与 Schema, 1: 编辑契约, 2: 完整 JSON
+	edit        catalogEditFormState
 	togglingIDs map[string]bool
 }
 
@@ -82,6 +102,29 @@ func (st *catalogPageState) focusTool(toolID, serverID string, serverByID map[st
 	}
 }
 
+func (st *catalogPageState) applyFilterIntent(filterServerID, filterAccess string, serverByID map[string]apitypes.Server) {
+	if filterServerID != "" {
+		st.serverFilter = filterServerID
+		if srv, found := serverByID[filterServerID]; found && srv.Demo {
+			st.showDemo = true
+		}
+		if filterAccess == "" {
+			st.accessIdx = 0
+		}
+	}
+	if filterAccess != "" {
+		switch filterAccess {
+		case "ro":
+			st.accessIdx = 1
+		case "rw":
+			st.accessIdx = 2
+		default:
+			st.accessIdx = 0
+		}
+	}
+	st.page = 1
+}
+
 func (st *catalogPageState) hasActiveFilters() bool {
 	return strings.TrimSpace(st.query) != "" ||
 		st.serverFilter != "all" ||
@@ -99,32 +142,38 @@ func (st *catalogPageState) resetFilters() {
 	st.page = 1
 }
 
-func (st *catalogPageState) syncEditForm(t apitypes.Tool) {
-	sig := fmt.Sprintf("%s|%s|%t|%s|%s", t.Revision, t.Description, t.ReadOnly, strings.Join(t.Actors, ","), strings.Join(t.Tags, ","))
-	if st.editLoadedID == t.ID && st.editLoadedRev == sig {
-		return
-	}
-	st.editLoadedID = t.ID
-	st.editLoadedRev = sig
-	st.editDesc = t.Description
-	st.editReadOnly = t.ReadOnly
-	st.editActors = strings.Join(t.Actors, ", ")
-	st.editTags = strings.Join(t.Tags, ", ")
+type catalogGovernanceStats struct {
+	realToolCount    int
+	enabledRealCount int
+	closedRealCount  int
+	roEnabledCount   int
+	rwEnabledCount   int
+	hitRealToolCount int
 }
 
-func (u *DesktopUI) renderCatalog(c *ui.Context) {
-	if u.State == nil {
-		return
-	}
-	st := u.catalogState()
-	servers := u.State.Registry.Servers
-	tools := u.State.Registry.Tools
-	hitCounts := u.Telemetry.ToolHitCounts
+type catalogViewModel struct {
+	serverByID    map[string]apitypes.Server
+	realServers   []apitypes.Server
+	demoServers   []apitypes.Server
+	stats         catalogGovernanceStats
+	actorOptions  []catalogSelectOption
+	serverOptions []catalogSelectOption
+	filtered      []apitypes.Tool
+	pagedTools    []apitypes.Tool
+	totalPages    int
+	startIdx      int
+	endIdx        int
+	selectedTool  *apitypes.Tool
+}
 
-	serverByID := make(map[string]apitypes.Server, len(servers))
-	realServerIDs := make(map[string]bool, len(servers))
-	var realServers []apitypes.Server
-	var demoServers []apitypes.Server
+func catalogIndexServers(servers []apitypes.Server) (
+	serverByID map[string]apitypes.Server,
+	realServerIDs map[string]bool,
+	realServers []apitypes.Server,
+	demoServers []apitypes.Server,
+) {
+	serverByID = make(map[string]apitypes.Server, len(servers))
+	realServerIDs = make(map[string]bool, len(servers))
 	for _, s := range servers {
 		serverByID[s.ID] = s
 		if s.Demo {
@@ -134,96 +183,65 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 			realServers = append(realServers, s)
 		}
 	}
+	return serverByID, realServerIDs, realServers, demoServers
+}
 
-	// Consume cross-page navigation intents (from Overview, Services, or Logs).
-	if toolID, serverID, ok := u.consumePendingCatalogTool(); ok {
-		st.focusTool(toolID, serverID, serverByID)
-	}
-	if filterServerID, filterAccess, ok := u.consumePendingCatalogFilter(); ok {
-		if filterServerID != "" {
-			st.serverFilter = filterServerID
-			if srv, found := serverByID[filterServerID]; found && srv.Demo {
-				st.showDemo = true
-			}
-			if filterAccess == "" {
-				st.accessIdx = 0
-			}
-		}
-		if filterAccess != "" {
-			switch filterAccess {
-			case "ro":
-				st.accessIdx = 1
-			case "rw":
-				st.accessIdx = 2
-			default:
-				st.accessIdx = 0
-			}
-		}
-		st.page = 1
-	}
-
-	// If showDemo was turned off while filtering on a demo server, reset serverFilter.
-	if !st.showDemo && st.serverFilter != "all" {
-		if srv, ok := serverByID[st.serverFilter]; !ok || srv.Demo {
-			st.serverFilter = "all"
-		}
-	}
-
-	// Compute top-level governance statistics on real tools.
-	var (
-		realToolCount    int
-		enabledRealCount int
-		roEnabledCount   int
-		rwEnabledCount   int
-		hitRealToolCount int
-	)
+func catalogCollectStatsAndActors(
+	tools []apitypes.Tool,
+	realServerIDs map[string]bool,
+	hitCounts map[string]int,
+	showDemo bool,
+) (catalogGovernanceStats, map[string]bool, []catalogSelectOption) {
+	var stats catalogGovernanceStats
 	actorSeen := make(map[string]bool)
-	var actorOptions []catalogSelectOption
-	actorOptions = append(actorOptions, catalogSelectOption{Value: "all", Label: i18n.T("ops.all-actors")})
 
 	for _, t := range tools {
 		isReal := realServerIDs[t.ServerID]
 		if isReal {
-			realToolCount++
+			stats.realToolCount++
 			if t.Enabled {
-				enabledRealCount++
+				stats.enabledRealCount++
 				if t.ReadOnly {
-					roEnabledCount++
+					stats.roEnabledCount++
 				} else {
-					rwEnabledCount++
+					stats.rwEnabledCount++
 				}
 			}
 			if hitCounts[t.ID] > 0 {
-				hitRealToolCount++
+				stats.hitRealToolCount++
 			}
 		}
-		if isReal || st.showDemo {
+		if isReal || showDemo {
 			for _, a := range t.Actors {
-				if a != "" && a != "*" && !actorSeen[a] {
+				if a != "" && a != "*" {
 					actorSeen[a] = true
 				}
 			}
 		}
 	}
+	stats.closedRealCount = max(0, stats.realToolCount-stats.enabledRealCount)
+
 	sortedActors := make([]string, 0, len(actorSeen))
 	for a := range actorSeen {
 		sortedActors = append(sortedActors, a)
 	}
 	sort.Strings(sortedActors)
+
+	actorOptions := make([]catalogSelectOption, 0, 1+len(sortedActors))
+	actorOptions = append(actorOptions, catalogSelectOption{Value: "all", Label: i18n.T("ops.all-actors")})
 	for _, a := range sortedActors {
 		actorOptions = append(actorOptions, catalogSelectOption{Value: a, Label: a})
 	}
-	if st.actorFilter != "all" && !actorSeen[st.actorFilter] {
-		st.actorFilter = "all"
-	}
+	return stats, actorSeen, actorOptions
+}
 
-	// Build service dropdown options.
-	srvOptions := make([]catalogSelectOption, 0, 1+len(servers))
-	srvOptions = append(srvOptions, catalogSelectOption{Value: "all", Label: i18n.T("ops.all-services")})
+func catalogBuildServerOptions(servers, realServers []apitypes.Server, showDemo bool) []catalogSelectOption {
 	visibleServers := realServers
-	if st.showDemo {
+	if showDemo {
 		visibleServers = servers
 	}
+	opts := make([]catalogSelectOption, 0, 1+len(visibleServers))
+	opts = append(opts, catalogSelectOption{Value: "all", Label: i18n.T("ops.all-services")})
 	for _, s := range visibleServers {
 		lbl := s.Name
 		if lbl == "" {
@@ -232,59 +250,61 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 		if s.Demo {
 			lbl += " (DEMO)"
 		}
-		srvOptions = append(srvOptions, catalogSelectOption{Value: s.ID, Label: lbl})
+		opts = append(opts, catalogSelectOption{Value: s.ID, Label: lbl})
 	}
+	return opts
+}
 
-	// Reset pagination when any filter or sort parameter changes.
-	filterSig := fmt.Sprintf("%s|%s|%d|%d|%s|%d|%t",
-		strings.TrimSpace(st.query), st.serverFilter, st.statusIdx, st.accessIdx, st.actorFilter, st.sortIdx, st.showDemo)
-	if filterSig != st.lastFilterSig {
-		st.lastFilterSig = filterSig
-		st.page = 1
+func catalogMatchesTool(t apitypes.Tool, srv apitypes.Server, qLower string, st *catalogPageState) bool {
+	if !st.showDemo && srv.Demo {
+		return false
 	}
+	if st.serverFilter != "all" && t.ServerID != st.serverFilter {
+		return false
+	}
+	if st.statusIdx == 1 && !t.Enabled {
+		return false
+	}
+	if st.statusIdx == 2 && t.Enabled {
+		return false
+	}
+	if st.accessIdx == 1 && !t.ReadOnly {
+		return false
+	}
+	if st.accessIdx == 2 && t.ReadOnly {
+		return false
+	}
+	if st.actorFilter != "all" && !slices.Contains(t.Actors, "*") && !slices.Contains(t.Actors, st.actorFilter) {
+		return false
+	}
+	if qLower == "" {
+		return true
+	}
+	haystack := strings.ToLower(strings.Join([]string{
+		t.ID,
+		t.Name,
+		t.Description,
+		t.ServerID,
+		srv.Name,
+		strings.Join(t.Tags, " "),
+		t.Method,
+		t.Path,
+	}, " "))
+	return strings.Contains(haystack, qLower)
+}
 
-	// Filter & sort tools.
+func catalogFilterAndSortTools(
+	tools []apitypes.Tool,
+	serverByID map[string]apitypes.Server,
+	hitCounts map[string]int,
+	st *catalogPageState,
+) []apitypes.Tool {
 	qLower := strings.ToLower(strings.TrimSpace(st.query))
 	filtered := make([]apitypes.Tool, 0, len(tools))
 	for _, t := range tools {
-		srv := serverByID[t.ServerID]
-		if !st.showDemo && srv.Demo {
-			continue
+		if catalogMatchesTool(t, serverByID[t.ServerID], qLower, st) {
+			filtered = append(filtered, t)
 		}
-		if st.serverFilter != "all" && t.ServerID != st.serverFilter {
-			continue
-		}
-		if st.statusIdx == 1 && !t.Enabled {
-			continue
-		}
-		if st.statusIdx == 2 && t.Enabled {
-			continue
-		}
-		if st.accessIdx == 1 && !t.ReadOnly {
-			continue
-		}
-		if st.accessIdx == 2 && t.ReadOnly {
-			continue
-		}
-		if st.actorFilter != "all" && !slices.Contains(t.Actors, "*") && !slices.Contains(t.Actors, st.actorFilter) {
-			continue
-		}
-		if qLower != "" {
-			haystack := strings.ToLower(strings.Join([]string{
-				t.ID,
-				t.Name,
-				t.Description,
-				t.ServerID,
-				srv.Name,
-				strings.Join(t.Tags, " "),
-				t.Method,
-				t.Path,
-			}, " "))
-			if !strings.Contains(haystack, qLower) {
-				continue
-			}
-		}
-		filtered = append(filtered, t)
 	}
 
 	sort.Slice(filtered, func(i, j int) bool {
@@ -298,120 +318,207 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 				return a.Enabled
 			}
 		}
-		nameCmp := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
-		if nameCmp != 0 {
+		if nameCmp := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); nameCmp != 0 {
 			return nameCmp < 0
 		}
 		return a.ID < b.ID
 	})
+	return filtered
+}
 
-	// Resolve selected tool for right-side inspector panel.
-	var selectedTool *apitypes.Tool
-	if !st.panelCollapsed && len(filtered) > 0 {
-		for i := range filtered {
-			if filtered[i].ID == st.selectedToolID {
-				selectedTool = &filtered[i]
-				break
-			}
-		}
-		if selectedTool == nil {
-			// Also check full registry in case user toggled a status filter while inspecting a tool.
-			for i := range tools {
-				if tools[i].ID == st.selectedToolID {
-					srv := serverByID[tools[i].ServerID]
-					if st.showDemo || !srv.Demo {
-						selectedTool = &tools[i]
-					}
-					break
-				}
-			}
-		}
-		if selectedTool == nil {
-			st.selectedToolID = filtered[0].ID
-			selectedTool = &filtered[0]
+func catalogResolveSelectedTool(
+	tools, filtered []apitypes.Tool,
+	serverByID map[string]apitypes.Server,
+	st *catalogPageState,
+) *apitypes.Tool {
+	if st.panelCollapsed || len(filtered) == 0 {
+		return nil
+	}
+	for i := range filtered {
+		if filtered[i].ID == st.selectedToolID {
+			return &filtered[i]
 		}
 	}
+	// Also check full registry in case user toggled a status filter while inspecting a tool.
+	for i := range tools {
+		if tools[i].ID == st.selectedToolID {
+			srv := serverByID[tools[i].ServerID]
+			if st.showDemo || !srv.Demo {
+				return &tools[i]
+			}
+			break
+		}
+	}
+	st.selectedToolID = filtered[0].ID
+	return &filtered[0]
+}
+
+func catalogPaginateTools(filtered []apitypes.Tool, page, pageSize int) (paged []apitypes.Tool, clampedPage, totalPages, startIdx, endIdx int) {
+	if len(filtered) == 0 {
+		return nil, 1, 1, 0, 0
+	}
+	totalPages = max(1, (len(filtered)+pageSize-1)/pageSize)
+	clampedPage = max(1, min(page, totalPages))
+	startIdx = (clampedPage - 1) * pageSize
+	endIdx = min(len(filtered), startIdx+pageSize)
+	return filtered[startIdx:endIdx], clampedPage, totalPages, startIdx, endIdx
+}
+
+func buildCatalogViewModel(
+	servers []apitypes.Server,
+	tools []apitypes.Tool,
+	hitCounts map[string]int,
+	st *catalogPageState,
+) catalogViewModel {
+	serverByID, realServerIDs, realServers, demoServers := catalogIndexServers(servers)
+
+	// If showDemo was turned off while filtering on a demo server, reset serverFilter.
+	if !st.showDemo && st.serverFilter != "all" {
+		if srv, ok := serverByID[st.serverFilter]; !ok || srv.Demo {
+			st.serverFilter = "all"
+		}
+	}
+
+	stats, actorSeen, actorOptions := catalogCollectStatsAndActors(tools, realServerIDs, hitCounts, st.showDemo)
+	if st.actorFilter != "all" && !actorSeen[st.actorFilter] {
+		st.actorFilter = "all"
+	}
+
+	serverOptions := catalogBuildServerOptions(servers, realServers, st.showDemo)
+
+	// Reset pagination when any filter or sort parameter changes.
+	filterSig := fmt.Sprintf("%s|%s|%d|%d|%s|%d|%t",
+		strings.TrimSpace(st.query), st.serverFilter, st.statusIdx, st.accessIdx, st.actorFilter, st.sortIdx, st.showDemo)
+	if filterSig != st.lastFilterSig {
+		st.lastFilterSig = filterSig
+		st.page = 1
+	}
+
+	filtered := catalogFilterAndSortTools(tools, serverByID, hitCounts, st)
+	selectedTool := catalogResolveSelectedTool(tools, filtered, serverByID, st)
+	paged, clampedPage, totalPages, startIdx, endIdx := catalogPaginateTools(filtered, st.page, catalogPageSize)
+	st.page = clampedPage
+
+	return catalogViewModel{
+		serverByID:    serverByID,
+		realServers:   realServers,
+		demoServers:   demoServers,
+		stats:         stats,
+		actorOptions:  actorOptions,
+		serverOptions: serverOptions,
+		filtered:      filtered,
+		pagedTools:    paged,
+		totalPages:    totalPages,
+		startIdx:      startIdx,
+		endIdx:        endIdx,
+		selectedTool:  selectedTool,
+	}
+}
+
+func (u *DesktopUI) renderCatalog(c *ui.Context) {
+	if u.State == nil {
+		return
+	}
+	st := u.catalogState()
+	servers := u.State.Registry.Servers
+	tools := u.State.Registry.Tools
+	hitCounts := u.Telemetry.ToolHitCounts
+
+	serverByID, _, _, _ := catalogIndexServers(servers)
+	if toolID, serverID, ok := u.consumePendingCatalogTool(); ok {
+		st.focusTool(toolID, serverID, serverByID)
+	}
+	if filterServerID, filterAccess, ok := u.consumePendingCatalogFilter(); ok {
+		st.applyFilterIntent(filterServerID, filterAccess, serverByID)
+	}
+
+	vm := buildCatalogViewModel(servers, tools, hitCounts, st)
 
 	// 1. Page Header.
-	SailSectionHeader(
-		c,
-		i18n.T("ops.catalog-title"),
-		"",
-		func() {
-			if SailSmallButton(c.Key("cat-nav-services"), i18n.T("ops.services")).Clicked() {
-				u.Navigate(ViewServices)
-			}
-			if SailSmallButton(c.Key("cat-nav-playground"), i18n.T("ops.playground")).Clicked() {
-				u.Navigate(ViewPlayground)
-			}
-		},
-	)
+	SailSectionHeader(c, i18n.T("ops.catalog-title"), "", func() {
+		if SailSmallButton(c.Key("cat-nav-services"), i18n.T("ops.services")).Clicked() {
+			u.Navigate(ViewServices)
+		}
+		if SailSmallButton(c.Key("cat-nav-playground"), i18n.T("ops.playground")).Clicked() {
+			u.Navigate(ViewPlayground)
+		}
+	})
 
 	// 2. Interactive Governance KPI Cards.
-	closedRealCount := realToolCount - enabledRealCount
-	if closedRealCount < 0 {
-		closedRealCount = 0
+	renderCatalogKPIRow(c, st, vm.stats)
+
+	// 3. Compact Filter Bar.
+	renderCatalogFilterBar(c, st, vm)
+
+	// 4. Empty State or Master-Detail Workbench.
+	if len(vm.filtered) == 0 {
+		renderCatalogEmptyState(c, st, len(tools), vm.stats.realToolCount)
+		return
 	}
+
+	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(22).Children(func() {
+		u.renderCatalogTableCard(c, st, vm, hitCounts)
+		if vm.selectedTool != nil {
+			u.renderCatalogDetailPanel(c, st, *vm.selectedTool, vm.serverByID[vm.selectedTool.ServerID], hitCounts[vm.selectedTool.ID])
+		}
+	})
+}
+
+func renderCatalogKPIRow(c *ui.Context, st *catalogPageState, stats catalogGovernanceStats) {
 	rwTone := ToneNeutral
-	if rwEnabledCount > 0 {
+	if stats.rwEnabledCount > 0 {
 		rwTone = ToneWarning
 	}
 	ui.Row(c).FillWidth().Wrap().Gap(16).AlignItems(ui.Stretch).Children(func() {
-		SailKPICard(
-			c.Key("cat-kpi-open"),
-			i18n.T("ops.enabled-over-total"),
-			fmt.Sprintf("%d / %d", enabledRealCount, realToolCount),
-			i18n.T("ops.disabled-count", closedRealCount),
-			ToneNeutral,
-			func() {
+		SailKPICard(c.Key("cat-kpi-open"), SailKPICardSpec{
+			Label: i18n.T("ops.enabled-over-total"),
+			Value: fmt.Sprintf("%d / %d", stats.enabledRealCount, stats.realToolCount),
+			Hint:  i18n.T("ops.disabled-count", stats.closedRealCount),
+			Tone:  ToneNeutral,
+			OnClick: func() {
 				if st.statusIdx == 1 {
 					st.statusIdx = 0
 				} else {
 					st.statusIdx = 1
 				}
 			},
-		)
-		SailKPICard(
-			c.Key("cat-kpi-ro"),
-			i18n.T("ops.read-only-tools"),
-			fmt.Sprintf("%d", roEnabledCount),
-			"",
-			ToneNeutral,
-			func() {
+		})
+		SailKPICard(c.Key("cat-kpi-ro"), SailKPICardSpec{
+			Label: i18n.T("ops.read-only-tools"),
+			Value: fmt.Sprintf("%d", stats.roEnabledCount),
+			Tone:  ToneNeutral,
+			OnClick: func() {
 				if st.accessIdx == 1 {
 					st.accessIdx = 0
 				} else {
 					st.accessIdx = 1
 				}
 			},
-		)
-		SailKPICard(
-			c.Key("cat-kpi-rw"),
-			i18n.T("ops.write-tools"),
-			fmt.Sprintf("%d", rwEnabledCount),
-			"",
-			rwTone,
-			func() {
+		})
+		SailKPICard(c.Key("cat-kpi-rw"), SailKPICardSpec{
+			Label: i18n.T("ops.write-tools"),
+			Value: fmt.Sprintf("%d", stats.rwEnabledCount),
+			Tone:  rwTone,
+			OnClick: func() {
 				if st.accessIdx == 2 {
 					st.accessIdx = 0
 				} else {
 					st.accessIdx = 2
 				}
 			},
-		)
-		SailKPICard(
-			c.Key("cat-kpi-hits"),
-			i18n.T("ops.recent-hits"),
-			fmt.Sprintf("%d", hitRealToolCount),
-			"",
-			ToneNeutral,
-			func() {
+		})
+		SailKPICard(c.Key("cat-kpi-hits"), SailKPICardSpec{
+			Label: i18n.T("ops.recent-hits"),
+			Value: fmt.Sprintf("%d", stats.hitRealToolCount),
+			Tone:  ToneNeutral,
+			OnClick: func() {
 				st.sortIdx = 0
 			},
-		)
+		})
 	})
+}
 
-	// 3. Compact Filter Bar.
+func renderCatalogFilterBar(c *ui.Context, st *catalogPageState, vm catalogViewModel) {
 	SailCard(c.Key("cat-filter-card"), func() {
 		ui.Row(c).FillWidth().Wrap().Gap(10).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Row(c).Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
@@ -420,7 +527,7 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 					Label(i18n.T("ops.search-catalog")).
 					Width(230)
 
-				catalogRenderSelect(c, "cat-srv-select", &st.serverFilter, srvOptions, 156)
+				catalogRenderSelect(c, "cat-srv-select", &st.serverFilter, vm.serverOptions, 156)
 
 				SailSegmented(c.Key("cat-status-seg"), &st.statusIdx, i18n.T("ops.filter-all"), i18n.T("ops.filter-enabled"), i18n.T("ops.filter-disabled")).
 					Label(i18n.T("ops.enabled-filter"))
@@ -430,14 +537,14 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 			})
 
 			ui.Row(c).Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
-				if len(actorOptions) > 1 {
-					catalogRenderSelect(c, "cat-actor-select", &st.actorFilter, actorOptions, 124)
+				if len(vm.actorOptions) > 1 {
+					catalogRenderSelect(c, "cat-actor-select", &st.actorFilter, vm.actorOptions, 124)
 				}
 
 				SailSegmented(c.Key("cat-sort-seg"), &st.sortIdx, i18n.T("ops.sort-by-hits"), i18n.T("ops.sort-by-name")).
 					Label(i18n.T("ops.sort-mode"))
 
-				if len(demoServers) > 0 {
+				if len(vm.demoServers) > 0 {
 					ui.Checkbox(c.Key("cat-show-demo"), &st.showDemo, i18n.T("ops.demo-tools"))
 				}
 
@@ -446,7 +553,7 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 						st.resetFilters()
 					}
 				}
-				if st.panelCollapsed && len(filtered) > 0 {
+				if st.panelCollapsed && len(vm.filtered) > 0 {
 					if SailButton(c.Key("cat-reopen-panel"), i18n.T("ops.expand-details")).Clicked() {
 						st.panelCollapsed = false
 					}
@@ -454,214 +561,199 @@ func (u *DesktopUI) renderCatalog(c *ui.Context) {
 			})
 		})
 	})
+}
 
-	// 4. Empty State or Master-Detail Workbench.
-	if len(filtered) == 0 {
-		if !st.showDemo && realToolCount == 0 && len(tools) > 0 {
-			SailEmptyState(
-				c,
-				i18n.T("ops.no-real-upstream-tools"),
-				"",
-				i18n.T("ops.show-demo-tools"),
-				func() {
-					st.showDemo = true
-				},
-			)
-		} else {
-			actionLbl := ""
-			var actionFn func()
-			if st.hasActiveFilters() {
-				actionLbl = i18n.T("ops.clear-filters")
-				actionFn = st.resetFilters
-			}
-			SailEmptyState(
-				c,
-				i18n.T("ops.no-matching-tools"),
-				"",
-				actionLbl,
-				actionFn,
-			)
-		}
+func renderCatalogEmptyState(c *ui.Context, st *catalogPageState, totalTools, realToolCount int) {
+	if !st.showDemo && realToolCount == 0 && totalTools > 0 {
+		SailEmptyState(c, i18n.T("ops.no-real-upstream-tools"), "", i18n.T("ops.show-demo-tools"), func() {
+			st.showDemo = true
+		})
 		return
 	}
+	actionLbl := ""
+	var actionFn func()
+	if st.hasActiveFilters() {
+		actionLbl = i18n.T("ops.clear-filters")
+		actionFn = st.resetFilters
+	}
+	SailEmptyState(c, i18n.T("ops.no-matching-tools"), "", actionLbl, actionFn)
+}
 
-	totalPages := (len(filtered) + catalogPageSize - 1) / catalogPageSize
-	if totalPages < 1 {
-		totalPages = 1
-	}
-	if st.page < 1 {
-		st.page = 1
-	}
-	if st.page > totalPages {
-		st.page = totalPages
-	}
-	startIdx := (st.page - 1) * catalogPageSize
-	endIdx := startIdx + catalogPageSize
-	if endIdx > len(filtered) {
-		endIdx = len(filtered)
-	}
-	pagedTools := filtered[startIdx:endIdx]
+type catalogToolRowProps struct {
+	rowKey       string
+	tool         apitypes.Tool
+	srv          apitypes.Server
+	hits         int
+	maxDescLines int
+	isSelected   bool
+	isLast       bool
+}
 
-	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(22).Children(func() {
-		// Left Column: Hairline-divided Tool List Card (max 3 anchors per row).
-		applyCardElevation(
-			ui.Column(c.Key("cat-table-card")).
-				Grow(1).
-				MinWidth(0).
-				Radius(10).
-				Background(SailBgSurface),
-		).Clip().Children(func() {
-			SailListCardHeader(c, i18n.T("ops.tool-list"), i18n.T("ops.items-count", len(filtered)), nil)
+func (u *DesktopUI) renderCatalogTableCard(
+	c *ui.Context,
+	st *catalogPageState,
+	vm catalogViewModel,
+	hitCounts map[string]int,
+) {
+	applyCardElevation(
+		ui.Column(c.Key("cat-table-card")).
+			Grow(1).
+			MinWidth(0).
+			Radius(10).
+			Background(SailBgSurface),
+	).Clip().Children(func() {
+		SailListCardHeader(c, i18n.T("ops.tool-list"), i18n.T("ops.items-count", len(vm.filtered)), nil)
 
-			maxDescLines := 1
-			if selectedTool == nil {
-				maxDescLines = 2
+		maxDescLines := 1
+		if vm.selectedTool == nil {
+			maxDescLines = 2
+		}
+
+		seenRowKeys := make(map[string]int, len(vm.pagedTools))
+		for idx, tool := range vm.pagedTools {
+			rowKey := tool.ID
+			if rowKey == "" || seenRowKeys[rowKey] > 0 {
+				rowKey = fmt.Sprintf("%s#%d", tool.ID, idx)
 			}
+			seenRowKeys[tool.ID]++
+			u.renderCatalogToolRow(c, st, catalogToolRowProps{
+				rowKey:       rowKey,
+				tool:         tool,
+				srv:          vm.serverByID[tool.ServerID],
+				hits:         hitCounts[tool.ID],
+				maxDescLines: maxDescLines,
+				isSelected:   vm.selectedTool != nil && vm.selectedTool.ID == tool.ID,
+				isLast:       idx == len(vm.pagedTools)-1 && vm.totalPages <= 1,
+			})
+		}
 
-			seenRowKeys := make(map[string]int, len(pagedTools))
-			for idx, tool := range pagedTools {
-				t := tool
-				rowKey := t.ID
-				if rowKey == "" || seenRowKeys[rowKey] > 0 {
-					rowKey = fmt.Sprintf("%s#%d", t.ID, idx)
-				}
-				seenRowKeys[t.ID]++
-				srv := serverByID[t.ServerID]
-				hits := hitCounts[t.ID]
-				isSelected := selectedTool != nil && selectedTool.ID == t.ID
-				isLast := idx == len(pagedTools)-1 && totalPages <= 1
-
-				rowBg := SailBgSurface
-				if isSelected {
-					rowBg = SailAccentSoft
-				}
-
-				row := ui.Row(c.Key("cat-row-"+rowKey)).
-					FillWidth().
-					Padding(13, 20).
-					Gap(14).
-					AlignItems(ui.Center).
-					Justify(ui.SpaceBetween).
-					Background(rowBg)
-				if !isLast {
-					row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
-				}
-				if row.Hovered() && !isSelected {
-					row.Background(SailBgHover)
-				}
-
-				row.Children(func() {
-					// Anchor 1 & 2: Primary Identity + Cleaned 1–2 line Summary.
-					infoBtn := ui.ButtonBase(c.Key("cat-info-" + rowKey)).
-						Column().
-						Grow(1).
-						MinWidth(0).
-						Gap(4).
-						AlignItems(ui.Start).
-						Cursor(ui.CursorPointer)
-					infoBtn.Children(func() {
-						ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-							nameColor := SailInkStrong
-							if isSelected {
-								nameColor = SailAccent
-							}
-							ui.Text(c, t.Name).
-								Font("monospace").
-								FontSize(13).
-								FontWeight(600).
-								TextColor(nameColor).
-								SingleLine()
-
-							srvName := srv.Name
-							if srvName == "" {
-								srvName = t.ServerID
-							}
-							ui.Text(c, srvName).
-								FontSize(11.5).
-								TextColor(SailInkFaint).
-								SingleLine()
-
-							if !t.ReadOnly {
-								SailBadge(c, i18n.T("ops.write-access"), ToneWarning)
-							}
-						})
-
-						SailDescSummary(c, t.Description, i18n.T("ops.no-description"), maxDescLines).FillWidth()
-					})
-					if infoBtn.Clicked() {
-						st.selectedToolID = t.ID
-						st.panelCollapsed = false
-					}
-
-					// Anchor 3: Quiet hit count + Enable Switch + Detail toggle.
-					ui.Row(c).Shrink(0).Gap(12).AlignItems(ui.Center).Children(func() {
-						if hits > 0 {
-							ui.Text(c, i18n.T("ops.hits-count", hits)).
-								FontSize(12).
-								TextColor(SailInkMuted).
-								FontFeatures("tnum").
-								SingleLine()
-						}
-
-						enabledVal := t.Enabled
-						busy := st.togglingIDs[t.ID]
-						if ui.Switch(c.Key("cat-sw-"+rowKey), &enabledVal).
-							Disabled(busy).
-							Label(i18n.T("ops.open-state-for", t.Name)).
-							Changed() {
-							u.catalogToggleToolWhitelist(st, t)
-						}
-
-						btnLabel := i18n.T("ops.details")
-						if isSelected {
-							btnLabel = i18n.T("ops.collapse")
-						}
-						if SailSmallButton(c.Key("cat-inspect-"+rowKey), btnLabel).Clicked() {
-							if isSelected {
-								st.panelCollapsed = true
-							} else {
-								st.selectedToolID = t.ID
-								st.panelCollapsed = false
-							}
-						}
-					})
-				})
-			}
-
-			// Pagination Footer (shown only when multi-page).
-			if totalPages > 1 {
-				ui.Row(c).
-					FillWidth().
-					Padding(12, 20).
-					AlignItems(ui.Center).
-					Justify(ui.SpaceBetween).
-					Children(func() {
-						ui.Textf(c, "%d–%d / %d", startIdx+1, endIdx, len(filtered)).
-							FontSize(12).
-							TextColor(SailInkMuted).
-							FontFeatures("tnum")
-
-						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.Text(c, i18n.T("ops.page-indicator", st.page, totalPages)).
-								FontSize(12).
-								TextColor(SailInkMuted).
-								FontFeatures("tnum")
-							if SailSmallButton(c.Key("cat-prev-page"), i18n.T("ops.prev-page")).Disabled(st.page <= 1).Clicked() {
-								st.page--
-							}
-							if SailSmallButton(c.Key("cat-next-page"), i18n.T("ops.next-page")).Disabled(st.page >= totalPages).Clicked() {
-								st.page++
-							}
-						})
-					})
-			}
-		})
-
-		// Right Column: Tool Detail Panel / Inspector.
-		if selectedTool != nil {
-			u.renderCatalogDetailPanel(c, st, *selectedTool, serverByID[selectedTool.ServerID], hitCounts[selectedTool.ID])
+		if vm.totalPages > 1 {
+			renderCatalogPagination(c, st, vm)
 		}
 	})
+}
+
+func (u *DesktopUI) renderCatalogToolRow(c *ui.Context, st *catalogPageState, p catalogToolRowProps) {
+	t := p.tool
+	rowBg := SailBgSurface
+	if p.isSelected {
+		rowBg = SailAccentSoft
+	}
+
+	row := ui.Row(c.Key("cat-row-"+p.rowKey)).
+		FillWidth().
+		Padding(13, 20).
+		Gap(14).
+		AlignItems(ui.Center).
+		Justify(ui.SpaceBetween).
+		Background(rowBg)
+	if !p.isLast {
+		row.BorderWidth(0, 0, 1, 0).BorderColor(SailDivider)
+	}
+	if row.Hovered() && !p.isSelected {
+		row.Background(SailBgHover)
+	}
+
+	row.Children(func() {
+		infoBtn := ui.ButtonBase(c.Key("cat-info-" + p.rowKey)).
+			Column().
+			Grow(1).
+			MinWidth(0).
+			Gap(4).
+			AlignItems(ui.Start).
+			Cursor(ui.CursorPointer)
+		infoBtn.Children(func() {
+			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+				nameColor := SailInkStrong
+				if p.isSelected {
+					nameColor = SailAccent
+				}
+				ui.Text(c, t.Name).
+					Font("monospace").
+					FontSize(13).
+					FontWeight(600).
+					TextColor(nameColor).
+					SingleLine()
+
+				srvName := p.srv.Name
+				if srvName == "" {
+					srvName = t.ServerID
+				}
+				ui.Text(c, srvName).
+					FontSize(11.5).
+					TextColor(SailInkFaint).
+					SingleLine()
+
+				if !t.ReadOnly {
+					SailBadge(c, i18n.T("ops.write-access"), ToneWarning)
+				}
+			})
+
+			SailDescSummary(c, t.Description, i18n.T("ops.no-description"), p.maxDescLines).FillWidth()
+		})
+		if infoBtn.Clicked() {
+			st.selectedToolID = t.ID
+			st.panelCollapsed = false
+		}
+
+		ui.Row(c).Shrink(0).Gap(12).AlignItems(ui.Center).Children(func() {
+			if p.hits > 0 {
+				ui.Text(c, i18n.T("ops.hits-count", p.hits)).
+					FontSize(12).
+					TextColor(SailInkMuted).
+					FontFeatures("tnum").
+					SingleLine()
+			}
+
+			enabledVal := t.Enabled
+			if ui.Switch(c.Key("cat-sw-"+p.rowKey), &enabledVal).
+				Disabled(st.togglingIDs[t.ID]).
+				Label(i18n.T("ops.open-state-for", t.Name)).
+				Changed() {
+				u.catalogToggleToolWhitelist(st, t)
+			}
+
+			btnLabel := i18n.T("ops.details")
+			if p.isSelected {
+				btnLabel = i18n.T("ops.collapse")
+			}
+			if SailSmallButton(c.Key("cat-inspect-"+p.rowKey), btnLabel).Clicked() {
+				if p.isSelected {
+					st.panelCollapsed = true
+				} else {
+					st.selectedToolID = t.ID
+					st.panelCollapsed = false
+				}
+			}
+		})
+	})
+}
+
+func renderCatalogPagination(c *ui.Context, st *catalogPageState, vm catalogViewModel) {
+	ui.Row(c).
+		FillWidth().
+		Padding(12, 20).
+		AlignItems(ui.Center).
+		Justify(ui.SpaceBetween).
+		Children(func() {
+			ui.Textf(c, "%d–%d / %d", vm.startIdx+1, vm.endIdx, len(vm.filtered)).
+				FontSize(12).
+				TextColor(SailInkMuted).
+				FontFeatures("tnum")
+
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, i18n.T("ops.page-indicator", st.page, vm.totalPages)).
+					FontSize(12).
+					TextColor(SailInkMuted).
+					FontFeatures("tnum")
+				if SailSmallButton(c.Key("cat-prev-page"), i18n.T("ops.prev-page")).Disabled(st.page <= 1).Clicked() {
+					st.page--
+				}
+				if SailSmallButton(c.Key("cat-next-page"), i18n.T("ops.next-page")).Disabled(st.page >= vm.totalPages).Clicked() {
+					st.page++
+				}
+			})
+		})
 }
 
 func (u *DesktopUI) renderCatalogDetailPanel(
@@ -671,7 +763,7 @@ func (u *DesktopUI) renderCatalogDetailPanel(
 	srv apitypes.Server,
 	hits int,
 ) {
-	st.syncEditForm(tool)
+	st.edit.sync(tool)
 
 	applyCardElevation(
 		ui.Column(c.Key("cat-detail-"+tool.ID)).
@@ -849,19 +941,19 @@ func (u *DesktopUI) renderCatalogEditTab(c *ui.Context, st *catalogPageState, to
 	ui.Column(c).FillWidth().Gap(12).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Text(c, i18n.T("ops.read-only-mode")).FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
-			ui.Switch(c.Key("cat-edit-ro-"+tool.ID), &st.editReadOnly).Label(i18n.T("ops.read-only-mode"))
+			ui.Switch(c.Key("cat-edit-ro-"+tool.ID), &st.edit.readOnly).Label(i18n.T("ops.read-only-mode"))
 		})
 
 		ui.Column(c).FillWidth().Gap(5).Children(func() {
 			ui.Text(c, i18n.T("ops.description")).FontSize(12).FontWeight(600).TextColor(SailInkBody)
-			ui.TextArea(c.Key("cat-edit-desc-"+tool.ID), &st.editDesc).
+			ui.TextArea(c.Key("cat-edit-desc-"+tool.ID), &st.edit.desc).
 				Lines(4, 8).
 				FillWidth()
 		})
 
 		ui.Column(c).FillWidth().Gap(5).Children(func() {
 			ui.Text(c, i18n.T("ops.actors-label")).FontSize(12).FontWeight(600).TextColor(SailInkBody)
-			ui.TextInput(c.Key("cat-edit-actors-"+tool.ID), &st.editActors).
+			ui.TextInput(c.Key("cat-edit-actors-"+tool.ID), &st.edit.actors).
 				Font("monospace").
 				Placeholder("developer, observer").
 				FillWidth()
@@ -869,21 +961,20 @@ func (u *DesktopUI) renderCatalogEditTab(c *ui.Context, st *catalogPageState, to
 
 		ui.Column(c).FillWidth().Gap(5).Children(func() {
 			ui.Text(c, i18n.T("ops.tags-label")).FontSize(12).FontWeight(600).TextColor(SailInkBody)
-			ui.TextInput(c.Key("cat-edit-tags-"+tool.ID), &st.editTags).
+			ui.TextInput(c.Key("cat-edit-tags-"+tool.ID), &st.edit.tags).
 				Placeholder("github, pr").
 				FillWidth()
 		})
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailButton(c.Key("cat-edit-reset-"+tool.ID), i18n.T("ops.reset")).Disabled(st.savingContract).Clicked() {
-				st.editLoadedID = ""
-				st.syncEditForm(tool)
+			if SailButton(c.Key("cat-edit-reset-"+tool.ID), i18n.T("ops.reset")).Disabled(st.edit.savingContract).Clicked() {
+				st.edit.reset(tool)
 			}
 			saveLabel := i18n.T("ops.save-contract")
-			if st.savingContract {
+			if st.edit.savingContract {
 				saveLabel = i18n.T("ops.saving")
 			}
-			if SailPrimaryButton(c.Key("cat-edit-save-"+tool.ID), saveLabel).Disabled(st.savingContract).Clicked() {
+			if SailPrimaryButton(c.Key("cat-edit-save-"+tool.ID), saveLabel).Disabled(st.edit.savingContract).Clicked() {
 				u.catalogSaveToolMetadata(st, tool)
 			}
 		})
@@ -937,22 +1028,22 @@ func (u *DesktopUI) catalogToggleToolWhitelist(st *catalogPageState, target apit
 }
 
 func (u *DesktopUI) catalogSaveToolMetadata(st *catalogPageState, baseTool apitypes.Tool) {
-	if u.Client == nil || st.savingContract {
+	if u.Client == nil || st.edit.savingContract {
 		return
 	}
 	updated := baseTool
-	updated.Description = strings.TrimSpace(st.editDesc)
-	updated.ReadOnly = st.editReadOnly
-	updated.Actors = catalogSplitCSV(st.editActors)
-	updated.Tags = catalogSplitCSV(st.editTags)
+	updated.Description = strings.TrimSpace(st.edit.desc)
+	updated.ReadOnly = st.edit.readOnly
+	updated.Actors = catalogSplitCSV(st.edit.actors)
+	updated.Tags = catalogSplitCSV(st.edit.tags)
 	if len(updated.Actors) == 0 {
 		updated.Actors = []string{"developer"}
 	}
 
-	st.savingContract = true
+	st.edit.savingContract = true
 	u.RunAsync(func() error {
 		defer u.updateUI(func() {
-			st.savingContract = false
+			st.edit.savingContract = false
 		})
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()

@@ -53,14 +53,13 @@ func (u *DesktopUI) marketState() *marketPageState {
 	return u.market
 }
 
-func (u *DesktopUI) renderMarketContent(c *ui.Context) {
-	state := u.State
-	st := u.marketState()
+type marketViewModel struct {
+	installedCount   int
+	featuredFiltered []apitypes.MarketServer
+	registryFiltered []apitypes.MarketServer
+}
 
-	if !st.loaded && !st.loading && u.Client != nil {
-		u.fetchMarket(st, "")
-	}
-
+func buildMarketViewModel(state *apitypes.Bootstrap, st *marketPageState) marketViewModel {
 	installedByID := make(map[string]bool)
 	if state != nil {
 		for _, s := range state.Registry.Servers {
@@ -70,7 +69,54 @@ func (u *DesktopUI) renderMarketContent(c *ui.Context) {
 		}
 	}
 
-	// Search & Filter Bar.
+	var vm marketViewModel
+	q := strings.ToLower(strings.TrimSpace(st.query))
+	for _, item := range st.items {
+		item.Installed = item.Installed || installedByID[item.ServerID]
+		if item.Installed {
+			vm.installedCount++
+		}
+		if !marketMatchesFilter(item, st.filter) {
+			continue
+		}
+		if q != "" && !marketMatchesLocalQuery(item, q) {
+			continue
+		}
+		if item.Featured {
+			vm.featuredFiltered = append(vm.featuredFiltered, item)
+		} else {
+			vm.registryFiltered = append(vm.registryFiltered, item)
+		}
+	}
+	return vm
+}
+
+func (u *DesktopUI) renderMarketContent(c *ui.Context) {
+	st := u.marketState()
+	if !st.loaded && !st.loading && u.Client != nil {
+		u.fetchMarket(st, "")
+	}
+
+	vm := buildMarketViewModel(u.State, st)
+
+	u.renderMarketSearchBar(c, st)
+	renderMarketFilterBar(c, st, vm.installedCount)
+
+	if st.fetchErr != "" {
+		SailAlertBox(c, ToneDanger, i18n.T("market.error.load"), st.fetchErr)
+	}
+	if st.registryErr != "" {
+		SailAlertBox(c, ToneWarning, i18n.T("market.warning.registry_down"), st.registryErr)
+	}
+
+	u.renderMarketBody(c, st, vm)
+
+	if st.showModal && st.modalItem != nil {
+		u.renderMarketInstallModal(c, st, *st.modalItem)
+	}
+}
+
+func (u *DesktopUI) renderMarketSearchBar(c *ui.Context, st *marketPageState) {
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
 		inp := SailTextInput(c.Key("mkt-search"), &st.query).
 			Placeholder(i18n.T("market.search.placeholder")).
@@ -91,46 +137,18 @@ func (u *DesktopUI) renderMarketContent(c *ui.Context) {
 			u.fetchMarket(st, strings.TrimSpace(st.query))
 		}
 	})
+}
 
-	installedCount := 0
-	for _, item := range st.items {
-		if item.Installed || installedByID[item.ServerID] {
-			installedCount++
-		}
-	}
-
+func renderMarketFilterBar(c *ui.Context, st *marketPageState, installedCount int) {
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 		renderMarketFilterPill(c, st, "all", i18n.T("common.all"))
 		renderMarketFilterPill(c, st, "http", i18n.T("market.filter.cloud"))
 		renderMarketFilterPill(c, st, "stdio", i18n.T("market.filter.local"))
 		renderMarketFilterPill(c, st, "installed", fmt.Sprintf(i18n.T("market.filter.installed"), installedCount))
 	})
+}
 
-	if st.fetchErr != "" {
-		SailAlertBox(c, ToneDanger, i18n.T("market.error.load"), st.fetchErr)
-	}
-	if st.registryErr != "" {
-		SailAlertBox(c, ToneWarning, i18n.T("market.warning.registry_down"), st.registryErr)
-	}
-
-	q := strings.ToLower(strings.TrimSpace(st.query))
-	var featuredFiltered []apitypes.MarketServer
-	var registryFiltered []apitypes.MarketServer
-	for _, item := range st.items {
-		item.Installed = item.Installed || installedByID[item.ServerID]
-		if !marketMatchesFilter(item, st.filter) {
-			continue
-		}
-		if q != "" && !marketMatchesLocalQuery(item, q) {
-			continue
-		}
-		if item.Featured {
-			featuredFiltered = append(featuredFiltered, item)
-		} else {
-			registryFiltered = append(registryFiltered, item)
-		}
-	}
-
+func (u *DesktopUI) renderMarketBody(c *ui.Context, st *marketPageState, vm marketViewModel) {
 	winW, _ := c.Size()
 	cols := 3
 	if winW > 0 && winW < 1040 {
@@ -141,31 +159,31 @@ func (u *DesktopUI) renderMarketContent(c *ui.Context) {
 		SailCard(c, func() {
 			SailQuietStatus(c, i18n.T("market.loading"), SailWarningInk, SailInkMuted)
 		})
-	} else if len(featuredFiltered) == 0 && len(registryFiltered) == 0 {
+		return
+	}
+	if len(vm.featuredFiltered) == 0 && len(vm.registryFiltered) == 0 {
 		actionLbl := ""
 		var onAction func()
-		if strings.TrimSpace(st.query) != "" && strings.TrimSpace(st.query) != st.registryQuery {
+		qTrim := strings.TrimSpace(st.query)
+		if qTrim != "" && qTrim != st.registryQuery {
 			actionLbl = i18n.T("market.search.registry_cta")
-			onAction = func() { u.fetchMarket(st, strings.TrimSpace(st.query)) }
+			onAction = func() { u.fetchMarket(st, qTrim) }
 		}
 		SailEmptyState(c, i18n.T("market.empty.title"), i18n.T("market.empty.subtitle"), actionLbl, onAction)
-	} else {
-		if len(featuredFiltered) > 0 {
-			u.renderMarketGrid(c, st, featuredFiltered, cols, "feat")
-		}
-		if len(registryFiltered) > 0 {
-			ui.Column(c).FillWidth().Gap(10).Children(func() {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-					ui.Text(c, i18n.T("market.section.registry_results")).FontSize(13).FontWeight(600).TextColor(SailInkBody)
-					ui.Text(c, "registry.modelcontextprotocol.io").Font("monospace").FontSize(11.5).TextColor(SailInkMuted)
-				})
-				u.renderMarketGrid(c, st, registryFiltered, cols, "reg")
-			})
-		}
+		return
 	}
 
-	if st.showModal && st.modalItem != nil {
-		u.renderMarketInstallModal(c, st, *st.modalItem)
+	if len(vm.featuredFiltered) > 0 {
+		u.renderMarketGrid(c, st, vm.featuredFiltered, cols, "feat")
+	}
+	if len(vm.registryFiltered) > 0 {
+		ui.Column(c).FillWidth().Gap(10).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+				ui.Text(c, i18n.T("market.section.registry_results")).FontSize(13).FontWeight(600).TextColor(SailInkBody)
+				ui.Text(c, "registry.modelcontextprotocol.io").Font("monospace").FontSize(11.5).TextColor(SailInkMuted)
+			})
+			u.renderMarketGrid(c, st, vm.registryFiltered, cols, "reg")
+		})
 	}
 }
 

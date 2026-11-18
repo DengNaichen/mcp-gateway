@@ -95,173 +95,264 @@ func percentileInt64(sortedAsc []int64, p float64) *int64 {
 
 // ComputeGatewayTelemetry computes real-time overview metrics from the bootstrap snapshot.
 func ComputeGatewayTelemetry(state apitypes.Bootstrap) GatewayTelemetry {
+	acc := newTelemetryAccumulator(state)
+	for _, ev := range state.Events {
+		acc.addEvent(ev)
+	}
+	return acc.summarize(state)
+}
+
+// telemetryAccumulator folds each bootstrap event into the counters used by the
+// Overview page so the per-event logic stays in small, testable helpers.
+type telemetryAccumulator struct {
+	discoverCount     int
+	invokeCount       int
+	agentCount        int
+	selectedCount     int
+	noMatchCount      int
+	needsContextCount int
+	errorCount        int
+
+	eligibleSum      float64
+	eligibleSamples  int
+	selectedToolsSum float64
+	selectedSamples  int
+	totalTokens      int
+
+	discoverDurations []int64
+	invokeDurations   []int64
+	toolHitCounts     map[string]int
+	blindSpotMap      map[string]*BlindSpotItem
+	toolByID          map[string]apitypes.Tool
+	serverByID        map[string]apitypes.Server
+}
+
+func newTelemetryAccumulator(state apitypes.Bootstrap) *telemetryAccumulator {
 	events := state.Events
 	servers := state.Registry.Servers
 	tools := state.Registry.Tools
-
-	var (
-		discoverCount     int
-		invokeCount       int
-		agentCount        int
-		selectedCount     int
-		noMatchCount      int
-		needsContextCount int
-		errorCount        int
-
-		eligibleSum      float64
-		eligibleSamples  int
-		selectedToolsSum float64
-		selectedSamples  int
-		totalTokens      int
-	)
-
-	discoverDurations := make([]int64, 0, len(events))
-	invokeDurations := make([]int64, 0, len(events))
-	toolHitCounts := make(map[string]int)
-	blindSpotMap := make(map[string]*BlindSpotItem)
-
-	toolByID := make(map[string]apitypes.Tool, len(tools))
+	acc := &telemetryAccumulator{
+		discoverDurations: make([]int64, 0, len(events)),
+		invokeDurations:   make([]int64, 0, len(events)),
+		toolHitCounts:     make(map[string]int),
+		blindSpotMap:      make(map[string]*BlindSpotItem),
+		toolByID:          make(map[string]apitypes.Tool, len(tools)),
+		serverByID:        make(map[string]apitypes.Server, len(servers)),
+	}
 	for _, t := range tools {
-		toolByID[t.ID] = t
+		acc.toolByID[t.ID] = t
 	}
-	serverByID := make(map[string]apitypes.Server, len(servers))
 	for _, s := range servers {
-		serverByID[s.ID] = s
+		acc.serverByID[s.ID] = s
+	}
+	return acc
+}
+
+func (a *telemetryAccumulator) addEvent(ev apitypes.Event) {
+	switch ev.Kind {
+	case "discover":
+		a.discoverCount++
+		if ev.DurationMS >= 0 {
+			a.discoverDurations = append(a.discoverDurations, ev.DurationMS)
+		}
+	case "invoke":
+		a.invokeCount++
+		if ev.DurationMS >= 0 {
+			a.invokeDurations = append(a.invokeDurations, ev.DurationMS)
+		}
+	case "agent":
+		a.agentCount++
 	}
 
-	for _, ev := range events {
-		switch ev.Kind {
-		case "discover":
-			discoverCount++
-			if ev.DurationMS >= 0 {
-				discoverDurations = append(discoverDurations, ev.DurationMS)
-			}
-		case "invoke":
-			invokeCount++
-			if ev.DurationMS >= 0 {
-				invokeDurations = append(invokeDurations, ev.DurationMS)
-			}
-		case "agent":
-			agentCount++
-		}
+	a.recordStatus(ev)
 
-		isErr := ev.Status == "error" || ev.Status == "failed"
-		if isErr {
-			errorCount++
-		} else {
-			switch ev.Status {
-			case "selected":
-				selectedCount++
-			case "no_match":
-				noMatchCount++
-			case "needs_context":
-				needsContextCount++
-			}
-		}
+	if detailMap := parseTelemetryDetail(ev.Detail); detailMap != nil {
+		a.recordDetailMetrics(ev, detailMap)
+		a.recordBlindSpot(ev, detailMap)
+	} else {
+		a.recordBlindSpot(ev, nil)
+	}
+}
 
-		var detailMap map[string]any
-		if len(ev.Detail) > 0 {
-			_ = json.Unmarshal(ev.Detail, &detailMap)
-		}
-		if detailMap != nil {
-			if elig, ok := jsonFloat(detailMap["eligible"]); ok && elig > 0 {
-				eligibleSum += elig
-				eligibleSamples++
-			}
-			if pt, ok := jsonFloat(detailMap["prompt_tokens"]); ok {
-				ot, _ := jsonFloat(detailMap["output_tokens"])
-				totalTokens += int(pt + ot)
-			}
-			if rawTools, ok := detailMap["tools"].([]any); ok {
-				if ev.Status == "selected" {
-					selectedToolsSum += float64(len(rawTools))
-					selectedSamples++
-				}
-				for _, item := range rawTools {
-					var id string
-					switch v := item.(type) {
-					case string:
-						id = v
-					case map[string]any:
-						if s, ok := v["id"].(string); ok && s != "" {
-							id = s
-						} else if s, ok := v["tool_id"].(string); ok && s != "" {
-							id = s
-						}
-					}
-					if id != "" {
-						toolHitCounts[id]++
-					}
-				}
-			}
-		}
+func (a *telemetryAccumulator) recordStatus(ev apitypes.Event) {
+	if ev.Status == "error" || ev.Status == "failed" {
+		a.errorCount++
+		return
+	}
+	switch ev.Status {
+	case "selected":
+		a.selectedCount++
+	case "no_match":
+		a.noMatchCount++
+	case "needs_context":
+		a.needsContextCount++
+	}
+}
 
-		if isErr || ev.Status == "no_match" || ev.Status == "needs_context" {
-			key := ev.Status + "::" + strings.TrimSpace(ev.Title)
-			if existing, ok := blindSpotMap[key]; ok {
-				existing.Count++
-			} else {
-				var errSummary string
-				if detailMap != nil {
-					if rawErr, ok := detailMap["error"]; ok && rawErr != nil {
-						firstLine := strings.SplitN(fmt.Sprint(rawErr), "\n", 2)[0]
-						errSummary = truncateRunes(firstLine, 120)
-					} else if rawQ, ok := detailMap["question"]; ok && rawQ != nil {
-						errSummary = fmt.Sprint(rawQ)
-					}
-				}
-				blindSpotMap[key] = &BlindSpotItem{
-					Intent:       ev.Title,
-					Status:       ev.Status,
-					Actor:        ev.Actor,
-					Count:        1,
-					LastTime:     ev.Time,
-					LastEventID:  ev.ID,
-					ErrorSummary: errSummary,
-				}
-			}
+func (a *telemetryAccumulator) recordDetailMetrics(ev apitypes.Event, detailMap map[string]any) {
+	if elig, ok := jsonFloat(detailMap["eligible"]); ok && elig > 0 {
+		a.eligibleSum += elig
+		a.eligibleSamples++
+	}
+	if pt, ok := jsonFloat(detailMap["prompt_tokens"]); ok {
+		ot, _ := jsonFloat(detailMap["output_tokens"])
+		a.totalTokens += int(pt + ot)
+	}
+	rawTools, ok := detailMap["tools"].([]any)
+	if !ok {
+		return
+	}
+	if ev.Status == "selected" {
+		a.selectedToolsSum += float64(len(rawTools))
+		a.selectedSamples++
+	}
+	for _, item := range rawTools {
+		if id := telemetryToolID(item); id != "" {
+			a.toolHitCounts[id]++
 		}
 	}
+}
 
-	slices.Sort(discoverDurations)
+func (a *telemetryAccumulator) recordBlindSpot(ev apitypes.Event, detailMap map[string]any) {
+	if ev.Status != "error" && ev.Status != "failed" && ev.Status != "no_match" && ev.Status != "needs_context" {
+		return
+	}
+	key := ev.Status + "::" + strings.TrimSpace(ev.Title)
+	if existing, ok := a.blindSpotMap[key]; ok {
+		existing.Count++
+		return
+	}
+	a.blindSpotMap[key] = &BlindSpotItem{
+		Intent:       ev.Title,
+		Status:       ev.Status,
+		Actor:        ev.Actor,
+		Count:        1,
+		LastTime:     ev.Time,
+		LastEventID:  ev.ID,
+		ErrorSummary: telemetryErrorSummary(detailMap),
+	}
+}
 
-	var hitRatePct *float64
-	if discoverCount > 0 {
-		v := (float64(selectedCount) / float64(discoverCount)) * 100
-		hitRatePct = &v
+func (a *telemetryAccumulator) summarize(state apitypes.Bootstrap) GatewayTelemetry {
+	slices.Sort(a.discoverDurations)
+
+	out := GatewayTelemetry{
+		SampleSize:        len(state.Events),
+		DiscoverCount:     a.discoverCount,
+		InvokeCount:       a.invokeCount,
+		AgentCount:        a.agentCount,
+		SelectedCount:     a.selectedCount,
+		NoMatchCount:      a.noMatchCount,
+		NeedsContextCount: a.needsContextCount,
+		ErrorCount:        a.errorCount,
+		HitRatePct:        telemetryPercent(a.selectedCount, a.discoverCount),
+		SuccessRatePct:    telemetrySuccessRate(len(state.Events), a.errorCount),
+		AvgEligible:       telemetryAverage(a.eligibleSum, a.eligibleSamples),
+		AvgSelectedOnHit:  telemetryAverage(a.selectedToolsSum, a.selectedSamples),
+		P50DiscoverMs:     percentileInt64(a.discoverDurations, 50),
+		P95DiscoverMs:     percentileInt64(a.discoverDurations, 95),
+		AvgInvokeMs:       telemetryAvgInt64(a.invokeDurations),
+		TotalTokens:       a.totalTokens,
+		ToolHitCounts:     a.toolHitCounts,
 	}
-	var successRatePct *float64
-	if len(events) > 0 {
-		v := (float64(len(events)-errorCount) / float64(len(events))) * 100
-		successRatePct = &v
+	out.CompressionPct = telemetryCompression(out.AvgEligible, out.AvgSelectedOnHit)
+	out.TopTools = buildTopTools(a.toolHitCounts, a.toolByID, a.serverByID)
+	out.AttentionItems = buildAttentionItems(a.blindSpotMap)
+	out.PulseBuckets = computePulseBuckets(state, time.Now())
+	return out
+}
+
+func parseTelemetryDetail(raw []byte) map[string]any {
+	if len(raw) == 0 {
+		return nil
 	}
-	var avgEligible *float64
-	if eligibleSamples > 0 {
-		v := eligibleSum / float64(eligibleSamples)
-		avgEligible = &v
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
 	}
-	var avgSelectedOnHit *float64
-	if selectedSamples > 0 {
-		v := selectedToolsSum / float64(selectedSamples)
-		avgSelectedOnHit = &v
-	}
-	var compressionPct *float64
-	if avgEligible != nil && *avgEligible > 0 && avgSelectedOnHit != nil {
-		v := math.Max(0, (1.0 - *avgSelectedOnHit / *avgEligible)*100)
-		compressionPct = &v
-	}
-	var avgInvokeMs *int64
-	if len(invokeDurations) > 0 {
-		var sum int64
-		for _, d := range invokeDurations {
-			sum += d
+	return m
+}
+
+func telemetryToolID(item any) string {
+	switch v := item.(type) {
+	case string:
+		return v
+	case map[string]any:
+		if s, ok := v["id"].(string); ok && s != "" {
+			return s
 		}
-		v := int64(math.Round(float64(sum) / float64(len(invokeDurations))))
-		avgInvokeMs = &v
+		if s, ok := v["tool_id"].(string); ok && s != "" {
+			return s
+		}
 	}
+	return ""
+}
 
-	topTools := make([]TopToolItem, 0, len(toolHitCounts))
-	for id, hits := range toolHitCounts {
+func telemetryErrorSummary(m map[string]any) string {
+	if m == nil {
+		return ""
+	}
+	if rawErr, ok := m["error"]; ok && rawErr != nil {
+		firstLine := strings.SplitN(fmt.Sprint(rawErr), "\n", 2)[0]
+		return truncateRunes(firstLine, 120)
+	}
+	if rawQ, ok := m["question"]; ok && rawQ != nil {
+		return fmt.Sprint(rawQ)
+	}
+	return ""
+}
+
+func telemetryPercent(numerator, denominator int) *float64 {
+	if denominator <= 0 {
+		return nil
+	}
+	v := (float64(numerator) / float64(denominator)) * 100
+	return &v
+}
+
+func telemetrySuccessRate(total, errors int) *float64 {
+	if total <= 0 {
+		return nil
+	}
+	v := (float64(total-errors) / float64(total)) * 100
+	return &v
+}
+
+func telemetryAverage(sum float64, samples int) *float64 {
+	if samples <= 0 {
+		return nil
+	}
+	v := sum / float64(samples)
+	return &v
+}
+
+func telemetryCompression(avgEligible, avgSelected *float64) *float64 {
+	if avgEligible == nil || *avgEligible <= 0 || avgSelected == nil {
+		return nil
+	}
+	v := math.Max(0, (1.0-*avgSelected/(*avgEligible))*100)
+	return &v
+}
+
+func telemetryAvgInt64(vals []int64) *int64 {
+	if len(vals) == 0 {
+		return nil
+	}
+	var sum int64
+	for _, d := range vals {
+		sum += d
+	}
+	v := int64(math.Round(float64(sum) / float64(len(vals))))
+	return &v
+}
+
+func buildTopTools(
+	hits map[string]int,
+	toolByID map[string]apitypes.Tool,
+	serverByID map[string]apitypes.Server,
+) []TopToolItem {
+	topTools := make([]TopToolItem, 0, len(hits))
+	for id, hitCount := range hits {
 		regTool, hasTool := toolByID[id]
 		serverID := regTool.ServerID
 		if serverID == "" {
@@ -292,7 +383,7 @@ func ComputeGatewayTelemetry(state apitypes.Bootstrap) GatewayTelemetry {
 			ServerID:   serverID,
 			ServerName: srvName,
 			ReadOnly:   readOnly,
-			Hits:       hits,
+			Hits:       hitCount,
 		})
 	}
 	sort.Slice(topTools, func(i, j int) bool {
@@ -304,7 +395,10 @@ func ComputeGatewayTelemetry(state apitypes.Bootstrap) GatewayTelemetry {
 	if len(topTools) > 6 {
 		topTools = topTools[:6]
 	}
+	return topTools
+}
 
+func buildAttentionItems(blindSpotMap map[string]*BlindSpotItem) []BlindSpotItem {
 	attentionItems := make([]BlindSpotItem, 0, len(blindSpotMap))
 	for _, item := range blindSpotMap {
 		attentionItems = append(attentionItems, *item)
@@ -323,32 +417,7 @@ func ComputeGatewayTelemetry(state apitypes.Bootstrap) GatewayTelemetry {
 	if len(attentionItems) > 7 {
 		attentionItems = attentionItems[:7]
 	}
-
-	pulseBuckets := computePulseBuckets(state, time.Now())
-
-	return GatewayTelemetry{
-		SampleSize:        len(events),
-		DiscoverCount:     discoverCount,
-		InvokeCount:       invokeCount,
-		AgentCount:        agentCount,
-		SelectedCount:     selectedCount,
-		NoMatchCount:      noMatchCount,
-		NeedsContextCount: needsContextCount,
-		ErrorCount:        errorCount,
-		HitRatePct:        hitRatePct,
-		SuccessRatePct:    successRatePct,
-		AvgEligible:       avgEligible,
-		AvgSelectedOnHit:  avgSelectedOnHit,
-		CompressionPct:    compressionPct,
-		P50DiscoverMs:     percentileInt64(discoverDurations, 50),
-		P95DiscoverMs:     percentileInt64(discoverDurations, 95),
-		AvgInvokeMs:       avgInvokeMs,
-		TotalTokens:       totalTokens,
-		ToolHitCounts:     toolHitCounts,
-		TopTools:          topTools,
-		AttentionItems:    attentionItems,
-		PulseBuckets:      pulseBuckets,
-	}
+	return attentionItems
 }
 
 func computePulseBuckets(state apitypes.Bootstrap, now time.Time) []apitypes.PulseBucket {
