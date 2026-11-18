@@ -320,9 +320,7 @@ func (u *DesktopUI) renderPluginRow(c *ui.Context, st *clientsPageState, row cli
 func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, st *clientsPageState, row clientplugin.Status, busy bool, fullDetail string) {
 	switch {
 	case row.CanUpdate:
-		btn := SailPrimaryButton(c.Key("update-plugin"), "更新插件").
-			Padding(5, 11).
-			FontSize(12.5).
+		btn := SailSmallPrimaryButton(c.Key("update-plugin"), "更新插件").
 			Label(row.Name + " 更新插件").
 			Disabled(busy)
 		if fullDetail != "" {
@@ -332,9 +330,7 @@ func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, st *clientsPageStat
 			u.runClientPlugin(row.ID, "update")
 		}
 	case row.CanInstall && row.HasLegacyMCP:
-		btn := SailPrimaryButton(c.Key("upgrade-plugin"), "升级为插件").
-			Padding(5, 11).
-			FontSize(12.5).
+		btn := SailSmallPrimaryButton(c.Key("upgrade-plugin"), "升级为插件").
 			Label(row.Name + " 升级为插件").
 			Disabled(busy)
 		if fullDetail != "" {
@@ -344,9 +340,7 @@ func (u *DesktopUI) renderPluginPrimaryAction(c *ui.Context, st *clientsPageStat
 			u.runClientPlugin(row.ID, "install")
 		}
 	case row.CanInstall:
-		btn := SailPrimaryButton(c.Key("install-plugin"), "安装插件").
-			Padding(5, 11).
-			FontSize(12.5).
+		btn := SailSmallPrimaryButton(c.Key("install-plugin"), "安装插件").
 			Label(row.Name + " 安装插件").
 			Disabled(busy)
 		if fullDetail != "" {
@@ -425,11 +419,11 @@ func (u *DesktopUI) renderClientVerifyModal(c *ui.Context, st *clientsPageState)
 				u.Notify("已复制 " + clientName + " 验证 Prompt")
 			})
 
-			ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Children(func() {
-				if SailSmallButton(c.Key("verify-modal-cancel"), "关闭").Clicked() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
+				if SailButton(c.Key("verify-modal-cancel"), "关闭").Clicked() {
 					st.showVerifyModal = false
 				}
-				if SailPrimaryButton(c.Key("verify-modal-copy-close"), "复制并关闭").Padding(5, 12).FontSize(12.5).Clicked() {
+				if SailPrimaryButton(c.Key("verify-modal-copy-close"), "复制并关闭").Clicked() {
 					c.WriteClipboard(promptText)
 					u.Notify("已复制 " + clientName + " 验证 Prompt")
 					st.showVerifyModal = false

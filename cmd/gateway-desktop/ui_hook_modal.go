@@ -181,7 +181,7 @@ func (u *DesktopUI) renderHookSnippetModal(c *ui.Context) {
 		})
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
-			if SailSmallButton(c.Key("hook-refresh-btn"), "重新获取").Disabled(st.loadingAgent != "").Clicked() {
+			if SailButton(c.Key("hook-refresh-btn"), "重新获取").Disabled(st.loadingAgent != "").Clicked() {
 				u.ensureHookSnippetLoaded(st, activeAgent.ID, true)
 			}
 			if SailPrimaryButton(c.Key("hook-copy-primary"), "复制配置片段").

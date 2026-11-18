@@ -1024,7 +1024,8 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 				// Right status & refresh controls.
 				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 					modelChip := ui.ButtonBase(c.Key("top-model-chip")).
-						Padding(4, 10).
+						Height(SailControlHeightSm).
+						Padding(0, 10).
 						Radius(6).
 						Gap(6).
 						AlignItems(ui.Center).
@@ -1050,7 +1051,8 @@ func (u *DesktopUI) renderMainWorkspace(c *ui.Context, bar ui.TitleBar) {
 					}
 
 					refreshBtn := SailButton(c.Key("top-refresh-btn"), "").
-						Padding(5, 10).
+						Height(SailControlHeightSm).
+						Padding(0, 10).
 						Radius(6).
 						Gap(5).
 						AlignItems(ui.Center).

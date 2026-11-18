@@ -553,12 +553,12 @@ func (u *DesktopUI) renderPlaygroundInspector(
 			if sel.InputSchema == nil {
 				SailSubtleCard(c, func() {
 					ui.Text(c, "摘要模式未附带 Input Schema").FontSize(12.5).FontWeight(600).TextColor(SailInkStrong)
-					ui.Row(c).Gap(8).Children(func() {
+					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 						btnText := "拉取 Schema"
 						if st.loadingSchema {
 							btnText = "加载中…"
 						}
-						if SailPrimaryButton(c.Key("pg-fetch-schema"), btnText).Disabled(st.loadingSchema).Clicked() {
+						if SailSmallPrimaryButton(c.Key("pg-fetch-schema"), btnText).Disabled(st.loadingSchema).Clicked() {
 							u.fetchPlaygroundToolSchema(st, sel.ID, effectiveActor)
 						}
 						if full, ok := toolsByID[sel.ID]; ok && full.InputSchema != nil {

@@ -368,6 +368,7 @@ func SailKPICard(c *ui.Context, label, value, hint string, tone BadgeTone, onCli
 	tc := colorsForTone(tone)
 	card := ui.Column(c).
 		Grow(1).
+		FillHeight().
 		MinWidth(176).
 		Padding(18, 20).
 		Gap(6).
@@ -508,9 +509,21 @@ func SailAlertBox(c *ui.Context, tone BadgeTone, title, detail string) {
 		})
 }
 
+const (
+	// SailControlHeightMd is the standard 32px height for toolbars, search fields, form inputs, selects, segmented controls, and standard buttons.
+	SailControlHeightMd float32 = 32
+	// SailControlHeightSm is the compact 28px height for inline row actions, card header actions, and topbar chips.
+	SailControlHeightSm float32 = 28
+)
+
 // SailButton keeps secondary actions lightly raised, with a flat pressed face.
 func SailButton(c *ui.Context, label string) ui.Element {
-	btn := ui.Button(c, label).Background(SailBgCanvas).Border(1, SailSurfaceBorder)
+	btn := ui.Button(c, label).
+		Height(SailControlHeightMd).
+		Padding(0, 12).
+		FontSize(12.5).
+		Background(SailBgCanvas).
+		Border(1, SailSurfaceBorder)
 	if btn.Pressed() {
 		btn.Background(SailBgMuted)
 	} else {
@@ -524,7 +537,10 @@ func SailButton(c *ui.Context, label string) ui.Element {
 
 // SailPrimaryButton preserves the native primary face and its interaction states.
 func SailPrimaryButton(c *ui.Context, label string) ui.Element {
-	btn := ui.PrimaryButton(c, label)
+	btn := ui.PrimaryButton(c, label).
+		Height(SailControlHeightMd).
+		Padding(0, 12).
+		FontSize(12.5)
 	if !btn.Pressed() {
 		btn.Shadow(0, 2, 6, 0, SailControlShadow)
 	}
@@ -533,13 +549,19 @@ func SailPrimaryButton(c *ui.Context, label string) ui.Element {
 
 // SailSmallButton renders a compact secondary action using the shared control surface.
 func SailSmallButton(c *ui.Context, label string) ui.Element {
-	return SailButton(c, label).Padding(5, 11).FontSize(12.5)
+	return SailButton(c, label).Height(SailControlHeightSm).Padding(0, 10).FontSize(12)
+}
+
+// SailSmallPrimaryButton renders a compact primary action aligned to SailControlHeightSm.
+func SailSmallPrimaryButton(c *ui.Context, label string) ui.Element {
+	return SailPrimaryButton(c, label).Height(SailControlHeightSm).Padding(0, 10).FontSize(12)
 }
 
 // SailDangerButton renders a compact red-tinted action button for destructive or warning actions.
 func SailDangerButton(c *ui.Context, label string) ui.Element {
 	btn := ui.ButtonBase(c).
-		Padding(5, 11).
+		Height(SailControlHeightSm).
+		Padding(0, 10).
 		Radius(6).
 		Background(SailDangerBg).
 		Border(1, SailDangerBorder).
@@ -548,9 +570,34 @@ func SailDangerButton(c *ui.Context, label string) ui.Element {
 		btn.Background(SailDangerBorder)
 	}
 	btn.Children(func() {
-		ui.Text(c, label).FontSize(12.5).FontWeight(600).TextColor(SailDangerInk).SingleLine()
+		ui.Text(c, label).FontSize(12).FontWeight(600).TextColor(SailDangerInk).SingleLine()
 	})
 	return btn
+}
+
+// SailTextInput creates a standard-height single-line text input aligned to SailControlHeightMd.
+func SailTextInput(c *ui.Context, value *string) ui.Element {
+	return ui.TextInput(c, value).Height(SailControlHeightMd).FontSize(12.5)
+}
+
+// SailSearchField creates a standard-height search field aligned to SailControlHeightMd.
+func SailSearchField(c *ui.Context, query *string) ui.Element {
+	return ui.SearchField(c, query).Height(SailControlHeightMd).FontSize(12.5)
+}
+
+// SailSegmented creates a standard-height segmented control aligned to SailControlHeightMd.
+func SailSegmented(c *ui.Context, selected *int, labels ...string) ui.Element {
+	return ui.Segmented(c, selected, labels...).Height(SailControlHeightMd)
+}
+
+// SailSmallSegmented creates a compact segmented control aligned to SailControlHeightSm.
+func SailSmallSegmented(c *ui.Context, selected *int, labels ...string) ui.Element {
+	return ui.Segmented(c, selected, labels...).Height(SailControlHeightSm)
+}
+
+// SailSelect creates a standard-height select trigger aligned to SailControlHeightMd.
+func SailSelect(c *ui.Context, selected *string, options []string) ui.Element {
+	return ui.Select(c, selected, options).Height(SailControlHeightMd).FontSize(12.5)
 }
 
 // --- Unified Description Cleaning & Structured Typography ---

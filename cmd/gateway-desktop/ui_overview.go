@@ -261,8 +261,9 @@ func (u *DesktopUI) renderOverviewSetupBanner(
 					}
 				} else if setup.ModelConfigured && state.KeyConfigured {
 					verifyBtn := SailButton(c.Key("ov-banner-verify-btn"), "").
-						Padding(5, 11).
-						FontSize(12.5).
+						Height(SailControlHeightSm).
+						Padding(0, 10).
+						FontSize(12).
 						Disabled(ov.testingModel)
 					verifyBtn.Children(func() {
 						if ov.testingModel {

@@ -78,7 +78,7 @@ func (u *DesktopUI) renderMarket(c *ui.Context) {
 
 	// Search & Filter Bar.
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
-		inp := ui.TextInput(c.Key("mkt-search"), &st.query).
+		inp := SailTextInput(c.Key("mkt-search"), &st.query).
 			Placeholder("搜索 MCP 服务器 — GitHub、Postgres、Figma、URL 或包名...").
 			Grow(1).
 			MinWidth(0)
@@ -177,7 +177,7 @@ func (u *DesktopUI) renderMarket(c *ui.Context) {
 
 func renderMarketFilterPill(c *ui.Context, st *marketPageState, id, label string) {
 	if st.filter == id {
-		if SailPrimaryButton(c.Key("mkt-flt-"+id), label).Clicked() {
+		if SailSmallPrimaryButton(c.Key("mkt-flt-"+id), label).Clicked() {
 			st.filter = id
 		}
 		return

@@ -177,12 +177,12 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 	SailCard(c.Key("logs-filter-card"), func() {
 		ui.Row(c).FillWidth().Wrap().Gap(10).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Row(c).Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
-				ui.SearchField(c.Key("logs-search"), &st.query).
+				SailSearchField(c.Key("logs-search"), &st.query).
 					Placeholder("搜索意图、工具名或载荷…").
 					Label("搜索请求日志").
 					Width(236)
 
-				ui.Segmented(
+				SailSegmented(
 					c.Key("logs-kind-seg"),
 					&st.kindIdx,
 					"全部",
@@ -191,7 +191,7 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 					"agent_tool",
 				).Label("事件类型筛选")
 
-				ui.Segmented(
+				SailSegmented(
 					c.Key("logs-status-seg"),
 					&st.statusIdx,
 					"全部",
@@ -203,7 +203,7 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				if st.hasActiveFilters() {
-					if SailSmallButton(c.Key("logs-reset-btn"), "重置").Clicked() {
+					if SailButton(c.Key("logs-reset-btn"), "重置").Clicked() {
 						st.resetFilters()
 					}
 				}
