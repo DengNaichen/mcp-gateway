@@ -685,6 +685,37 @@
       transition: transform 0.14s ease;
     }
     .switch.on::after { transform: translateX(13px); }
+    /* 列表内的启用开关：弱化为中性色，避免抢占状态与动作的注意力 */
+    .switch-quiet { width: 26px; height: 15px; }
+    .switch-quiet::after { width: 11px; height: 11px; }
+    .switch-quiet.on { background: var(--ink-muted); }
+    .switch-quiet.on::after { transform: translateX(11px); }
+
+    /* 上游服务分诊列表 */
+    .btn-group { display: inline-flex; align-items: stretch; }
+    .btn-group > .btn-primary:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+    .btn-split { border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; border-left: 1px solid rgba(255,255,255,0.28) !important; padding-left: 8px; padding-right: 8px; height: 100%; }
+    .triage-toolbar { padding: 12px 20px; border-bottom: 1px solid var(--divider); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .seg-count { font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; margin-left: 2px; }
+    .seg-count-err { color: var(--danger); font-weight: 600; }
+    .seg-count-warn { color: var(--warning); font-weight: 600; }
+    .triage-group-head { padding: 14px 20px 6px; font-size: 11.5px; font-weight: 600; color: var(--ink-faint); letter-spacing: 0.02em; border-bottom: 1px solid var(--divider); background: var(--bg-muted); }
+    .triage-group-head span { font-weight: 500; margin-left: 4px; font-variant-numeric: tabular-nums; }
+    .triage-summary { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .triage-summary > * { flex-shrink: 0; }
+    .triage-summary > :last-child { flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
+    .triage-summary .mono { font-size: 12px; color: var(--ink-strong); }
+    .row-disabled .triage-summary .mono { color: var(--ink-faint); }
+    .triage-label { font-weight: 600; }
+    .triage-label.err { color: var(--danger); }
+    .triage-label.warn { color: var(--warning); }
+    .triage-consequence { color: var(--ink-faint); }
+    .triage-stale { color: var(--ink-faint); }
+    .triage-action { display: inline-flex; justify-content: flex-end; min-width: 76px; }
+    .triage-chevron { color: var(--ink-faint); display: inline-flex; }
+    .hairline-row:hover .triage-chevron { color: var(--ink-muted); }
+    .row-disabled .row-name, .row-disabled .row-summary { color: var(--ink-faint); }
+    .nav-count.nav-count-err, .nav-item.active .nav-count.nav-count-err { color: var(--danger); font-weight: 600; }
 
     /* Grids & Splits */
     .kpi-grid {
@@ -1401,7 +1432,7 @@
     let selectedServiceId = "";
     let serviceDetailTab = "whitelist"; // whitelist | config | health
     let serviceSearch = "";
-    let serviceProtoFilter = "all"; // all | mcp_stdio | mcp_http | http
+    let serviceStatusFilter = "all"; // all | attention | pending | ready | disabled
     let serviceDemoExpanded = false;
     let serviceWhitelistSearch = "";
     let serviceWhitelistFilter = "all"; // all | open | closed | rw
@@ -1614,6 +1645,111 @@
         desc: "Read-only analytics PostgreSQL replica query access."
       },
       {
+        id: "vercel",
+        name: "Vercel",
+        proto: "MCP Stdio",
+        kind: "mcp_stdio",
+        enabled: true,
+        demo: false,
+        endpoint: "npx -y @vercel/mcp",
+        headers: {},
+        credentials: [
+          { name: "VERCEL_TOKEN", configured: true, saved: true, environment: false }
+        ],
+        lastCheck: { status: "success", checkedAt: "11-18 13:02:44", stale: false, message: "MCP 已连接，读取到 250 个工具。" },
+        lastInvokeFailure: null,
+        toolStub: { total: 250, open: 250, rwOpen: 99 },
+        desc: "Vercel deployments, projects, domains, DNS, environment variables, logs, analytics, Edge Config, billing and docs"
+      },
+      {
+        id: "supabase",
+        name: "Supabase",
+        proto: "MCP Stdio",
+        kind: "mcp_stdio",
+        enabled: true,
+        demo: false,
+        endpoint: "npx -y @supabase/mcp-server-supabase",
+        headers: {},
+        env: { SUPABASE_ACCESS_TOKEN: "${SUPABASE_ACCESS_TOKEN}" },
+        credentials: [
+          { name: "SUPABASE_ACCESS_TOKEN", configured: false, saved: false, environment: false }
+        ],
+        lastCheck: null,
+        lastInvokeFailure: null,
+        toolStub: { total: 22, open: 22, rwOpen: 9 },
+        desc: "Supabase projects, database branches, SQL, edge functions and storage."
+      },
+      {
+        id: "notion",
+        name: "Notion",
+        proto: "MCP Stdio",
+        kind: "mcp_stdio",
+        enabled: true,
+        demo: false,
+        endpoint: "npx -y @notionhq/notion-mcp-server",
+        headers: {},
+        env: { NOTION_TOKEN: "${NOTION_TOKEN}" },
+        credentials: [
+          { name: "NOTION_TOKEN", configured: false, saved: false, environment: false }
+        ],
+        lastCheck: null,
+        lastInvokeFailure: null,
+        toolStub: { total: 24, open: 13, rwOpen: 1 },
+        desc: "Notion pages, databases, comments and search."
+      },
+      {
+        id: "slack",
+        name: "Slack",
+        proto: "MCP Stdio",
+        kind: "mcp_stdio",
+        enabled: true,
+        demo: false,
+        endpoint: "npx -y @modelcontextprotocol/server-slack",
+        headers: {},
+        env: { SLACK_BOT_TOKEN: "${SLACK_BOT_TOKEN}", SLACK_TEAM_ID: "${SLACK_TEAM_ID}" },
+        credentials: [
+          { name: "SLACK_BOT_TOKEN", configured: false, saved: false, environment: false },
+          { name: "SLACK_TEAM_ID", configured: false, saved: false, environment: false }
+        ],
+        lastCheck: null,
+        lastInvokeFailure: null,
+        toolStub: { total: 8, open: 5, rwOpen: 5 },
+        desc: "Slack channels, messages, threads and reactions."
+      },
+      {
+        id: "playwright",
+        name: "Playwright",
+        proto: "MCP Stdio",
+        kind: "mcp_stdio",
+        enabled: true,
+        demo: false,
+        endpoint: "npx -y @playwright/mcp",
+        headers: {},
+        credentials: [],
+        lastCheck: null,
+        lastInvokeFailure: null,
+        toolStub: { total: 25, open: 7, rwOpen: 0 },
+        desc: "Browser automation: navigate, click, fill forms, take screenshots and read accessibility snapshots."
+      },
+      {
+        id: "sentry",
+        name: "Sentry",
+        proto: "MCP Stdio",
+        kind: "mcp_stdio",
+        enabled: false,
+        demo: false,
+        endpoint: "npx -y @sentry/mcp-server",
+        headers: {},
+        env: { SENTRY_ACCESS_TOKEN: "${SENTRY_ACCESS_TOKEN}" },
+        credentials: [
+          { name: "SENTRY_ACCESS_TOKEN", configured: false, saved: false, environment: false }
+        ],
+        lastCheck: null,
+        lastInvokeFailure: null,
+        toolStub: { total: 73, open: 48, rwOpen: 6 },
+        desc: "Sentry issues, events, releases and performance traces."
+      },
+      {
         id: "demo-orders",
         name: "Demo Orders API",
         proto: "HTTP REST",
@@ -1762,7 +1898,7 @@
       return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     }
 
-    function probePrototypeService(id) {
+    function probePrototypeService(id, silent) {
       const s = SERVICES.find(x => x.id === id);
       if (!s) return;
       const missing = (s.credentials || []).filter(c => !c.configured).map(c => c.name);
@@ -1775,7 +1911,7 @@
           message: "连接测试未通过：缺少必填凭据",
           detail: `missing credentials: ${missing.join(", ")}`
         };
-        showToast(`测试失败：缺少凭据 ${missing.join(", ")}`);
+        if (!silent) showToast(`测试失败：缺少凭据 ${missing.join(", ")}`);
         render();
         return;
       }
@@ -1787,7 +1923,7 @@
           message: "配置已保存，连接尚未试通",
           detail: "upstream HTTP 502: TLS handshake timeout"
         };
-        showToast("探活失败：upstream HTTP 502: TLS handshake timeout");
+        if (!silent) showToast("探活失败：upstream HTTP 502: TLS handshake timeout");
         render();
         return;
       }
@@ -1799,7 +1935,7 @@
         message: `连接验证通过，同步 ${stats.total} 个工具。`
       };
       s.lastInvokeFailure = null;
-      showToast(`${s.name} 连接测试通过`);
+      if (!silent) showToast(`${s.name} 连接测试通过`);
       render();
     }
 
@@ -1873,6 +2009,8 @@
         const rwOpen = open.filter(t => t.rw).length;
         return { total: list.length, open: open.length, rwOpen };
       }
+      const stubSrv = SERVICES.find(s => s.id === srvId);
+      if (stubSrv && stubSrv.toolStub) return { ...stubSrv.toolStub };
       const fallback = SERVICE_TOOLS[srvId] || [];
       return { total: fallback.length, open: fallback.length, rwOpen: fallback.filter(t => t.rw).length };
     }
@@ -2182,9 +2320,14 @@
 
     function syncChrome() {
       const realSrvs = getRealServices();
+      const attentionReal = realSrvs.filter(s => serviceTriageBucket(s) === "attention").length;
       const activeReal = realSrvs.filter(s => s.enabled).length;
       const srvEl = document.getElementById("nav-services-count");
-      if (srvEl) srvEl.textContent = activeReal > 0 ? String(activeReal) : "";
+      if (srvEl) {
+        srvEl.textContent = attentionReal > 0 ? String(attentionReal) : (activeReal > 0 ? String(activeReal) : "");
+        srvEl.classList.toggle("nav-count-err", attentionReal > 0);
+        srvEl.title = attentionReal > 0 ? `${attentionReal} 个服务需处理` : `${activeReal} 个服务已启用`;
+      }
 
       const realTools = TOOLS.filter(t => !t.demo);
       const enabledTools = realTools.filter(t => t.enabled).length;
@@ -2707,6 +2850,34 @@
       render();
     }
 
+    // 列表分诊：把 5 档 Readiness 收敛为 4 个处理桶，决定排序、筛选与行内主动作。
+    const SERVICE_BUCKET_ORDER = ["attention", "pending", "ready", "disabled"];
+    const SERVICE_BUCKET_LABEL = { attention: "需处理", pending: "待验证", ready: "就绪", disabled: "已停用" };
+    function serviceTriageBucket(s) {
+      const kind = evaluateServiceReadiness(s).kind;
+      if (kind === "disabled") return "disabled";
+      if (kind === "missing_creds" || kind === "conn_error" || kind === "invoke_error") return "attention";
+      if (kind === "unverified" || kind === "no_tools") return "pending";
+      return "ready";
+    }
+    function serviceRowAction(r) {
+      if (r.kind === "missing_creds") return { key: "fill_creds", label: "填写凭据", primary: false };
+      if (r.kind === "conn_error" || r.kind === "invoke_error") return { key: "probe", label: "重新测试", primary: false };
+      if (r.kind === "unverified") return { key: "probe", label: "测试连接", primary: false };
+      if (r.kind === "no_tools" && r.alertAction === "enable_ro") return { key: "enable_ro", label: "开放只读", primary: false };
+      return null;
+    }
+    function serviceRowQuickAction(srvId, key) {
+      if (key === "fill_creds") selectedServiceId = srvId;
+      handleReadinessAction(srvId, key);
+    }
+    function probeServicesBulk() {
+      const targets = getRealServices().filter(s => ["unverified", "conn_error", "invoke_error"].includes(evaluateServiceReadiness(s).kind));
+      targets.forEach(s => probePrototypeService(s.id, true));
+      const failed = targets.filter(s => serviceTriageBucket(s) === "attention").length;
+      showToast(`已测试 ${targets.length} 个服务：${targets.length - failed} 通过，${failed} 未通过`);
+    }
+
     function handleReadinessAction(srvId, action) {
       if (action === "fill_creds") {
         serviceDetailTab = "config";
@@ -2985,72 +3156,111 @@
       }
       const realServices = getRealServices();
       const demoServices = SERVICES.filter(s => s.demo);
-      const readyCount = realServices.filter(s => evaluateServiceReadiness(s).kind === "ready").length;
+      const rows = realServices.map(s => ({ s, r: evaluateServiceReadiness(s), bucket: serviceTriageBucket(s) }));
+      const counts = { attention: 0, pending: 0, ready: 0, disabled: 0 };
+      rows.forEach(x => { counts[x.bucket]++; });
       const enabledCount = realServices.filter(s => s.enabled).length;
-      const filtered = realServices.filter(s => {
-        if (serviceProtoFilter !== "all" && s.kind !== serviceProtoFilter) return false;
-        if (serviceSearch && !(s.name + s.desc + s.endpoint).toLowerCase().includes(serviceSearch.toLowerCase())) return false;
-        return true;
-      });
-      const hasFilter = serviceProtoFilter !== "all" || serviceSearch.trim() !== "";
+      const q = serviceSearch.trim().toLowerCase();
+      const filtered = rows
+        .filter(x => serviceStatusFilter === "all" || x.bucket === serviceStatusFilter)
+        .filter(x => !q || (x.s.name + x.s.desc + x.s.endpoint + x.s.proto + (x.r.missingVars || []).join(" ")).toLowerCase().includes(q))
+        .sort((a, b) => SERVICE_BUCKET_ORDER.indexOf(a.bucket) - SERVICE_BUCKET_ORDER.indexOf(b.bucket));
+      const hasFilter = serviceStatusFilter !== "all" || q !== "";
+      const addMenuOpen = openPopoverKey === "services-add";
+      const probeTargets = rows.filter(x => ["unverified", "conn_error", "invoke_error"].includes(x.r.kind));
+      const segBtn = (key, label, n, tone) => `
+        <button class="seg-btn ${serviceStatusFilter===key?"active":""}" type="button" onclick="serviceStatusFilter='${key}';render();">
+          ${label}${n === null ? "" : ` <span class="seg-count ${tone && n > 0 ? `seg-count-${tone}` : ""}">${n}</span>`}
+        </button>`;
+
+      let lastBucket = "";
+      const listHtml = filtered.map(({ s, r, bucket }) => {
+        const st = getServiceToolStats(s.id);
+        const parsed = parseStructuredDescription(s.desc);
+        const live = r.kind === "ready" || r.kind === "no_tools";
+        const action = serviceRowAction(r);
+        const groupHead = serviceStatusFilter === "all" && bucket !== lastBucket
+          ? `<div class="triage-group-head">${SERVICE_BUCKET_LABEL[bucket]} <span>${counts[bucket]}</span></div>` : "";
+        lastBucket = bucket;
+        let summary;
+        if (r.kind === "missing_creds") {
+          summary = `<span class="triage-label err">缺少凭据</span><span class="mono">${esc(r.missingVars.join(", "))}</span>${s.enabled ? `<span class="triage-consequence">· Agent 调用将失败</span>` : ""}`;
+        } else if (r.kind === "conn_error" || r.kind === "invoke_error") {
+          summary = `<span class="triage-label err">${esc(r.badge)}</span><span>${esc(r.summary)}</span>`;
+        } else if (r.kind === "unverified" || r.kind === "no_tools") {
+          summary = `<span class="triage-label warn">${esc(r.badge)}</span><span>${esc(r.kind === "unverified" && !s.lastCheck ? "尚未执行连接检查" : r.summary)}</span>`;
+        } else if (r.kind === "disabled") {
+          summary = r.missingVars && r.missingVars.length ? `<span>待补充凭据 <span class="mono">${esc(r.missingVars.join(", "))}</span></span>` : esc(parsed.summary);
+        } else {
+          summary = esc(parsed.summary);
+        }
+        return `${groupHead}
+          <div class="hairline-row ${s.enabled ? "" : "row-disabled"}" onclick="selectedServiceId='${s.id}';render();">
+            <div class="row-main">
+              <div class="row-title-line">
+                <span class="dot dot-${r.dot}"></span>
+                <span class="row-name" style="font-family:var(--sans);font-size:13.5px;">${esc(s.name)}</span>
+                <span class="row-sub">${esc(s.proto)}</span>
+              </div>
+              <div class="row-summary triage-summary">${summary}</div>
+            </div>
+            <div class="row-right" onclick="event.stopPropagation();">
+              <span class="quiet-meta ${live ? "" : "triage-stale"}" title="${live ? "开放 / 已同步工具" : "上次同步的工具数；服务当前不可调用"}">
+                ${st.open}/${st.total} 工具${s.enabled && st.rwOpen > 0 ? ` · ${st.rwOpen} 可写` : ""}
+              </span>
+              <span class="triage-action">${action ? `<button class="btn btn-sm ${action.primary ? "btn-primary" : ""}" type="button" onclick="serviceRowQuickAction('${s.id}','${action.key}')">${action.label}</button>` : ""}</span>
+              <button class="switch switch-quiet ${s.enabled ? "on" : ""}" type="button" onclick="toggleServiceEnabled('${s.id}')" title="${s.enabled ? "已启用 · 点击停用" : "已停用 · 点击启用"}"></button>
+              <span class="triage-chevron">${svgIcon("chevronRight", 14)}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
 
       return `
         <div class="section-header">
-          <h1 class="section-title">上游服务</h1>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn" type="button" onclick="openAddServiceModal('json')">粘贴 MCP JSON</button>
-            <button class="btn" type="button" onclick="openAddServiceModal('rest')">OpenAPI 导入</button>
+          <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">
+            <h1 class="section-title">上游服务</h1>
+            <span class="quiet-meta" style="font-size:12.5px;">
+              ${counts.attention > 0 ? `<span style="color:var(--danger);font-weight:600;">${counts.attention} 个需处理</span> · ` : ""}${counts.ready} 就绪 · ${enabledCount}/${realServices.length} 启用
+            </span>
+          </div>
+          <div class="btn-group">
             <button class="btn btn-primary" type="button" onclick="openAddServiceModal('stdio')">${svgIcon("plus", 13.5)}<span>添加上游服务</span></button>
+            <div class="menu-wrap">
+              <button class="btn btn-primary btn-split" type="button" title="更多添加方式" onclick="event.stopPropagation();openPopoverKey=(openPopoverKey==='services-add'?'':'services-add');render();">${svgIcon("chevronRight", 13, "transform:rotate(90deg);")}</button>
+              ${addMenuOpen ? `
+                <div class="popover-menu" onclick="event.stopPropagation();">
+                  <button class="popover-item" type="button" onclick="openPopoverKey='';openAddServiceModal('stdio')">手动配置</button>
+                  <button class="popover-item" type="button" onclick="openPopoverKey='';openAddServiceModal('json')">粘贴 MCP JSON</button>
+                  <button class="popover-item" type="button" onclick="openPopoverKey='';openAddServiceModal('rest')">OpenAPI 导入</button>
+                  <button class="popover-item" type="button" onclick="openPopoverKey='';switchPage('market')">从 MCP 市场添加</button>
+                </div>
+              ` : ""}
+            </div>
           </div>
         </div>
 
         <div class="card-flush">
-          <div class="card-header" style="padding:16px 20px;border-bottom:1px solid var(--divider);flex-wrap:wrap;gap:12px;">
-            <div style="display:flex;align-items:baseline;gap:10px;">
-              <h2 class="card-title">已接入服务</h2>
-              <span class="quiet-meta">${readyCount} 就绪 · ${enabledCount} / ${realServices.length} 启用</span>
-            </div>
+          <div class="triage-toolbar">
             <div class="segmented">
-              <button class="seg-btn ${serviceProtoFilter==="all"?"active":""}" type="button" onclick="serviceProtoFilter='all';render();">全部</button>
-              <button class="seg-btn ${serviceProtoFilter==="mcp_stdio"?"active":""}" type="button" onclick="serviceProtoFilter='mcp_stdio';render();">MCP Stdio</button>
-              <button class="seg-btn ${serviceProtoFilter==="mcp_http"?"active":""}" type="button" onclick="serviceProtoFilter='mcp_http';render();">MCP HTTP</button>
-              <button class="seg-btn ${serviceProtoFilter==="http"?"active":""}" type="button" onclick="serviceProtoFilter='http';render();">HTTP REST</button>
+              ${segBtn("all", "全部", null)}
+              ${segBtn("attention", "需处理", counts.attention, "err")}
+              ${segBtn("pending", "待验证", counts.pending, "warn")}
+              ${segBtn("ready", "就绪", counts.ready)}
+              ${segBtn("disabled", "已停用", counts.disabled)}
             </div>
-          </div>
-
-          <div style="padding:12px 20px;border-bottom:1px solid var(--divider);display:flex;align-items:center;justify-content:space-between;gap:10px;">
-            <input class="search" placeholder="搜索服务名称或描述…" value="${esc(serviceSearch)}" oninput="serviceSearch=this.value;render();" />
-            ${hasFilter ? `<button class="btn btn-sm" type="button" onclick="serviceSearch='';serviceProtoFilter='all';render();">重置</button>` : ""}
+            <div style="display:flex;align-items:center;gap:8px;">
+              ${probeTargets.length > 1 ? `<button class="btn btn-sm" type="button" onclick="probeServicesBulk()">全部测试连接 (${probeTargets.length})</button>` : ""}
+              <input class="search" placeholder="搜索名称、凭据变量或地址…" value="${esc(serviceSearch)}" oninput="serviceSearch=this.value;render();" />
+              ${hasFilter ? `<button class="btn btn-sm" type="button" onclick="serviceSearch='';serviceStatusFilter='all';render();">重置</button>` : ""}
+            </div>
           </div>
 
           ${realServices.length === 0 ? `
             <div style="padding:20px;"><div class="sail-empty"><div style="font-weight:600;color:var(--ink-strong);">暂无上游服务</div><button class="btn btn-primary btn-sm" type="button" onclick="openAddServiceModal('stdio')">添加上游服务</button></div></div>
           ` : filtered.length === 0 ? `
-            <div style="padding:20px;"><div class="sail-empty"><div style="font-weight:600;color:var(--ink-strong);">无匹配服务</div><button class="btn btn-sm" type="button" onclick="serviceSearch='';serviceProtoFilter='all';render();">重置筛选</button></div></div>
-          ` : filtered.map(s => {
-            const parsed = parseStructuredDescription(s.desc);
-            const st = getServiceToolStats(s.id);
-            const r = evaluateServiceReadiness(s);
-            return `
-              <div class="hairline-row" onclick="selectedServiceId='${s.id}';render();">
-                <div class="row-main">
-                  <div class="row-title-line">
-                    <span class="dot dot-${r.dot}"></span>
-                    <span class="row-name" style="font-family:var(--sans);font-size:13.5px;">${esc(s.name)}</span>
-                    <span class="row-sub">${esc(s.proto)}</span>
-                    ${r.badge ? `<span class="badge badge-${r.badgeTone}">${esc(r.badge)}</span>` : ""}
-                    ${s.enabled && st.rwOpen > 0 ? `<span class="badge badge-rw">写 ×${st.rwOpen}</span>` : ""}
-                  </div>
-                  <div class="row-summary" style="${r.dot === "err" ? "color:var(--danger);" : ""}">${r.summary ? esc(r.summary) : esc(parsed.summary)}</div>
-                </div>
-                <div class="row-right" onclick="event.stopPropagation();">
-                  <span class="quiet-meta">${st.open}/${st.total} 工具</span>
-                  <button class="switch ${s.enabled ? "on" : ""}" type="button" onclick="toggleServiceEnabled('${s.id}')" title="启用开关"></button>
-                  <button class="btn btn-sm" type="button" onclick="selectedServiceId='${s.id}';render();">管理详情 ${svgIcon("chevronRight", 13)}</button>
-                </div>
-              </div>
-            `;
-          }).join("")}
+            <div style="padding:20px;"><div class="sail-empty"><div style="font-weight:600;color:var(--ink-strong);">${serviceStatusFilter === "attention" && !q ? "没有需要处理的服务" : "无匹配服务"}</div><button class="btn btn-sm" type="button" onclick="serviceSearch='';serviceStatusFilter='all';render();">查看全部</button></div></div>
+          ` : listHtml}
         </div>
 
         ${demoServices.length > 0 ? `
