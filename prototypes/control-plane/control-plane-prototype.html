@@ -1543,11 +1543,329 @@
     ];
 
     let SERVICES = [
-      { id: "github", name: "GitHub MCP", proto: "MCP Stdio", kind: "mcp_stdio", enabled: true, demo: false, tone: "ok", status: "在线", endpoint: "npx -y @modelcontextprotocol/server-github", desc: "Repository, pull requests, issues, and commit operations via official GitHub MCP server.\n\nArgs:\n  GITHUB_PERSONAL_ACCESS_TOKEN: Scoped token in process env", healthMsg: "最近心跳 12s 前 · 延迟 38 ms" },
-      { id: "k8s", name: "K8s Diagnostics", proto: "MCP Streamable HTTP", kind: "mcp_http", enabled: true, demo: false, tone: "ok", status: "在线", endpoint: "https://k8s-diag.internal/mcp", desc: "### 生产集群只读诊断网关\n提供 Pod 事件、日志尾行与节点水位查询，默认屏蔽写操作。", healthMsg: "最近心跳 25s 前 · 延迟 44 ms" },
-      { id: "billing", name: "Billing REST API", proto: "HTTP REST", kind: "http", enabled: true, demo: false, tone: "err", status: "连接超时", endpoint: "https://billing.internal/openapi.json", desc: "Internal invoice & refund endpoints imported from OpenAPI v3 spec.", healthMsg: "upstream HTTP 502: TLS handshake timeout" },
-      { id: "demo-orders", name: "Demo Orders API", proto: "HTTP REST", kind: "http", enabled: false, demo: true, tone: "muted", status: "演示服务", endpoint: "http://127.0.0.1:0/demo", desc: "内置只读演示上游服务，默认不计入真实工具池。", healthMsg: "内置演示数据源" }
+      {
+        id: "github",
+        name: "GitHub MCP",
+        proto: "MCP Streamable HTTP",
+        kind: "mcp_http",
+        enabled: true,
+        demo: false,
+        endpoint: "https://api.githubcopilot.com/mcp/",
+        headers: { Authorization: "Bearer ${GITHUB_TOKEN}" },
+        credentials: [
+          { name: "GITHUB_TOKEN", configured: false, saved: false, environment: false }
+        ],
+        lastCheck: {
+          status: "success",
+          checkedAt: "11-14 17:34:16",
+          stale: true,
+          message: "MCP 已连接，读取到 28 个工具。"
+        },
+        lastInvokeFailure: {
+          time: "17:16:02",
+          tool: "github.list_pull_requests",
+          detail: "下游工具调用失败: gateway process environment is missing: GITHUB_TOKEN"
+        },
+        desc: "Repository, pull requests, issues, and commit operations via official GitHub MCP server.\n\nArgs:\n  GITHUB_TOKEN: Personal access token referenced in Authorization header"
+      },
+      {
+        id: "k8s",
+        name: "K8s Diagnostics",
+        proto: "MCP Streamable HTTP",
+        kind: "mcp_http",
+        enabled: true,
+        demo: false,
+        endpoint: "https://k8s-diag.internal/mcp",
+        headers: {},
+        credentials: [],
+        lastCheck: {
+          status: "success",
+          checkedAt: "11-18 14:40:12",
+          stale: false,
+          message: "MCP 已连接，读取到 2 个工具。"
+        },
+        lastInvokeFailure: null,
+        desc: "### 生产集群只读诊断网关\n提供 Pod 事件、日志尾行与节点水位查询，默认屏蔽写操作。"
+      },
+      {
+        id: "billing",
+        name: "Billing REST API",
+        proto: "HTTP REST",
+        kind: "http",
+        enabled: true,
+        demo: false,
+        endpoint: "https://billing.internal/openapi.json",
+        headers: { "X-API-Key": "${BILLING_API_KEY}" },
+        credentials: [
+          { name: "BILLING_API_KEY", configured: true, saved: true, environment: false }
+        ],
+        lastCheck: {
+          status: "error",
+          checkedAt: "11-18 14:22:05",
+          stale: false,
+          message: "配置已保存，连接尚未试通",
+          detail: "upstream HTTP 502: TLS handshake timeout"
+        },
+        lastInvokeFailure: null,
+        desc: "Internal invoice & refund endpoints imported from OpenAPI v3 spec."
+      },
+      {
+        id: "postgres",
+        name: "Analytics Postgres",
+        proto: "MCP Stdio",
+        kind: "mcp_stdio",
+        enabled: true,
+        demo: false,
+        endpoint: "npx -y @modelcontextprotocol/server-postgres",
+        headers: {},
+        env: { PGPASSWORD: "${PG_READONLY_PASS}" },
+        credentials: [
+          { name: "PG_READONLY_PASS", configured: true, saved: false, environment: true }
+        ],
+        lastCheck: {
+          status: "success",
+          checkedAt: "11-16 09:15:40",
+          stale: true,
+          message: "MCP 已连接，读取到 1 个工具。"
+        },
+        lastInvokeFailure: null,
+        desc: "Read-only analytics PostgreSQL replica query access."
+      },
+      {
+        id: "demo-orders",
+        name: "Demo Orders API",
+        proto: "HTTP REST",
+        kind: "http",
+        enabled: false,
+        demo: true,
+        endpoint: "http://127.0.0.1:0/demo",
+        headers: {},
+        credentials: [],
+        lastCheck: null,
+        lastInvokeFailure: null,
+        desc: "内置只读演示上游服务，默认不计入真实工具池。"
+      }
     ];
+
+    let credentialDrafts = {};
+
+    function evaluateServiceReadiness(s) {
+      const stats = getServiceToolStats(s.id);
+      const creds = s.credentials || [];
+      const missingVars = creds.filter(c => !c.configured).map(c => c.name);
+      const chk = s.lastCheck || null;
+      const invErr = s.lastInvokeFailure || null;
+
+      if (s.demo) {
+        return { kind: "demo", dot: "muted", badge: "演示", badgeTone: "neutral", label: "演示服务", summary: s.desc, checkLabel: "内置演示数据源", checkSubtle: true };
+      }
+      if (!s.enabled) {
+        return {
+          kind: "disabled",
+          dot: "muted",
+          badge: "",
+          badgeTone: "neutral",
+          label: "已停用",
+          summary: missingVars.length > 0 ? `已停用 · 待补充凭据 ${missingVars.join(", ")}` : "",
+          missingVars,
+          checkLabel: chk ? `${chk.checkedAt}（历史记录）` : "未检查",
+          checkSubtle: true
+        };
+      }
+      if (missingVars.length > 0) {
+        const checkNote = chk
+          ? (chk.status === "success" ? `历史通过 · ${chk.checkedAt}` : `异常 · ${chk.checkedAt}`)
+          : "未检查";
+        const invokeHint = invErr ? `；最近调用 ${invErr.tool} 失败（${invErr.time}）` : "";
+        return {
+          kind: "missing_creds",
+          dot: "err",
+          badge: "缺少凭据",
+          badgeTone: "err",
+          label: "缺少凭据",
+          summary: `缺少凭据 ${missingVars.join(", ")}${invokeHint}`,
+          alertTitle: `当前缺少凭据：${missingVars.join(", ")}`,
+          alertDetail: `当前网关进程与系统钥匙串均未提供 ${missingVars.join(", ")}${invErr ? `，最近调用 ${invErr.tool}（${invErr.time}）已因此失败` : ""}。请在「连接与认证配置 → 服务凭据」中填入保存（免重启立即生效），或导出该环境变量后重启网关。`,
+          alertAction: "fill_creds",
+          alertActionLabel: "填写服务凭据",
+          missingVars,
+          checkLabel: checkNote,
+          checkSubtle: true
+        };
+      }
+      if (chk && chk.status === "error") {
+        return {
+          kind: "conn_error",
+          dot: "err",
+          badge: "连接异常",
+          badgeTone: "err",
+          label: "连接异常",
+          summary: chk.detail || chk.message || "连接检查未通过",
+          alertTitle: chk.message || "连接检查失败",
+          alertDetail: chk.detail || "",
+          alertAction: "probe",
+          alertActionLabel: "重新测试连接",
+          missingVars: [],
+          checkLabel: `异常 · ${chk.checkedAt}`,
+          checkSubtle: false
+        };
+      }
+      if (invErr) {
+        return {
+          kind: "invoke_error",
+          dot: "err",
+          badge: "调用失败",
+          badgeTone: "err",
+          label: "最近调用失败",
+          summary: `最近调用 ${invErr.tool} 失败（${invErr.time}）`,
+          alertTitle: `最近调用失败 · ${invErr.tool}（${invErr.time}）`,
+          alertDetail: invErr.detail,
+          alertAction: "probe",
+          alertActionLabel: "立即测试连接",
+          missingVars: [],
+          checkLabel: chk ? `历史通过 · ${chk.checkedAt}` : "未检查",
+          checkSubtle: true
+        };
+      }
+      if (!chk || chk.stale) {
+        return {
+          kind: "unverified",
+          dot: "warn",
+          badge: "待验证",
+          badgeTone: "warn",
+          label: chk ? "配置已变更，待复测" : "尚未测试连接",
+          summary: chk ? `连接或凭据已变更，上次检查于 ${chk.checkedAt}` : "尚未执行连接检查，点击测试连接确认可用",
+          alertTitle: chk ? "连接配置或凭据已变更，待重新验证" : "尚未执行连接检查",
+          alertDetail: chk ? `上次检查通过时间为 ${chk.checkedAt}，当前环境指纹已变化，请重新测试连接确认服务可用。` : "服务配置已保存，但尚未验证与上游端点的连通性。",
+          alertAction: "probe",
+          alertActionLabel: "测试连接",
+          missingVars: [],
+          checkLabel: chk ? `待复测 · ${chk.checkedAt}` : "未检查",
+          checkSubtle: true
+        };
+      }
+      if (stats.open === 0) {
+        return {
+          kind: "no_tools",
+          dot: "warn",
+          badge: stats.total === 0 ? "无工具" : "未开放工具",
+          badgeTone: "warn",
+          label: stats.total === 0 ? "尚未导入工具" : "未开放任何工具",
+          summary: stats.total === 0 ? "连接正常，但当前服务下尚无已同步工具" : `连接正常，但 ${stats.total} 个已同步工具均处于关闭状态`,
+          alertTitle: stats.total === 0 ? "当前服务尚无可用工具" : "尚未向 Agent 开放任何工具",
+          alertDetail: stats.total === 0 ? "请同步下游工具或导入接口定义。" : "上游连接与凭据均已就绪，但白名单开放工具数为 0，Agent 暂时无法发现该服务的工具。",
+          alertAction: stats.total > 0 ? "enable_ro" : "",
+          alertActionLabel: stats.total > 0 ? "仅开放只读工具" : "",
+          missingVars: [],
+          checkLabel: chk.checkedAt,
+          checkSubtle: false
+        };
+      }
+      return {
+        kind: "ready",
+        dot: "ok",
+        badge: "",
+        badgeTone: "ok",
+        label: "就绪",
+        summary: "",
+        missingVars: [],
+        checkLabel: chk.checkedAt,
+        checkSubtle: false
+      };
+    }
+
+    function nowCheckTimestamp() {
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+
+    function probePrototypeService(id) {
+      const s = SERVICES.find(x => x.id === id);
+      if (!s) return;
+      const missing = (s.credentials || []).filter(c => !c.configured).map(c => c.name);
+      const ts = nowCheckTimestamp();
+      if (missing.length > 0) {
+        s.lastCheck = {
+          status: "error",
+          checkedAt: ts,
+          stale: false,
+          message: "连接测试未通过：缺少必填凭据",
+          detail: `missing credentials: ${missing.join(", ")}`
+        };
+        showToast(`测试失败：缺少凭据 ${missing.join(", ")}`);
+        render();
+        return;
+      }
+      if (s.id === "billing" && s.endpoint.includes("billing.internal")) {
+        s.lastCheck = {
+          status: "error",
+          checkedAt: ts,
+          stale: false,
+          message: "配置已保存，连接尚未试通",
+          detail: "upstream HTTP 502: TLS handshake timeout"
+        };
+        showToast("探活失败：upstream HTTP 502: TLS handshake timeout");
+        render();
+        return;
+      }
+      const stats = getServiceToolStats(s.id);
+      s.lastCheck = {
+        status: "success",
+        checkedAt: ts,
+        stale: false,
+        message: `连接验证通过，同步 ${stats.total} 个工具。`
+      };
+      s.lastInvokeFailure = null;
+      showToast(`${s.name} 连接测试通过`);
+      render();
+    }
+
+    function updateCredentialDraft(srvId, name, val) {
+      if (!credentialDrafts[srvId]) credentialDrafts[srvId] = {};
+      credentialDrafts[srvId][name] = val;
+    }
+
+    function savePrototypeCredentials(srvId, testAfter) {
+      const s = SERVICES.find(x => x.id === srvId);
+      if (!s) return;
+      const drafts = credentialDrafts[srvId] || {};
+      let updatedCount = 0;
+      (s.credentials || []).forEach(c => {
+        const v = (drafts[c.name] || "").trim();
+        if (v) {
+          c.saved = true;
+          c.configured = true;
+          updatedCount++;
+        }
+      });
+      credentialDrafts[srvId] = {};
+      if (updatedCount === 0 && !testAfter) {
+        showToast("未输入新凭据，已保留原值");
+        render();
+        return;
+      }
+      if (s.lastCheck) s.lastCheck.stale = true;
+      if (testAfter) {
+        probePrototypeService(srvId);
+      } else {
+        showToast("凭据已加密保存至系统钥匙串");
+        render();
+      }
+    }
+
+    function clearPrototypeCredential(srvId, varName) {
+      const s = SERVICES.find(x => x.id === srvId);
+      if (!s) return;
+      const entry = (s.credentials || []).find(c => c.name === varName);
+      if (!entry) return;
+      entry.saved = false;
+      entry.configured = !!entry.environment;
+      if (s.lastCheck) s.lastCheck.stale = true;
+      if (credentialDrafts[srvId]) delete credentialDrafts[srvId][varName];
+      showToast(`已清除钥匙串中保存的 ${varName}`);
+      render();
+    }
 
     const SERVICE_TOOLS = {
       github: [
@@ -2123,10 +2441,18 @@
 
     function renderOverview() {
       const realServices = getRealServices();
-      const onlineServices = realServices.filter(s => s.enabled && s.tone === "ok").length;
-      const errorServices = realServices.filter(s => s.tone === "err");
+      const readinessMap = new Map(realServices.map(s => [s.id, evaluateServiceReadiness(s)]));
+      const readyServices = realServices.filter(s => readinessMap.get(s.id).kind === "ready").length;
+      const issueServices = realServices.filter(s => {
+        const k = readinessMap.get(s.id).kind;
+        return k === "missing_creds" || k === "conn_error" || k === "invoke_error";
+      });
+      const pendingServices = realServices.filter(s => {
+        const k = readinessMap.get(s.id).kind;
+        return k === "unverified" || k === "no_tools";
+      });
       const realTools = TOOLS.filter(t => !t.demo);
-      const enabledToolsCount = realTools.filter(t => t.enabled).length;
+      const enabledToolsCount = realTools.filter(t => t.enabled && readinessMap.get(t.serverId)?.kind === "ready").length;
       const topTools = [...realTools].filter(t => t.hits > 0).sort((a, b) => b.hits - a.hits).slice(0, 4);
       const maxHits = topTools[0] ? topTools[0].hits : 1;
 
@@ -2199,9 +2525,12 @@
           </div>
 
           <div class="kpi-card">
-            <div class="kpi-label">上游服务</div>
-            <div class="kpi-val">${onlineServices} <span style="font-size:13px;font-weight:500;color:var(--ink-muted)">/ ${realServices.length} 在线</span></div>
-            <div class="kpi-hint">${enabledToolsCount}/${realTools.length} 工具可用${errorServices.length > 0 ? ` · ${errorServices.length} 连接超时` : ""}</div>
+            <div class="kpi-label" style="display:flex;justify-content:space-between;align-items:center;">
+              <span>上游服务</span>
+              ${issueServices.length > 0 ? `<span class="badge badge-err">${issueServices.length} 异常</span>` : (pendingServices.length > 0 ? `<span class="badge badge-warn">${pendingServices.length} 待验证</span>` : "")}
+            </div>
+            <div class="kpi-val">${readyServices} <span style="font-size:13px;font-weight:500;color:var(--ink-muted)">/ ${realServices.length} 就绪</span></div>
+            <div class="kpi-hint">${enabledToolsCount}/${realTools.length} 工具就绪可用${issueServices.length > 0 ? ` · ${issueServices.length} 需修复` : (pendingServices.length > 0 ? ` · ${pendingServices.length} 待复测` : "")}</div>
           </div>
         </div>
 
@@ -2287,16 +2616,17 @@
                 </div>
               ` : realServices.map(s => {
                 const st = getServiceToolStats(s.id);
-                const hasErr = s.tone === "err";
+                const r = readinessMap.get(s.id) || evaluateServiceReadiness(s);
                 return `
                   <div class="hairline-row" onclick="openOverviewDrawer('service','${s.id}')">
                     <div class="row-main">
                       <div class="row-title-line">
-                        <span class="dot dot-${hasErr ? "err" : s.enabled ? "ok" : "muted"}"></span>
+                        <span class="dot dot-${r.dot}"></span>
                         <span class="row-name" style="font-family:var(--sans);">${esc(s.name)}</span>
-                        ${hasErr ? `<span class="badge badge-err">连接异常</span>` : (st.rwOpen > 0 ? `<span class="badge badge-rw">写 ×${st.rwOpen}</span>` : (!s.enabled ? `<span class="quiet-meta">已停用</span>` : ""))}
+                        ${r.badge ? `<span class="badge badge-${r.badgeTone}">${esc(r.badge)}</span>` : (!s.enabled ? `<span class="quiet-meta">已停用</span>` : "")}
+                        ${s.enabled && st.rwOpen > 0 ? `<span class="badge badge-rw">写 ×${st.rwOpen}</span>` : ""}
                       </div>
-                      <div class="row-summary">${hasErr ? esc(s.healthMsg) : `${esc(s.proto)} · ${st.open}/${st.total} 工具开放`}</div>
+                      <div class="row-summary">${r.summary ? esc(r.summary) : `${esc(s.proto)} · ${st.open}/${st.total} 工具开放`}</div>
                     </div>
                     <div class="row-right">
                       ${svgIcon("chevronRight", 15, "color:var(--ink-faint);")}
@@ -2403,10 +2733,24 @@
       const s = SERVICES.find(x => x.id === id);
       if (!s) return;
       s.enabled = !s.enabled;
-      s.tone = s.enabled ? "ok" : "muted";
-      s.status = s.enabled ? "在线" : "已停用";
       showToast(`${s.enabled ? "已启用" : "已停用"} ${s.name}`);
       render();
+    }
+
+    function handleReadinessAction(srvId, action) {
+      if (action === "fill_creds") {
+        serviceDetailTab = "config";
+        serviceConfigJsonMode = false;
+        render();
+        setTimeout(() => {
+          const inp = document.querySelector(`[data-cred-input="${srvId}"]`);
+          if (inp) inp.focus();
+        }, 30);
+      } else if (action === "probe") {
+        probePrototypeService(srvId);
+      } else if (action === "enable_ro") {
+        batchServiceTools(srvId, "ro");
+      }
     }
 
     function batchServiceTools(srvId, mode) {
@@ -2423,6 +2767,13 @@
     function renderServiceDetail(s) {
       const srvTools = TOOLS.filter(t => t.serverId === s.id);
       const stats = getServiceToolStats(s.id);
+      const r = evaluateServiceReadiness(s);
+      const creds = s.credentials || [];
+      const credSummary = creds.length === 0
+        ? "无需凭据变量"
+        : (r.missingVars && r.missingVars.length > 0
+            ? `缺少 ${r.missingVars.join(", ")}`
+            : `${creds.length}/${creds.length} 已就绪`);
       const filteredTools = srvTools.filter(t => {
         if (serviceWhitelistFilter === "open" && !t.enabled) return false;
         if (serviceWhitelistFilter === "closed" && t.enabled) return false;
@@ -2431,44 +2782,101 @@
         return true;
       });
 
+      const alertTone = (r.kind === "missing_creds" || r.kind === "conn_error" || r.kind === "invoke_error") ? "err" : "warn";
+
       return `
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
           <button class="btn btn-sm" type="button" onclick="selectedServiceId='';render();">← 返回上游服务</button>
           <button class="btn btn-sm" type="button" onclick="catalogServiceFilter='${s.id}';switchPage('catalog');">在工具目录中查看 ${svgIcon("arrowUpRight", 12)}</button>
         </div>
 
+        <div class="section-header" style="flex-wrap:wrap;gap:12px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <h1 class="section-title" style="font-size:20px;">${esc(s.name)}</h1>
+            <span class="quiet-meta">${esc(s.proto)}</span>
+            ${r.badge
+              ? `<span class="badge badge-${r.badgeTone}"><span class="dot dot-${r.dot}" style="width:5.5px;height:5.5px;"></span>${esc(r.badge)}</span>`
+              : `<span class="quiet-meta"><span class="dot dot-${r.dot}"></span>${esc(r.label)}</span>`
+            }
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            ${!s.demo ? `
+              <label class="quiet-meta" style="cursor:pointer;gap:7px;">
+                <span>${s.enabled ? "启用开关 · 开" : "启用开关 · 关"}</span>
+                <button class="switch ${s.enabled ? "on" : ""}" type="button" onclick="toggleServiceEnabled('${s.id}')" title="启用开关"></button>
+              </label>
+              <button class="btn btn-sm" type="button" onclick="probePrototypeService('${s.id}')">${svgIcon("refresh", 12.5)}<span>测试连接</span></button>
+              <button class="btn btn-sm btn-danger" type="button" onclick="s.enabled=false;batchServiceTools('${s.id}','none');">停用</button>
+            ` : ""}
+          </div>
+        </div>
+
         <div class="card">
-          <div class="card-header" style="flex-wrap:wrap;">
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-              <span class="dot dot-${s.tone === "err" ? "err" : s.enabled ? "ok" : "muted"}"></span>
-              <h1 class="section-title" style="font-size:19px;">${esc(s.name)}</h1>
-              <span class="badge badge-neutral">${esc(s.proto)}</span>
-              ${s.tone === "err" ? `<span class="badge badge-err">连接异常</span>` : ""}
-              ${stats.rwOpen > 0 ? `<span class="badge badge-rw">写 ×${stats.rwOpen}</span>` : ""}
+          ${s.desc ? `
+            ${renderDescriptionDetail("srv-" + s.id, s.desc)}
+            <div style="height:1px;background:var(--divider);"></div>
+          ` : ""}
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+              <div>
+                <div class="quiet-meta" style="font-size:11.5px;">服务 ID</div>
+                <div class="mono" style="font-size:12.5px;color:var(--ink-strong);margin-top:2px;">${esc(s.id)}</div>
+              </div>
+              <div>
+                <div class="quiet-meta" style="font-size:11.5px;">接入地址 / 命令</div>
+                <div class="mono" style="font-size:12.5px;color:var(--ink-strong);margin-top:2px;">${esc(s.endpoint)}</div>
+              </div>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <button class="switch ${s.enabled ? "on" : ""}" type="button" onclick="toggleServiceEnabled('${s.id}')" title="启用服务"></button>
-              <button class="btn btn-sm" type="button" onclick="showToast('已重新同步 ${esc(s.name)} 工具列表')">${svgIcon("refresh", 12.5)}<span>同步工具</span></button>
-              <button class="btn btn-sm btn-danger" type="button" onclick="batchServiceTools('${s.id}','none')">停用全部</button>
+            <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+              ${creds.length > 0 ? `
+                <div style="text-align:right;">
+                  <div class="quiet-meta" style="font-size:11.5px;">服务凭据</div>
+                  <div style="font-size:12.5px;font-weight:600;margin-top:2px;color:${r.missingVars && r.missingVars.length > 0 ? "var(--danger)" : "var(--ink-strong)"};">${esc(credSummary)}</div>
+                </div>
+              ` : ""}
+              <div style="text-align:right;">
+                <div class="quiet-meta" style="font-size:11.5px;">开放工具</div>
+                <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;margin-top:2px;">
+                  <span class="mono" style="font-size:13px;font-weight:600;color:var(--ink-strong);">${stats.open} / ${stats.total}</span>
+                  ${stats.rwOpen > 0 ? `<span class="badge badge-rw">写 ×${stats.rwOpen}</span>` : ""}
+                </div>
+              </div>
+              <div style="text-align:right;">
+                <div class="quiet-meta" style="font-size:11.5px;">最近检查</div>
+                <div style="margin-top:2px;">
+                  ${r.kind === "conn_error"
+                    ? `<span class="badge badge-err">${esc(r.checkLabel)}</span>`
+                    : r.checkSubtle
+                      ? `<span class="quiet-meta mono" style="color:${r.dot === "warn" ? "var(--warning)" : "var(--ink-muted)"};">${esc(r.checkLabel)}</span>`
+                      : `<span class="quiet-meta mono"><span class="dot dot-ok"></span>${esc(r.checkLabel)}</span>`
+                  }
+                </div>
+              </div>
             </div>
           </div>
+        </div>
 
-          <div class="card-subtle">
-            <div class="kv-row"><span class="kv-k">服务 ID</span><span class="kv-v mono">${esc(s.id)}</span></div>
-            <div class="kv-row"><span class="kv-k">接入地址 / 命令</span><span class="kv-v mono">${esc(s.endpoint)}</span></div>
-            <div class="kv-row"><span class="kv-k">开放工具</span><span class="kv-v mono">${stats.open} / ${stats.total}</span></div>
+        ${r.alertTitle ? `
+          <div class="sail-alert ${alertTone}" style="align-items:center;">
+            <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1;">
+              <div style="font-weight:600;">${esc(r.alertTitle)}</div>
+              ${r.alertDetail ? `<div style="font-size:12px;opacity:0.95;">${esc(r.alertDetail)}</div>` : ""}
+            </div>
+            ${r.alertAction ? `
+              <button class="btn btn-sm ${alertTone === "err" ? "btn-primary" : ""}" style="flex-shrink:0;" type="button" onclick="handleReadinessAction('${s.id}','${r.alertAction}')">${esc(r.alertActionLabel)}</button>
+            ` : ""}
           </div>
+        ` : ""}
 
-          ${renderDescriptionDetail("srv-" + s.id, s.desc)}
-        </div>
+        ${!s.demo ? `
+          <div class="segmented" style="align-self:flex-start;">
+            <button class="seg-btn ${serviceDetailTab==="whitelist"?"active":""}" type="button" onclick="serviceDetailTab='whitelist';render();">工具白名单 (${srvTools.length})</button>
+            <button class="seg-btn ${serviceDetailTab==="config"?"active":""}" type="button" onclick="serviceDetailTab='config';render();">连接与认证配置</button>
+            <button class="seg-btn ${serviceDetailTab==="health"?"active":""}" type="button" onclick="serviceDetailTab='health';render();">健康与维护概览</button>
+          </div>
+        ` : ""}
 
-        <div class="segmented" style="align-self:flex-start;">
-          <button class="seg-btn ${serviceDetailTab==="whitelist"?"active":""}" type="button" onclick="serviceDetailTab='whitelist';render();">工具白名单 (${srvTools.length})</button>
-          <button class="seg-btn ${serviceDetailTab==="config"?"active":""}" type="button" onclick="serviceDetailTab='config';render();">连接与认证配置</button>
-          <button class="seg-btn ${serviceDetailTab==="health"?"active":""}" type="button" onclick="serviceDetailTab='health';render();">健康与维护概览</button>
-        </div>
-
-        ${serviceDetailTab === "whitelist" ? `
+        ${(s.demo || serviceDetailTab === "whitelist") ? `
           <div class="card-flush">
             <div class="card-header" style="padding:14px 20px;border-bottom:1px solid var(--divider);flex-wrap:wrap;gap:10px;">
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -2480,11 +2888,13 @@
                   <button class="seg-btn ${serviceWhitelistFilter==="rw"?"active":""}" type="button" onclick="serviceWhitelistFilter='rw';render();">写操作</button>
                 </div>
               </div>
-              <div style="display:flex;gap:6px;">
-                <button class="btn btn-sm" type="button" onclick="batchServiceTools('${s.id}','ro')">仅开放只读</button>
-                <button class="btn btn-sm" type="button" onclick="batchServiceTools('${s.id}','all')">全选开放</button>
-                <button class="btn btn-sm" type="button" onclick="batchServiceTools('${s.id}','none')">全部停用</button>
-              </div>
+              ${!s.demo ? `
+                <div style="display:flex;gap:6px;">
+                  <button class="btn btn-sm" type="button" onclick="batchServiceTools('${s.id}','ro')">仅开放只读</button>
+                  <button class="btn btn-sm" type="button" onclick="batchServiceTools('${s.id}','all')">全选开放</button>
+                  <button class="btn btn-sm" type="button" onclick="batchServiceTools('${s.id}','none')">全部停用</button>
+                </div>
+              ` : ""}
             </div>
             ${filteredTools.length === 0 ? `
               <div style="padding:20px;"><div class="sail-empty"><div style="font-weight:600;color:var(--ink-strong);">无匹配工具</div></div></div>
@@ -2509,9 +2919,42 @@
             }).join("")}
           </div>
         ` : serviceDetailTab === "config" ? `
+          ${creds.length > 0 ? `
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <h2 class="card-title">服务凭据</h2>
+                  <div class="quiet-meta" style="margin-top:2px;">凭据保存在系统钥匙串，重启后自动恢复；环境变量优先</div>
+                </div>
+              </div>
+              ${creds.map((c, idx) => {
+                let stLabel = "未配置";
+                let stDot = "err";
+                if (c.environment) { stLabel = "由运行环境提供"; stDot = "ok"; }
+                else if (c.saved) { stLabel = "已保存"; stDot = "ok"; }
+                const draftVal = (credentialDrafts[s.id] && credentialDrafts[s.id][c.name]) || "";
+                return `
+                  <div style="display:flex;align-items:center;gap:12px;padding:6px 0;${idx < creds.length - 1 ? "border-bottom:1px solid var(--divider);" : ""}">
+                    <code class="mono" style="width:210px;flex-shrink:0;font-size:12px;font-weight:600;color:var(--ink-strong);">${esc(c.name)}</code>
+                    <input data-cred-input="${s.id}" type="password" class="input-line" style="flex:1;" placeholder="输入新凭据，留空保留已存值" value="${esc(draftVal)}" oninput="updateCredentialDraft('${s.id}','${c.name}',this.value)" />
+                    <span class="quiet-meta" style="min-width:118px;justify-content:flex-end;color:${c.configured ? "var(--ink-muted)" : "var(--danger)"};"><span class="dot dot-${stDot}"></span>${esc(stLabel)}</span>
+                    <button class="btn btn-sm" type="button" ${c.saved ? "" : "disabled"} onclick="clearPrototypeCredential('${s.id}','${c.name}')">清除</button>
+                  </div>
+                `;
+              }).join("")}
+              <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px;">
+                <button class="btn" type="button" onclick="savePrototypeCredentials('${s.id}', false)">保存凭据</button>
+                <button class="btn btn-primary" type="button" onclick="savePrototypeCredentials('${s.id}', true)">保存凭据并测试连接</button>
+              </div>
+            </div>
+          ` : ""}
+
           <div class="card">
             <div class="card-header">
-              <h2 class="card-title">连接与认证配置</h2>
+              <div>
+                <h2 class="card-title">连接与认证配置</h2>
+                <div class="quiet-meta" style="margin-top:2px;">配置中使用 \${ENV_VAR} 引用，凭据单独保存且绝不回显明文</div>
+              </div>
               <div class="segmented">
                 <button class="seg-btn ${!serviceConfigJsonMode?"active":""}" type="button" onclick="serviceConfigJsonMode=false;render();">表单视图</button>
                 <button class="seg-btn ${serviceConfigJsonMode?"active":""}" type="button" onclick="serviceConfigJsonMode=true;render();">JSON 定义</button>
@@ -2519,8 +2962,8 @@
             </div>
             ${serviceConfigJsonMode ? `
               <div class="code-navy">
-                <div class="code-navy-hdr"><span>${esc(s.id)}.json</span><button class="endpoint-copy" style="color:#fff;" type="button" onclick="copyText(JSON.stringify({id:'${s.id}',kind:'${s.kind}',endpoint:'${s.endpoint}'},null,2),'已复制服务 JSON')">复制</button></div>
-                <pre>${esc(JSON.stringify({ id: s.id, name: s.name, kind: s.kind, endpoint: s.endpoint, enabled: s.enabled }, null, 2))}</pre>
+                <div class="code-navy-hdr"><span>${esc(s.id)}.json</span><button class="endpoint-copy" style="color:#fff;" type="button" onclick="copyText(JSON.stringify({id:'${s.id}',kind:'${s.kind}',endpoint:'${s.endpoint}',headers:s.headers||{}},null,2),'已复制服务 JSON')">复制</button></div>
+                <pre>${esc(JSON.stringify({ id: s.id, name: s.name, kind: s.kind, endpoint: s.endpoint, headers: s.headers || {}, env: s.env || {}, enabled: s.enabled }, null, 2))}</pre>
               </div>
             ` : `
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
@@ -2528,25 +2971,37 @@
                 <div><div class="field-label-row"><span class="field-label">传输协议</span></div><input class="input-line mono" value="${esc(s.proto)}" disabled /></div>
               </div>
               <div><div class="field-label-row"><span class="field-label">命令 / URL</span></div><input class="input-line mono" value="${esc(s.endpoint)}" /></div>
+              <div><div class="field-label-row"><span class="field-label">${s.kind === "mcp_stdio" ? "环境变量 (JSON)" : "请求头 (JSON)"}</span></div><textarea class="input-area mono" rows="3">${esc(JSON.stringify(s.kind === "mcp_stdio" ? (s.env || {}) : (s.headers || {}), null, 2))}</textarea></div>
               <div style="display:flex;justify-content:flex-end;gap:8px;">
                 <button class="btn" type="button" onclick="showToast('已重置表单')">重置</button>
                 <button class="btn" type="button" onclick="showToast('已保存连接配置')">仅保存</button>
-                <button class="btn btn-primary" type="button" onclick="showToast('保存成功且连通性探测通过')">保存并测试连接</button>
+                <button class="btn btn-primary" type="button" onclick="probePrototypeService('${s.id}')">保存并测试连接</button>
               </div>
             `}
           </div>
+
+          ${creds.length === 0 ? `
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <h2 class="card-title">服务凭据</h2>
+                  <div class="quiet-meta" style="margin-top:2px;">凭据保存在系统钥匙串，重启后自动恢复；环境变量优先</div>
+                </div>
+              </div>
+              <div class="quiet-meta">此服务未引用 \${ENV_VAR} 环境变量。</div>
+            </div>
+          ` : ""}
         ` : `
           <div class="card">
             <div class="card-header">
-              <h2 class="card-title">健康与维护概览</h2>
-              <button class="btn btn-sm" type="button" onclick="showToast('探活完成：${esc(s.name)}')">${svgIcon("play", 12)}<span>立即探活</span></button>
-            </div>
-            <div class="sail-alert ${s.tone === "err" ? "err" : "ok"}">
-              <div><strong>${s.tone === "err" ? "连接探活异常" : "运行正常"}</strong>：${esc(s.healthMsg)}</div>
+              <h2 class="card-title">运行状态与健康检查</h2>
+              <button class="btn btn-sm" type="button" onclick="probePrototypeService('${s.id}')">${svgIcon("refresh", 12)}<span>立即探活</span></button>
             </div>
             <div class="card-subtle">
+              <div class="kv-row"><span class="kv-k">当前可用状态</span><span class="kv-v"><span class="dot dot-${r.dot}" style="margin-right:6px;"></span>${esc(r.label)}</span></div>
+              <div class="kv-row"><span class="kv-k">历史连接检查</span><span class="kv-v mono">${s.lastCheck ? `${esc(s.lastCheck.checkedAt)} · ${esc(s.lastCheck.message || "")}${s.lastCheck.stale ? "（环境已变更，待复测）" : ""}` : "尚无记录"}</span></div>
+              ${s.lastInvokeFailure ? `<div class="kv-row"><span class="kv-k">最近调用失败</span><span class="kv-v mono" style="color:var(--danger);">${esc(s.lastInvokeFailure.time)} · ${esc(s.lastInvokeFailure.tool)} — ${esc(s.lastInvokeFailure.detail)}</span></div>` : ""}
               <div class="kv-row"><span class="kv-k">维护引擎</span><span class="kv-v">Deterministic Schema Sync · 定时探活</span></div>
-              <div class="kv-row"><span class="kv-k">最近检查</span><span class="kv-v mono">2026-11-17 17:12:00</span></div>
             </div>
           </div>
         `}
@@ -2560,6 +3015,7 @@
       }
       const realServices = getRealServices();
       const demoServices = SERVICES.filter(s => s.demo);
+      const readyCount = realServices.filter(s => evaluateServiceReadiness(s).kind === "ready").length;
       const enabledCount = realServices.filter(s => s.enabled).length;
       const filtered = realServices.filter(s => {
         if (serviceProtoFilter !== "all" && s.kind !== serviceProtoFilter) return false;
@@ -2582,7 +3038,7 @@
           <div class="card-header" style="padding:16px 20px;border-bottom:1px solid var(--divider);flex-wrap:wrap;gap:12px;">
             <div style="display:flex;align-items:baseline;gap:10px;">
               <h2 class="card-title">已接入服务</h2>
-              <span class="quiet-meta">${enabledCount} / ${realServices.length} 启用</span>
+              <span class="quiet-meta">${readyCount} 就绪 · ${enabledCount} / ${realServices.length} 启用</span>
             </div>
             <div class="segmented">
               <button class="seg-btn ${serviceProtoFilter==="all"?"active":""}" type="button" onclick="serviceProtoFilter='all';render();">全部</button>
@@ -2604,22 +3060,22 @@
           ` : filtered.map(s => {
             const parsed = parseStructuredDescription(s.desc);
             const st = getServiceToolStats(s.id);
-            const hasErr = s.tone === "err";
+            const r = evaluateServiceReadiness(s);
             return `
               <div class="hairline-row" onclick="selectedServiceId='${s.id}';render();">
                 <div class="row-main">
                   <div class="row-title-line">
-                    <span class="dot dot-${hasErr ? "err" : s.enabled ? "ok" : "muted"}"></span>
+                    <span class="dot dot-${r.dot}"></span>
                     <span class="row-name" style="font-family:var(--sans);font-size:13.5px;">${esc(s.name)}</span>
                     <span class="row-sub">${esc(s.proto)}</span>
-                    ${hasErr ? `<span class="badge badge-err">连接异常</span>` : ""}
-                    ${st.rwOpen > 0 ? `<span class="badge badge-rw">写 ×${st.rwOpen}</span>` : ""}
+                    ${r.badge ? `<span class="badge badge-${r.badgeTone}">${esc(r.badge)}</span>` : ""}
+                    ${s.enabled && st.rwOpen > 0 ? `<span class="badge badge-rw">写 ×${st.rwOpen}</span>` : ""}
                   </div>
-                  <div class="row-summary">${hasErr ? esc(s.healthMsg) : esc(parsed.summary)}</div>
+                  <div class="row-summary" style="${r.dot === "err" ? "color:var(--danger);" : ""}">${r.summary ? esc(r.summary) : esc(parsed.summary)}</div>
                 </div>
                 <div class="row-right" onclick="event.stopPropagation();">
                   <span class="quiet-meta">${st.open}/${st.total} 工具</span>
-                  <button class="switch ${s.enabled ? "on" : ""}" type="button" onclick="toggleServiceEnabled('${s.id}')" title="启用状态"></button>
+                  <button class="switch ${s.enabled ? "on" : ""}" type="button" onclick="toggleServiceEnabled('${s.id}')" title="启用开关"></button>
                   <button class="btn btn-sm" type="button" onclick="selectedServiceId='${s.id}';render();">管理详情 ${svgIcon("chevronRight", 13)}</button>
                 </div>
               </div>
@@ -4753,21 +5209,26 @@
         } else if (overviewDrawer.type === "service") {
           const s = SERVICES.find(x => x.id === overviewDrawer.id);
           if (s) {
-            const tools = SERVICE_TOOLS[s.id] || [];
+            const tools = TOOLS.filter(t => t.serverId === s.id);
+            const fallbackTools = tools.length ? tools : (SERVICE_TOOLS[s.id] || []);
             const st = getServiceToolStats(s.id);
-            hdr = `<span class="dot dot-${s.tone === "err" ? "err" : s.enabled ? "ok" : "muted"}"></span><span>${esc(s.name)}</span>`;
+            const r = evaluateServiceReadiness(s);
+            const alertTone = (r.kind === "missing_creds" || r.kind === "conn_error" || r.kind === "invoke_error") ? "err" : "warn";
+            hdr = `<span class="dot dot-${r.dot}"></span><span>${esc(s.name)}</span>`;
             body = `
-              ${s.tone === "err" ? `<div class="sail-alert err"><span>${esc(s.healthMsg)}</span></div>` : ""}
+              ${r.alertTitle ? `<div class="sail-alert ${alertTone}"><div><strong>${esc(r.alertTitle)}</strong>${r.alertDetail ? `<div style="margin-top:2px;font-size:12px;">${esc(r.alertDetail)}</div>` : ""}</div></div>` : ""}
               <div class="card-subtle" style="gap:4px;">
                 <div class="kv-row"><span class="kv-k">协议</span><span class="kv-v">${esc(s.proto)}</span></div>
-                <div class="kv-row"><span class="kv-k">运行状态</span><span class="kv-v" style="${s.tone === "err" ? "color:var(--danger);" : ""}">${esc(s.status)}</span></div>
+                <div class="kv-row"><span class="kv-k">当前可用状态</span><span class="kv-v" style="${r.dot === "err" ? "color:var(--danger);" : (r.dot === "warn" ? "color:var(--warning);" : "")}">${esc(r.label)}</span></div>
+                <div class="kv-row"><span class="kv-k">启用开关</span><span class="kv-v">${s.enabled ? "已启用" : "已停用"}</span></div>
+                <div class="kv-row"><span class="kv-k">最近检查</span><span class="kv-v mono">${esc(r.checkLabel)}</span></div>
                 <div class="kv-row"><span class="kv-k">开放工具</span><span class="kv-v mono">${st.open}/${st.total}</span></div>
               </div>
               ${renderDescriptionDetail("ov-srv-" + s.id, s.desc)}
               <div>
                 <div style="font-size:12px;font-weight:600;color:var(--ink-muted);margin-bottom:8px;">下属工具</div>
                 <div class="card-flush">
-                  ${tools.map(t => `
+                  ${fallbackTools.map(t => `
                     <div class="hairline-row" style="cursor:default;">
                       <div class="row-main"><span class="row-name">${esc(t.name)}</span></div>
                       <div class="row-right">${t.rw ? `<span class="badge badge-rw">写</span>` : ""}</div>
@@ -4776,7 +5237,7 @@
                 </div>
               </div>
             `;
-            ftrAction = `<button class="btn btn-sm" type="button" onclick="selectedServiceId='${s.id}';closeOverviewDrawer();switchPage('services');">管理此服务 ${svgIcon("arrowUpRight", 12)}</button>`;
+            ftrAction = `<button class="btn btn-sm" type="button" onclick="selectedServiceId='${s.id}';serviceDetailTab='${r.kind === "missing_creds" ? "config" : "whitelist"}';closeOverviewDrawer();switchPage('services');">${r.kind === "missing_creds" ? "填写凭据" : "管理此服务"} ${svgIcon("arrowUpRight", 12)}</button>`;
           }
         } else if (overviewDrawer.type === "tool") {
           const t = TOOLS.find(x => x.id === overviewDrawer.id);

@@ -271,6 +271,16 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 		toolsByServer[t.ServerID] = append(toolsByServer[t.ServerID], t)
 	}
 
+	readinessByServer := make(map[string]serviceReadiness, len(realServers))
+	readyCount := 0
+	for _, s := range realServers {
+		r := u.readinessForServer(s, toolsByServer[s.ID])
+		readinessByServer[s.ID] = r
+		if r.IsHealthyReady() {
+			readyCount++
+		}
+	}
+
 	SailSectionHeader(
 		c,
 		"上游服务",
@@ -293,7 +303,7 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 		SailListCardHeader(
 			c,
 			"已接入服务",
-			fmt.Sprintf("%d / %d 启用", onlineCount, len(realServers)),
+			fmt.Sprintf("%d 就绪 · %d / %d 启用", readyCount, onlineCount, len(realServers)),
 			func() {
 				ui.Segmented(c.Key("svc-proto-filter"), &st.listProtoFilter, "全部", "MCP Stdio", "MCP HTTP", "HTTP REST")
 			},
@@ -387,14 +397,7 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 				}
 			}
 			rwCount := onCount - roCount
-			check, hasCheck := u.State.Setup.SourceChecks[s.ID]
-
-			dotColor := SailInkFaint
-			if hasCheck && check.Status == "error" {
-				dotColor = SailDangerInk
-			} else if s.Enabled {
-				dotColor = SailSuccessInk
-			}
+			readiness := readinessByServer[s.ID]
 
 			row := ui.Row(c.Key("svc-card-"+s.ID)).
 				FillWidth().
@@ -409,10 +412,10 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 				row.Background(SailBgHover)
 			}
 			row.Children(func() {
-				// Anchor 1 & 2: Primary Identity + Cleaned 1-sentence Summary
+				// Anchor 1 & 2: Primary Identity + Readiness / Cleaned 1-sentence Summary
 				ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-						SailStatusDot(c, dotColor)
+						SailStatusDot(c, readiness.DotColor)
 
 						nameBtn := ui.ButtonBase(c.Key("svc-open-" + s.ID)).Cursor(ui.CursorPointer)
 						nameBtn.Children(func() {
@@ -425,16 +428,30 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 
 						ui.Text(c, serviceProtocolTag(s)).FontSize(11.5).TextColor(SailInkFaint).SingleLine()
 
-						if hasCheck && check.Status == "error" {
-							SailBadge(c, "连接异常", ToneDanger)
+						if readiness.BadgeLabel != "" {
+							SailBadge(c, readiness.BadgeLabel, readiness.BadgeTone)
 						}
-						if rwCount > 0 {
+						if s.Enabled && rwCount > 0 {
 							SailBadge(c, fmt.Sprintf("写 ×%d", rwCount), ToneWarning)
 						}
 					})
 
 					ui.Row(c).Padding(0, 0, 0, 14.5).MinWidth(0).Children(func() {
-						SailDescSummary(c, s.Description, ServerTargetText(s), 1).Grow(1).MinWidth(0)
+						if readiness.RowSummary != "" {
+							sumColor := SailInkMuted
+							if readiness.HasError() {
+								sumColor = SailDangerInk
+							}
+							ui.Text(c, readiness.RowSummary).
+								FontSize(12.5).
+								LineHeight(1.42).
+								TextColor(sumColor).
+								SingleLine().
+								Grow(1).
+								MinWidth(0)
+						} else {
+							SailDescSummary(c, s.Description, ServerTargetText(s), 1).Grow(1).MinWidth(0)
+						}
 					})
 				})
 
@@ -540,7 +557,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 			}
 		}
 	}
-	check, hasCheck := u.State.Setup.SourceChecks[server.ID]
+	readiness := u.readinessForServer(server, srvTools)
 
 	// Top back button + catalog shortcut
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
@@ -574,15 +591,19 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 			if server.Demo {
 				ui.Text(c, "演示").FontSize(12).TextColor(SailInkFaint).SingleLine()
 			} else {
+				if readiness.BadgeLabel != "" {
+					SailBadgeDot(c, readiness.BadgeLabel, readiness.BadgeTone)
+				} else {
+					SailQuietStatus(c, readiness.StatusLabel, readiness.DotColor, SailInkBody)
+				}
+
 				enabledVal := server.Enabled
 				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					dotCol := SailInkFaint
-					lbl := "已停用"
+					swLbl := "已停用"
 					if enabledVal {
-						dotCol = SailSuccessInk
-						lbl = "已启用"
+						swLbl = "已启用"
 					}
-					SailQuietStatus(c, lbl, dotCol, SailInkMuted)
+					ui.Text(c, swLbl).FontSize(12).TextColor(SailInkMuted).SingleLine()
 					sw := ui.Switch(c.Key("detail-srv-sw-"+server.ID), &enabledVal).
 						Label("启用服务").
 						Disabled(st.toggleBusyID == server.ID)
@@ -590,6 +611,16 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 						u.toggleServerEnabled(st, server, enabledVal)
 					}
 				})
+
+				probeLabel := "测试连接"
+				if st.connBusy {
+					probeLabel = "测试中…"
+				}
+				if SailSmallButton(c.Key("detail-probe-"+server.ID), probeLabel).
+					Disabled(st.connBusy || st.syncingServerID != "").
+					Clicked() {
+					u.probeServerConnection(st, server)
+				}
 			}
 
 			if server.Kind == "mcp" && !server.Demo {
@@ -598,7 +629,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 					syncLabel = "同步中…"
 				}
 				if SailSmallButton(c.Key("detail-sync-"+server.ID), syncLabel).
-					Disabled(st.syncingServerID != "").
+					Disabled(st.syncingServerID != "" || st.connBusy).
 					Clicked() {
 					u.syncServerTools(st, server)
 				}
@@ -668,7 +699,22 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 				})
 			})
 
-			ui.Row(c).Gap(16).AlignItems(ui.Center).Children(func() {
+			ui.Row(c).Gap(18).AlignItems(ui.Center).Wrap().Children(func() {
+				if readiness.CredSummary != "" {
+					ui.Column(c).Gap(3).AlignItems(ui.End).Children(func() {
+						ui.Text(c, "服务凭据").FontSize(11.5).TextColor(SailInkMuted)
+						credColor := SailInkStrong
+						if readiness.CredDanger {
+							credColor = SailDangerInk
+						}
+						ui.Text(c, readiness.CredSummary).
+							FontSize(12.5).
+							FontWeight(600).
+							TextColor(credColor).
+							SingleLine()
+					})
+				}
+
 				ui.Column(c).Gap(3).AlignItems(ui.End).Children(func() {
 					ui.Text(c, "开放工具").FontSize(11.5).TextColor(SailInkMuted)
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
@@ -683,13 +729,18 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 					})
 				})
 
-				if hasCheck {
+				if readiness.CheckDisplay != checkDisplayNone && readiness.CheckLabel != "" {
 					ui.Column(c).Gap(3).AlignItems(ui.End).Children(func() {
 						ui.Text(c, "最近检查").FontSize(11.5).TextColor(SailInkMuted)
-						if check.Status == "error" {
-							SailBadge(c, "异常 · "+FormatTime(check.CheckedAt), ToneDanger)
-						} else {
-							SailQuietStatus(c, FormatTime(check.CheckedAt), SailSuccessInk, SailInkBody)
+						switch readiness.CheckDisplay {
+						case checkDisplayDanger:
+							SailBadge(c, readiness.CheckLabel, ToneDanger)
+						case checkDisplayWarn:
+							SailBadge(c, readiness.CheckLabel, ToneWarning)
+						case checkDisplaySuccess:
+							SailQuietStatus(c, readiness.CheckLabel, SailSuccessInk, SailInkBody)
+						default:
+							ui.Text(c, readiness.CheckLabel).FontSize(12).Font("monospace").TextColor(SailInkMuted).SingleLine()
 						}
 					})
 				}
@@ -697,9 +748,29 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 		})
 	})
 
-	if hasCheck && check.Status == "error" {
-		SailAlertBox(c, ToneDanger, check.Message, check.Detail)
-	}
+	renderReadinessActionBanner(
+		c,
+		"detail-readiness-"+server.ID,
+		readiness,
+		st.connBusy || st.toolBatchBusy || st.credentialBusy,
+		func() {
+			switch readiness.AlertAction {
+			case readinessActionFillCreds:
+				st.detailSubtab = 1
+				st.connMode = 0
+			case readinessActionProbe:
+				u.probeServerConnection(st, server)
+			case readinessActionEnableReadOnly:
+				var roIDs []string
+				for _, t := range srvTools {
+					if t.ReadOnly {
+						roIDs = append(roIDs, t.ID)
+					}
+				}
+				u.applyServerToolWhitelist(st, server.ID, roIDs, "已仅开放全部只读工具")
+			}
+		},
+	)
 
 	// Sub-tabs
 	if !server.Demo {
@@ -983,6 +1054,10 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 	if st.connHydratedID != server.ID {
 		st.hydrateConnForm(server)
 	}
+	credsFirst := len(serverReferencedEnvVars(server)) > 0
+	if credsFirst {
+		u.renderServerCredentials(c, st, server)
+	}
 
 	SailCard(c, func() {
 		SailCardTitle(
@@ -1131,8 +1206,9 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 			}
 		})
 	})
-	u.renderServerCredentials(c, st, server)
-
+	if !credsFirst {
+		u.renderServerCredentials(c, st, server)
+	}
 }
 
 func (st *servicesPageState) buildServerFromConnForm(orig apitypes.Server) (apitypes.Server, error) {
@@ -1185,6 +1261,15 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 		st.hydrateMaintSource(*st.maintOverview, server)
 	}
 
+	var srvTools []apitypes.Tool
+	if u.State != nil {
+		for _, t := range u.State.Registry.Tools {
+			if t.ServerID == server.ID {
+				srvTools = append(srvTools, t)
+			}
+		}
+	}
+	readiness := u.readinessForServer(server, srvTools)
 	check, hasCheck := u.State.Setup.SourceChecks[server.ID]
 
 	// Health & process summary card
@@ -1213,26 +1298,26 @@ func (u *DesktopUI) renderServiceMaintenanceTab(c *ui.Context, st *servicesPageS
 
 		ui.Row(c).FillWidth().Gap(14).Children(func() {
 			subtlePanel(c, 220, 1, func() {
-				ui.Text(c, "连接检查").FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
-				if !hasCheck {
-					ui.Text(c, "尚无探活记录").FontSize(13).TextColor(SailInkBody)
-				} else {
-					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-						if check.Status == "error" {
-							SailBadgeDot(c, "异常", ToneDanger)
-						} else if check.Stale {
-							SailBadgeDot(c, "待复测", ToneWarning)
-						} else {
-							SailQuietStatus(c, "正常", SailSuccessInk, SailInkStrong)
-						}
-						ui.Text(c, FormatTime(check.CheckedAt)).FontSize(12).TextColor(SailInkMuted)
-					})
-					if check.Message != "" {
-						ui.Text(c, check.Message).FontSize(12.5).TextColor(SailInkBody)
+				ui.Text(c, "当前状态与历史检查").FontSize(11.5).FontWeight(600).TextColor(SailInkMuted)
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+					if readiness.BadgeLabel != "" {
+						SailBadgeDot(c, readiness.BadgeLabel, readiness.BadgeTone)
+					} else {
+						SailQuietStatus(c, readiness.StatusLabel, readiness.DotColor, SailInkStrong)
 					}
-					if check.Detail != "" {
-						ui.Text(c, check.Detail).Font("monospace").FontSize(11.5).TextColor(SailDangerInk).Selectable()
+					if hasCheck {
+						ui.Text(c, "最近检查 "+FormatTime(check.CheckedAt)).FontSize(12).TextColor(SailInkMuted)
+					} else {
+						ui.Text(c, "尚无探活记录").FontSize(12).TextColor(SailInkMuted)
 					}
+				})
+				if readiness.AlertTitle != "" {
+					ui.Text(c, readiness.AlertTitle).FontSize(12.5).TextColor(SailInkBody)
+				} else if hasCheck && check.Message != "" {
+					ui.Text(c, check.Message).FontSize(12.5).TextColor(SailInkBody)
+				}
+				if hasCheck && check.Detail != "" {
+					ui.Text(c, check.Detail).Font("monospace").FontSize(11.5).TextColor(SailDangerInk).Selectable()
 				}
 			})
 
@@ -2395,6 +2480,7 @@ func (u *DesktopUI) saveConnForm(st *servicesPageState, orig apitypes.Server, te
 		u.updateUI(func() {
 			st.connBusy = false
 			st.connHydratedID = ""
+			st.credentialServerID = ""
 		})
 		u.Notify(msg)
 		return nil
@@ -2438,6 +2524,7 @@ func (u *DesktopUI) saveConnJSON(st *servicesPageState, orig apitypes.Server) {
 		u.updateUI(func() {
 			st.connBusy = false
 			st.connHydratedID = ""
+			st.credentialServerID = ""
 		})
 		u.Notify("服务 JSON 定义已保存")
 		return nil
