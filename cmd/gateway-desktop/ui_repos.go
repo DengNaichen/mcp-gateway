@@ -707,7 +707,7 @@ func (u *DesktopUI) renderServiceGrantList(
 ) {
 	if len(draft.grants) == 0 {
 		ui.Row(c).FillWidth().Padding(18, 20).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			ui.Text(c, "未授权任何上游服务（0 工具）").FontSize(12.5).TextColor(SailInkMuted)
+			ui.Text(c, "未授权任何服务（0 工具）").FontSize(12.5).TextColor(SailInkMuted)
 		})
 		return
 	}

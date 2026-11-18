@@ -52,7 +52,7 @@ func (u *DesktopUI) marketState() *marketPageState {
 	return u.market
 }
 
-func (u *DesktopUI) renderMarket(c *ui.Context) {
+func (u *DesktopUI) renderMarketContent(c *ui.Context) {
 	state := u.State
 	st := u.marketState()
 
@@ -68,13 +68,6 @@ func (u *DesktopUI) renderMarket(c *ui.Context) {
 			}
 		}
 	}
-
-	SailSectionHeader(c, "MCP 市场", "", func() {
-		SailQuietStatus(c, "精选，以及官方 MCP Registry", SailSuccessInk, SailInkMuted)
-		if SailSmallButton(c.Key("mkt-refresh"), "刷新").Disabled(st.loading).Clicked() {
-			u.fetchMarket(st, st.registryQuery)
-		}
-	})
 
 	// Search & Filter Bar.
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
@@ -610,7 +603,7 @@ func (u *DesktopUI) installFromMarket(st *marketPageState, item apitypes.MarketS
 			}
 		})
 		if res.SyncError != "" {
-			u.Notify(fmt.Sprintf("已添加 %s，工具同步失败（可在上游服务重试）", item.Title))
+			u.Notify(fmt.Sprintf("已添加 %s，工具同步失败（可在已接入服务重试）", item.Title))
 		} else {
 			u.Notify(fmt.Sprintf("已接入 %s（读取到 %d 个工具）", item.Title, res.ToolCount))
 		}

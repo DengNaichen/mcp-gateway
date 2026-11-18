@@ -20,7 +20,7 @@ type overviewLocalState struct {
 	testingModel      bool
 	testErrTitle      string
 	testErrDetail     string
-	rightTab          int // 0: 上游服务, 1: 高频工具
+	rightTab          int // 0: 服务, 1: 高频工具
 	hoveredPulseIdx   int
 	drawerOpen        bool
 	drawerType        string // "log", "service", "tool"
@@ -166,7 +166,7 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 		addSvcBtn := SailPrimaryButton(c.Key("ov-hdr-add-svc"), "").Padding(5, 12).FontSize(12.5)
 		addSvcBtn.Children(func() {
 			ui.Icon(c, ovIconPlus).Size(13.5, 13.5)
-			ui.Text(c, "添加上游服务").SingleLine()
+			ui.Text(c, "添加服务").SingleLine()
 		})
 		if addSvcBtn.Clicked() {
 			u.OpenAddServiceModal()
@@ -454,7 +454,7 @@ func (u *DesktopUI) renderOverviewKPIGrid(
 		// Card 4: Upstream Services
 		ovMetricCard(c, func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(6).Children(func() {
-				ui.Text(c, "上游服务").FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+				ui.Text(c, "已接入服务").FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
 				if errServerCount > 0 {
 					SailBadge(c, fmt.Sprintf("%d 异常", errServerCount), ToneDanger)
 				} else if pendingServerCount > 0 {
@@ -809,8 +809,8 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 			AlignItems(ui.Center).
 			Justify(ui.SpaceBetween).
 			Children(func() {
-				ui.Segmented(c.Key("ov-right-tab"), &ov.rightTab, "上游服务", "高频工具").
-					Label("切换上游服务与高频工具")
+				ui.Segmented(c.Key("ov-right-tab"), &ov.rightTab, "服务", "高频工具").
+					Label("切换服务与高频工具")
 
 				if ov.rightTab == 0 {
 					if ovRenderArrowLinkBtn(c, "ov-manage-upstreams", "管理") {
@@ -828,9 +828,9 @@ func (u *DesktopUI) renderOverviewRightSwitchCard(
 				ui.Box(c).Padding(18, 20).FillWidth().Children(func() {
 					SailEmptyState(
 						c,
-						"尚未接入上游服务",
+						"尚未接入服务",
 						"",
-						"添加上游服务",
+						"添加服务",
 						func() { u.OpenAddServiceModal() },
 					)
 				})

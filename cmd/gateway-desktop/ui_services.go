@@ -23,6 +23,7 @@ var nonServiceIDRe = regexp.MustCompile(`[^a-z0-9._-]+`)
 
 type servicesPageState struct {
 	// List view state
+	subtab           int // 0=已接入, 1=市场
 	listQuery        string
 	listStatusFilter int // 0=全部, else serviceTriageBucket+1
 	bulkProbeBusy    bool
@@ -288,43 +289,62 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].bucket < rows[j].bucket })
 
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(16).Children(func() {
-		ui.Row(c).Grow(1).MinWidth(0).Gap(12).AlignItems(ui.Baseline).Children(func() {
-			ui.Text(c, "上游服务").FontSize(21).Bold().LetterSpacing(-0.2).TextColor(SailInkStrong)
-			if attention := bucketCounts[triageAttention]; attention > 0 {
-				ui.Text(c, fmt.Sprintf("%d 个需处理", attention)).FontSize(12.5).FontWeight(600).TextColor(SailDangerInk).SingleLine()
+		ui.Row(c).Grow(1).MinWidth(0).Gap(12).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "服务").FontSize(21).Bold().LetterSpacing(-0.2).TextColor(SailInkStrong)
+			ui.Segmented(c.Key("svc-subtab"), &st.subtab, "已接入", "市场").
+				Label("切换已接入服务与市场")
+			if st.subtab == 0 {
+				if attention := bucketCounts[triageAttention]; attention > 0 {
+					ui.Text(c, fmt.Sprintf("%d 个需处理", attention)).FontSize(12.5).FontWeight(600).TextColor(SailDangerInk).SingleLine()
+				}
+				ui.Text(c, fmt.Sprintf("%d 就绪 · %d / %d 启用", bucketCounts[triageReady], enabledCount, len(rows))).
+					FontSize(12.5).FontFeatures("tnum").TextColor(SailInkMuted).SingleLine()
+			} else {
+				SailQuietStatus(c, "精选，以及官方 MCP Registry", SailSuccessInk, SailInkMuted)
 			}
-			ui.Text(c, fmt.Sprintf("%d 就绪 · %d / %d 启用", bucketCounts[triageReady], enabledCount, len(rows))).
-				FontSize(12.5).FontFeatures("tnum").TextColor(SailInkMuted).SingleLine()
 		})
-		ui.Row(c).Gap(1).AlignItems(ui.Center).Shrink(0).Children(func() {
-			if SailPrimaryButton(c.Key("svc-btn-add"), "添加上游服务").Clicked() {
-				st.openAddModal(0)
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Shrink(0).Children(func() {
+			if st.subtab == 1 {
+				mktSt := u.marketState()
+				if SailSmallButton(c.Key("mkt-refresh"), "刷新").Disabled(mktSt.loading).Clicked() {
+					u.fetchMarket(mktSt, mktSt.registryQuery)
+				}
 			}
-			SailPrimaryButton(c.Key("svc-btn-add-more"), "▾").
-				Padding(0, 8).
-				Label("更多添加方式").
-				PopoverMenuButton(func(menu *ui.Menu) {
-					if menu.Item("手动配置").Chosen() {
-						st.openAddModal(0)
-					}
-					if menu.Item("粘贴 MCP JSON").Chosen() {
-						st.openAddModal(3)
-					}
-					if menu.Item("OpenAPI 导入").Chosen() {
-						st.openAddModal(2)
-					}
-					if menu.Item("从 MCP 市场添加").Chosen() {
-						u.Navigate(ViewMarket)
-					}
-				})
+			ui.Row(c).Gap(1).AlignItems(ui.Center).Shrink(0).Children(func() {
+				if SailPrimaryButton(c.Key("svc-btn-add"), "添加服务").Clicked() {
+					st.openAddModal(0)
+				}
+				SailPrimaryButton(c.Key("svc-btn-add-more"), "▾").
+					Padding(0, 8).
+					Label("更多添加方式").
+					PopoverMenuButton(func(menu *ui.Menu) {
+						if menu.Item("手动配置").Chosen() {
+							st.openAddModal(0)
+						}
+						if menu.Item("粘贴 MCP JSON").Chosen() {
+							st.openAddModal(3)
+						}
+						if menu.Item("OpenAPI 导入").Chosen() {
+							st.openAddModal(2)
+						}
+						if st.subtab == 0 && menu.Item("从市场添加").Chosen() {
+							st.subtab = 1
+						}
+					})
+			})
 		})
 	})
+
+	if st.subtab == 1 {
+		u.renderMarketContent(c)
+		return
+	}
 
 	// Hairline-divided service list card, triaged by readiness.
 	SailFlushCard(c, func() {
 		if len(rows) == 0 {
 			ui.Column(c).FillWidth().Padding(20).Children(func() {
-				SailEmptyState(c, "暂无上游服务", "", "添加上游服务", func() { st.openAddModal(0) })
+				SailEmptyState(c, "暂无服务", "", "添加服务", func() { st.openAddModal(0) })
 			})
 			return
 		}
@@ -687,7 +707,7 @@ func (u *DesktopUI) renderServiceDetail(c *ui.Context, st *servicesPageState, se
 			backBtn.Background(SailBgHover)
 		}
 		backBtn.Children(func() {
-			ui.Text(c, "← 返回上游服务列表").FontSize(12.5).FontWeight(500).TextColor(SailInkBody).SingleLine()
+			ui.Text(c, "← 返回服务列表").FontSize(12.5).FontWeight(500).TextColor(SailInkBody).SingleLine()
 		})
 		if backBtn.Clicked() {
 			u.clearActiveService()
@@ -1733,7 +1753,7 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 
 		// Header
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			ui.Text(c, "添加上游服务").FontSize(17).Bold().TextColor(SailInkStrong)
+			ui.Text(c, "添加服务").FontSize(17).Bold().TextColor(SailInkStrong)
 			if SailSmallButton(c.Key("add-modal-close"), "关闭").Clicked() {
 				st.showAddModal = false
 			}
