@@ -111,10 +111,16 @@ func CursorPreToolMatcher() string {
 	return "^MCP:(discover_tools|get_tool_schema|invoke_tool)$"
 }
 
-// AntigravityPreToolMatcher returns the PreToolUse regex for Google Antigravity,
-// matching both direct mcp_<slug>_<tool> / mcp__<slug>__<tool> forms and
-// plugin-namespaced mcp_<plugin>_<server>_<tool> registrations.
+const AntigravityLazyToolName = "call_mcp_tool"
+
+// AntigravityPreToolMatcher matches eager Gateway tools and the shared lazy MCP wrapper.
 func AntigravityPreToolMatcher(slug string) string {
+	return AntigravityEagerToolMatcher(slug) + "|^" + AntigravityLazyToolName + "$"
+}
+
+// AntigravityEagerToolMatcher captures a Gateway meta-tool name from a direct
+// or plugin-namespaced eager registration.
+func AntigravityEagerToolMatcher(slug string) string {
 	sr := SlugRegex(slug)
 	return "^(?:mcp__(?:(?:plugin_)?[A-Za-z0-9_-]+?_)?" + sr + "__|mcp_(?:" + sr + "_){1,2})(discover_tools|get_tool_schema|invoke_tool)$"
 }

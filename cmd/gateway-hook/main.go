@@ -135,11 +135,17 @@ func printUsage(w io.Writer) {
 }
 
 func emitHostNoop(platform string, stdout io.Writer) error {
-	if platform == "cursor" || platform == "antigravity" {
-		_, err := io.WriteString(stdout, "{}\n")
-		return err
+	var response string
+	switch platform {
+	case "antigravity":
+		response = "{\"decision\":\"allow\"}\n"
+	case "cursor":
+		response = "{}\n"
+	default:
+		return nil
 	}
-	return nil
+	_, err := io.WriteString(stdout, response)
+	return err
 }
 
 func readBoundedJSONObject(r io.Reader) (map[string]any, []byte, error) {
@@ -249,11 +255,12 @@ func handleHostHook(ctx context.Context, opts hostHookOptions) error {
 		if eventName != "" && eventName != "PreToolUse" && eventName != "pre_tool_execution" {
 			return emitHostNoop(platform, stdout)
 		}
-		matchedOp, ok := matchAntigravityMetaTool(toolName)
+		matchedOp, metaArgs, ok := extractAntigravityMetaTool(toolName, inputObj)
 		if !ok {
 			return emitHostNoop(platform, stdout)
 		}
 		op = matchedOp
+		inputObj = metaArgs
 		cwd, ambiguous = resolveWorkspaceWithRoots(ctx, event, "workspacePaths", "workspace_paths", "workspace_roots")
 		sid = sanitizeSID(firstString(event, "conversationId", "conversation_id", "sessionId", "session_id"))
 
@@ -289,11 +296,14 @@ func handleHostHook(ctx context.Context, opts hostHookOptions) error {
 		})
 	case "antigravity":
 		ctxField := workspace.CurrentContextField()
+		overwrite := map[string]any{ctxField: updated[ctxField]}
+		if toolName == workspace.AntigravityLazyToolName {
+			// Antigravity applies overwrite at the top level, replacing Arguments.
+			overwrite = map[string]any{"Arguments": updated}
+		}
 		return writeCompactJSONLine(stdout, map[string]any{
-			"decision": "allow",
-			"overwrite": map[string]any{
-				ctxField: updated[ctxField],
-			},
+			"decision":  "allow",
+			"overwrite": overwrite,
 		})
 	default:
 		return writeCompactJSONLine(stdout, map[string]any{
@@ -428,12 +438,26 @@ func matchCursorMetaTool(toolName string) (string, bool) {
 	return m[1], true
 }
 
-func matchAntigravityMetaTool(toolName string) (string, bool) {
-	re, err := regexp.Compile(workspace.AntigravityPreToolMatcher(buildinfo.Current().Slug))
-	if err != nil {
-		return "", false
+func extractAntigravityMetaTool(toolName string, args map[string]any) (string, map[string]any, bool) {
+	if toolName != workspace.AntigravityLazyToolName {
+		op, ok := matchAntigravityMetaTool(toolName)
+		return op, args, ok
 	}
-	m := re.FindStringSubmatch(strings.TrimSpace(toolName))
+
+	slug := buildinfo.Current().Slug
+	server := firstString(args, "ServerName")
+	op := firstString(args, "ToolName")
+	if (server != slug && server != slug+"_"+slug) || !workspace.IsMetaTool(op) {
+		return "", nil, false
+	}
+	arguments, ok := firstObject(args, "Arguments")
+	return op, arguments, ok
+}
+
+var antigravityEagerToolRe = regexp.MustCompile(workspace.AntigravityEagerToolMatcher(buildinfo.Current().Slug))
+
+func matchAntigravityMetaTool(toolName string) (string, bool) {
+	m := antigravityEagerToolRe.FindStringSubmatch(strings.TrimSpace(toolName))
 	if len(m) != 2 {
 		return "", false
 	}

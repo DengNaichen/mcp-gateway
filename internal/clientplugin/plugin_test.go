@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -498,6 +500,116 @@ func TestRenderedHookWrapperExecutesRealHookBinary(t *testing.T) {
 	}
 }
 
+func TestAntigravityLazyHooksCoexist(t *testing.T) {
+	home, cwd := t.TempDir(), t.TempDir()
+	t.Setenv("GATEWAY_HOOK_BIN", "")
+	channels := []struct {
+		name string
+		slug string
+		key  []byte
+		root string
+	}{
+		{name: "stable", slug: "mcp-gateway"},
+		{name: "dev", slug: "mcp-gateway-dev"},
+	}
+	for i := range channels {
+		ch := &channels[i]
+		dataDir := t.TempDir()
+		key, err := workspace.EnsureScopeKey(dataDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ch.key = key
+		hookBin := filepath.Join(t.TempDir(), ch.slug+"-hook")
+		build := exec.Command("go", "build", "-ldflags=-X gatewaylab/internal/buildinfo.channel="+ch.name, "-o", hookBin, "../../cmd/gateway-hook")
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("build %s hook: %v\n%s", ch.name, err, out)
+		}
+		mgr := New(Options{
+			HomeDir:  home,
+			StateDir: filepath.Join(home, "."+ch.slug, "plugins"),
+			DataDir:  dataDir,
+			BinPath:  hookBin,
+			Getenv:   func(string) string { return "" },
+			Runner:   missingAgyRunner{inner: &fakeRunner{home: home}},
+		})
+		mgr.slug = ch.slug
+		if err := mgr.Install(ClientAntigravity, "http://127.0.0.1:8788/mcp"); err != nil {
+			t.Fatal(err)
+		}
+		ch.root = mgr.agyPluginDir()
+		raw, err := os.ReadFile(filepath.Join(ch.root, "hooks.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var config map[string]struct {
+			PreToolUse []struct{ Matcher string }
+		}
+		if err := json.Unmarshal(raw, &config); err != nil {
+			t.Fatal(err)
+		}
+		hooks := config[ch.slug].PreToolUse
+		if len(hooks) != 1 || !regexp.MustCompile(hooks[0].Matcher).MatchString("call_mcp_tool") {
+			t.Fatalf("%s hooks.json does not match call_mcp_tool", ch.slug)
+		}
+	}
+
+	const original = `{"arguments":{},"tool_id":"notion.notion-get-self"}`
+	for _, target := range channels {
+		for _, order := range [][]int{{0, 1}, {1, 0}} {
+			t.Run(target.name+"/"+channels[order[0]].name+"-first", func(t *testing.T) {
+				args := map[string]json.RawMessage{
+					"ServerName": json.RawMessage(mustJSON(target.slug + "_" + target.slug)),
+					"ToolName":   json.RawMessage(`"invoke_tool"`),
+					"Arguments":  json.RawMessage(original),
+				}
+				for _, i := range order {
+					ch := channels[i]
+					raw, err := json.Marshal(args)
+					if err != nil {
+						t.Fatal(err)
+					}
+					event := `{"hookEventName":"PreToolUse","cwd":` + mustJSON(cwd) + `,"toolCall":{"name":"call_mcp_tool","args":` + string(raw) + `}}`
+					cmd := exec.Command("sh", "./scripts/run-gateway-hook", "antigravity")
+					cmd.Dir = ch.root
+					cmd.Stdin = strings.NewReader(event)
+					out, err := cmd.Output()
+					if err != nil {
+						t.Fatalf("%s hook: %v", ch.name, err)
+					}
+					var response struct {
+						Decision  string                     `json:"decision"`
+						Overwrite map[string]json.RawMessage `json:"overwrite"`
+					}
+					if err := json.Unmarshal(out, &response); err != nil || response.Decision != "allow" {
+						t.Fatalf("%s hook response: %s (%v)", ch.name, out, err)
+					}
+					if ch.slug != target.slug && string(out) != "{\"decision\":\"allow\"}\n" {
+						t.Fatalf("%s hook overwrote arguments for %s: %s", ch.name, target.name, out)
+					}
+					// Model Antigravity's shallow overwrite merge between serial hooks.
+					maps.Copy(args, response.Overwrite)
+				}
+				field := workspace.ContextFieldForSlug(target.slug)
+				hash, token, hasToken, err := workspace.CanonicalArgsHashJSON(args["Arguments"], field)
+				originalHash, _, _, _ := workspace.CanonicalArgsHashJSON([]byte(original), field)
+				if err != nil || !hasToken || hash != originalHash {
+					t.Fatalf("final Arguments changed or lacks signature: %s (%v)", args["Arguments"], err)
+				}
+				_, err = workspace.VerifyToken(target.key, token, workspace.VerifyParams{
+					Channel:    target.name,
+					URLAgent:   "antigravity",
+					AllowedOps: []string{"invoke_tool"},
+					ArgsHash:   hash,
+				}, time.Now())
+				if err != nil {
+					t.Fatalf("final %s signature failed verification: %v", target.name, err)
+				}
+			})
+		}
+	}
+}
+
 func TestAntigravityDesktopFallbackAndLegacyIDEWarning(t *testing.T) {
 	home := t.TempDir()
 	slug := buildinfo.Current().Slug
@@ -700,7 +812,14 @@ func TestWorkspaceAndClientConfigHostParity(t *testing.T) {
 
 func TestCodexTrustHintTracksInstallation(t *testing.T) {
 	home, state, data := t.TempDir(), t.TempDir(), t.TempDir()
-	options := Options{HomeDir: home, StateDir: state, DataDir: data, BinPath: "/bin/hook", Runner: &fakeRunner{home: home}}
+	options := Options{
+		HomeDir:  home,
+		StateDir: state,
+		DataDir:  data,
+		BinPath:  "/bin/hook",
+		Getenv:   func(string) string { return "" },
+		Runner:   &fakeRunner{home: home},
+	}
 	mgr := New(options)
 	endpoint := "http://127.0.0.1:8788/mcp"
 	warning := func() bool { t.Helper(); return len(mgr.observeCodex(endpoint, false).Warnings) > 0 }

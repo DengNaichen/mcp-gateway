@@ -2,7 +2,7 @@
   "mcp-gateway": {
     "PreToolUse": [
       {
-        "matcher": "^(?:mcp__(?:(?:plugin_)?[A-Za-z0-9_-]+?_)?mcp[-_]gateway__|mcp_(?:mcp[-_]gateway_){1,2})(discover_tools|get_tool_schema|invoke_tool)$",
+        "matcher": "^(?:mcp__(?:(?:plugin_)?[A-Za-z0-9_-]+?_)?mcp[-_]gateway__|mcp_(?:mcp[-_]gateway_){1,2})(discover_tools|get_tool_schema|invoke_tool)$|^call_mcp_tool$",
         "hooks": [
           {
             "type": "command",

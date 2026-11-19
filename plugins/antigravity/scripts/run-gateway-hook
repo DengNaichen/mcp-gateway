@@ -17,9 +17,10 @@ default_slug="mcp-gateway"
 default_data_dir=""
 
 emit_noop() {
-	if [ "$host" = "cursor" ] || [ "$host" = "antigravity" ]; then
-		printf '{}\n'
-	fi
+	case "$host" in
+		antigravity) printf '{"decision":"allow"}\n' ;;
+		cursor) printf '{}\n' ;;
+	esac
 	exit 0
 }
 
