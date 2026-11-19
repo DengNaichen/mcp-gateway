@@ -26,6 +26,10 @@ func Open(backend Backend) (*Store, error) {
 	}
 	data, err := backend.Load()
 	if err != nil {
+		var se *Error
+		if errors.As(err, &se) {
+			return nil, se
+		}
 		return nil, &Error{Message: "无法读取系统钥匙串凭据，请解锁登录钥匙串并允许 MCP Gateway 访问"}
 	}
 	if len(data) > 0 {
@@ -80,6 +84,10 @@ func (s *Store) persist(values map[string]string) error {
 		return errors.New("无法编码凭据")
 	}
 	if err := s.backend.Save(data); err != nil {
+		var se *Error
+		if errors.As(err, &se) {
+			return se
+		}
 		return &Error{Message: "无法保存凭据，请解锁系统钥匙串并允许 MCP Gateway 访问后重试"}
 	}
 	return nil
