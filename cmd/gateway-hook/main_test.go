@@ -333,12 +333,12 @@ func TestAntigravityHookContract(t *testing.T) {
 		}
 	}
 
-	// 2. Unrelated built-in or third-party MCP tools must emit noop `{}` without blocking.
+	// 2. Unrelated tools receive an allow decision without an overwrite.
 	for _, unrelated := range []string{"run_command", "mcp_github_discover_tools"} {
 		ev := `{"hookEventName":"PreToolUse","cwd":` + mustStrJSON(repoDir) + `,"toolCall":{"name":` + mustStrJSON(unrelated) + `,"args":{"intent":"hi"}}}`
 		var out, errBuf bytes.Buffer
-		if code := runCLI([]string{"antigravity", "--data", dataDir}, strings.NewReader(ev), &out, &errBuf); code != 0 || out.String() != "{}\n" {
-			t.Fatalf("expected noop {} for %q, got code=%d out=%q", unrelated, code, out.String())
+		if code := runCLI([]string{"antigravity", "--data", dataDir}, strings.NewReader(ev), &out, &errBuf); code != 0 || out.String() != "{\"decision\":\"allow\"}\n" {
+			t.Fatalf("expected allow without overwrite for %q, got code=%d out=%q", unrelated, code, out.String())
 		}
 	}
 
@@ -364,6 +364,83 @@ func TestAntigravityHookContract(t *testing.T) {
 	}, time.Now())
 	if err != nil || !claimsAmbig.Ambiguous || claimsAmbig.Cwd != "" {
 		t.Fatalf("expected Ambiguous:true for multi-root antigravity workspacePaths: err=%v claims=%+v", err, claimsAmbig)
+	}
+}
+
+func TestAntigravityLazyHookContract(t *testing.T) {
+	dataDir, cwd := t.TempDir(), t.TempDir()
+	key, err := workspace.EnsureScopeKey(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := buildinfo.Current()
+	ctxField := workspace.CurrentContextField()
+	const original = `{"arguments":{"count":9007199254740993},"fields":["name"],"tool_id":"notion.notion-get-self"}`
+
+	for _, tc := range []struct {
+		name      string
+		server    string
+		tool      string
+		arguments string
+		sign      bool
+	}{
+		{"direct", info.Slug, "invoke_tool", original, true},
+		{"namespaced", info.Slug + "_" + info.Slug, "invoke_tool", original, true},
+		{"discover", info.Slug, "discover_tools", `{"intent":"find users"}`, true},
+		{"schema", info.Slug, "get_tool_schema", `{"tool_id":"notion.notion-get-self"}`, true},
+		{"third party", "linear", "invoke_tool", original, false},
+		{"foreign namespace", "linear_" + info.Slug, "invoke_tool", original, false},
+		{"non-exact slug", info.Slug + " ", "invoke_tool", original, false},
+		{"unsupported tool", info.Slug, "list_tools", original, false},
+		{"invalid arguments", info.Slug, "invoke_tool", `null`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := `{"conversationId":"agy-lazy","workspacePaths":[` + mustStrJSON(cwd) + `],"cwd":` + mustStrJSON(cwd) + `,"hookEventName":"PreToolUse","stepIdx":19,"toolCall":{"id":"toolu_01","name":"call_mcp_tool","args":{"ServerName":` + mustStrJSON(tc.server) + `,"ToolName":` + mustStrJSON(tc.tool) + `,"Arguments":` + tc.arguments + `}}}`
+			var out, stderr bytes.Buffer
+			if code := runCLI([]string{"antigravity", "--data", dataDir}, strings.NewReader(ev), &out, &stderr); code != 0 {
+				t.Fatalf("antigravity hook: code=%d stderr=%s", code, stderr.String())
+			}
+			if !tc.sign {
+				if out.String() != "{\"decision\":\"allow\"}\n" {
+					t.Fatalf("expected allow without overwrite, got %s", out.String())
+				}
+				return
+			}
+
+			var resp struct {
+				Decision  string                     `json:"decision"`
+				Overwrite map[string]json.RawMessage `json:"overwrite"`
+			}
+			if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			arguments, ok := resp.Overwrite["Arguments"]
+			if resp.Decision != "allow" || !ok || len(resp.Overwrite) != 1 {
+				t.Fatalf("expected allow with complete Arguments overwrite, got %s", out.String())
+			}
+			originalHash, _, _, err := workspace.CanonicalArgsHashJSON([]byte(tc.arguments), ctxField)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hash, token, hasToken, err := workspace.CanonicalArgsHashJSON(arguments, ctxField)
+			if err != nil || !hasToken || hash != originalHash {
+				t.Fatalf("Arguments changed or lacks signature: %s (err=%v)", arguments, err)
+			}
+			claims, err := workspace.VerifyToken(key, token, workspace.VerifyParams{
+				Channel:    info.Channel,
+				URLAgent:   "antigravity",
+				AllowedOps: []string{tc.tool},
+				ArgsHash:   hash,
+			}, time.Now())
+			if err != nil || claims.Cwd != cwd || claims.SID != "agy-lazy" {
+				t.Fatalf("invalid lazy hook token: err=%v claims=%+v", err, claims)
+			}
+		})
+	}
+
+	var out bytes.Buffer
+	if code := runCLI([]string{"antigravity"}, strings.NewReader("invalid JSON"), &out, &out); code != 0 || out.String() != "{\"decision\":\"allow\"}\n" {
+		t.Fatalf("invalid input should allow without overwrite: code=%d out=%q", code, out.String())
 	}
 }
 

@@ -534,6 +534,7 @@ func TestNativePreToolMatcherPluginNamespaces(t *testing.T) {
 func TestAntigravityPreToolMatcher(t *testing.T) {
 	re := regexp.MustCompile(AntigravityPreToolMatcher("mcp-gateway-dev"))
 	for _, match := range []string{
+		"call_mcp_tool",
 		"mcp_mcp-gateway-dev_discover_tools",
 		"mcp_mcp_gateway_dev_invoke_tool",
 		"mcp_mcp-gateway-dev_mcp-gateway-dev_discover_tools",
@@ -546,6 +547,8 @@ func TestAntigravityPreToolMatcher(t *testing.T) {
 		}
 	}
 	for _, miss := range []string{
+		"call_mcp_tool_extra",
+		"extra_call_mcp_tool",
 		"run_command",
 		"mcp_github_discover_tools",
 		"mcp_mcp-gateway_discover_tools",

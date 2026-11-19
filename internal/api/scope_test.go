@@ -845,6 +845,54 @@ func TestEndToEndGatewayHookBinaryToGatewayMCP(t *testing.T) {
 	if err != nil || res.IsError {
 		t.Fatalf("end-to-end hook -> MCP call failed: %v %+v", err, res)
 	}
+
+	agyClient := mcp.NewClient(&mcp.Implementation{Name: "antigravity", Version: "1"}, nil)
+	agySession, err := agyClient.Connect(context.Background(), &mcp.StreamableClientTransport{Endpoint: host.URL + "/mcp?agent=antigravity"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeSession(agySession)
+
+	input := map[string]any{"tool_id": "github.list", "arguments": map[string]any{}}
+	unsigned := &mcp.CallToolParams{Name: "invoke_tool", Arguments: input}
+	if err := toolCallErr(agySession.CallTool(context.Background(), unsigned)); err == nil || !strings.Contains(err.Error(), "scope_required") {
+		t.Fatalf("unsigned Antigravity call should be rejected with scope_required: %v", err)
+	}
+
+	lazyEvent, err := json.Marshal(map[string]any{
+		"hookEventName": "PreToolUse",
+		"cwd":           repoDir,
+		"toolCall": map[string]any{
+			"name": "call_mcp_tool",
+			"args": map[string]any{
+				"ServerName": slug + "_" + slug,
+				"ToolName":   "invoke_tool",
+				"Arguments":  input,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agyHook := exec.Command(hookBin, "antigravity", "--data", svcs.DataDir)
+	agyHook.Stdin = bytes.NewReader(lazyEvent)
+	agyOut, err := agyHook.Output()
+	if err != nil {
+		t.Fatalf("run gateway-hook antigravity: %v", err)
+	}
+	var agyResult struct {
+		Decision  string `json:"decision"`
+		Overwrite struct {
+			Arguments json.RawMessage `json:"Arguments"`
+		} `json:"overwrite"`
+	}
+	if err := json.Unmarshal(agyOut, &agyResult); err != nil || agyResult.Decision != "allow" {
+		t.Fatalf("invalid Antigravity hook response: %s (%v)", agyOut, err)
+	}
+	signed := &mcp.CallToolParams{Name: "invoke_tool", Arguments: agyResult.Overwrite.Arguments}
+	if err := toolCallErr(agySession.CallTool(context.Background(), signed)); err != nil {
+		t.Fatalf("signed Antigravity Lazy call failed: %v", err)
+	}
 }
 
 // toolCallErr folds an isError tool result into an error, so assertions treat
