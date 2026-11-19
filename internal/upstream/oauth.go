@@ -51,7 +51,27 @@ func defaultOpenBrowserURL(rawURL string) error {
 	return cmd.Start()
 }
 
-func (u *Service) oauthHandlerForServer(server Server) (*auth.AuthorizationCodeHandler, func(), error) {
+// An authorization failure is terminal for this connection. The MCP SDK can
+// fall back from server/discover to initialize, but replaying browser OAuth on
+// that fallback cannot reuse the already-consumed loopback callback.
+type oauthHandler struct {
+	*auth.AuthorizationCodeHandler
+	mu  sync.Mutex
+	err error
+}
+
+func (h *oauthHandler) Authorize(ctx context.Context, req *http.Request, resp *http.Response) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.err != nil {
+		_ = resp.Body.Close()
+		return h.err
+	}
+	h.err = h.AuthorizationCodeHandler.Authorize(ctx, req, resp)
+	return h.err
+}
+
+func (u *Service) oauthHandlerForServer(server Server) (auth.OAuthHandler, func(), error) {
 	serverID := oauthSessionKey(server)
 	existingTS, err := u.cachedOAuth(serverID)
 	if err != nil {
@@ -84,7 +104,7 @@ func (u *Service) oauthHandlerForServer(server Server) (*auth.AuthorizationCodeH
 		if err != nil {
 			return nil, nil, err
 		}
-		return h, func() {}, nil
+		return &oauthHandler{AuthorizationCodeHandler: h}, func() {}, nil
 	}
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -124,7 +144,7 @@ func (u *Service) oauthHandlerForServer(server Server) (*auth.AuthorizationCodeH
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(`<!doctype html><html><body style="font-family:system-ui;padding:40px;color:#111827;"><h3>授权成功</h3><p>已连接到 MCP Gateway，可以关闭此标签页并返回应用。</p></body></html>`))
+		_, _ = w.Write([]byte(`<!doctype html><html><body style="font-family:system-ui;padding:40px;color:#111827;"><h3>已收到授权回调</h3><p>请返回 MCP Gateway 查看连接结果，可以关闭此标签页。</p></body></html>`))
 		sendOnce.Do(func() {
 			ch <- cbOutcome{
 				res: &auth.AuthorizationResult{
@@ -188,5 +208,5 @@ func (u *Service) oauthHandlerForServer(server Server) (*auth.AuthorizationCodeH
 		cleanup()
 		return nil, nil, err
 	}
-	return h, cleanup, nil
+	return &oauthHandler{AuthorizationCodeHandler: h}, cleanup, nil
 }

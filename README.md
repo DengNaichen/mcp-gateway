@@ -275,6 +275,14 @@ Flags 放在子命令之前。`-url` 可指定网关地址，本机无认证模�
 - 校验授权 URL 仅允许 `https`（或本机 `http` loopback），OAuth 客户端信息与令牌使用当前实例的凭据存储（macOS 桌面端默认为系统钥匙串），重启后自动恢复、到期自动刷新并保存轮换令牌，不写入 SQLite；内存模式重启后需重新授权；
 - 当前不支持旧版 HTTP+SSE transport。
 
+Supabase OAuth 真实链路诊断（手动开启，需在浏览器完成授权）：
+
+```sh
+GATEWAY_DIAG_SUPABASE=1 go test ./internal/upstream -run '^TestDiagnosticSupabaseOAuth$' -v -count=1 -timeout=6m
+```
+
+诊断只读取工具列表，使用独立的内存会话，不读取或替换应用已保存的凭据。终端只记录请求主机/路径、状态、耗时和工具数量，不输出请求头、查询参数、响应正文或令牌；浏览器授权最多等待 5 分钟。
+
 ## SQLite
 
 首次运行创建 `data/gateway.db`，启用 WAL 和外键。`-data` 可改变数据库所在目录。全部 14 张数据表如下：
