@@ -58,6 +58,7 @@ type Status struct {
 	Detail           string   `json:"detail,omitempty"`
 	InstalledVersion string   `json:"installed_version,omitempty"`
 	TargetVersion    string   `json:"target_version,omitempty"`
+	AvailableVersion string   `json:"available_version,omitempty"`
 	CLIAvailable     bool     `json:"cli_available"`
 	HasLegacyMCP     bool     `json:"has_legacy_mcp"`
 	CanInstall       bool     `json:"can_install"`
@@ -78,6 +79,8 @@ type Manager struct {
 	slug          string
 	version       string
 	appName       string
+	updates       *pluginUpdates
+	activeRelease *releaseManifest
 	mu            sync.Mutex
 }
 
@@ -115,7 +118,8 @@ func New(opts Options) *Manager {
 		runner:        runner,
 		clientConfigs: cc,
 		slug:          info.Slug,
-		version:       info.Version,
+		version:       buildinfo.PluginVersion(),
+		updates:       newPluginUpdates(stateDir, info.Channel),
 		appName:       info.Name,
 	}
 }

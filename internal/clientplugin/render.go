@@ -28,6 +28,9 @@ type renderedBundle struct {
 
 func (m *Manager) resolveHookBinaryAndData() (hookBin string, dataDir string) {
 	hookBin = m.binPath
+	if m.activeRelease != nil {
+		hookBin = m.updates.hookPath(m.activeRelease.Version)
+	}
 	if hookBin == "" {
 		hookBin = workspace.ResolveHookBinary(m.homeDir, m.dataDir)
 	}
@@ -102,6 +105,9 @@ func (m *Manager) renderHookWrapper(hookBin, dataDir string) ([]byte, error) {
 }
 
 func (m *Manager) renderClaudeMarketplace(endpoint, hookBin, dataDir string) (renderedBundle, error) {
+	if m.activeRelease != nil {
+		return renderReleasedBundle(m.activeRelease, releaseRender{ClientClaude, endpoint, hookBin, dataDir, ""}), nil
+	}
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientClaude)
 	prefix := "plugins/" + m.slug + "/"
 	desc := fmt.Sprintf("Connects Claude Code to %s with semantic tool discovery, scoped invocation, and automatic workspace provenance signing.", m.appName)
@@ -193,6 +199,9 @@ func (m *Manager) renderClaudeMarketplace(endpoint, hookBin, dataDir string) (re
 }
 
 func (m *Manager) renderCodexMarketplace(endpoint, hookBin, dataDir, installationID string) (renderedBundle, error) {
+	if m.activeRelease != nil {
+		return renderReleasedBundle(m.activeRelease, releaseRender{ClientCodex, endpoint, hookBin, dataDir, installationID}), nil
+	}
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientCodex)
 	prefix := "plugins/" + m.slug + "/"
 	desc := fmt.Sprintf("Connects Codex to %s with semantic tool discovery, scoped invocation, and automatic workspace provenance signing.", m.appName)
@@ -302,6 +311,9 @@ func (m *Manager) renderCodexMarketplace(endpoint, hookBin, dataDir, installatio
 }
 
 func (m *Manager) renderCursorPlugin(endpoint, hookBin, dataDir string) (renderedBundle, error) {
+	if m.activeRelease != nil {
+		return renderReleasedBundle(m.activeRelease, releaseRender{ClientCursor, endpoint, hookBin, dataDir, ""}), nil
+	}
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientCursor)
 	hookScript, err := m.renderHookWrapper(hookBin, dataDir)
 	if err != nil {
@@ -369,6 +381,9 @@ func (m *Manager) renderCursorPlugin(endpoint, hookBin, dataDir string) (rendere
 }
 
 func (m *Manager) renderOpenCodePlugin(endpoint, hookBin, dataDir string) (renderedBundle, error) {
+	if m.activeRelease != nil {
+		return renderReleasedBundle(m.activeRelease, releaseRender{ClientOpenCode, endpoint, hookBin, dataDir, ""}), nil
+	}
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientOpenCode)
 	var extraArgs []string
 	if dataDir != "" {
@@ -409,6 +424,9 @@ func (m *Manager) renderOpenCodePlugin(endpoint, hookBin, dataDir string) (rende
 }
 
 func (m *Manager) renderPiPackage(endpoint, hookBin, dataDir string) (renderedBundle, error) {
+	if m.activeRelease != nil {
+		return renderReleasedBundle(m.activeRelease, releaseRender{ClientPi, endpoint, hookBin, dataDir, ""}), nil
+	}
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientPi)
 	var extraArgs []string
 	if dataDir != "" {
@@ -467,6 +485,9 @@ func (m *Manager) renderPiPackage(endpoint, hookBin, dataDir string) (renderedBu
 }
 
 func (m *Manager) renderAntigravityPlugin(endpoint, hookBin, dataDir string) (renderedBundle, error) {
+	if m.activeRelease != nil {
+		return renderReleasedBundle(m.activeRelease, releaseRender{ClientAntigravity, endpoint, hookBin, dataDir, ""}), nil
+	}
 	agentURL := clientconfig.ClientEndpoint(endpoint, ClientAntigravity)
 	hookScript, err := m.renderHookWrapper(hookBin, dataDir)
 	if err != nil {

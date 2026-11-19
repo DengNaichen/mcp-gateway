@@ -151,7 +151,7 @@ func (m *Manager) installClaude(endpoint string, update bool) error {
 	if inst != nil && r == nil {
 		return errors.New(i18n.T("client.err-claude-foreign-plugin"))
 	}
-	if mpKnown && !workspace.SameFilePath(mpSource, mktDir) && r == nil {
+	if mpKnown && !workspace.SameFilePath(mpSource, mktDir) {
 		return errors.New(i18n.T("client.err-claude-marketplace-exists", mpSource))
 	}
 	hookBin, dataDir := m.resolveHookBinaryAndData()
@@ -209,6 +209,10 @@ func (m *Manager) removeClaude() error {
 		return fmt.Errorf(i18n.T("client.err-claude-uninstall"), err)
 	}
 	cfgDir := m.hostConfigDir(ClientClaude)
+	mpSource, mpKnown := readClaudeMarketplaceSource(cfgDir, m.slug)
+	if mpKnown && !workspace.SameFilePath(mpSource, r.InstallRoot) {
+		return errors.New(i18n.T("client.err-claude-foreign-plugin"))
+	}
 	ctx := context.Background()
 	env := m.claudeEnv()
 	if inst, _ := readClaudeInstalledPlugin(cfgDir, m.pluginID()); inst != nil {
@@ -216,7 +220,7 @@ func (m *Manager) removeClaude() error {
 			return err
 		}
 	}
-	if _, known := readClaudeMarketplaceSource(cfgDir, m.slug); known {
+	if mpKnown {
 		if _, _, err := m.runner.Run(ctx, env, m.homeDir, "claude", "plugin", "marketplace", "remove", m.slug); err != nil {
 			return err
 		}
@@ -340,7 +344,7 @@ func (m *Manager) installCodex(endpoint string, update bool) error {
 	if hasPlugin && r == nil {
 		return errors.New(i18n.T("client.err-codex-foreign-plugin"))
 	}
-	if hasMP && !workspace.SameFilePath(mpSource, mktDir) && r == nil {
+	if hasMP && !workspace.SameFilePath(mpSource, mktDir) {
 		return errors.New(i18n.T("client.err-codex-marketplace-exists", mpSource))
 	}
 	hookBin, dataDir := m.resolveHookBinaryAndData()
@@ -406,9 +410,12 @@ func (m *Manager) removeCodex() error {
 		return fmt.Errorf(i18n.T("client.err-codex-uninstall"), err)
 	}
 	cfgDir := m.hostConfigDir(ClientCodex)
-	_, hasPlugin, _, hasMP, err := readCodexPluginState(cfgDir, m.slug, m.pluginID())
+	_, hasPlugin, mpSource, hasMP, err := readCodexPluginState(cfgDir, m.slug, m.pluginID())
 	if err != nil {
 		return err
+	}
+	if hasMP && !workspace.SameFilePath(mpSource, r.InstallRoot) {
+		return errors.New(i18n.T("client.err-codex-foreign-plugin"))
 	}
 	ctx := context.Background()
 	env := m.codexEnv()

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -149,6 +151,16 @@ func (u *DesktopUI) refreshClientConfigs() {
 	u.runClientAction(false, nil, "")
 }
 
+func (u *DesktopUI) checkClientPluginUpdates() {
+	u.runClientAction(true, func(string) error {
+		lastSuccess, err := u.ClientPlugins.CheckUpdates(context.Background())
+		if err != nil && !lastSuccess.IsZero() {
+			return errors.New(i18n.T("ops.plugin-check-failed-last-success", err.Error(), lastSuccess.Local().Format(time.DateTime)))
+		}
+		return err
+	}, "")
+}
+
 // changeClientConfig is shared by native actions and the local verification socket.
 func (u *DesktopUI) changeClientConfig(id, action, endpoint string) error {
 	if u.ClientConfigs == nil {
@@ -251,7 +263,12 @@ func (u *DesktopUI) renderClients(c *ui.Context) {
 		})
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, buildinfo.Current().Slug+" · "+u.clientEndpoint()).Font("monospace").FontSize(12).TextColor(SailInkMuted).SingleLine()
-			if SailSmallButton(c.Key("clients-refresh"), i18n.T("ops.refresh-status")).Disabled(busy).Clicked() {
+			switch {
+			case u.ClientPlugins != nil && u.ClientPlugins.SupportsReleaseUpdates():
+				if SailSmallButton(c.Key("clients-check-updates"), i18n.T("ops.check-plugin-updates")).Disabled(busy).Clicked() {
+					u.checkClientPluginUpdates()
+				}
+			case SailSmallButton(c.Key("clients-refresh"), i18n.T("ops.refresh-status")).Disabled(busy).Clicked():
 				u.refreshClientConfigs()
 			}
 		})
@@ -488,6 +505,9 @@ func (u *DesktopUI) renderClientVerifyModal(c *ui.Context, st *clientsPageState)
 }
 
 func pluginRowSubtitle(row clientplugin.Status) (string, bool) {
+	if row.AvailableVersion != "" {
+		return i18n.T("ops.plugin-update-available", row.AvailableVersion), false
+	}
 	switch row.State {
 	case i18n.T("client.state.existing-plugin"), i18n.T("client.state.config-changed"), i18n.T("client.state.config-error"), i18n.T("client.state.record-error"):
 		return row.State, true

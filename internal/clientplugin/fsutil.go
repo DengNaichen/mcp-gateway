@@ -20,6 +20,7 @@ type pluginReceipt struct {
 	InstallationID string            `json:"installation_id,omitempty"`
 	Client         string            `json:"client"`
 	Version        string            `json:"version"`
+	Release        bool              `json:"release,omitempty"`
 	Digest         string            `json:"digest"`
 	Endpoint       string            `json:"endpoint"`
 	InstallRoot    string            `json:"install_root"`
@@ -45,6 +46,7 @@ func (m *Manager) loadReceipt(id string) (*pluginReceipt, error) {
 }
 
 func (m *Manager) saveReceipt(r pluginReceipt) error {
+	r.Release = m.activeRelease != nil
 	raw, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return err

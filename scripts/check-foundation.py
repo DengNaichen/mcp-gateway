@@ -7,7 +7,7 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 output = subprocess.check_output(
-    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault", "./internal/retry", "./internal/apitypes", "./internal/apiclient", "./internal/buildinfo", "./internal/i18n", "./internal/workspace", "./internal/clientconfig", "./internal/clientplugin"],
+    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault", "./internal/retry", "./internal/apitypes", "./internal/apiclient", "./internal/buildinfo", "./internal/i18n", "./internal/workspace", "./internal/clientconfig", "./internal/clientplugin", "./internal/clientplugin/github"],
     cwd=root, text=True,
 )
 allowed = {
@@ -49,7 +49,8 @@ allowed.update({
     "gatewaylab/internal/i18n": set(),
     "gatewaylab/internal/workspace": {"gatewaylab/internal/buildinfo"},
     "gatewaylab/internal/clientconfig": {"gatewaylab/internal/buildinfo", "gatewaylab/internal/i18n"},
-    "gatewaylab/internal/clientplugin": {"gatewaylab/internal/buildinfo", "gatewaylab/internal/clientconfig", "gatewaylab/internal/i18n", "gatewaylab/internal/workspace", "gatewaylab/plugins"},
+    "gatewaylab/internal/clientplugin": {"gatewaylab/internal/buildinfo", "gatewaylab/internal/clientconfig", "gatewaylab/internal/i18n", "gatewaylab/internal/workspace", "gatewaylab/internal/clientplugin/github", "gatewaylab/plugins"},
+    "gatewaylab/internal/clientplugin/github": set(),
 })
 decoder = json.JSONDecoder()
 while output.strip():
@@ -64,7 +65,7 @@ while output.strip():
     print(f'{package["ImportPath"]} -> {", ".join(sorted(internal)) or "no internal dependencies"}')
 
 # SQLite ownership stays in store as the remaining domains are extracted.
-for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "model", "scope", "routing", "upstream", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault", "apiclient", "buildinfo", "workspace", "clientconfig", "clientplugin")
+for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "model", "scope", "routing", "upstream", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault", "apiclient", "buildinfo", "workspace", "clientconfig", "clientplugin", "clientplugin/github")
                    for p in (root / "internal" / name).glob("*.go")):
     if path.name.endswith("_test.go"):
         continue
