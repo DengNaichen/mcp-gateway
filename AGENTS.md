@@ -2,7 +2,7 @@
 
 ## Git & Worktree
 
-- Git 分支、worktree、提交、PR 与合并后清理遵循 [.agents/skills/git-workflow/SKILL.md](.agents/skills/git-workflow/SKILL.md)。
+- Git 分支、worktree、提交、PR、合并后回收与编译产物清理遵循 [.agents/skills/git-workflow/SKILL.md](.agents/skills/git-workflow/SKILL.md)。
 - 主 checkout（`~/Developer/mcp-gateway`）保持在干净的 `main`；新开工作通过 [.agents/skills/git-workflow/scripts/new-worktree](.agents/skills/git-workflow/scripts/new-worktree) 创建在 `<主 checkout>/.worktrees/<branch-slug>`（已由 `.gitignore` 忽略），不在 `~/Developer/` 下平铺创建 worktree 目录。
 - PR 合并后从干净的主 checkout 运行 [.agents/skills/git-workflow/scripts/finish-branch](.agents/skills/git-workflow/scripts/finish-branch) 完成 worktree 与分支回收。
 

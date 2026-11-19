@@ -1,4 +1,10 @@
-.PHONY: setup backend desktop package build run dev release
+.PHONY: setup backend desktop package build run dev release clean clean-check
+
+clean-check:
+	python3 .agents/skills/git-workflow/scripts/clean-build-artifacts.py
+
+clean:
+	python3 .agents/skills/git-workflow/scripts/clean-build-artifacts.py --apply
 
 setup:
 	go mod download
