@@ -74,6 +74,17 @@ git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
 
 ### 清理
 
+#### 编译产物
+
+- `make clean-check` 预览、`make clean` 删除当前 checkout 的 `bin/`、`build/` 和历史裸文件 `gateway-desktop`，入口为 [clean-build-artifacts.py](scripts/clean-build-artifacts.py)。
+- 跨 worktree 巡检：`python3 .agents/skills/git-workflow/scripts/clean-build-artifacts.py --all-worktrees --temp-builds`，核对后加 `--apply`。脚本跳过占用、近期更新等不宜删除的目标；有跳过项或检查失败时返回非零。不要与构建并发运行。
+- 临时构建/验收后清理本会话闲置产物；交付包、待审阅截图与排障证据保留。运行数据、凭据、已安装应用和其他项目产物不在清理范围，不使用 `git clean -fdx`。
+- 共享 Go cache 不随日常清理或分支回收清空；用户要求释放缓存时显式加 `--go-cache --apply`，说明后续会重编译。保留依赖缓存，不使用 `go clean -modcache`。
+
+修改脚本后运行：`python3 -B .agents/skills/git-workflow/scripts/test-clean-build-artifacts.py`。
+
+#### Worktree
+
 - 未合并或放弃的 worktree：确认工作区干净且无占用进程后，执行：
   ```sh
   node .agents/skills/git-workflow/scripts/worktree-runtime.mjs clean <worktree路径>

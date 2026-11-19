@@ -114,5 +114,7 @@ python3 .agents/skills/desktop-dev/scripts/verify-credential-persistence.py
 
 ## 相关资源
 
+- 临时构建与验收的产物收尾遵循 [git-workflow 的编译产物清理规则](../git-workflow/SKILL.md#编译产物)。
+
 - UI 原型与主题规范：[prototypes/README.md](../../../prototypes/README.md)、[ui_theme.go](../../../cmd/gateway-desktop/ui_theme.go)
 - 应用与托盘图标重生成：[cmd/gateway-desktop/assets/README.md](../../../cmd/gateway-desktop/assets/README.md)（[generate-icons.cjs](../../../scripts/generate-icons.cjs)、[generate-dev-icon.cjs](../../../scripts/generate-dev-icon.cjs)）
