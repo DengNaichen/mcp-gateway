@@ -3,7 +3,6 @@ package upstream
 import (
 	"context"
 	"fmt"
-	"html"
 	"net"
 	"net/http"
 	"net/url"
@@ -121,6 +120,14 @@ func (u *Service) oauthHandlerForServer(server Server) (auth.OAuthHandler, func(
 	ch := make(chan cbOutcome, 1)
 	var sendOnce sync.Once
 
+	writeCallbackPage := func(w http.ResponseWriter, statusCode int, state oauthCallbackState, errDetail string) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(statusCode)
+		_, _ = w.Write(renderOAuthCallbackPage(state, server, errDetail))
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -130,9 +137,7 @@ func (u *Service) oauthHandlerForServer(server Server) (auth.OAuthHandler, func(
 			if desc != "" {
 				msg += ": " + desc
 			}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = fmt.Fprintf(w, "<!doctype html><html><body style=\"font-family:system-ui;padding:40px;\"><h3>授权未完成</h3><p>%s</p></body></html>", html.EscapeString(msg))
+			writeCallbackPage(w, http.StatusBadRequest, oauthCallbackError, msg)
 			sendOnce.Do(func() {
 				ch <- cbOutcome{err: fmt.Errorf("oauth authorization failed: %s", msg)}
 			})
@@ -140,11 +145,10 @@ func (u *Service) oauthHandlerForServer(server Server) (auth.OAuthHandler, func(
 		}
 		code := q.Get("code")
 		if code == "" {
-			http.Error(w, "missing code", http.StatusBadRequest)
+			writeCallbackPage(w, http.StatusBadRequest, oauthCallbackInvalid, "")
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(`<!doctype html><html><body style="font-family:system-ui;padding:40px;color:#111827;"><h3>已收到授权回调</h3><p>请返回 MCP Gateway 查看连接结果，可以关闭此标签页。</p></body></html>`))
+		writeCallbackPage(w, http.StatusOK, oauthCallbackReceived, "")
 		sendOnce.Do(func() {
 			ch <- cbOutcome{
 				res: &auth.AuthorizationResult{
