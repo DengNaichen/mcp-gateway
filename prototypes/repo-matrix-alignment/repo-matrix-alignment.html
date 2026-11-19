@@ -1,0 +1,862 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>仓库绑定矩阵对齐方案 · MCP Gateway</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f4f6f9;
+    --window: #ffffff;
+    --sidebar: #f8fafc;
+    --surface: #ffffff;
+    --subtle: #f8fafc;
+    --hover: #f3f6fa;
+    --ink-strong: #111827;
+    --ink-body: #374151;
+    --ink-muted: #6b7280;
+    --ink-faint: #9ca3af;
+    --divider: #edf1f6;
+    --border: #e5e9f0;
+    --border-strong: #cbd5e1;
+    --accent: #635bff;
+    --accent-hover: #5249e8;
+    --accent-soft: #f5f6ff;
+    --guide: rgba(99, 91, 255, 0.42);
+    --danger: #e11d48;
+    --green: #16a34a;
+    --shadow-win: 0 18px 50px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.06);
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #111114;
+    --window: #18181b;
+    --sidebar: #141417;
+    --surface: #1f1f24;
+    --subtle: #24242a;
+    --hover: #28282f;
+    --ink-strong: #f4f4f5;
+    --ink-body: #d4d4d8;
+    --ink-muted: #a1a1aa;
+    --ink-faint: #71717a;
+    --divider: #2a2a31;
+    --border: #32323a;
+    --border-strong: #464652;
+    --accent: #7a73ff;
+    --accent-hover: #8d87ff;
+    --accent-soft: #262445;
+    --guide: rgba(122, 115, 255, 0.52);
+    --shadow-win: 0 22px 60px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink-body);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 24px 48px;
+  }
+
+  /* Top control strip */
+  .proto-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+  .proto-title h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 650;
+    color: var(--ink-strong);
+    letter-spacing: -0.02em;
+  }
+  .proto-title p {
+    margin: 2px 0 0;
+    font-size: 12.5px;
+    color: var(--ink-muted);
+  }
+  .proto-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+  .seg {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow-sm);
+  }
+  .seg button {
+    border: 0;
+    background: transparent;
+    color: var(--ink-muted);
+    padding: 5px 11px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.12s ease;
+    white-space: nowrap;
+  }
+  .seg button:hover { color: var(--ink-strong); }
+  .seg button[aria-pressed="true"] {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .chip-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--ink-body);
+    box-shadow: var(--shadow-sm);
+  }
+  .chip-toggle[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* Summary callout */
+  .diff-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    align-items: center;
+    padding: 10px 14px;
+    margin-bottom: 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 12.5px;
+    color: var(--ink-muted);
+  }
+  .diff-strip strong { color: var(--ink-strong); font-weight: 600; }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+  .pill.warn { background: rgba(225, 29, 72, 0.1); color: var(--danger); }
+  .pill.good { background: rgba(22, 163, 74, 0.1); color: var(--green); }
+  .pill.alt { background: var(--accent-soft); color: var(--accent); }
+
+  /* Mock desktop window */
+  .window {
+    display: grid;
+    grid-template-columns: 216px minmax(0, 1fr);
+    background: var(--window);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow-win);
+    overflow: hidden;
+    min-height: 640px;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    background: var(--sidebar);
+    border-right: 1px solid var(--divider);
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+  }
+  .traffic {
+    display: flex;
+    gap: 8px;
+    padding: 4px 6px 14px;
+  }
+  .traffic span {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--border);
+    border: 1px solid var(--border-strong);
+    opacity: 0.7;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 2px 6px 18px;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--ink-strong);
+  }
+  .brand-mark {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: #111827;
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  :root[data-theme="dark"] .brand-mark { background: #f4f4f5; color: #111827; }
+  .nav-group {
+    font-size: 11px;
+    color: var(--ink-faint);
+    padding: 10px 8px 6px;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px;
+    border-radius: 7px;
+    color: var(--ink-body);
+    font-size: 13px;
+    margin-bottom: 2px;
+  }
+  .nav-item.active {
+    background: var(--surface);
+    color: var(--ink-strong);
+    font-weight: 600;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+  }
+  .nav-count {
+    font-size: 12px;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .nav-item.active .nav-count { color: var(--accent); font-weight: 600; }
+  .nav-count.err { color: var(--danger); font-weight: 600; }
+
+  /* Main pane */
+  .main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .topbar {
+    height: 46px;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--divider);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12.5px;
+    color: var(--ink-muted);
+  }
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ink-body);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+  }
+  .dot-green { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+  .content {
+    padding: 24px 28px 32px;
+    min-width: 0;
+  }
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .page-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ink-strong);
+    letter-spacing: -0.02em;
+  }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .switch-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    border: 1px solid var(--divider);
+    border-radius: 8px;
+    background: var(--subtle);
+    font-size: 12px;
+    color: var(--ink-body);
+  }
+  .switch-track {
+    width: 30px;
+    height: 17px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    position: relative;
+  }
+  .switch-track::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--ink-body);
+    font-size: 12.5px;
+    font-weight: 500;
+    box-shadow: var(--shadow-sm);
+  }
+  .btn:hover { background: var(--hover); }
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-sm {
+    height: 26px;
+    padding: 0 10px;
+    font-size: 12px;
+    border-radius: 6px;
+  }
+
+  .view-tabs {
+    display: inline-flex;
+    padding: 3px;
+    background: var(--subtle);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+  .view-tabs span {
+    padding: 4px 12px;
+    font-size: 12.5px;
+    border-radius: 6px;
+    color: var(--ink-muted);
+  }
+  .view-tabs span.active {
+    background: var(--surface);
+    color: var(--ink-strong);
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* Matrix card */
+  .card-flush {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+  .matrix-scroll {
+    overflow-x: auto;
+    position: relative;
+  }
+  .matrix-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .matrix-table thead th {
+    height: 46px;
+    background: var(--subtle);
+    border-bottom: 1px solid var(--divider);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-muted);
+    vertical-align: middle;
+    position: relative;
+  }
+  .matrix-table tbody tr {
+    height: 64px;
+    border-bottom: 1px solid var(--divider);
+    transition: background 0.1s ease;
+  }
+  .matrix-table tbody tr:hover { background: var(--hover); }
+  .matrix-table tbody td {
+    vertical-align: middle;
+    position: relative;
+  }
+
+  .col-repo {
+    width: 240px;
+    padding: 0 16px;
+    text-align: left;
+  }
+  .repo-hdr-center thead th.col-repo {
+    text-align: center;
+  }
+  .repo-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .repo-hint {
+    font-size: 11.5px;
+    color: var(--ink-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+  }
+
+  .svc-hdr-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: 100%;
+    color: var(--ink-strong);
+    font-weight: 600;
+  }
+  .svc-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .svc-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  /* Checkbox matching native desktop */
+  .cb {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    border: 1.5px solid var(--border-strong);
+    background: var(--surface);
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    transition: all 0.12s ease;
+    vertical-align: middle;
+  }
+  .cb:hover { border-color: var(--accent); }
+  .cb.checked {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .cb svg { width: 11px; height: 11px; display: none; }
+  .cb.checked svg { display: block; }
+
+  /* --- MODE: before (reproduces current desktop bug) --- */
+  .mode-before .matrix-table {
+    table-layout: fixed;
+    width: auto;
+    min-width: 100%;
+  }
+  .mode-before .col-svc {
+    width: 160px;
+    min-width: 160px;
+    padding: 0 12px;
+  }
+  .mode-before thead th.col-svc { text-align: left; }
+  .mode-before tbody td.col-svc { text-align: center; }
+  .mode-before .col-act {
+    width: 80px;
+    min-width: 80px;
+    padding: 0 12px;
+    text-align: right;
+  }
+  /* Reproduce extra trailing divider on last row */
+  .mode-before tbody tr:last-child { border-bottom: 1px solid var(--divider); }
+
+  /* --- MODE: center (recommended) --- */
+  .mode-center .col-svc {
+    padding: 0 10px;
+    text-align: center;
+  }
+  .mode-center .col-act {
+    width: 78px;
+    padding: 0 16px 0 8px;
+    text-align: right;
+  }
+  .mode-center tbody tr:last-child { border-bottom: 0; }
+
+  /* --- MODE: left (alternative) --- */
+  .mode-left .col-svc {
+    padding: 0 14px;
+    text-align: left;
+  }
+  .mode-left .col-act {
+    width: 78px;
+    padding: 0 16px 0 8px;
+    text-align: right;
+  }
+  .mode-left tbody tr:last-child { border-bottom: 0; }
+
+  /* Alignment guide lines */
+  .show-guides .mode-center .col-svc::before,
+  .show-guides .mode-before tbody td.col-svc::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    border-left: 1px dashed var(--guide);
+    pointer-events: none;
+  }
+  .show-guides .mode-before thead th.col-svc::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 12px;
+    border-left: 1px dashed var(--danger);
+    pointer-events: none;
+  }
+  .show-guides .mode-left .col-svc::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 14px;
+    border-left: 1px dashed var(--guide);
+    pointer-events: none;
+  }
+
+  .scroll-hint {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--ink-muted);
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .scroll-hint code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+    background: var(--subtle);
+    padding: 1px 5px;
+    border-radius: 4px;
+    border: 1px solid var(--divider);
+  }
+
+  @media (max-width: 860px) {
+    .window { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="proto-bar">
+    <div class="proto-title">
+      <h1>仓库绑定 · 矩阵对齐方案对比</h1>
+      <p>对照原生桌面端 <code>cmd/gateway-desktop/ui_repo_matrix.go</code> 的列宽、对齐与操作列裁切问题</p>
+    </div>
+    <div class="proto-controls">
+      <div class="seg" role="group" aria-label="对齐方案">
+        <button type="button" data-mode="before" aria-pressed="false">当前桌面端（错位）</button>
+        <button type="button" data-mode="center" aria-pressed="true">方案 A：统一居中（推荐）</button>
+        <button type="button" data-mode="left" aria-pressed="false">方案 B：统一左对齐</button>
+      </div>
+      <div class="seg" role="group" aria-label="服务数量">
+        <button type="button" data-count="4" aria-pressed="true">4 个服务</button>
+        <button type="button" data-count="7" aria-pressed="false">7 个服务（滚动）</button>
+      </div>
+      <button type="button" class="chip-toggle" id="repoCenterBtn" aria-pressed="false">表头「仓库」居中</button>
+      <button type="button" class="chip-toggle" id="guideBtn" aria-pressed="true">对齐参考线</button>
+      <button type="button" class="chip-toggle" id="themeBtn" aria-pressed="false">深色模式</button>
+    </div>
+  </div>
+
+  <div class="diff-strip" id="diffStrip"></div>
+
+  <div class="window" id="windowFrame">
+    <aside class="sidebar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <div class="brand">
+        <span class="brand-mark">M</span>
+        <span>MCP Gateway</span>
+      </div>
+      <div class="nav-group">工作台</div>
+      <div class="nav-item"><span>概览</span></div>
+      <div class="nav-item"><span>服务</span><span class="nav-count err">1</span></div>
+      <div class="nav-item"><span>工具目录</span><span class="nav-count">445/779</span></div>
+      <div class="nav-item active"><span>仓库绑定</span><span class="nav-count">5</span></div>
+      <div class="nav-item"><span>连接客户端</span><span class="nav-count">6</span></div>
+      <div class="nav-item"><span>访问与路由</span></div>
+      <div class="nav-group">观测与调试</div>
+      <div class="nav-item"><span>请求日志</span><span class="nav-count">100</span></div>
+      <div class="nav-item"><span>路由沙盒</span></div>
+    </aside>
+
+    <section class="main">
+      <header class="topbar">
+        <span>仓库绑定</span>
+        <div class="topbar-right">
+          <span class="status-pill"><span class="dot-green"></span>jev</span>
+          <button type="button" class="btn btn-sm">刷新</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <div class="page-header">
+          <h2 class="page-title">仓库绑定</h2>
+          <div class="header-actions">
+            <span class="switch-wrap"><span class="switch-track"></span>启用仓库隔离拦截</span>
+            <button type="button" class="btn">手动配置 Hook</button>
+            <button type="button" class="btn btn-primary">添加本地仓库…</button>
+          </div>
+        </div>
+
+        <div class="view-tabs">
+          <span class="active">矩阵视图</span>
+          <span>单仓库详情</span>
+        </div>
+
+        <div class="card-flush" id="matrixCard">
+          <div class="matrix-scroll" id="matrixScroll"></div>
+        </div>
+
+        <div class="scroll-hint" id="scrollHint"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+const ALL_SERVICES = [
+  { id: "github", name: "GitHub", bg: "#111827", glyph: "G" },
+  { id: "vercel", name: "Vercel", bg: "#0f172a", glyph: "▲" },
+  { id: "supabase", name: "Supabase", bg: "#15803d", glyph: "⚡" },
+  { id: "notion", name: "Notion", bg: "#1f2937", glyph: "N" },
+  { id: "linear", name: "Linear", bg: "#4f46e5", glyph: "L" },
+  { id: "figma", name: "Figma", bg: "#db2777", glyph: "F" },
+  { id: "sentry", name: "Sentry", bg: "#3b0764", glyph: "S" },
+];
+
+const REPOS = [
+  { id: "*", name: "全局默认 *", hint: "未绑定仓库兜底" },
+  { id: "mcp-gateway", name: "mcp-gateway", hint: "DengNaichen/mcp-gateway" },
+  { id: "roster", name: "Roster", hint: "DengNaichen/Roster" },
+  { id: "sift", name: "sift", hint: "DengNaichen/sift" },
+  { id: "stet", name: "Stet", hint: "DengNaichen/Stet" },
+  { id: "xiyun", name: "xiyun", hint: "codeup.aliyun.com/66b9ad5a9ab3d…" },
+];
+
+const grants = {
+  "*": new Set(),
+  "mcp-gateway": new Set(["github", "linear"]),
+  "roster": new Set(["github", "vercel", "supabase"]),
+  "sift": new Set(["github"]),
+  "stet": new Set(["github", "sentry"]),
+  "xiyun": new Set(),
+};
+
+let mode = "center";
+let serviceCount = 4;
+let showGuides = true;
+let repoHdrCenter = false;
+
+const checkSvg = `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2.2 6.4 4.8 9 9.8 3.2"/></svg>`;
+
+const MODE_NOTES = {
+  before: {
+    pillClass: "warn",
+    pillText: "现状问题",
+    text: "<strong>表头左对齐（红虚线） vs 复选框居中（紫虚线）</strong>，每列错开半格；且 4 列 × 160px + 240px + 80px = 960px 超出卡片宽度，右侧「详情」按钮被挤出可见区。",
+    hint: "原生代码：<code>serviceWidth = 160</code>、表头无 <code>Justify(ui.Center)</code>、表头缺少 <code>actionWidth</code> 占位列。"
+  },
+  center: {
+    pillClass: "good",
+    pillText: "推荐方案",
+    text: "<strong>表头图标+名称与复选框严格共中线居中</strong>；服务列按可用宽度均分（最小 116px），4 个服务时右侧「详情」按钮完整露出且无多余横向滚动，服务更多时平滑横向滚动。",
+    hint: "落地改动：表头服务格加 <code>Justify(ui.Center)</code> 并去掉文本 <code>Grow(1)</code>；<code>serviceWidth</code> 改为按视口计算 <code>max(116, (viewport - repo - action) / n)</code>；表头补齐操作列占位。"
+  },
+  left: {
+    pillClass: "alt",
+    pillText: "备选方案",
+    text: "<strong>表头与复选框统一左对齐</strong>（复选框左边缘对齐服务图标左边缘），同样自适应列宽并完整露出右侧「详情」按钮。",
+    hint: "落地改动：复选框单元格去掉 <code>Justify(ui.Center)</code>，改为 <code>Padding(0, 14)</code> 左对齐，与表头内边距一致。"
+  }
+};
+
+function render() {
+  const services = ALL_SERVICES.slice(0, serviceCount);
+  const frame = document.getElementById("windowFrame");
+  frame.classList.toggle("show-guides", showGuides);
+
+  const card = document.getElementById("matrixCard");
+  card.className = `card-flush mode-${mode}${repoHdrCenter ? " repo-hdr-center" : ""}`;
+
+  const note = MODE_NOTES[mode];
+  document.getElementById("diffStrip").innerHTML =
+    `<span class="pill ${note.pillClass}">${note.pillText}</span><span>${note.text}</span>`;
+  document.getElementById("scrollHint").innerHTML =
+    `<span>${note.hint}</span><span>点击任意复选框可实时切换</span>`;
+
+  let colgroup = `<colgroup><col style="width:240px">`;
+  if (mode === "before") {
+    for (const _ of services) colgroup += `<col style="width:160px">`;
+    colgroup += `<col style="width:80px"></colgroup>`;
+  } else {
+    const minW = 116;
+    const minTotal = 240 + services.length * minW + 78;
+    const svcWidthStyle = services.length > 5 ? `width:${minW}px` : "";
+    for (const _ of services) colgroup += `<col style="${svcWidthStyle}">`;
+    colgroup += `<col style="width:78px"></colgroup>`;
+    var tableStyle = `min-width:${minTotal}px;`;
+  }
+
+  const headerCells = services.map(s => `
+    <th class="col-svc" title="${s.name}">
+      <span class="svc-hdr-inner">
+        <span class="svc-icon" style="background:${s.bg}">${s.glyph}</span>
+        <span class="svc-name">${s.name}</span>
+      </span>
+    </th>
+  `).join("");
+
+  const rowsHtml = REPOS.map(repo => {
+    const set = grants[repo.id];
+    const cells = services.map(s => {
+      const checked = set.has(s.id);
+      return `
+        <td class="col-svc">
+          <button type="button" class="cb ${checked ? "checked" : ""}"
+            aria-label="${repo.name} · ${s.name}"
+            aria-pressed="${checked}"
+            data-repo="${repo.id}" data-svc="${s.id}">
+            ${checkSvg}
+          </button>
+        </td>
+      `;
+    }).join("");
+    return `
+      <tr>
+        <td class="col-repo">
+          <div class="repo-name">${repo.name}</div>
+          <div class="repo-hint">${repo.hint}</div>
+        </td>
+        ${cells}
+        <td class="col-act">
+          <button type="button" class="btn btn-sm">详情</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  document.getElementById("matrixScroll").innerHTML = `
+    <table class="matrix-table" style="${mode === "before" ? `width:${240 + services.length * 160 + 80}px` : tableStyle}">
+      ${colgroup}
+      <thead>
+        <tr>
+          <th class="col-repo">仓库</th>
+          ${headerCells}
+          <th class="col-act"></th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  `;
+
+  document.querySelectorAll(".cb").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const set = grants[btn.dataset.repo];
+      if (set.has(btn.dataset.svc)) set.delete(btn.dataset.svc);
+      else set.add(btn.dataset.svc);
+      render();
+    });
+  });
+}
+
+document.querySelectorAll("[data-mode]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    mode = btn.dataset.mode;
+    document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+    render();
+  });
+});
+
+document.querySelectorAll("[data-count]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    serviceCount = Number(btn.dataset.count);
+    document.querySelectorAll("[data-count]").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+    render();
+  });
+});
+
+document.getElementById("repoCenterBtn").addEventListener("click", e => {
+  repoHdrCenter = !repoHdrCenter;
+  e.currentTarget.setAttribute("aria-pressed", String(repoHdrCenter));
+  render();
+});
+
+document.getElementById("guideBtn").addEventListener("click", e => {
+  showGuides = !showGuides;
+  e.currentTarget.setAttribute("aria-pressed", String(showGuides));
+  render();
+});
+
+document.getElementById("themeBtn").addEventListener("click", e => {
+  const isDark = document.documentElement.dataset.theme === "dark";
+  document.documentElement.dataset.theme = isDark ? "" : "dark";
+  e.currentTarget.setAttribute("aria-pressed", String(!isDark));
+});
+
+render();
+</script>
+</body>
+</html>

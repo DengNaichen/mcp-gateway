@@ -162,10 +162,44 @@ func TestRepoMatrixHorizontalScrollKeepsColumnsAligned(t *testing.T) {
 		t.Fatalf("last column not reachable: header=%+v cell=%+v", after, cell)
 	}
 	first, _ := tester.Find("全局默认 * · Service 6")
-	if cell.X-first.X != 160 {
+	if cell.X-first.X != repoMatrixMinServiceWidth {
 		t.Fatalf("checkbox columns changed width: %+v %+v", first, cell)
 	}
-	if cell.X < after.X || cell.X > after.X+after.W {
+	if cell.X < after.X-24 || cell.X > after.X+after.W {
 		t.Fatalf("header and checkbox drifted: %+v %+v", after, cell)
+	}
+}
+
+func TestRepoMatrixCentersHeadersAndFitsDetailsButton(t *testing.T) {
+	app := &DesktopUI{State: &apitypes.Bootstrap{}}
+	app.State.Registry.Servers = []apitypes.Server{
+		{ID: "github", Name: "GitHub"},
+		{ID: "vercel", Name: "Vercel"},
+		{ID: "supabase", Name: "Supabase"},
+		{ID: "notion", Name: "Notion"},
+	}
+	tester := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).FillWidth().FillHeight().Padding(20).Children(func() { app.renderReposMatrix(c, app.reposState(), app.State) })
+	}, 920, 600)
+	// First frame measures scroll viewport width; second frame lays out with adaptive columns.
+	tester.Frame()
+	tester.Frame()
+
+	details, ok := tester.Find("全局默认 * 详情")
+	if !ok || details.X+details.W > 900 {
+		t.Fatalf("details button clipped outside viewport: %+v", details)
+	}
+	for _, name := range []string{"GitHub", "Vercel", "Supabase", "Notion"} {
+		hdr, hdrOK := tester.Find(name)
+		cell, cellOK := tester.Find("全局默认 * · " + name)
+		if !hdrOK || !cellOK {
+			t.Fatalf("missing header or cell for %s: hdr=%v cell=%v", name, hdrOK, cellOK)
+		}
+		// Header text sits to the right of its 16px icon + 7px gap, so group center is (hdr.X - 23 + hdr.X + hdr.W) / 2.
+		groupCenter := (hdr.X - 23 + hdr.X + hdr.W) / 2
+		cellCenter := cell.X + cell.W/2
+		if diff := groupCenter - cellCenter; diff < -2 || diff > 2 {
+			t.Fatalf("%s header center (%.1f) and checkbox center (%.1f) misaligned: hdr=%+v cell=%+v", name, groupCenter, cellCenter, hdr, cell)
+		}
 	}
 }
