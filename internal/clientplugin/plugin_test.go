@@ -41,7 +41,7 @@ func (f *fakeRunner) LookPath(binary string) (string, error) {
 func (f *fakeRunner) Run(_ context.Context, env []string, dir, binary string, args ...string) ([]byte, []byte, error) {
 	f.calls = append(f.calls, binary+" "+strings.Join(args, " "))
 	slug := buildinfo.Current().Slug
-	ver := buildinfo.Current().Version
+	ver := buildinfo.PluginVersion()
 	pluginID := slug + "@" + slug
 
 	envMap := map[string]string{}

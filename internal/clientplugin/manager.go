@@ -48,7 +48,7 @@ func (m *Manager) revokeLegacyMCPBestEffort(id string) {
 }
 
 func (m *Manager) syncHookIfPossible() {
-	if m.homeDir == "" || m.binPath != "" {
+	if m.homeDir == "" || m.binPath != "" || m.activeRelease != nil {
 		return
 	}
 	if m.dataDir != "" {
@@ -80,23 +80,39 @@ func (m *Manager) Statuses(endpoint string) []Status {
 
 	ids := clientconfig.ClientIDs()
 	out := make([]Status, 0, len(ids))
+	latest, _ := m.latestRelease()
 	for _, id := range ids {
-		switch id {
-		case ClientCodex:
-			out = append(out, m.observeCodex(endpoint, hasLegacy(id)))
-		case ClientClaude:
-			out = append(out, m.observeClaude(endpoint, hasLegacy(id)))
-		case ClientCursor:
-			out = append(out, m.observeCursor(endpoint, hasLegacy(id)))
-		case ClientOpenCode:
-			out = append(out, m.observeOpenCode(endpoint, hasLegacy(id)))
-		case ClientPi:
-			out = append(out, m.observePi(endpoint, hasLegacy(id)))
-		case ClientAntigravity:
-			out = append(out, m.observeAntigravity(endpoint, hasLegacy(id)))
-		}
+		out = append(out, m.markAvailableUpdate(m.observe(id, endpoint, hasLegacy(id)), latest))
 	}
 	return out
+}
+
+func (m *Manager) observe(id, endpoint string, legacy bool) Status {
+	r, _ := m.loadReceipt(id)
+	release, err := m.installedRelease(r)
+	if err != nil {
+		return Status{
+			ID: id, Name: clientconfig.ClientDisplayName(id), Path: r.InstallRoot,
+			InstalledVersion: r.Version, State: i18n.T("client.state.record-error"), Detail: err.Error(), CanRemove: true,
+		}
+	}
+	if release != nil {
+		defer m.activateRelease(release)()
+	}
+	switch id {
+	case ClientCodex:
+		return m.observeCodex(endpoint, legacy)
+	case ClientClaude:
+		return m.observeClaude(endpoint, legacy)
+	case ClientCursor:
+		return m.observeCursor(endpoint, legacy)
+	case ClientOpenCode:
+		return m.observeOpenCode(endpoint, legacy)
+	case ClientPi:
+		return m.observePi(endpoint, legacy)
+	default:
+		return m.observeAntigravity(endpoint, legacy)
+	}
 }
 
 // Install installs the official plugin for client id targeting endpoint.
@@ -120,6 +136,14 @@ func (m *Manager) apply(id, endpoint string, update bool) error {
 	if err != nil {
 		return err
 	}
+	return m.withInstallLock(func() error {
+		return m.applyRelease(id, update, func() error {
+			return m.install(id, validURL, update)
+		})
+	})
+}
+
+func (m *Manager) install(id, validURL string, update bool) error {
 	m.syncHookIfPossible()
 
 	switch id {
@@ -145,6 +169,10 @@ func (m *Manager) Remove(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	return m.withInstallLock(func() error { return m.remove(id) })
+}
+
+func (m *Manager) remove(id string) error {
 	switch id {
 	case ClientCodex:
 		return m.removeCodex()

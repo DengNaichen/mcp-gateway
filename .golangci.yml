@@ -122,11 +122,18 @@ linters:
           allow:
             - gatewaylab/internal/buildinfo
             - gatewaylab/internal/clientconfig
+            - gatewaylab/internal/clientplugin/github
             - gatewaylab/internal/i18n
             - gatewaylab/internal/workspace
           deny:
             - pkg: gatewaylab/internal
-              desc: "clientplugin may only import buildinfo, clientconfig, i18n, and workspace"
+              desc: "clientplugin may only import local configuration, identity, i18n, workspace, and its GitHub transport"
+        clientplugin-github-layer:
+          files: ["**/internal/clientplugin/github/**"]
+          list-mode: lax
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "plugin release GitHub transport has no domain dependencies"
         store-layer:
           files: ["**/internal/store/**"]
           list-mode: lax

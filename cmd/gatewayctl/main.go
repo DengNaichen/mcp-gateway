@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -133,7 +134,7 @@ func runGatewayCommand(cmdArgs []string, opts gatewayCommandOptions, stdout io.W
 
 func runPluginCommand(args []string, defaultURL string, stdout io.Writer) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: gatewayctl plugin <status|install|update|remove|verify-prompt> [flags]")
+		return fmt.Errorf("usage: gatewayctl plugin <status|check|install|update|remove|verify-prompt> [flags]")
 	}
 	action := args[0]
 	fs := flag.NewFlagSet("gatewayctl plugin "+action, flag.ContinueOnError)
@@ -155,7 +156,7 @@ func runPluginCommand(args []string, defaultURL string, stdout io.Writer) error 
 	} else if fs.NArg() > 0 && !(target != "" && fs.NArg() == 0) {
 		return fmt.Errorf("unexpected arguments: %v", fs.Args())
 	}
-	if target == "" && (action == "status" || action == "verify-prompt") {
+	if target == "" && (action == "status" || action == "check" || action == "verify-prompt") {
 		target = "all"
 	}
 	if target == "" {
@@ -196,6 +197,11 @@ func runPluginCommand(args []string, defaultURL string, stdout io.Writer) error 
 
 	switch action {
 	case "status":
+		return printPluginStatuses(stdout, mgr.Statuses(mcpURL), targets, isAll)
+	case "check":
+		if _, err := mgr.CheckUpdates(context.Background()); err != nil {
+			return err
+		}
 		return printPluginStatuses(stdout, mgr.Statuses(mcpURL), targets, isAll)
 	case "verify-prompt":
 		return printVerifyPrompts(stdout, mgr, mcpURL, targets, isAll)

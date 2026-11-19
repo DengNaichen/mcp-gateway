@@ -2485,7 +2485,8 @@
         name: "Cursor",
         path: "~/.cursor/plugins/local/mcp-gateway",
         state: "需要更新",
-        detail: "已安装 v0.0.3 -> 可升级至 v0.0.4（更新 MCP 端口与 Hook 规则）",
+        availableVersion: "0.3.3",
+        detail: "v0.3.2",
         warning: "",
         legacyMcp: false
       },
@@ -2541,19 +2542,20 @@
       if (!c) return;
       openPopoverKey = "";
       if (action === "install" || action === "upgrade" || action === "update") {
+        const version = c.availableVersion || "0.3.2";
         c.state = "已安装";
+        delete c.availableVersion;
         c.legacyMcp = false;
         if (id === "codex") {
           c.installationID = crypto.randomUUID();
           localStorage.setItem("codex-installation", c.installationID);
           c.warning = "若 Codex 首次提示审查插件 Hook，请在 Codex 中确认信任";
         } else c.warning = "";
-        c.detail = action === "upgrade"
-          ? "已自动撤回旧版全局 MCP 并启用 v0.0.4 官方插件"
-          : "v0.0.4 · 官方插件已启用（MCP + Hook + mcp-gateway Skill）";
+        c.detail = `v${version}`;
         showToast(`${c.name} 官方插件已就绪`);
       } else if (action === "remove") {
         c.state = "未安装";
+        delete c.availableVersion;
         c.detail = "已卸载官方插件与对应 Hook";
         showToast(`已卸载 ${c.name} 官方插件`);
       } else if (action === "legacy-mcp") {
@@ -2811,7 +2813,7 @@
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
             <span class="mono" style="font-size:12px;color:var(--ink-muted);">mcp-gateway · http://127.0.0.1:8788/mcp</span>
-            <button class="btn btn-sm" type="button" onclick="refreshPrototypeState()">${svgIcon("refresh", 13)}<span>刷新状态</span></button>
+            <button class="btn btn-sm" type="button" onclick="refreshPrototypeState()">${svgIcon("refresh", 13)}<span>检查插件更新</span></button>
           </div>
         </div>
 
@@ -2837,7 +2839,7 @@
                     ${clientBrandIcon(c.id, 26)}
                     <span class="row-name" style="font-family:var(--sans);font-size:14px;">${esc(c.name)}</span>
                     <button class="btn-icon" type="button" title="${esc(c.path)}（在 Finder 中打开配置位置）" onclick="showToast('配置目录：${esc(c.path)}')">${svgIcon("arrowUpRight", 15)}</button>
-                    ${c.warning ? `<span class="quiet-meta" style="color:var(--warning);">· ${esc(c.warning)}</span>` : `<span class="quiet-meta">· ${esc(c.detail)}</span>`}
+                    ${c.warning ? `<span class="quiet-meta" style="color:var(--warning);">· ${esc(c.warning)}</span>` : `<span class="quiet-meta">· ${esc(c.availableVersion ? `v${c.availableVersion} 可更新` : c.detail)}</span>`}
                   </div>
                 </div>
                 <div class="row-right" style="gap:8px;">

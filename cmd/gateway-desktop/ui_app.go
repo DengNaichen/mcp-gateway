@@ -148,6 +148,11 @@ func (u *DesktopUI) AttachWindow(win *mygo.Window) {
 	u.refreshClientConfigs()
 
 	go u.pollLoop(pollCtx)
+	if u.ClientPlugins != nil && os.Getenv("GATEWAY_CLIENT_CONFIG_HOME") == "" {
+		go u.ClientPlugins.WatchUpdates(pollCtx, func() {
+			u.updateUI(func() { u.refreshClientConfigs() })
+		})
+	}
 }
 
 // DetachWindow stops background polling when the window is destroyed.

@@ -210,10 +210,13 @@ Flags 放在子命令之前。`-url` 可指定网关地址，本机无认证模�
 
 ```sh
 ./bin/dev/gatewayctl plugin status
+./bin/dev/gatewayctl plugin check
 ./bin/dev/gatewayctl plugin install -client claude
 ./bin/dev/gatewayctl plugin update -client all
 ./bin/dev/gatewayctl plugin remove -client cursor
 ```
+
+macOS 桌面端每 6 小时在后台检查独立的插件 Release，显示各客户端可用的新版本。点击「更新插件」后才会安装，CLI 可以用 `plugin check` 和 `plugin update` 执行对应操作。Gateway 保留宿主自行管理的插件。独立插件包的构建和签名流程见 [插件发布](plugins/releases.md)。
 
 ## 仓库级工作区作用域（Repository Scoping）
 

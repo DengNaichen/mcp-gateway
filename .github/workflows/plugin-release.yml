@@ -1,0 +1,62 @@
+name: Plugin Release
+
+on:
+  push:
+    tags:
+      - "plugin-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Check release tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^plugin-v(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$ ]]
+          git merge-base --is-ancestor HEAD origin/main
+      - name: Test plugin rendering, installation and Hook signing
+        run: |
+          CGO_ENABLED=0 go test -count=1 ./internal/clientplugin ./cmd/gateway-hook ./internal/api
+          CGO_ENABLED=0 go test -count=1 -ldflags '-X gatewaylab/internal/buildinfo.channel=stable' ./internal/clientplugin ./cmd/gateway-hook ./internal/api
+      - name: Build and sign plugin assets
+        env:
+          TAG: ${{ github.ref_name }}
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          CGO_ENABLED: "0"
+        run: |
+          version="${TAG#plugin-v}"
+          mkdir -p dist
+          for channel in stable dev; do
+            flags="-X gatewaylab/internal/buildinfo.channel=$channel -X gatewaylab/internal/buildinfo.revision=${GITHUB_SHA:0:8}"
+            for arch in arm64 amd64; do
+              base="dist/plugin-$channel-darwin-$arch"
+              GOOS=darwin GOARCH="$arch" go build -ldflags "$flags" -o "$base-hook" ./cmd/gateway-hook
+              go run -ldflags "$flags" ./cmd/gateway-plugin-release \
+                -version "$version" -platform "darwin-$arch" -hook "$base-hook" > "$base.json"
+            done
+          done
+      - name: Publish without changing the latest desktop App release
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" dist/* --verify-tag --latest=false \
+            --title "Gateway plugins ${TAG#plugin-v}" --notes "Independent MCP Gateway client plugins and Hooks."

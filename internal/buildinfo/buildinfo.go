@@ -30,20 +30,23 @@ type Identity struct {
 	Version string `json:"version"`
 }
 
-var current = resolve()
+var current, pluginVersion = resolve()
 
-func Current() Identity { return current }
-func resolve() Identity {
+func Current() Identity     { return current }
+func PluginVersion() string { return pluginVersion }
+
+func resolve() (Identity, string) {
 	var profiles struct {
-		Version     string `json:"version"`
-		Stable, Dev Profile
+		Version       string `json:"version"`
+		PluginVersion string `json:"pluginVersion"`
+		Stable, Dev   Profile
 	}
 	if err := json.Unmarshal(profilesJSON, &profiles); err != nil {
 		panic(err)
 	}
 	switch channel {
 	case "stable":
-		return Identity{profiles.Stable, channel, profiles.Version}
+		return Identity{profiles.Stable, channel, profiles.Version}, profiles.PluginVersion
 	case "dev":
 		rev := revision
 		if rev == "" {
@@ -68,7 +71,8 @@ func resolve() Identity {
 		if rev == "" {
 			rev = "local"
 		}
-		return Identity{profiles.Dev, channel, profiles.Version + "-dev." + rev}
+		suffix := "-dev." + rev
+		return Identity{profiles.Dev, channel, profiles.Version + suffix}, profiles.PluginVersion + suffix
 	default:
 		panic("unknown build channel: " + channel)
 	}
