@@ -67,8 +67,8 @@ func TestOAuthFailureDoesNotRestartBrowserDuringProtocolFallback(t *testing.T) {
 				}
 				defer resp.Body.Close()
 				body, err := io.ReadAll(resp.Body)
-				if strings.Contains(string(body), "授权成功") || !strings.Contains(string(body), "已收到授权回调") {
-					t.Error("callback reported success before the authorization flow finished")
+				if strings.Contains(string(body), "授权成功") || !strings.Contains(string(body), "授权完成") || !strings.Contains(string(body), "请返回 MCP Gateway 查看连接结果") {
+					t.Error("callback page did not render expected post-auth guidance without claiming connection success")
 				}
 				return err
 			}})
@@ -90,4 +90,59 @@ func TestOAuthFailureDoesNotRestartBrowserDuringProtocolFallback(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRenderOAuthCallbackPage(t *testing.T) {
+	t.Run("received", func(t *testing.T) {
+		body := string(renderOAuthCallbackPage(oauthCallbackReceived, Server{
+			ID:       "linear",
+			Name:     "Linear",
+			Endpoint: "https://mcp.linear.app/sse",
+		}, ""))
+
+		for _, want := range []string{"授权完成", "正在连接", "Linear", "mcp.linear.app", "请返回 MCP Gateway 查看连接结果"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("body missing %q", want)
+			}
+		}
+		if strings.Contains(body, "授权成功") {
+			t.Errorf("received page must not prematurely claim 授权成功")
+		}
+		if strings.Contains(body, "copyErrBtn") {
+			t.Errorf("received page should not render error copy script")
+		}
+	})
+
+	t.Run("error escapes untrusted input and falls back to server id", func(t *testing.T) {
+		body := string(renderOAuthCallbackPage(oauthCallbackError, Server{
+			ID:       "custom-svc",
+			Endpoint: "https://auth.example.com/mcp",
+		}, `access_denied: <script>alert("xss")</script>`))
+
+		for _, want := range []string{"授权未完成", "未完成", "custom-svc", "auth.example.com", "copyErrBtn", `&lt;script&gt;alert(&#34;xss&#34;)&lt;/script&gt;`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("body missing %q", want)
+			}
+		}
+		if strings.Contains(body, `<script>alert("xss")</script>`) {
+			t.Errorf("error detail was not HTML escaped")
+		}
+	})
+
+	t.Run("invalid omits metadata divider", func(t *testing.T) {
+		body := string(renderOAuthCallbackPage(oauthCallbackInvalid, Server{
+			ID:       "linear",
+			Name:     "Linear",
+			Endpoint: "https://mcp.linear.app/sse",
+		}, ""))
+
+		for _, want := range []string{"授权链接无效", "链接无效"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("body missing %q", want)
+			}
+		}
+		if strings.Contains(body, `<div class="meta-section">`) {
+			t.Errorf("invalid page should omit meta-section divider")
+		}
+	})
 }

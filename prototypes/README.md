@@ -14,3 +14,4 @@
 | 服务与市场合并原型 | [services-market-merge.html](services-market-merge/services-market-merge.html) | 探索中 | 将「上游服务」与「MCP 市场」合并为单一一级菜单（支持顶部实时切换 `服务` / `外部服务` / `集成` 命名试看），页内以 `已接入` / `市场` 分段切换，含就绪度分诊、行内补齐凭据/测试连接、市场一键添加到已接入闭环及浅/深色主题 |
 | 仓库绑定矩阵对齐对比 | [repo-matrix-alignment.html](repo-matrix-alignment/repo-matrix-alignment.html) | 已实现 | 对照原生桌面端仓库绑定矩阵视图的表头/复选框错位与右侧「详情」按钮裁切问题，支持切换当前现状、统一居中（推荐）、统一左对齐，含对齐参考线、4/7 服务滚动切换与浅/深色主题 |
 | 桌面凭据持久化 | [credentials.html](credentials/credentials.html) | 已实现 | 模型与服务凭据的保存、恢复和清除，以及 OAuth 回调反馈；规范见 [credentials_design.md](credentials/credentials_design.md) |
+| OAuth 浏览器回调页 | [oauth-callback.html](oauth-callback/oauth-callback.html) | 已实现 | 浏览器完成 OAuth 授权后跳转回 `127.0.0.1/callback` 的落地页，覆盖授权完成 / 授权未完成 / 链接无效三态、服务上下文、内联 Favicon 与浅/深色主题；规范见 [oauth_callback_design.md](oauth-callback/oauth_callback_design.md) |

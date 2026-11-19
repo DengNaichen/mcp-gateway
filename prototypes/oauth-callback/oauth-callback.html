@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>授权完成 · MCP Gateway</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180' fill='none'%3E%3Crect width='180' height='180' rx='36' fill='%23000'/%3E%3Cpath d='M23.6 85.25L86.2 22.65C94.85 14.01 108.86 14.01 117.5 22.65C126.15 31.29 126.15 45.31 117.5 53.95L70.23 101.23' stroke='white' stroke-width='12' stroke-linecap='round'/%3E%3Cpath d='M70.88 100.58L117.5 53.95C126.15 45.31 140.16 45.31 148.81 53.95L149.13 54.28C157.78 62.92 157.78 76.94 149.13 85.58L92.51 142.2C89.63 145.08 89.63 149.75 92.51 152.63L104.14 164.26' stroke='white' stroke-width='12' stroke-linecap='round'/%3E%3Cpath d='M101.85 38.3L55.55 84.6C46.91 93.24 46.91 107.26 55.55 115.9C64.2 124.55 78.21 124.55 86.85 115.9L133.15 69.6' stroke='white' stroke-width='12' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <style>
+    /* Exact Stripe Sail / Linear tokens from cmd/gateway-desktop/ui_theme.go & prototypes/control-elevation/elevation.html */
+    :root {
+      color-scheme: light;
+      --bg-canvas: #ffffff;
+      --bg-surface: #ffffff;
+      --bg-subtle: #f7f9fc;
+      --bg-hover: #f3f6fa;
+      --ink-strong: #111827;
+      --ink-body: #374151;
+      --ink-muted: #6b7280;
+      --ink-faint: #9ca3af;
+      --divider: #edf1f6;
+      --border-strong: #cbd5e1;
+      --accent: #635bff;
+      --dot-success: #16a34a;
+      --danger-bg: #fee2e2;
+      --danger-border: #fecaca;
+      --danger-ink: #b91c1c;
+      --warning-bg: #fef3c7;
+      --warning-border: #fde68a;
+      --warning-ink: #b45309;
+      --lift-border: rgba(15, 23, 42, 0.065);
+      --card-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
+      --control-shadow: 0 2px 6px rgba(15, 23, 42, 0.07);
+      --logo-bg: #000000;
+      --logo-fg: #ffffff;
+    }
+
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg-canvas: #1a1a1e;
+      --bg-surface: #232327;
+      --bg-subtle: #1c1c20;
+      --bg-hover: #2c2c33;
+      --ink-strong: #f4f4f5;
+      --ink-body: #d4d4d8;
+      --ink-muted: #a1a1aa;
+      --ink-faint: #71717a;
+      --divider: #2b2b31;
+      --border-strong: #43434c;
+      --accent: #7a73ff;
+      --dot-success: #4ade80;
+      --danger-bg: #2e161a;
+      --danger-border: #5c252c;
+      --danger-ink: #f87171;
+      --warning-bg: #2c2211;
+      --warning-border: #564019;
+      --warning-ink: #fbbf24;
+      --lift-border: rgba(255, 255, 255, 0.08);
+      --card-shadow: 0 3px 10px rgba(0, 0, 0, 0.16);
+      --control-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+      --logo-bg: #000000;
+      --logo-fg: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      background: var(--bg-canvas);
+      color: var(--ink-strong);
+      font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+    }
+
+    button {
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+    }
+
+    button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    /* ============================================================
+       ACTUAL PRODUCTION CALLBACK PAGE (100% MCP Gateway Sail style)
+       ============================================================ */
+    .viewport {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 24px 92px;
+      background: var(--bg-canvas);
+    }
+
+    /* SailCard: Radius(10), 1px hairline border, subtle card shadow, minimal dividers */
+    .card {
+      width: 100%;
+      max-width: 440px;
+      background: var(--bg-surface);
+      border: 1px solid var(--lift-border);
+      border-radius: 10px;
+      box-shadow: var(--card-shadow);
+      padding: 22px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* Header row: brand lockup (same as ui_app.go sidebar) + SailQuietStatus, no divider below */
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      background: var(--logo-bg);
+      color: var(--logo-fg);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .brand-name {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--ink-strong);
+      white-space: nowrap;
+    }
+
+    /* SailQuietStatus: 6px dot + 12px muted text; high-saturation pill only for danger/warning */
+    .quiet-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--ink-muted);
+      white-space: nowrap;
+    }
+
+    .quiet-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--dot-success);
+      flex-shrink: 0;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      font-size: 11.5px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .status-pill.danger {
+      background: var(--danger-bg);
+      border-color: var(--danger-border);
+      color: var(--danger-ink);
+    }
+
+    .status-pill.warning {
+      background: var(--warning-bg);
+      border-color: var(--warning-border);
+      color: var(--warning-ink);
+    }
+
+    /* Main message block */
+    .card-body {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .card-title {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.35;
+      color: var(--ink-strong);
+    }
+
+    .card-desc {
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--ink-muted);
+    }
+
+    /* Single hairline divider separating context metadata from main copy */
+    .meta-section {
+      padding-top: 14px;
+      border-top: 1px solid var(--divider);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .service-line {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .meta-key {
+      font-size: 12px;
+      color: var(--ink-muted);
+      flex-shrink: 0;
+    }
+
+    .service-val {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .service-name {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--ink-strong);
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .service-host {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11.5px;
+      color: var(--ink-faint);
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .error-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .error-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .error-text {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--danger-ink);
+      word-break: break-word;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .btn-sm {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 26px;
+      padding: 0 9px;
+      font-size: 11.5px;
+      font-weight: 500;
+      border-radius: 6px;
+      border: 1px solid var(--lift-border);
+      background: var(--bg-surface);
+      color: var(--ink-body);
+      box-shadow: var(--control-shadow);
+      transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .btn-sm:hover {
+      background: var(--bg-canvas);
+      border-color: var(--border-strong);
+      color: var(--ink-strong);
+    }
+
+    .btn-sm:active {
+      box-shadow: none;
+      background: var(--bg-hover);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* ============================================================
+       PROTOTYPE-ONLY PREVIEW BAR (not part of production page)
+       ============================================================ */
+    .proto-bar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 6px 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--lift-border);
+      border-radius: 10px;
+      box-shadow: var(--control-shadow);
+      font-size: 12px;
+    }
+
+    .seg {
+      display: flex;
+      gap: 2px;
+      padding: 2px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--divider);
+      border-radius: 7px;
+    }
+
+    .seg button {
+      border: 0;
+      background: transparent;
+      color: var(--ink-muted);
+      padding: 4px 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .seg button:hover {
+      color: var(--ink-strong);
+    }
+
+    .seg button[aria-pressed="true"] {
+      background: var(--bg-surface);
+      color: var(--ink-strong);
+      font-weight: 500;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+    }
+
+    @media (max-width: 520px) {
+      .viewport { padding: 20px 16px 104px; }
+      .card { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="viewport">
+    <section class="card" role="status" aria-live="polite">
+      <header class="card-header">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 180 180" fill="none">
+              <path d="M23.6 85.25L86.2 22.65C94.85 14.01 108.86 14.01 117.5 22.65C126.15 31.29 126.15 45.31 117.5 53.95L70.23 101.23" stroke="currentColor" stroke-width="15" stroke-linecap="round"/>
+              <path d="M70.88 100.58L117.5 53.95C126.15 45.31 140.16 45.31 148.81 53.95L149.13 54.28C157.78 62.92 157.78 76.94 149.13 85.58L92.51 142.2C89.63 145.08 89.63 149.75 92.51 152.63L104.14 164.26" stroke="currentColor" stroke-width="15" stroke-linecap="round"/>
+              <path d="M101.85 38.3L55.55 84.6C46.91 93.24 46.91 107.26 55.55 115.9C64.2 124.55 78.21 124.55 86.85 115.9L133.15 69.6" stroke="currentColor" stroke-width="15" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span class="brand-name">MCP Gateway</span>
+        </div>
+        <div id="statusBadge"></div>
+      </header>
+
+      <div class="card-body">
+        <h1 id="cardTitle" class="card-title">授权完成</h1>
+        <p id="cardDesc" class="card-desc">请返回 MCP Gateway 查看连接结果，可关闭此标签页。</p>
+      </div>
+
+      <div id="metaSection" class="meta-section">
+        <div id="serviceLine" class="service-line">
+          <span class="meta-key">服务</span>
+          <div class="service-val">
+            <span id="serviceName" class="service-name">Linear</span>
+            <span id="serviceHost" class="service-host">mcp.linear.app</span>
+          </div>
+        </div>
+        <div id="errorBlock" class="error-block hidden">
+          <div class="error-head">
+            <span class="meta-key">原因</span>
+            <button id="copyErrBtn" type="button" class="btn-sm">复制</button>
+          </div>
+          <div id="errorDetail" class="error-text"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="proto-bar" role="toolbar" aria-label="原型切换">
+    <div class="seg" data-control="state">
+      <button type="button" data-value="received" aria-pressed="true">授权完成</button>
+      <button type="button" data-value="error" aria-pressed="false">授权未完成</button>
+      <button type="button" data-value="invalid" aria-pressed="false">链接无效</button>
+    </div>
+    <div class="seg" data-control="theme">
+      <button type="button" data-value="light" aria-pressed="true">浅色</button>
+      <button type="button" data-value="dark" aria-pressed="false">深色</button>
+    </div>
+    <div class="seg" data-control="sample">
+      <button type="button" data-value="normal" aria-pressed="true">常规服务</button>
+      <button type="button" data-value="long" aria-pressed="false">超长数据</button>
+    </div>
+  </div>
+
+  <script>
+    const SAMPLES = {
+      normal: {
+        name: "Linear",
+        host: "mcp.linear.app",
+        error: "access_denied: The user cancelled the authorization request."
+      },
+      long: {
+        name: "Enterprise Observability & Incident Platform (Production)",
+        host: "mcp-gateway-oauth.internal.observability.example.com",
+        error: "invalid_scope: The requested scope 'read:incidents write:deployments admin:audit_logs:extended_retention' is not permitted for client 'mcp-gateway-dcr-7f9a2b3c4d5e6f'."
+      }
+    };
+
+    const STATES = {
+      received: {
+        tabTitle: "授权完成 · MCP Gateway",
+        badge: `<span class="quiet-status"><span class="quiet-dot"></span>正在连接</span>`,
+        title: "授权完成",
+        desc: "请返回 MCP Gateway 查看连接结果，可关闭此标签页。",
+        showService: true,
+        showError: false
+      },
+      error: {
+        tabTitle: "授权未完成 · MCP Gateway",
+        badge: `<span class="status-pill danger">未完成</span>`,
+        title: "授权未完成",
+        desc: "请返回 MCP Gateway 重新发起授权，可关闭此标签页。",
+        showService: true,
+        showError: true
+      },
+      invalid: {
+        tabTitle: "授权链接无效 · MCP Gateway",
+        badge: `<span class="status-pill warning">链接无效</span>`,
+        title: "授权链接无效",
+        desc: "请返回 MCP Gateway 重新发起授权，可关闭此标签页。",
+        showService: false,
+        showError: false
+      }
+    };
+
+    const current = { state: "received", theme: "light", sample: "normal" };
+
+    function render() {
+      const st = STATES[current.state];
+      const sp = SAMPLES[current.sample];
+
+      document.documentElement.dataset.theme = current.theme;
+      document.title = st.tabTitle;
+
+      document.getElementById("statusBadge").innerHTML = st.badge;
+      document.getElementById("cardTitle").textContent = st.title;
+      document.getElementById("cardDesc").textContent = st.desc;
+
+      const hasMeta = st.showService || st.showError;
+      document.getElementById("metaSection").classList.toggle("hidden", !hasMeta);
+      document.getElementById("serviceLine").classList.toggle("hidden", !st.showService);
+      document.getElementById("errorBlock").classList.toggle("hidden", !st.showError);
+
+      document.getElementById("serviceName").textContent = sp.name;
+      document.getElementById("serviceName").title = sp.name;
+      document.getElementById("serviceHost").textContent = sp.host;
+      document.getElementById("serviceHost").title = sp.host;
+      document.getElementById("errorDetail").textContent = sp.error;
+    }
+
+    document.querySelectorAll(".seg").forEach((group) => {
+      const key = group.dataset.control;
+      group.addEventListener("click", (e) => {
+        const btn = e.target.closest("button");
+        if (!btn) return;
+        current[key] = btn.dataset.value;
+        group.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+        render();
+      });
+    });
+
+    document.getElementById("copyErrBtn").addEventListener("click", async () => {
+      const btn = document.getElementById("copyErrBtn");
+      try {
+        await navigator.clipboard.writeText(document.getElementById("errorDetail").textContent);
+        btn.textContent = "已复制";
+        setTimeout(() => { btn.textContent = "复制"; }, 1500);
+      } catch (_) {
+        btn.textContent = "复制失败";
+        setTimeout(() => { btn.textContent = "复制"; }, 1500);
+      }
+    });
+
+    render();
+  </script>
+</body>
+</html>
