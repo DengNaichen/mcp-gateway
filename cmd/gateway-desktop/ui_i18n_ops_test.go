@@ -88,6 +88,12 @@ func opsI18nTestBootstrap() apitypes.Bootstrap {
 		{ID: "ev-1", Time: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), Kind: "invoke", Actor: "developer", Status: "ok", Title: "list_issues", DurationMS: 42,
 			Protocol: "mcp", Decision: "deny", ServiceID: "github", RuleID: "policy:pol-1"},
 	}
+	boot.PendingApprovals = 1
+	boot.Approvals = []apitypes.Approval{{
+		ID: "apv-1", Status: "pending", Actor: "alice", Agent: "codex", RepoID: "repo-1", RepoName: "mcp-gateway",
+		ServiceID: "github", Action: "github.create_issue", RuleID: "policy:pol-1", Summary: "create issue",
+		ArgsRedacted: `{"title":"[redacted]"}`, CreatedAt: "2026-01-02T03:04:05Z", PendingExpiresAt: "2999-01-01T00:00:00Z",
+	}}
 	boot.Policies = apitypes.PolicyOverview{Rules: []apitypes.PolicyRule{
 		{ID: "pol-1", Effect: "deny", Enabled: true, RepoKey: "*", ServiceID: "github", Access: "rw", Actor: "alice"},
 	}}
@@ -104,6 +110,7 @@ func TestDesktopOpsViewsRenderEnglish(t *testing.T) {
 		title string
 		build func(u *DesktopUI) func(*ui.Context)
 	}{
+		{name: "overview", title: "1 pending approvals", build: func(u *DesktopUI) func(*ui.Context) { return u.renderOverview }},
 		{name: "catalog", title: "Tool catalog", build: func(u *DesktopUI) func(*ui.Context) { return u.renderCatalog }},
 		{name: "clients", title: "Connected clients", build: func(u *DesktopUI) func(*ui.Context) { return u.renderClients }},
 		{name: "repos", title: "Repository bindings", build: func(u *DesktopUI) func(*ui.Context) { return u.renderRepos }},
@@ -149,6 +156,8 @@ func TestDesktopOpsEnglishSamples(t *testing.T) {
 			{"ops.catalog-title", "Tool catalog"},
 			{"ops.clients-title", "Connected clients"},
 			{"ops.logs-title", "Request logs"},
+			{"approval.block-self", "Self-approval blocked: another admin must decide"},
+			{"approval.strip-title", "1 pending approvals"},
 			{"ops.repos-title", "Repository bindings"},
 			{"ops.settings-title", "Access & routing"},
 			{"ops.playground", "Routing sandbox"},
@@ -170,6 +179,8 @@ func TestDesktopOpsEnglishSamples(t *testing.T) {
 				args = []any{"Claude Code", "config error"}
 			case "ops.page-indicator":
 				args = []any{2, 3}
+			case "approval.strip-title":
+				args = []any{1}
 			}
 			if got := i18n.T(tc.key, args...); got != tc.want {
 				t.Fatalf("T(%q) = %q, want %q", tc.key, got, tc.want)

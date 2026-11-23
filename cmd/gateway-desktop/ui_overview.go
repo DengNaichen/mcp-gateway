@@ -200,7 +200,10 @@ func (u *DesktopUI) renderOverview(c *ui.Context) {
 		}
 	})
 
-	// 2. Day-0 / Unverified Setup Banner (native safety guard).
+	// 2. Pending approvals inbox strip (absent when nothing waits).
+	u.renderOverviewApprovalStrip(c)
+
+	// 3. Day-0 / Unverified Setup Banner (native safety guard).
 	if !ov.bannerDismissed && (!state.Setup.ToolsReady || !snap.modelReady) {
 		u.renderOverviewSetupBanner(c, ov, state, snap.realServers)
 	}

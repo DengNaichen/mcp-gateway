@@ -31,6 +31,7 @@ type logsPageState struct {
 	timelineLimit int
 	timelineScrl  ui.ScrollState
 	bindingRepo   bool
+	approvals     approvalsState
 }
 
 func (u *DesktopUI) logsState() *logsPageState {
@@ -111,6 +112,7 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 		logsApplyPendingEvent(u.State.Events, st, targetID)
 		st.syncLabels(opts)
 	}
+	u.applyPendingApproval(st)
 	events, remote := u.logsSourceEvents(st)
 
 	filtered, errCount, activeEvent := logsPrepareEventsView(events, st)
@@ -133,10 +135,13 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 		},
 	)
 
-	// 2. Compact Filter Bar.
+	// 2. Pending approvals review queue (above the ledger, highest priority).
+	u.renderLogsApprovalQueue(c, st)
+
+	// 3. Compact Filter Bar.
 	renderLogsFilterBar(c, st, opts, len(filtered), len(events), st.remote.loading)
 
-	// 3. Empty State or Split Master-Detail Workbench.
+	// 4. Empty State or Split Master-Detail Workbench.
 	if len(filtered) == 0 {
 		u.renderLogsEmptyState(c, st, len(events))
 		return
@@ -394,6 +399,7 @@ func (u *DesktopUI) renderLogsInspectorPane(
 		u.renderLogsInspectorHeader(c, ev, parsed, toolByID)
 		renderLogsInspectorMetrics(c, ev, parsed)
 		renderLogsInspectorAuditCard(c, ev)
+		u.renderLogsLinkedApproval(c, st, ev)
 		renderLogsInspectorMetaCard(c, parsed)
 
 		if sc := parsed.Scope; sc != nil {

@@ -654,7 +654,7 @@ func (u *DesktopUI) renderSidebar(c *ui.Context, bar ui.TitleBar) {
 					{id: ViewSettings, label: i18n.T("nav.settings"), icon: IconShield},
 				})
 				u.renderNavGroup(c, i18n.T("nav.group.observability"), []navItem{
-					{id: ViewLogs, label: i18n.T("nav.logs"), icon: IconActivity, badge: countBadge(len(state.Events))},
+					logsNavItem(len(state.Events), state.PendingApprovals),
 					{id: ViewPlayground, label: i18n.T("nav.playground"), icon: IconWaypoints},
 				})
 			})
@@ -680,6 +680,16 @@ func servicesNavItem(enabled, attention int) navItem {
 	item := navItem{id: ViewServices, label: i18n.T("nav.services"), icon: IconServer, badge: countBadge(enabled)}
 	if attention > 0 {
 		item.badge = countBadge(attention)
+		item.badgeDanger = true
+	}
+	return item
+}
+
+// logsNavItem surfaces pending approvals as a red count; otherwise the event count.
+func logsNavItem(events, pendingApprovals int) navItem {
+	item := navItem{id: ViewLogs, label: i18n.T("nav.logs"), icon: IconActivity, badge: countBadge(events)}
+	if pendingApprovals > 0 {
+		item.badge = countBadge(pendingApprovals)
 		item.badgeDanger = true
 	}
 	return item

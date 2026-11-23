@@ -162,6 +162,7 @@ type navIntent struct {
 	viewAtomic    atomic.Value // stores ViewID
 	serviceID     string
 	eventID       string
+	approvalID    *string
 	repoKey       string
 	addService    bool
 	catalogFilter *catalogFilterIntent
@@ -186,6 +187,7 @@ func (n *navIntent) navigate(view ViewID) {
 	}
 	if view != ViewLogs {
 		n.eventID = ""
+		n.approvalID = nil
 	}
 	n.setView(view)
 }
@@ -259,6 +261,16 @@ func (n *navIntent) consumeRepoKey() string {
 func (n *navIntent) openLogsEvent(eventID string) {
 	n.eventID = eventID
 	n.setView(ViewLogs)
+}
+
+func (n *navIntent) openLogsApproval(approvalID string) {
+	n.approvalID = &approvalID
+	n.eventID = ""
+	n.setView(ViewLogs)
+}
+
+func (n *navIntent) consumeApprovalID() (string, bool) {
+	return takeIntent(&n.approvalID)
 }
 
 func (n *navIntent) consumeEventID() string {
