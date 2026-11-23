@@ -30,7 +30,7 @@ var opsFormatVerbRe = regexp.MustCompile(`%(?:\[\d+\])?[-+# 0]*(?:\*|\d+)?(?:\.(
 func opsZhFragments(t *testing.T) []string {
 	t.Helper()
 	var fragments []string
-	for _, name := range []string{"desktop_ops.json", "clients.json"} {
+	for _, name := range []string{"desktop_ops.json", "clients.json", "desktop_policy.json"} {
 		path := filepath.Join("..", "..", "internal", "i18n", "locales", "zh-CN", name)
 		raw, err := os.ReadFile(path) //nolint:gosec // fixed test-owned path
 		if err != nil {
@@ -85,8 +85,12 @@ func opsI18nTestBootstrap() apitypes.Bootstrap {
 		},
 	}
 	boot.Events = []apitypes.Event{
-		{ID: "ev-1", Time: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), Kind: "invoke", Actor: "developer", Status: "ok", Title: "list_issues", DurationMS: 42},
+		{ID: "ev-1", Time: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), Kind: "invoke", Actor: "developer", Status: "ok", Title: "list_issues", DurationMS: 42,
+			Protocol: "mcp", Decision: "deny", ServiceID: "github", RuleID: "policy:pol-1"},
 	}
+	boot.Policies = apitypes.PolicyOverview{Rules: []apitypes.PolicyRule{
+		{ID: "pol-1", Effect: "deny", Enabled: true, RepoKey: "*", ServiceID: "github", Access: "rw", Actor: "alice"},
+	}}
 	return boot
 }
 
@@ -228,7 +232,7 @@ func TestClientConfigStatusesLocalized(t *testing.T) {
 // TestDesktopOpsLocaleFilesTranslated guards the locale files themselves: every
 // English string must be non-empty and free of Chinese characters.
 func TestDesktopOpsLocaleFilesTranslated(t *testing.T) {
-	for _, name := range []string{"desktop_ops.json", "clients.json"} {
+	for _, name := range []string{"desktop_ops.json", "clients.json", "desktop_policy.json"} {
 		path := filepath.Join("..", "..", "internal", "i18n", "locales", "en", name)
 		raw, err := os.ReadFile(path) //nolint:gosec // fixed test-owned path
 		if err != nil {

@@ -166,6 +166,9 @@ func (u *DesktopUI) renderSettings(c *ui.Context) {
 
 	SailSectionHeader(c, i18n.T("ops.settings-title"), "", nil)
 
+	// Section 0: Read-only runtime trust mode.
+	renderSettingsTrustModeCard(c, state)
+
 	// Section 1: Actor & Read/Write Guardrail Matrix.
 	u.renderSettingsGuardrailSection(c, st, state)
 
@@ -174,6 +177,26 @@ func (u *DesktopUI) renderSettings(c *ui.Context) {
 
 	// Section 3: Saved Model Profiles List.
 	u.renderSettingsProfilesSection(c, st, state)
+}
+
+// renderSettingsTrustModeCard states the runtime trust boundary in one line;
+// it is read-only because the mode is fixed by how the gateway was started.
+func renderSettingsTrustModeCard(c *ui.Context, state *apitypes.Bootstrap) {
+	mode := policySecurityMode(state)
+	desc := i18n.T("policy.mode-local-desc")
+	if mode == apitypes.SecurityModeSharedBoundary {
+		desc = i18n.T("policy.mode-shared-desc")
+	}
+	SailCard(c.Key("settings-trust-mode"), func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(12).Children(func() {
+			ui.Row(c).Gap(10).AlignItems(ui.Center).MinWidth(0).Children(func() {
+				ui.Text(c, i18n.T("policy.trust-mode")).FontSize(12).FontWeight(500).TextColor(SailInkMuted).SingleLine()
+				SailQuietStatus(c, policySecurityModeLabel(mode), SailSuccessInk, SailInkStrong)
+			})
+			ui.Text(c, "trust = "+policyExpectedTrust(mode)).Font("monospace").FontSize(11.5).TextColor(SailInkMuted).SingleLine()
+		})
+		ui.Text(c, desc).FontSize(12.5).LineHeight(1.5).TextColor(SailInkBody)
+	})
 }
 
 func (u *DesktopUI) renderSettingsGuardrailSection(c *ui.Context, st *settingsState, state *apitypes.Bootstrap) {

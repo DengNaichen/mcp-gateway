@@ -56,6 +56,8 @@ type playgroundState struct {
 	invoking      bool
 	invokeError   string
 	invocation    *apitypes.InvokeResult
+
+	policy *pgPolicyState
 }
 
 func (u *DesktopUI) playgroundState() *playgroundState {
@@ -255,6 +257,7 @@ func (u *DesktopUI) renderPlayground(c *ui.Context) {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(24).Children(func() {
 			u.renderPlaygroundComposer(c, st, state, vm)
 			u.renderPlaygroundResults(c, st, vm)
+			u.renderPlaygroundPolicyPanel(c, st, state, vm)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).Gap(24).Children(func() {
 			u.renderPlaygroundInspector(c, st, vm.toolsByID, vm.effectiveActor)

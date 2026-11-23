@@ -19,8 +19,13 @@ const logsDefaultTimelineLimit = 150
 
 type logsPageState struct {
 	query         string
-	kindIdx       int // 0: 全部, 1: discover, 2: invoke, 3: agent / agent_tool
-	statusIdx     int // 0: 全部, 1: 成功, 2: 未命中, 3: 错误
+	protocolIdx   int // index into logsProtocolValues
+	decisionIdx   int // index into logsDecisionValues
+	repoLabel     string
+	repoKey       string // "": all, logsRepoUnbound, or Repository.ID
+	serviceLabel  string
+	serviceID     string
+	remote        logsRemotePage
 	selectedID    string
 	payloadTab    int // 0: 完整事件 JSON, 1: Detail 详情载荷
 	timelineLimit int
@@ -38,13 +43,15 @@ func (u *DesktopUI) logsState() *logsPageState {
 }
 
 func (st *logsPageState) hasActiveFilters() bool {
-	return strings.TrimSpace(st.query) != "" || st.kindIdx != 0 || st.statusIdx != 0
+	return strings.TrimSpace(st.query) != "" || st.protocolIdx != 0 || st.decisionIdx != 0 || st.repoKey != "" || st.serviceID != ""
 }
 
 func (st *logsPageState) resetFilters() {
 	st.query = ""
-	st.kindIdx = 0
-	st.statusIdx = 0
+	st.protocolIdx = 0
+	st.decisionIdx = 0
+	st.repoLabel, st.repoKey = "", ""
+	st.serviceLabel, st.serviceID = "", ""
 	st.timelineLimit = logsDefaultTimelineLimit
 }
 
@@ -95,13 +102,16 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 		return
 	}
 	st := u.logsState()
-	events := u.State.Events
+	opts := buildLogsFilterOptions(u.State)
+	st.syncLabels(opts)
 	toolByID := logsBuildToolIndex(u.State.Registry.Tools)
 
 	// Consume cross-page navigation handoff (e.g. from Overview blind-spot row).
 	if targetID := u.consumePendingEventID(); targetID != "" {
-		logsApplyPendingEvent(events, st, targetID)
+		logsApplyPendingEvent(u.State.Events, st, targetID)
+		st.syncLabels(opts)
 	}
+	events, remote := u.logsSourceEvents(st)
 
 	filtered, errCount, activeEvent := logsPrepareEventsView(events, st)
 
@@ -124,7 +134,7 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 	)
 
 	// 2. Compact Filter Bar.
-	renderLogsFilterBar(c, st, len(filtered), len(events))
+	renderLogsFilterBar(c, st, opts, len(filtered), len(events), st.remote.loading)
 
 	// 3. Empty State or Split Master-Detail Workbench.
 	if len(filtered) == 0 {
@@ -133,7 +143,7 @@ func (u *DesktopUI) renderLogs(c *ui.Context) {
 	}
 
 	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(22).Children(func() {
-		u.renderLogsTimelinePane(c, st, filtered, activeEvent)
+		u.renderLogsTimelinePane(c, st, filtered, activeEvent, remote)
 		if activeEvent != nil {
 			u.renderLogsInspectorPane(c, st, *activeEvent, toolByID)
 		}
@@ -192,50 +202,6 @@ func logsPrepareEventsView(events []apitypes.Event, st *logsPageState) ([]apityp
 	return filtered, errCount, activeEvent
 }
 
-func renderLogsFilterBar(c *ui.Context, st *logsPageState, filteredCount, totalCount int) {
-	SailCard(c.Key("logs-filter-card"), func() {
-		ui.Row(c).FillWidth().Wrap().Gap(10).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
-			ui.Row(c).Wrap().Gap(10).AlignItems(ui.Center).Children(func() {
-				SailSearchField(c.Key("logs-search"), &st.query).
-					Placeholder(i18n.T("ops.search-logs-placeholder")).
-					Label(i18n.T("ops.search-logs")).
-					Width(236)
-
-				SailSegmented(
-					c.Key("logs-kind-seg"),
-					&st.kindIdx,
-					i18n.T("ops.filter-all"),
-					"discover",
-					"invoke",
-					"agent_tool",
-				).Label(i18n.T("ops.event-kind-filter"))
-
-				SailSegmented(
-					c.Key("logs-status-seg"),
-					&st.statusIdx,
-					i18n.T("ops.filter-all"),
-					i18n.T("ops.status-success"),
-					i18n.T("ops.status-miss"),
-					i18n.T("ops.status-error"),
-				).Label(i18n.T("ops.event-status-filter"))
-			})
-
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				if st.hasActiveFilters() {
-					if SailButton(c.Key("logs-reset-btn"), i18n.T("ops.reset")).Clicked() {
-						st.resetFilters()
-					}
-				}
-				ui.Textf(c, "%d / %d", filteredCount, totalCount).
-					FontSize(12).
-					TextColor(SailInkMuted).
-					FontFeatures("tnum").
-					SingleLine()
-			})
-		})
-	})
-}
-
 func (u *DesktopUI) renderLogsEmptyState(c *ui.Context, st *logsPageState, totalCount int) {
 	if totalCount == 0 {
 		SailEmptyState(
@@ -270,6 +236,7 @@ func (u *DesktopUI) renderLogsTimelinePane(
 	st *logsPageState,
 	filtered []apitypes.Event,
 	activeEvent *apitypes.Event,
+	remote bool,
 ) {
 	visibleCount := len(filtered)
 	if st.timelineLimit <= 0 {
@@ -317,6 +284,13 @@ func (u *DesktopUI) renderLogsTimelinePane(
 							st.timelineLimit += logsDefaultTimelineLimit
 						}
 					})
+				} else if remote && st.remote.hasMore {
+					ui.Row(c).FillWidth().Padding(10, 16).Justify(ui.Center).Children(func() {
+						if SailSmallButton(c.Key("logs-load-older"), i18n.T("policy.load-older")).Disabled(st.remote.loading).Clicked() {
+							filter, _ := logsServerFilter(st)
+							u.fetchLogsPage(st, filter, st.remote.key, true)
+						}
+					})
 				}
 			})
 	})
@@ -348,13 +322,15 @@ func renderLogsTimelineRow(c *ui.Context, st *logsPageState, p logsTimelineRowPr
 		// Anchor 1 & 3: Status dot + quiet kind (+ Error badge if error) on left; latency + time on right.
 		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Row(c).Gap(6).AlignItems(ui.Center).MinWidth(0).Children(func() {
-				SailStatusDot(c, logsStatusDotColor(ev.Status))
-				ui.Text(c, logsKindBadgeLabel(ev.Kind)).
+				SailStatusDot(c, logsRowDotColor(ev))
+				ui.Text(c, logsRowKindLabel(ev)).
 					Font("monospace").
 					FontSize(11.5).
 					TextColor(SailInkMuted).
 					SingleLine()
-				if logsIsErrorStatus(ev.Status) {
+				if ev.Decision == "deny" || ev.Decision == "approve" {
+					policyEffectBadge(c, ev.Decision)
+				} else if logsIsErrorStatus(ev.Status) {
 					SailBadge(c, i18n.T("ops.status-error"), ToneDanger)
 				}
 			})
@@ -417,6 +393,7 @@ func (u *DesktopUI) renderLogsInspectorPane(
 	).Children(func() {
 		u.renderLogsInspectorHeader(c, ev, parsed, toolByID)
 		renderLogsInspectorMetrics(c, ev, parsed)
+		renderLogsInspectorAuditCard(c, ev)
 		renderLogsInspectorMetaCard(c, parsed)
 
 		if sc := parsed.Scope; sc != nil {
@@ -711,52 +688,6 @@ func logsMetricTile(c *ui.Context, label, value, sub string, mono bool) {
 		})
 }
 
-func logsMatchesFilters(ev apitypes.Event, st *logsPageState) bool {
-	switch st.kindIdx {
-	case 1:
-		if ev.Kind != "discover" {
-			return false
-		}
-	case 2:
-		if ev.Kind != "invoke" {
-			return false
-		}
-	case 3:
-		if ev.Kind != "agent" && ev.Kind != "agent_tool" {
-			return false
-		}
-	}
-
-	switch st.statusIdx {
-	case 1: // 成功
-		if logsIsErrorStatus(ev.Status) || logsIsUnmatchedStatus(ev.Status) {
-			return false
-		}
-	case 2: // 未命中
-		if !logsIsUnmatchedStatus(ev.Status) {
-			return false
-		}
-	case 3: // 错误
-		if !logsIsErrorStatus(ev.Status) {
-			return false
-		}
-	}
-
-	q := strings.ToLower(strings.TrimSpace(st.query))
-	if q == "" {
-		return true
-	}
-	haystack := strings.ToLower(strings.Join([]string{
-		ev.ID,
-		ev.Title,
-		ev.Actor,
-		ev.Kind,
-		ev.Status,
-		string(ev.Detail),
-	}, " "))
-	return strings.Contains(haystack, q)
-}
-
 func logsIsErrorStatus(status string) bool {
 	return status == "error" || status == "failed"
 }
@@ -840,6 +771,20 @@ func logsBuildFullEventJSON(ev apitypes.Event, detailAny any) string {
 		"status":      ev.Status,
 		"title":       ev.Title,
 		"duration_ms": ev.DurationMS,
+	}
+	for k, v := range map[string]string{
+		"repo_id":     ev.RepoID,
+		"service_id":  ev.ServiceID,
+		"protocol":    ev.Protocol,
+		"action":      ev.Action,
+		"decision":    ev.Decision,
+		"rule_id":     ev.RuleID,
+		"approval_id": ev.ApprovalID,
+		"skill_id":    ev.SkillID,
+	} {
+		if v != "" {
+			fullEnvelope[k] = v
+		}
 	}
 	if detailAny != nil {
 		fullEnvelope["detail"] = detailAny

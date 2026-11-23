@@ -2,8 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/ui"
 
 	"gatewaylab/internal/apitypes"
 )
@@ -232,21 +238,50 @@ func TestLogsMatchedBoundRepoAndReplayKey(t *testing.T) {
 }
 
 func TestLogsMatchesFilters(t *testing.T) {
-	evDiscoverErr := apitypes.Event{ID: "1", Kind: "discover", Status: "error", Title: "search issues", Actor: "dev"}
-	evAgent := apitypes.Event{ID: "2", Kind: "agent", Status: "selected", Title: "invoke"}
-	evNoMatch := apitypes.Event{ID: "3", Kind: "discover", Status: "no_match", Title: "unknown"}
+	evDeny := apitypes.Event{ID: "1", Kind: "invoke", Protocol: "cli", Decision: "deny", RuleID: "policy:pol-1", ServiceID: "gh", RepoID: "repo-1", Title: "gh pr merge"}
+	evAllow := apitypes.Event{ID: "2", Kind: "invoke", Protocol: "mcp", Decision: "allow", ServiceID: "github", Title: "list_issues"}
+	evApprove := apitypes.Event{ID: "3", Kind: "invoke", Protocol: "http", Decision: "approve", ApprovalID: "apv-7f3a21", ServiceID: "gh", RepoID: "repo-1"}
 
-	if !logsMatchesFilters(evDiscoverErr, &logsPageState{kindIdx: 1, statusIdx: 3, query: "ISSUES"}) {
-		t.Fatal("expected discover error to match filter")
+	cases := []struct {
+		name string
+		ev   apitypes.Event
+		st   logsPageState
+		want bool
+	}{
+		{"protocolAndDecision", evDeny, logsPageState{protocolIdx: 3, decisionIdx: 3}, true},
+		{"protocolMismatch", evDeny, logsPageState{protocolIdx: 1}, false},
+		{"decisionMismatch", evAllow, logsPageState{decisionIdx: 2}, false},
+		{"repoMatch", evApprove, logsPageState{repoKey: "repo-1"}, true},
+		{"repoMismatch", evAllow, logsPageState{repoKey: "repo-1"}, false},
+		// Unbound means RepoID == "", independent of any scope status in Detail.
+		{"unboundMatchesEmptyRepoID", evAllow, logsPageState{repoKey: logsRepoUnbound}, true},
+		{"unboundRejectsBoundRepo", evDeny, logsPageState{repoKey: logsRepoUnbound}, false},
+		{"serviceMatch", evDeny, logsPageState{serviceID: "gh"}, true},
+		{"serviceMismatch", evAllow, logsPageState{serviceID: "gh"}, false},
+		{"searchRuleID", evDeny, logsPageState{query: "POL-1"}, true},
+		{"searchApprovalID", evApprove, logsPageState{query: "apv-7f3a"}, true},
+		{"searchMiss", evAllow, logsPageState{query: "nothing"}, false},
 	}
-	if !logsMatchesFilters(evAgent, &logsPageState{kindIdx: 3, statusIdx: 1}) {
-		t.Fatal("expected agent kind to match kindIdx=3 and statusIdx=1")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := logsMatchesFilters(tc.ev, &tc.st); got != tc.want {
+				t.Fatalf("logsMatchesFilters() = %v, want %v", got, tc.want)
+			}
+		})
 	}
-	if !logsMatchesFilters(evNoMatch, &logsPageState{kindIdx: 1, statusIdx: 2}) {
-		t.Fatal("expected no_match to match statusIdx=2")
+}
+
+func TestLogsServerFilter(t *testing.T) {
+	if _, active := logsServerFilter(&logsPageState{}); active {
+		t.Fatal("empty filters must render Bootstrap.Events without querying")
 	}
-	if logsMatchesFilters(evNoMatch, &logsPageState{statusIdx: 1}) {
-		t.Fatal("unmatched event must not match success filter")
+	f, active := logsServerFilter(&logsPageState{protocolIdx: 3, decisionIdx: 2, repoKey: "repo-1", serviceID: "gh", query: " merge "})
+	if !active || f.Protocol != "cli" || f.Decision != "approve" || f.RepoID != "repo-1" || f.ServiceID != "gh" || f.Query != "merge" || f.Limit != logsQueryPageSize {
+		t.Fatalf("unexpected filter: %+v active=%v", f, active)
+	}
+	f, active = logsServerFilter(&logsPageState{repoKey: logsRepoUnbound})
+	if !active || f.RepoID != "" {
+		t.Fatalf("unbound filter must not be sent as repo_id: %+v active=%v", f, active)
 	}
 }
 
@@ -256,13 +291,13 @@ func TestLogsPrepareEventsViewAndPendingEvent(t *testing.T) {
 		{ID: "e2", Kind: "invoke", Status: "error", Title: "second"},
 		{ID: "e3", Kind: "discover", Status: "failed", Title: "third"},
 	}
-	st := &logsPageState{kindIdx: 1, statusIdx: 1, timelineLimit: 1}
+	st := &logsPageState{protocolIdx: 1, decisionIdx: 1, timelineLimit: 1}
 	logsApplyPendingEvent(events, st, "e3")
 	if st.selectedID != "e3" {
 		t.Fatalf("selectedID = %q, want e3", st.selectedID)
 	}
-	if st.kindIdx != 0 || st.statusIdx != 0 {
-		t.Fatalf("expected incompatible filters to reset, got kind=%d status=%d", st.kindIdx, st.statusIdx)
+	if st.protocolIdx != 0 || st.decisionIdx != 0 {
+		t.Fatalf("expected incompatible filters to reset, got protocol=%d decision=%d", st.protocolIdx, st.decisionIdx)
 	}
 	if st.timelineLimit < 3 {
 		t.Fatalf("expected timelineLimit to expand for e3, got %d", st.timelineLimit)
@@ -280,5 +315,127 @@ func TestLogsPrepareEventsViewAndPendingEvent(t *testing.T) {
 	_, _, fallback := logsPrepareEventsView(events, st)
 	if fallback == nil || fallback.ID != "e1" || st.selectedID != "e1" {
 		t.Fatalf("expected fallback to first event e1, got %+v (selected=%q)", fallback, st.selectedID)
+	}
+}
+
+func waitForUI(t *testing.T, tester *ui.Tester, u *DesktopUI, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		tester.Frame()
+		ok := func() bool {
+			leave := u.enterHeadlessFrame()
+			defer leave()
+			return cond()
+		}()
+		if ok {
+			tester.Frame()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for UI condition")
+		}
+		time.Sleep(2 * time.Millisecond)
+		tester.Advance(10 * time.Millisecond)
+	}
+}
+
+func logsLedgerBootstrap() apitypes.Bootstrap {
+	now := time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC)
+	return apitypes.Bootstrap{
+		Access: apitypes.AccessInfo{Actor: "developer", SecurityMode: apitypes.SecurityModeLocalGuardrail},
+		Registry: apitypes.Registry{Servers: []apitypes.Server{
+			{ID: "gh", Name: "gh CLI", Enabled: true},
+			{ID: "github", Name: "GitHub MCP", Enabled: true},
+		}},
+		Scopes: apitypes.ScopeOverview{Repositories: []apitypes.Repository{{ID: "repo-1", Name: "alpha-repo"}}},
+		Events: []apitypes.Event{
+			{ID: "ev-local-allow", Time: now, Kind: "invoke", Status: "ok", Title: "github.list_issues", Protocol: "mcp", Decision: "allow", ServiceID: "github"},
+			{ID: "ev-local-deny", Time: now.Add(-time.Minute), Kind: "invoke", Status: "denied", Title: "gh pr merge 1", Protocol: "cli", Decision: "deny", ServiceID: "gh", RepoID: "repo-1", RuleID: "policy:pol-1"},
+		},
+	}
+}
+
+func TestLogsUnifiedLedgerQueriesBackend(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		queries []url.Values
+	)
+	boot := logsLedgerBootstrap()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/events/query" {
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		mu.Lock()
+		queries = append(queries, r.URL.Query())
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode(apitypes.EventPage{Items: []apitypes.Event{{
+			ID: "ev-remote-approve", Time: time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC), Kind: "invoke", Status: "pending",
+			Title: "gh pr merge 482", Protocol: "cli", Decision: "approve", ServiceID: "gh", Action: "gh.pr.merge",
+			RuleID: "policy:pol-2", ApprovalID: "apv-7f3a21", RepoID: "repo-1",
+		}}})
+	}))
+	defer srv.Close()
+
+	u := NewDesktopUI(&gatewayRuntime{UIURL: srv.URL, Mode: modeAttached})
+	u.State = &boot
+	u.Loading = false
+	tester := ui.NewTester(func(c *ui.Context) {
+		defer u.enterHeadlessFrame()()
+		u.renderLogs(c)
+	}, 1400, 1200)
+
+	// No filter: Bootstrap.Events render directly, deny gets a red badge.
+	if !tester.HasText("github.list_issues") || !tester.HasText("gh pr merge 1") {
+		t.Fatalf("expected local events without filters: %v", tester.Texts())
+	}
+	mu.Lock()
+	if len(queries) != 0 {
+		t.Fatalf("unfiltered view must not query: %v", queries)
+	}
+	mu.Unlock()
+
+	if err := tester.Click("CLI"); err != nil {
+		t.Fatal(err)
+	}
+	waitForUI(t, tester, u, func() bool { return u.logsState().remote.loaded })
+	if !tester.HasText("gh pr merge 482") || tester.HasText("github.list_issues") {
+		t.Fatalf("filtered view should render backend page: %v", tester.Texts())
+	}
+	mu.Lock()
+	q := queries[len(queries)-1]
+	mu.Unlock()
+	if q.Get("protocol") != "cli" || q.Get("limit") != "200" || q.Has("repo_id") {
+		t.Fatalf("unexpected query: %v", q)
+	}
+
+	// Inspector shows the audit metadata card.
+	for _, want := range []string{"审计元信息", "rule_id", "policy:pol-2", "approval_id", "apv-7f3a21", "action", "gh.pr.merge"} {
+		if !tester.HasText(want) {
+			t.Fatalf("inspector missing %q", want)
+		}
+	}
+}
+
+func TestLogsUnboundFilterAndOfflineFallback(t *testing.T) {
+	boot := logsLedgerBootstrap()
+	// Unreachable backend: filtered views fall back to Bootstrap.Events.
+	u := NewDesktopUI(&gatewayRuntime{UIURL: "http://127.0.0.1:1", Mode: modeAttached})
+	u.State = &boot
+	u.Loading = false
+	st := u.logsState()
+	st.repoLabel = "未绑定仓库"
+	tester := ui.NewTester(func(c *ui.Context) {
+		defer u.enterHeadlessFrame()()
+		u.renderLogs(c)
+	}, 1400, 1200)
+	waitForUI(t, tester, u, func() bool { return !st.remote.loading && st.remote.err != "" })
+	if st.repoKey != logsRepoUnbound {
+		t.Fatalf("repoKey = %q, want unbound sentinel", st.repoKey)
+	}
+	if !tester.HasText("github.list_issues") || tester.HasText("gh pr merge 1") {
+		t.Fatalf("unbound filter must keep only RepoID==\"\" events: %v", tester.Texts())
 	}
 }

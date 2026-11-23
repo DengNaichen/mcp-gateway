@@ -855,3 +855,193 @@ func slicesDeleteObserved(in []apitypes.ObservedRepo, name string) []apitypes.Ob
 	}
 	return out
 }
+
+func policyTestBootstrap(mode string) apitypes.Bootstrap {
+	return apitypes.Bootstrap{
+		MCPURL: "http://127.0.0.1:8788/mcp",
+		Access: apitypes.AccessInfo{Shared: mode == apitypes.SecurityModeSharedBoundary, SecurityMode: mode, Actor: "developer"},
+		Registry: apitypes.Registry{
+			Servers: []apitypes.Server{{ID: "github", Name: "GitHub MCP", Enabled: true}},
+			Tools: []apitypes.Tool{
+				{ID: "github.list_prs", ServerID: "github", Name: "list_prs", Enabled: true, ReadOnly: true, Actors: []string{"*"}},
+				{ID: "github.merge_pr", ServerID: "github", Name: "merge_pr", Enabled: true, Actors: []string{"*"}},
+			},
+		},
+		Scopes: apitypes.ScopeOverview{
+			Repositories: []apitypes.Repository{{ID: "repo-1", Name: "alpha-repo", RootPaths: []string{"/work/alpha"}}},
+			Rules:        []apitypes.ScopeRule{{RepoKey: "*", Grants: []apitypes.ServiceGrant{}}},
+		},
+		Policies: apitypes.PolicyOverview{Rules: []apitypes.PolicyRule{
+			{ID: "pol-repo", Effect: "approve", Enabled: true, RepoKey: "repo-1", ServiceID: "github", Access: "rw", Actor: "alice", Reason: "merge needs review"},
+			{ID: "pol-global", Effect: "deny", Enabled: true, RepoKey: "*", ServiceID: "*", Access: "rw", Reason: "no writes outside repos"},
+		}},
+	}
+}
+
+func TestSortPolicyRulesForDisplayPinsGlobal(t *testing.T) {
+	got := sortPolicyRulesForDisplay([]apitypes.PolicyRule{
+		{ID: "a", RepoKey: "repo-1"}, {ID: "b", RepoKey: "*"}, {ID: "c", RepoKey: "repo-2"}, {ID: "d", RepoKey: "*"},
+	})
+	var ids []string
+	for _, r := range got {
+		ids = append(ids, r.ID)
+	}
+	if strings.Join(ids, ",") != "b,d,a,c" {
+		t.Fatalf("order = %v, want global rules first in stable order", ids)
+	}
+}
+
+func TestBuildPolicyRuleFromDraft(t *testing.T) {
+	boot := policyTestBootstrap(apitypes.SecurityModeSharedBoundary)
+	opts := buildPolicyRuleOptions(&boot)
+	draft := policyRuleDraft{effectIdx: 1, accessIdx: 2, repoLabel: "alpha-repo", serviceLabel: "GitHub MCP", toolIDs: "github.merge_pr, github.merge_pr，github.list_prs", actor: " group:ops ", reason: " review "}
+	rule, err := buildPolicyRuleFromDraft(draft, opts, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule.Effect != "approve" || rule.Access != "rw" || rule.RepoKey != "repo-1" || rule.ServiceID != "github" || !rule.Enabled ||
+		rule.Actor != "group:ops" || rule.Reason != "review" || strings.Join(rule.ToolIDs, ",") != "github.merge_pr,github.list_prs" {
+		t.Fatalf("unexpected shared-mode rule: %+v", rule)
+	}
+	rule, err = buildPolicyRuleFromDraft(draft, opts, true)
+	if err != nil || rule.Actor != "" {
+		t.Fatalf("local guardrail must drop actor: %+v err=%v", rule, err)
+	}
+	if _, err := buildPolicyRuleFromDraft(policyRuleDraft{effectIdx: 5}, opts, false); err == nil {
+		t.Fatal("expected invalid effect index to fail")
+	}
+}
+
+func TestReposPolicyRulesSectionCRUD(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		saved   []apitypes.PolicyRule
+		deleted []string
+	)
+	boot := policyTestBootstrap(apitypes.SecurityModeSharedBoundary)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/bootstrap":
+			_ = json.NewEncoder(w).Encode(boot)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/policies/rules":
+			var rule apitypes.PolicyRule
+			_ = json.Unmarshal(raw, &rule)
+			saved = append(saved, rule)
+			if rule.ID == "" {
+				rule.ID = "pol-new"
+				boot.Policies.Rules = append(boot.Policies.Rules, rule)
+			} else {
+				for i := range boot.Policies.Rules {
+					if boot.Policies.Rules[i].ID == rule.ID {
+						boot.Policies.Rules[i] = rule
+					}
+				}
+			}
+			_ = json.NewEncoder(w).Encode(rule)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/policies/rules/"):
+			id := strings.TrimPrefix(r.URL.Path, "/api/policies/rules/")
+			deleted = append(deleted, id)
+			var kept []apitypes.PolicyRule
+			for _, rule := range boot.Policies.Rules {
+				if rule.ID != id {
+					kept = append(kept, rule)
+				}
+			}
+			boot.Policies.Rules = kept
+			_, _ = w.Write([]byte(`{"deleted":true}`))
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	defer srv.Close()
+
+	uiApp := NewDesktopUI(&gatewayRuntime{UIURL: srv.URL, MCPURL: boot.MCPURL, Mode: modeAttached})
+	mu.Lock()
+	bootCopy := boot
+	mu.Unlock()
+	uiApp.State = &bootCopy
+	uiApp.Loading = false
+	uiApp.ViewMode = ViewRepos
+	tester := ui.NewTester(uiApp.View, 1400, 1400)
+	waitAsyncIdle(t, tester, uiApp)
+
+	if !tester.HasText("额外限制") || !tester.HasText("对未绑定 / 无凭证调用同样生效 · no writes outside repos") {
+		t.Fatalf("missing policy section or global hint: %v", tester.Texts())
+	}
+	globalRect, okG := tester.Find("* · * · rw")
+	repoRect, okR := tester.Find("alpha-repo · GitHub MCP · rw")
+	if !okG || !okR || globalRect.Y >= repoRect.Y {
+		t.Fatalf("global rule must be pinned above repo rule: global=%v(%v) repo=%v(%v)", globalRect, okG, repoRect, okR)
+	}
+	if !tester.HasText("身份 · alice · merge needs review") {
+		t.Fatal("shared mode should show the rule actor")
+	}
+
+	// Create with defaults: deny · * · * · *.
+	if err := tester.Click("新增限制"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if err := tester.Click("保存规则"); err != nil {
+		t.Fatal(err)
+	}
+	waitAsyncIdle(t, tester, uiApp)
+
+	// Toggle the global rule off.
+	if err := tester.Click("启用规则 pol-global"); err != nil {
+		t.Fatal(err)
+	}
+	waitAsyncIdle(t, tester, uiApp)
+
+	// Delete the repo rule through the confirm dialog.
+	if err := tester.Click("删除规则 pol-repo"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if err := tester.Click("删除"); err != nil {
+		t.Fatal(err)
+	}
+	waitAsyncIdle(t, tester, uiApp)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(saved) != 2 {
+		t.Fatalf("saved = %+v, want create + toggle", saved)
+	}
+	if c := saved[0]; c.ID != "" || c.Effect != "deny" || c.RepoKey != "*" || c.ServiceID != "*" || c.Access != "*" || !c.Enabled {
+		t.Fatalf("unexpected created rule: %+v", c)
+	}
+	if tg := saved[1]; tg.ID != "pol-global" || tg.Enabled || tg.Effect != "deny" || tg.Reason != "no writes outside repos" {
+		t.Fatalf("toggle must resend the full rule disabled: %+v", tg)
+	}
+	if len(deleted) != 1 || deleted[0] != "pol-repo" {
+		t.Fatalf("deleted = %v, want [pol-repo]", deleted)
+	}
+}
+
+func TestReposPolicyRulesLocalGuardrailActor(t *testing.T) {
+	boot := policyTestBootstrap(apitypes.SecurityModeLocalGuardrail)
+	uiApp := NewDesktopUI(&gatewayRuntime{UIURL: "http://127.0.0.1:1", Mode: modeAttached})
+	uiApp.State = &boot
+	uiApp.Loading = false
+	uiApp.ViewMode = ViewRepos
+	tester := ui.NewTester(uiApp.View, 1400, 1400)
+	tester.Frame()
+	if !tester.HasText("actor alice（本地模式对所有调用生效） · merge needs review") {
+		t.Fatalf("local mode must grey out the actor: %v", tester.Texts())
+	}
+	if err := tester.Click("新增限制"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if !tester.HasText("本地护栏模式下调用方身份为自述，actor 不参与匹配：规则对所有调用生效。") {
+		t.Fatal("missing local-mode actor hint in the form")
+	}
+	if info, ok := tester.Access("身份"); !ok || !info.Disabled {
+		t.Fatalf("actor input must be disabled in local mode: %+v ok=%v", info, ok)
+	}
+}
