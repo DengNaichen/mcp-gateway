@@ -113,6 +113,7 @@ func (g *server) mcpServer() *mcp.Server {
 	s.AddTool(&mcp.Tool{Name: "invoke_tool", Description: "Execute a registered tool ID returned by discover_tools using arguments matching its input_schema. Authorization, enablement and schema are checked again. Optional fields projects nested response paths.", InputSchema: metaToolSchema(map[string]any{
 		"tool_id":     map[string]any{"type": "string"},
 		"arguments":   map[string]any{"type": "object"},
+		"skill_id":    map[string]any{"type": "string", "description": "Optional caller declaration checked against the skill allowlist"},
 		"approval_id": map[string]any{"type": "string", "description": "Approval ID returned by a previous invocation with the same arguments"},
 		"fields":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		"actor":       map[string]any{"type": "string", "enum": []string{"developer", "observer"}},

@@ -11,8 +11,8 @@ import (
 var ErrInvalidQuery = errors.New("invalid activity query")
 
 type Filter struct {
-	Actor, RepoID, ServiceID, Protocol, Decision, Status, Query, Before string
-	Limit                                                               int
+	Actor, RepoID, ServiceID, Protocol, Decision, Status, Query, Before, Action, SkillID string
+	Limit                                                                                int
 }
 
 type EventPage struct {
@@ -33,7 +33,7 @@ func (s *Service) Query(f Filter) (EventPage, error) {
 	filter := store.ActivityFilter{
 		Actor: f.Actor, RepoID: f.RepoID, ServiceID: f.ServiceID,
 		Protocol: f.Protocol, Decision: f.Decision, Status: f.Status, Query: f.Query,
-		Limit: limit + 1,
+		Action: f.Action, SkillID: f.SkillID, Limit: limit + 1,
 	}
 	if f.Before != "" {
 		stamp, id, compound := strings.Cut(f.Before, "|")

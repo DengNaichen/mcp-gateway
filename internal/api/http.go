@@ -27,6 +27,7 @@ func (g *server) handler() http.Handler {
 	g.registerAccess(mux)
 	g.registerScopes(mux)
 	g.registerPolicies(mux)
+	g.registerSkills(mux)
 	g.registerApprovals(mux)
 	mcpServer := g.mcpServer()
 	mux.Handle("/mcp", g.trackMCP(mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server { return mcpServer }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})))

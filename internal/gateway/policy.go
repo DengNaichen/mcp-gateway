@@ -40,7 +40,11 @@ type PolicyEvalResult struct {
 }
 
 func (g *Gateway) authorize(ctx context.Context, t registry.Tool, actor string) policy.Decision {
-	if scope.HasInternalBypass(ctx) {
+	return g.authorizeWithSkill(ctx, t, actor, "")
+}
+
+func (g *Gateway) authorizeWithSkill(ctx context.Context, t registry.Tool, actor, skillID string) policy.Decision {
+	if skillID == "" && scope.HasInternalBypass(ctx) {
 		return policy.Evaluate(policy.Input{InternalBypass: true}, nil)
 	}
 	principal, _ := access.PrincipalFrom(ctx)
@@ -56,9 +60,13 @@ func (g *Gateway) authorize(ctx context.Context, t registry.Tool, actor string) 
 		ServiceID:       t.ServerID,
 		ToolID:          t.ID,
 		ReadOnly:        t.ReadOnly,
+		SkillID:         skillID,
 	}
 	if !in.IdentityAllowed {
 		in.IdentityReason = "Tool is disabled or outside the caller's permissions"
+	}
+	if in.IdentityAllowed && skillID != "" {
+		in.Skill = g.skillAdmission(skillID)
 	}
 	switch resolved.Mode {
 	case scope.ModeBypass:

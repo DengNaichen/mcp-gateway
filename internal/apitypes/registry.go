@@ -2,22 +2,23 @@ package apitypes
 
 // Server is a registered tool source (PUT /api/servers, POST /api/setup/source).
 type Server struct {
-	ID           string            `json:"id"`
-	Name         string            `json:"name"`
-	Description  string            `json:"description"`
-	Kind         string            `json:"kind"`
-	Endpoint     string            `json:"endpoint"`
-	Headers      map[string]string `json:"headers,omitempty"`
-	Enabled      bool              `json:"enabled"`
-	Demo         bool              `json:"demo,omitempty"`
-	Transport    string            `json:"transport,omitempty"`
-	OAuth        bool              `json:"oauth,omitempty"`
-	Command      string            `json:"command,omitempty"`
-	Args         []string          `json:"args,omitempty"`
-	Env          map[string]string `json:"env,omitempty"`
-	WorkDir      string            `json:"work_dir,omitempty"`
-	RedactFields []string          `json:"redact_fields,omitempty"`
-	RedactEmails bool              `json:"redact_emails,omitempty"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Description   string            `json:"description"`
+	Kind          string            `json:"kind"`
+	Endpoint      string            `json:"endpoint"`
+	Headers       map[string]string `json:"headers,omitempty"`
+	Enabled       bool              `json:"enabled"`
+	Demo          bool              `json:"demo,omitempty"`
+	Transport     string            `json:"transport,omitempty"`
+	OAuth         bool              `json:"oauth,omitempty"`
+	Command       string            `json:"command,omitempty"`
+	CommandSHA256 string            `json:"command_sha256,omitempty"`
+	Args          []string          `json:"args,omitempty"`
+	Env           map[string]string `json:"env,omitempty"`
+	WorkDir       string            `json:"work_dir,omitempty"`
+	RedactFields  []string          `json:"redact_fields,omitempty"`
+	RedactEmails  bool              `json:"redact_emails,omitempty"`
 }
 
 // Tool is a registered tool (PUT /api/tools).

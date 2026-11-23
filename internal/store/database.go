@@ -211,5 +211,19 @@ CREATE INDEX IF NOT EXISTS scope_observations_by_last_seen ON scope_observations
 			return fmt.Errorf("migrate v10: %w", err)
 		}
 	}
+	if version < 11 {
+		if err := RunTx(db, func(tx DBTX) error {
+			_, err := tx.Exec(`
+CREATE TABLE IF NOT EXISTS skills (
+	id TEXT PRIMARY KEY,
+	definition TEXT NOT NULL CHECK(json_valid(definition))
+);
+PRAGMA user_version=11;
+`)
+			return err
+		}); err != nil {
+			return fmt.Errorf("migrate v11: %w", err)
+		}
+	}
 	return nil
 }

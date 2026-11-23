@@ -297,6 +297,12 @@ func (g docGenerator) fields(t reflect.Type, properties map[string]any, required
 		if err != nil {
 			return fmt.Errorf("%s.%s: %w", t.Name(), f.Name, err)
 		}
+		if t == reflect.TypeFor[apitypes.Server]() && name == "kind" {
+			s["enum"] = []string{"http", "mcp", "cli"}
+		}
+		if name == "skill_id" && (t == reflect.TypeFor[apitypes.InvokeRequest]() || t == reflect.TypeFor[apitypes.CLIExecRequest]()) {
+			s["description"] = "Optional caller declaration checked against the skill allowlist."
+		}
 		properties[name] = s
 		if !strings.Contains(opts, "omitempty") {
 			*required = append(*required, name)

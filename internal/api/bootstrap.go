@@ -31,7 +31,13 @@ func (g *server) registerBootstrap(mux *http.ServeMux) {
 			}
 			approvals, pending = mapSlice(rows, wireApproval), count
 		}
+		skills, err := g.gw.Skills()
+		if err != nil {
+			fail(w, err)
+			return
+		}
 		respond(w, 200, apitypes.Bootstrap{
+			Skills:    mapSlice(skills, wireSkill),
 			Approvals: approvals, PendingApprovals: pending,
 			Registry:              wireRegistry(g.registry.Snapshot()),
 			Settings:              apitypes.Settings(settings),

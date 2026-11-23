@@ -36,7 +36,7 @@ func (c *Client) QueryEvents(ctx context.Context, filter apitypes.EventFilter) (
 	for _, field := range []struct{ key, value string }{
 		{"actor", filter.Actor}, {"repo_id", filter.RepoID}, {"service_id", filter.ServiceID},
 		{"protocol", filter.Protocol}, {"decision", filter.Decision}, {"status", filter.Status},
-		{"q", filter.Query}, {"before", filter.Before},
+		{"q", filter.Query}, {"before", filter.Before}, {"action", filter.Action}, {"skill_id", filter.SkillID},
 	} {
 		if field.value != "" {
 			query.Set(field.key, field.value)

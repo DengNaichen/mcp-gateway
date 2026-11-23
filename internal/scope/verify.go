@@ -255,6 +255,8 @@ func restAllowedOps(op string) []string {
 	switch op {
 	case "discover_tools", "discover":
 		return []string{"discover_tools", "discover"}
+	case "cli_exec":
+		return []string{"cli_exec"}
 	case "invoke_tool", "invoke":
 		return []string{"invoke_tool", "invoke"}
 	case "get_tool_schema", "schema":

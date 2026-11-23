@@ -778,8 +778,8 @@ func TestEmbeddedAssetsHaveNoDeadFilesAndTemplatesRender(t *testing.T) {
 }
 
 func TestWorkspaceAndClientConfigHostParity(t *testing.T) {
-	if !slices.Equal(clientconfig.ClientIDs(), workspace.KnownAgents) {
-		t.Fatalf("host catalog IDs mismatch: clientconfig=%v workspace=%v", clientconfig.ClientIDs(), workspace.KnownAgents)
+	if !slices.Equal(clientconfig.ClientIDs(), workspace.HookAgents) {
+		t.Fatalf("host catalog IDs mismatch: clientconfig=%v workspace=%v", clientconfig.ClientIDs(), workspace.HookAgents)
 	}
 	home := t.TempDir()
 	env := map[string]string{

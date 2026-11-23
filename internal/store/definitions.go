@@ -21,6 +21,7 @@ type Definitions[T any] struct {
 
 func ModelProfiles[T any](db DBTX) Definitions[T] { return Definitions[T]{db, "model_profiles"} }
 func PolicyRules[T any](db DBTX) Definitions[T]   { return Definitions[T]{db, "policy_rules"} }
+func Skills[T any](db DBTX) Definitions[T]        { return Definitions[T]{db, "skills"} }
 func Repositories[T any](db DBTX) Definitions[T]  { return Definitions[T]{db, "repositories"} }
 func MaintenanceSources[T any](db DBTX) Definitions[T] {
 	return Definitions[T]{db, "maintenance_sources"}
@@ -41,6 +42,16 @@ func marshalDefinition[T any](value T) (string, error) {
 func (r Definitions[T]) List() ([]T, error) {
 	return listDefinitions[T](r.db, definitionLabels(r.table), "SELECT definition FROM "+r.table+" ORDER BY rowid")
 }
+func (r Definitions[T]) Get(id string) (T, error) {
+	var value T
+	var raw string
+	if err := r.db.QueryRow("SELECT definition FROM "+r.table+" WHERE id=?", id).Scan(&raw); err != nil {
+		return value, wrapNotFound(err)
+	}
+	err := json.Unmarshal([]byte(raw), &value)
+	return value, err
+}
+
 func (r Definitions[T]) Put(id string, value T) error {
 	raw, err := marshalDefinition(value)
 	if err != nil {
@@ -223,6 +234,8 @@ func definitionLabels(table string) readLabels {
 		return readLabels{query: "query model profiles", scan: "read model profile", decode: "decode model profile"}
 	case "policy_rules":
 		return readLabels{query: "query policy rules", scan: "read policy rule", decode: "decode policy rule", iterate: "iterate policy rules"}
+	case "skills":
+		return readLabels{query: "query skills", decode: "decode skill"}
 	case "repositories":
 		return readLabels{query: "query repositories", decode: "decode repository"}
 	case "maintenance_sources":

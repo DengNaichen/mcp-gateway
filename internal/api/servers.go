@@ -13,11 +13,12 @@ func (g *server) registerServers(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		if err := g.gw.SaveServer(domainServer(in)); err != nil {
+		saved, err := g.gw.SaveServerDefinition(domainServer(in))
+		if err != nil {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, in)
+		respond(w, 200, wireServer(saved))
 	})
 	mux.HandleFunc("GET /api/servers/{id}/credentials", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")

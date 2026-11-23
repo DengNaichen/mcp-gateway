@@ -166,11 +166,22 @@ func parseAPIError(resp *http.Response, respBytes []byte) *APIError {
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, body any, out any) error {
+	return c.doJSONWithScope(ctx, method, path, body, out, nil)
+}
+
+func (c *Client) doJSONWithScope(ctx context.Context, method, path string, body any, out any, signScope func([]byte) (string, error)) error {
 	var bodyReader io.Reader
+	var scopeToken string
 	if body != nil {
 		raw, err := json.Marshal(body)
 		if err != nil {
 			return fmt.Errorf("encode request: %w", err)
+		}
+		if signScope != nil {
+			scopeToken, err = signScope(raw)
+			if err != nil {
+				return err
+			}
 		}
 		bodyReader = bytes.NewReader(raw)
 	}
@@ -180,6 +191,10 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+
+	if scopeToken != "" {
+		req.Header.Set("X-Gateway-Scope", scopeToken)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

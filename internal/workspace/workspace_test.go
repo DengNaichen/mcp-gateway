@@ -395,9 +395,9 @@ func TestScopeKeyTokensAndChannelContextFields(t *testing.T) {
 	}
 }
 
-func TestBuildSnippetAllAgents(t *testing.T) {
+func TestBuildSnippetAllHookAgents(t *testing.T) {
 	home := t.TempDir()
-	for _, agent := range KnownAgents {
+	for _, agent := range HookAgents {
 		spec, err := BuildSnippet(SnippetOptions{
 			Agent:    agent,
 			Endpoint: "http://127.0.0.1:8789/mcp",

@@ -233,17 +233,35 @@ func (m *Maintainer) SaveSource(s MaintenanceSource) error {
 	if i < 0 || reg.Servers[i].Demo {
 		return invalid("请选择已接入的非演示服务")
 	}
-	if (s.Format == "openapi" && reg.Servers[i].Kind != "http") || (s.Format == "native" && reg.Servers[i].Kind != "mcp") {
-		return invalid("OpenAPI 对应 HTTP 服务，native 对应原生 MCP 服务")
-	}
-	if reg.Servers[i].Kind != "mcp" && len(s.Files)+len(s.URLs) == 0 && s.Repository == nil {
-		return invalid("请指定至少一个参考文件或文档 URL")
+	if err := checkMaintenanceProtocol(reg.Servers[i], s); err != nil {
+		return err
 	}
 	s.NextRunAt = time.Now().Add(time.Duration(s.IntervalMinutes) * time.Minute)
 	if err := m.saveSource(s); err != nil {
 		return err
 	}
 	m.signal()
+	return nil
+}
+
+func checkMaintenanceProtocol(server Server, s MaintenanceSource) error {
+	switch server.Kind {
+	case "mcp":
+		if s.Format == "openapi" {
+			return invalid("OpenAPI 对应 HTTP 服务")
+		}
+	case "http":
+		if s.Format == "native" {
+			return invalid("native 对应原生 MCP 服务")
+		}
+		if len(s.Files)+len(s.URLs) == 0 && s.Repository == nil {
+			return invalid("请指定至少一个参考文件或文档 URL")
+		}
+	case "cli":
+		return invalid("受控 CLI 工具由网关维护")
+	default:
+		return invalid("未知服务协议")
+	}
 	return nil
 }
 
@@ -320,6 +338,9 @@ func (m *Maintainer) makeRun(id string, force bool) (MaintenanceRun, error) {
 	i := slices.IndexFunc(reg.Servers, func(v Server) bool { return v.ID == id })
 	if i < 0 {
 		return MaintenanceRun{}, invalid("服务不存在")
+	}
+	if err := checkMaintenanceProtocol(reg.Servers[i], s); err != nil {
+		return MaintenanceRun{}, err
 	}
 	before := serverTools(reg, id)
 	r := MaintenanceRun{ID: newID(), ServerID: id, Source: s, Server: reg.Servers[i], Before: before, Baseline: catalogDigest(reg.Servers[i], before), Status: "queued", Stage: "等待检查", CreatedAt: time.Now(), Events: []string{}, Force: force}

@@ -28,10 +28,10 @@ type ActivityRow struct {
 }
 
 type ActivityFilter struct {
-	Actor, RepoID, ServiceID, Protocol, Decision, Status, Query string
-	Before                                                      *time.Time
-	BeforeID                                                    string
-	Limit                                                       int
+	Actor, RepoID, ServiceID, Protocol, Decision, Status, Query, Action, SkillID string
+	Before                                                                       *time.Time
+	BeforeID                                                                     string
+	Limit                                                                        int
 }
 
 type ActivityRepository struct{ db DBTX }
@@ -67,6 +67,7 @@ func (r ActivityRepository) Find(f ActivityFilter) ([]ActivityRow, error) {
 	for _, field := range []struct{ column, value string }{
 		{"actor", f.Actor}, {"repo_id", f.RepoID}, {"service_id", f.ServiceID},
 		{"protocol", f.Protocol}, {"decision", f.Decision}, {"status", f.Status},
+		{"action", f.Action}, {"skill_id", f.SkillID},
 	} {
 		if field.value != "" {
 			clauses = append(clauses, field.column+" = ?")

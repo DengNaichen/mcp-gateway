@@ -150,6 +150,17 @@ linters:
               desc: "store may only import registry"
             - pkg: gatewaylab/internal/model
               desc: "store may only import registry"
+        cliexec-layer:
+          files: ["**/internal/cliexec/**"]
+          list-mode: lax
+          allow:
+            - gatewaylab/internal/registry
+            - gatewaylab/internal/procutil
+            - gatewaylab/internal/fault
+            - gatewaylab/internal/input
+          deny:
+            - pkg: gatewaylab/internal
+              desc: "cliexec uses injected credentials and must stay independent of gateway and storage"
         policy-pure:
           files: ["**/internal/policy/**"]
           list-mode: strict

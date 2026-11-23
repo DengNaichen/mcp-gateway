@@ -262,10 +262,15 @@ func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir
 	var result any
 	var callErr error
 	target := contractInvocation{Server: server, Tool: tool, Dir: dir, Arguments: arguments, Case: c}
-	if server.Kind == "mcp" {
+	switch server.Kind {
+	case "mcp":
 		result, callErr, err = m.runMCPContract(ctx, target)
-	} else {
+	case "http":
 		result, callErr, err = m.runHTTPContract(ctx, target)
+	case "cli":
+		return invalid("受控 CLI 工具由网关维护")
+	default:
+		return invalid("未知服务协议")
 	}
 	if err != nil {
 		return err

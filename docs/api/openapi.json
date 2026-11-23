@@ -352,6 +352,15 @@
           },
           "setup": {
             "$ref": "#/components/schemas/SetupStatus"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/Skill"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
@@ -367,7 +376,50 @@
           "registry",
           "scopes",
           "settings",
-          "setup"
+          "setup",
+          "skills"
+        ],
+        "type": "object"
+      },
+      "CLIExecRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "approval_id": {
+            "type": "string"
+          },
+          "argv": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "service_id": {
+            "type": "string"
+          },
+          "sim_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SimScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skill_id": {
+            "description": "Optional caller declaration checked against the skill allowlist.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "argv",
+          "service_id"
         ],
         "type": "object"
       },
@@ -1226,6 +1278,10 @@
                 "type": "null"
               }
             ]
+          },
+          "skill_id": {
+            "description": "Optional caller declaration checked against the skill allowlist.",
+            "type": "string"
           },
           "tool_id": {
             "type": "string"
@@ -2759,6 +2815,9 @@
           "command": {
             "type": "string"
           },
+          "command_sha256": {
+            "type": "string"
+          },
           "demo": {
             "type": "boolean"
           },
@@ -2793,6 +2852,11 @@
             "type": "string"
           },
           "kind": {
+            "enum": [
+              "http",
+              "mcp",
+              "cli"
+            ],
             "type": "string"
           },
           "name": {
@@ -3036,6 +3100,49 @@
         },
         "required": [
           "repo_key"
+        ],
+        "type": "object"
+      },
+      "Skill": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_repos": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "allowed_services": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "allowed_repos",
+          "allowed_services",
+          "enabled",
+          "id",
+          "updated_at"
         ],
         "type": "object"
       },
@@ -3749,6 +3856,85 @@
         ]
       }
     },
+    "/api/cli/exec": {
+      "post": {
+        "description": "Invocation route. Shared mode requires an authenticated principal. When repository scope is enforced, callers need a signed scope token or an administrator's explicit sim_scope.",
+        "operationId": "post_cli_exec",
+        "parameters": [
+          {
+            "description": "Agent key identifying the calling client",
+            "in": "query",
+            "name": "agent",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Signed repository scope token issued by the scope hook",
+            "in": "header",
+            "name": "X-Gateway-Scope",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CLIExecRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvokeResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvokeResult"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          },
+          {}
+        ],
+        "summary": "Invoke a controlled GitHub CLI tool",
+        "tags": [
+          "cli"
+        ]
+      }
+    },
     "/api/discover": {
       "post": {
         "description": "Invocation route. Shared mode requires an authenticated principal. When repository scope is enforced, callers need a signed scope token or an administrator's explicit sim_scope.",
@@ -3896,6 +4082,22 @@
             "description": "Service protocol",
             "in": "query",
             "name": "protocol",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact tool action",
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Declared skill ID",
+            "in": "query",
+            "name": "skill_id",
             "schema": {
               "type": "string"
             }
@@ -5846,6 +6048,126 @@
         "summary": "Onboarding progress",
         "tags": [
           "setup"
+        ]
+      }
+    },
+    "/api/skills": {
+      "get": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "get_skills",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Skill"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List caller-declared skill admission rules",
+        "tags": [
+          "skills"
+        ]
+      },
+      "put": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "put_skills",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Skill"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Skill"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Save a caller-declared skill allowlist",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/{id}": {
+      "delete": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "delete_skills_by_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete a caller-declared skill allowlist",
+        "tags": [
+          "skills"
         ]
       }
     },

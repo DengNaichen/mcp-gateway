@@ -149,7 +149,7 @@ func (s *Service) Record(kind, actor, status, title string, started time.Time, d
 
 // AuditMeta carries the request and decision associated with an activity row.
 type AuditMeta struct {
-	RepoID, ServiceID, Protocol, Action, Decision, RuleID, ApprovalID string
+	RepoID, ServiceID, Protocol, Action, Decision, RuleID, ApprovalID, SkillID string
 }
 
 func (s *Service) RecordAudit(kind, actor, status, title string, started time.Time, meta AuditMeta, detail any) {
@@ -172,7 +172,7 @@ func (s *Service) RecordAudit(kind, actor, status, title string, started time.Ti
 	now := time.Now().UTC()
 	e := Event{ID: uuid.NewString(), Time: now, Kind: kind, Actor: actor, Status: status, Title: title, DurationMS: time.Since(started).Milliseconds(), Detail: b,
 		RepoID: meta.RepoID, ServiceID: meta.ServiceID, Protocol: meta.Protocol,
-		Action: meta.Action, Decision: meta.Decision, RuleID: meta.RuleID, ApprovalID: meta.ApprovalID,
+		Action: meta.Action, Decision: meta.Decision, RuleID: meta.RuleID, ApprovalID: meta.ApprovalID, SkillID: meta.SkillID,
 	}
 	cutoff := now.Add(-pulseWindow - time.Duration(PulseBucketMinutes)*time.Minute)
 	s.mu.Lock()

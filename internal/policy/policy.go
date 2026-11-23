@@ -37,6 +37,12 @@ type BaselineGrant struct {
 	ToolIDs  []string
 }
 
+type SkillAdmission struct {
+	Enabled         bool
+	AllowedRepos    []string
+	AllowedServices []string
+}
+
 type Input struct {
 	IdentityAllowed bool
 	IdentityReason  string
@@ -51,6 +57,8 @@ type Input struct {
 	ServiceID       string
 	ToolID          string
 	ReadOnly        bool
+	SkillID         string
+	Skill           SkillAdmission
 }
 
 type Step struct {
@@ -71,7 +79,11 @@ type Decision struct {
 // Evaluate stops at the first terminal stage. Within the same effect the
 // first matching rule wins, so the caller supplies rules in stable order.
 func Evaluate(in Input, rules []Rule) Decision {
-	trace := make([]Step, 0, 6)
+	stages := 6
+	if in.SkillID != "" {
+		stages++
+	}
+	trace := make([]Step, 0, stages)
 	if in.InternalBypass {
 		return finish(trace, "internal", EffectAllow, "internal", "Internal request")
 	}
@@ -80,6 +92,13 @@ func Evaluate(in Input, rules []Rule) Decision {
 		return finish(trace, "identity", EffectDeny, "identity", in.IdentityReason)
 	}
 	trace = append(trace, Step{Stage: "identity", Matched: true, Effect: EffectAllow, RuleID: "identity", Reason: in.IdentityReason})
+	if in.SkillID != "" {
+		ruleID := "skill:" + in.SkillID
+		if !in.Skill.Enabled || !admits(in.Skill.AllowedRepos, in.RepoID) || !admits(in.Skill.AllowedServices, in.ServiceID) {
+			return finish(trace, "skill", EffectDeny, ruleID, "Declared skill is not admitted for this repository and service")
+		}
+		trace = append(trace, Step{Stage: "skill", Matched: true, Effect: EffectAllow, RuleID: ruleID})
+	}
 	if rule := firstMatch(in, rules, EffectDeny); rule != nil {
 		return finish(trace, "deny", EffectDeny, "policy:"+rule.ID, rule.Reason)
 	}
@@ -151,4 +170,8 @@ func baselineAllows(in Input) bool {
 		}
 	}
 	return false
+}
+
+func admits(ids []string, id string) bool {
+	return slices.Contains(ids, "*") || id != "" && slices.Contains(ids, id)
 }

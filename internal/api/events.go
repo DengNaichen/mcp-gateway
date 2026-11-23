@@ -19,7 +19,7 @@ func (g *server) registerEvents(mux *http.ServeMux) {
 		filter := activity.Filter{
 			Actor: q.Get("actor"), RepoID: q.Get("repo_id"), ServiceID: q.Get("service_id"),
 			Protocol: q.Get("protocol"), Decision: q.Get("decision"), Status: q.Get("status"),
-			Query: q.Get("q"), Before: q.Get("before"),
+			Query: q.Get("q"), Before: q.Get("before"), Action: q.Get("action"), SkillID: q.Get("skill_id"),
 		}
 		if q.Has("limit") {
 			limit, err := strconv.Atoi(q.Get("limit"))

@@ -8,11 +8,17 @@ import (
 )
 
 func maintenanceFormat(s MaintenanceSource, server Server) string {
+	switch server.Kind {
+	case "mcp":
+		if s.Format == "" && s.Instructions == "" {
+			return "native"
+		}
+	case "http":
+	default:
+		return ""
+	}
 	if s.Format != "" {
 		return s.Format
-	}
-	if server.Kind == "mcp" && s.Instructions == "" {
-		return "native"
 	}
 	return "pi"
 }

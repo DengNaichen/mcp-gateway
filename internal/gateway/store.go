@@ -112,7 +112,7 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, Services, erro
 	if err != nil {
 		return nil, Services{}, err
 	}
-	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupServerEnv, OpenBrowser: opts.OpenBrowser, LoadOAuth: g.credentials.Get, SaveOAuth: func(key, value string) error {
+	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupServerEnv, LookupSecret: g.lookupServerSecretOnly, OpenBrowser: opts.OpenBrowser, LoadOAuth: g.credentials.Get, SaveOAuth: func(key, value string) error {
 		return g.credentials.Update(map[string]string{key: value}, nil)
 	}})
 	if err := g.loadRegistry(); err != nil {
@@ -180,9 +180,10 @@ func openCredentialStore(dir string, opts Options) (*secrets.Store, error) {
 func relocateDemoEndpoints(reg registry.Registry, baseURL string) registry.Registry {
 	for i := range reg.Servers {
 		if reg.Servers[i].Demo {
-			if reg.Servers[i].Kind == "mcp" {
+			switch reg.Servers[i].Kind {
+			case "mcp":
 				reg.Servers[i].Endpoint = baseURL + "/demo/mcp"
-			} else {
+			case "http":
 				reg.Servers[i].Endpoint = baseURL + "/demo/api"
 			}
 		}

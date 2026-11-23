@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -96,7 +97,7 @@ func (g *Gateway) DecideApproval(ctx context.Context, id, decision, note string)
 	return a.Approval, nil
 }
 
-func approvalHash(req InvokeRequest, ev scope.EventScope, t registry.Tool, protocol string) (string, error) {
+func approvalHash(req InvokeRequest, ev scope.EventScope, t registry.Tool, s registry.Server) (string, error) {
 	args, err := workspace.CanonicalArgsHash(req.Arguments, "")
 	if err != nil {
 		return "", err
@@ -114,7 +115,14 @@ func approvalHash(req InvokeRequest, ev scope.EventScope, t registry.Tool, proto
 			anchor = ev.Root
 		}
 	}
-	b, err := json.Marshal([]string{req.Actor, ev.Agent, ev.RepoID, anchor, protocol, t.ServerID, t.ID, fmt.Sprintf("%x", sha256.Sum256(schema)), args})
+	parts := []string{req.Actor, ev.Agent, ev.RepoID, anchor, s.Kind, t.ServerID, t.ID, fmt.Sprintf("%x", sha256.Sum256(schema)), args}
+	if s.Kind == "cli" {
+		parts = append(parts, s.CommandSHA256)
+	}
+	if req.SkillID != "" {
+		parts = append(parts, req.SkillID)
+	}
+	b, err := json.Marshal(parts)
 	if err != nil {
 		return "", err
 	}
@@ -164,7 +172,7 @@ func (g *Gateway) requestApproval(ctx context.Context, req InvokeRequest, t regi
 	return approvalChallenge(a, "approval_required", now)
 }
 
-func (g *Gateway) retryApproval(ctx context.Context, req InvokeRequest, t registry.Tool, hash string, audit *activity.AuditMeta) (InvokeResult, string, error) {
+func (g *Gateway) retryApproval(ctx context.Context, req InvokeRequest, t registry.Tool, server registry.Server, hash string, audit *activity.AuditMeta) (InvokeResult, string, error) {
 	// Order rule updates against the final policy evaluation and lease claim.
 	g.publicationConfigMu.RLock()
 	defer g.publicationConfigMu.RUnlock()
@@ -187,7 +195,19 @@ func (g *Gateway) retryApproval(ctx context.Context, req InvokeRequest, t regist
 	default:
 		return InvokeResult{}, "", invalidApproval()
 	}
-	d := g.authorize(ctx, t, req.Actor)
+	if server.Kind == "cli" {
+		current := g.registry.Snapshot()
+		if !slices.ContainsFunc(current.Servers, func(s registry.Server) bool {
+			return s.ID == server.ID && s.Kind == "cli" && s.CommandSHA256 == server.CommandSHA256
+		}) {
+			return InvokeResult{}, "", invalidApproval()
+		}
+		t.Enabled = slices.ContainsFunc(current.Servers, func(s registry.Server) bool { return s.ID == server.ID && s.Enabled }) &&
+			slices.ContainsFunc(current.Tools, func(candidate registry.Tool) bool {
+				return candidate.ID == t.ID && candidate.ServerID == t.ServerID && candidate.Enabled
+			})
+	}
+	d := g.authorizeWithSkill(ctx, t, req.Actor, req.SkillID)
 	audit.Decision, audit.RuleID = d.Effect, d.RuleID
 	if d.Effect == policy.EffectDeny || !t.Enabled {
 		if err := g.storage.RevokeApproved(req.ApprovalID, hash, req.Actor, time.Now()); err != nil {

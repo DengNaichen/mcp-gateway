@@ -34,7 +34,11 @@ var (
 	ErrTokenInvalid    = errors.New("scope token is invalid")
 )
 
-var KnownAgents = []string{"codex", "claude", "cursor", "opencode", "pi", "antigravity"}
+// HookAgents are clients with an installable gateway scope hook.
+var HookAgents = []string{"codex", "claude", "cursor", "opencode", "pi", "antigravity"}
+
+// KnownAgents also includes clients that sign scope without an installed hook.
+var KnownAgents = append(slices.Clone(HookAgents), "gatewayctl")
 
 func IsKnownAgent(agent string) bool {
 	return slices.Contains(KnownAgents, agent)

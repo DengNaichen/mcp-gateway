@@ -48,7 +48,12 @@ var stdioOAuthPackageAliases = map[string][]string{
 // MatchOAuthRemote returns the curated OAuth remote target if s is a stdio MCP
 // service that corresponds to an official OAuth-capable market service.
 func MatchOAuthRemote(s registry.Server) *OAuthRemoteTarget {
-	if s.Demo || s.Kind != "mcp" || s.Transport != "stdio" {
+	switch s.Kind {
+	case "mcp":
+	default:
+		return nil
+	}
+	if s.Demo || s.Transport != "stdio" {
 		return nil
 	}
 	cmdAndArgs := strings.ToLower(strings.TrimSpace(s.Command + " " + strings.Join(s.Args, " ")))

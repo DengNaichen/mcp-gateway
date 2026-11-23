@@ -120,7 +120,7 @@ func domainDiscoverRequest(in apitypes.DiscoverRequest) gateway.DiscoverRequest 
 }
 
 func domainInvokeRequest(in apitypes.InvokeRequest) gateway.InvokeRequest {
-	return gateway.InvokeRequest{ApprovalID: in.ApprovalID, ToolID: in.ToolID, Arguments: in.Arguments, Fields: in.Fields, Actor: in.Actor}
+	return gateway.InvokeRequest{SkillID: in.SkillID, ApprovalID: in.ApprovalID, ToolID: in.ToolID, Arguments: in.Arguments, Fields: in.Fields, Actor: in.Actor}
 }
 
 func wireSelection(s gateway.Selection) apitypes.Selection {

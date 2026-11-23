@@ -38,7 +38,7 @@ func runWithArgs(rawArgs []string, stdout io.Writer) error {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return fmt.Errorf("usage: gatewayctl [flags] list | search <intent> | schema <tool_id> | call <tool_id> | plugin <action>")
+		return fmt.Errorf("usage: gatewayctl [flags] list | search <intent> | schema <tool_id> | call <tool_id> | exec <gh arguments> | plugin <action>")
 	}
 	cmdArgs := fs.Args()
 	if cmdArgs[0] == "plugin" {
@@ -69,6 +69,8 @@ func runGatewayCommand(cmdArgs []string, opts gatewayCommandOptions, stdout io.W
 	method, path := http.MethodGet, "/api/catalog?actor="+url.QueryEscape(opts.Actor)+"&include_demo="+fmt.Sprint(opts.IncludeDemo)
 	var payload any
 	switch cmdArgs[0] {
+	case "exec":
+		return runExec(cmdArgs[1:], opts, stdout)
 	case "list":
 	case "search":
 		if len(cmdArgs) < 2 {
@@ -377,6 +379,9 @@ func writePrettyRawJSON(stdout io.Writer, raw []byte) error {
 
 func main() {
 	if err := run(); err != nil {
+		if errors.Is(err, errApprovalRequired) {
+			os.Exit(approvalExitCode)
+		}
 		if _, writeErr := fmt.Fprintln(os.Stderr, err); writeErr != nil {
 			os.Exit(2)
 		}

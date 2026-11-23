@@ -54,12 +54,24 @@ type DiscoverSummaryResult struct {
 
 // InvokeRequest is sent to POST /api/invoke.
 type InvokeRequest struct {
+	SkillID    string         `json:"skill_id,omitempty"`
 	ApprovalID string         `json:"approval_id,omitempty"`
 	ToolID     string         `json:"tool_id"`
 	Arguments  map[string]any `json:"arguments"`
 	Fields     []string       `json:"fields,omitempty"`
 	Actor      string         `json:"actor,omitempty"`
 	SimScope   *SimScope      `json:"sim_scope,omitempty"`
+}
+
+// CLIExecRequest is sent to POST /api/cli/exec. Argv begins with the gh
+// subcommand. SkillID is a caller declaration subject to the skill allowlist.
+type CLIExecRequest struct {
+	ServiceID  string    `json:"service_id"`
+	Argv       []string  `json:"argv"`
+	SkillID    string    `json:"skill_id,omitempty"`
+	ApprovalID string    `json:"approval_id,omitempty"`
+	SimScope   *SimScope `json:"sim_scope,omitempty"`
+	Actor      string    `json:"actor,omitempty"`
 }
 
 // ApprovalChallenge describes how to retry the invocation. ExpiresIn is in seconds.

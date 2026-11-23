@@ -108,3 +108,40 @@ func BenchmarkEvaluate(b *testing.B) {
 		Evaluate(in, rules)
 	}
 }
+
+func TestSkillAdmissionPrecedence(t *testing.T) {
+	base := Input{IdentityAllowed: true, RepoID: "repo", ServiceID: "gh", SkillID: "review",
+		ScopeMode: ScopeEnforced, BaselineRuleKey: "repo",
+		BaselineGrants: []BaselineGrant{{ServerID: "gh", Access: "ro"}}, ReadOnly: true}
+	for _, tc := range []struct {
+		name, rule string
+		change     func(*Input)
+	}{
+		{"unknown", "skill:review", func(*Input) {}},
+		{"disabled", "skill:review", func(in *Input) { in.Skill = SkillAdmission{false, []string{"*"}, []string{"*"}} }},
+		{"identity first", "identity", func(in *Input) { in.IdentityAllowed = false }},
+		{"wrong repo", "skill:review", func(in *Input) { in.Skill = SkillAdmission{true, []string{"other"}, []string{"*"}} }},
+		{"wrong service", "skill:review", func(in *Input) { in.Skill = SkillAdmission{true, []string{"*"}, []string{"other"}} }},
+		{"unscoped repo is not an explicit ID", "skill:review", func(in *Input) { in.RepoID = ""; in.Skill = SkillAdmission{true, []string{"repo"}, []string{"*"}} }},
+		{"baseline still applies", "scope:repo", func(in *Input) {
+			in.BaselineGrants = nil
+			in.Skill = SkillAdmission{true, []string{"*"}, []string{"*"}}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := base
+			tc.change(&in)
+			if got := Evaluate(in, nil); got.Effect != EffectDeny || got.RuleID != tc.rule {
+				t.Fatalf("decision = %+v, want %s", got, tc.rule)
+			}
+		})
+	}
+	base.Skill = SkillAdmission{true, []string{"repo"}, []string{"gh"}}
+	if got := Evaluate(base, nil); got.Effect != EffectAllow {
+		t.Fatalf("admitted skill was denied: %+v", got)
+	}
+	base.SkillID, base.Skill = "", SkillAdmission{}
+	if got := Evaluate(base, nil); got.Effect != EffectAllow {
+		t.Fatalf("ordinary call was denied: %+v", got)
+	}
+}

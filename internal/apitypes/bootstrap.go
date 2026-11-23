@@ -42,8 +42,8 @@ type EventPage struct {
 }
 
 type EventFilter struct {
-	Actor, RepoID, ServiceID, Protocol, Decision, Status, Query, Before string
-	Limit                                                               int
+	Actor, RepoID, ServiceID, Protocol, Decision, Status, Query, Before, Action, SkillID string
+	Limit                                                                                int
 }
 
 // ConnectionCheck is the latest connectivity check of a source or the model
@@ -92,6 +92,7 @@ type PulseBucket struct {
 // Bootstrap is returned by GET /api/bootstrap: everything the control plane
 // needs to render its first screen.
 type Bootstrap struct {
+	Skills                []Skill        `json:"skills"`
 	PendingApprovals      int            `json:"pending_approvals"`
 	Approvals             []Approval     `json:"approvals"`
 	Registry              Registry       `json:"registry"`

@@ -128,9 +128,10 @@ func TestRouteTableMatchesMux(t *testing.T) {
 	}
 }
 
-func TestPolicyAndApprovalRoutesRequireAdmin(t *testing.T) {
+func TestPolicyApprovalAndSkillRoutesRequireAdmin(t *testing.T) {
 	for _, route := range apiRoutes {
-		if (strings.HasPrefix(route.Path, "/api/policies") || strings.HasPrefix(route.Path, "/api/approvals")) && (route.Invocation || route.Authenticated || route.Public) {
+		if (strings.HasPrefix(route.Path, "/api/policies") || strings.HasPrefix(route.Path, "/api/approvals") ||
+			strings.HasPrefix(route.Path, "/api/skills")) && (!route.requiresAdmin() || !route.requiresLocalAdmin()) {
 			t.Errorf("%s %s must be an admin-only route", route.Method, route.Path)
 		}
 	}

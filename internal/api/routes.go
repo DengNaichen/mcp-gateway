@@ -16,6 +16,8 @@ var apiRoutes = []route{
 		{"repo_id", "string", "Repository ID"},
 		{"service_id", "string", "Service ID"},
 		{"protocol", "string", "Service protocol"},
+		{"action", "string", "Exact tool action"},
+		{"skill_id", "string", "Declared skill ID"},
 		{"decision", "string", "Policy effect"},
 		{"status", "string", "Event status"},
 		{"q", "string", "Substring of title, action, or service ID"},
@@ -32,6 +34,10 @@ var apiRoutes = []route{
 	{Method: "DELETE", Path: "/api/policies/rules/{id}", Summary: "Delete a policy rule", Responses: ok(apitypes.Deleted{})},
 	{Method: "POST", Path: "/api/policies/evaluate", Summary: "Simulate a policy decision without executing a tool or recording activity", Request: apitypes.PolicyEvaluateRequest{}, Responses: ok(apitypes.PolicyEvaluateResult{})},
 
+	{Method: "GET", Path: "/api/skills", Summary: "List caller-declared skill admission rules", Responses: ok([]apitypes.Skill{})},
+	{Method: "PUT", Path: "/api/skills", Summary: "Save a caller-declared skill allowlist", Request: apitypes.Skill{}, Responses: ok(apitypes.Skill{})},
+	{Method: "DELETE", Path: "/api/skills/{id}", Summary: "Delete a caller-declared skill allowlist", Responses: ok(apitypes.Deleted{})},
+
 	{Method: "GET", Path: "/api/auth/me", Summary: "The caller's identity", Authenticated: true, Responses: ok(apitypes.AuthMe{})},
 	{Method: "POST", Path: "/api/auth/login", Summary: "Exchange an access token for a session cookie (shared mode)", Public: true, Request: apitypes.LoginRequest{}, Responses: ok(apitypes.LoginResult{})},
 	{Method: "POST", Path: "/api/auth/logout", Summary: "End the session", Authenticated: true, Responses: ok(apitypes.SignedOut{})},
@@ -40,6 +46,7 @@ var apiRoutes = []route{
 	{Method: "GET", Path: "/api/tools/{id}/schema", Summary: "Full definition of one authorized tool", Invocation: true, Query: []query{actorQuery, simScopeQuery}, Responses: ok(apitypes.ToolSchema{})},
 	{Method: "POST", Path: "/api/discover", Summary: "Route an intent to a small set of authorized tools", Invocation: true, Request: apitypes.DiscoverRequest{}, Responses: ok(oneOf{apitypes.DiscoverResult{}, apitypes.DiscoverSummaryResult{}})},
 	{Method: "POST", Path: "/api/invoke", Summary: "Invoke a registered tool", Invocation: true, Request: apitypes.InvokeRequest{}, Responses: map[int]any{200: apitypes.InvokeResult{}, 202: apitypes.InvokeResult{}}},
+	{Method: "POST", Path: "/api/cli/exec", Summary: "Invoke a controlled GitHub CLI tool", Invocation: true, Request: apitypes.CLIExecRequest{}, Responses: map[int]any{200: apitypes.InvokeResult{}, 202: apitypes.InvokeResult{}}},
 
 	{Method: "PUT", Path: "/api/servers", Summary: "Create or replace a tool source", Request: apitypes.Server{}, Responses: ok(apitypes.Server{})},
 	{Method: "POST", Path: "/api/servers/openapi", Summary: "Register an HTTP source and the tools generated from its OpenAPI document", Request: apitypes.ImportOpenAPIRequest{}, Responses: ok(apitypes.ImportOpenAPIResult{})},
