@@ -38,6 +38,9 @@ func TestCLIIsolationApprovalSkillsAndAudit(t *testing.T) {
 	t.Setenv("GIT_CONFIG_VALUE_0", "host-git-config")
 
 	f := newActorFixtureWithOptions(t, false, gateway.Options{LocalAdminToken: adminTestToken})
+	if err := os.Chmod(f.svcs.DataDir, 0700); err != nil {
+		t.Fatal(err)
+	}
 	cwd := t.TempDir()
 	if err := os.Mkdir(filepath.Join(cwd, ".git"), 0700); err != nil {
 		t.Fatal(err)

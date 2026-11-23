@@ -190,7 +190,7 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	var data any
 	switch s.Kind {
 	case "cli":
-		data, err = cliexec.Run(ctx, s, cliAction, req.Arguments, g.lookupServerSecretOnly(s.ID, "GH_TOKEN"))
+		data, err = cliexec.Run(ctx, g.dir, s, cliAction, req.Arguments, g.lookupServerSecretOnly(s.ID, "GH_TOKEN"))
 	case "mcp":
 		data, err = g.upstream.CallMCP(ctx, s, t, req.Arguments)
 	case "http":
