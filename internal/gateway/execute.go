@@ -168,5 +168,9 @@ func invokeAuditError(err error) string {
 			return "Upstream tool call failed"
 		}
 	}
+	var se *scope.Error
+	if errors.As(err, &se) && se.Code != "" {
+		return se.Code
+	}
 	return "Tool call failed"
 }

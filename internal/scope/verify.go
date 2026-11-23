@@ -285,15 +285,20 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 	enforce = g.scope.Enforce
 	g.mu.RUnlock()
 
+	// A valid signature identifies the workspace in observation mode. Only
+	// enforcement or an explicit simulation restricts the baseline grants.
+	mode, status := ModeCompatUnscoped, "observed"
+	if enforce {
+		mode = ModeEnforced
+	}
 	matchedRepo := matchConfiguredRepoByAnchors(repos, string(info.Kind), info.CommonDir, info.Root)
 	if matchedRepo != nil {
 		rule := resolvePrecedenceRule(rules, true, matchedRepo.ID)
-		status := "observed"
 		if enforce {
 			status = "verified"
 		}
 		return ResolvedRequestScope{
-			Mode: ModeEnforced,
+			Mode: mode,
 			Rule: rule,
 			Event: EventScope{
 				Agent:        claims.Agent,
@@ -313,8 +318,11 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 	g.recordObservation(info, claims.Agent, now)
 
 	rule := resolvePrecedenceRule(rules, false, "*")
+	if enforce {
+		status = "unconfigured"
+	}
 	return ResolvedRequestScope{
-		Mode: ModeEnforced,
+		Mode: mode,
 		Rule: rule,
 		Event: EventScope{
 			Agent:        claims.Agent,
@@ -325,7 +333,7 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 			GitCommonDir: info.CommonDir,
 			RemoteHint:   info.RemoteHint,
 			MatchedRule:  rule.RepoKey,
-			Status:       "unconfigured",
+			Status:       status,
 		},
 	}, nil
 }

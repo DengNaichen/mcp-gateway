@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 
 	"gatewaylab/internal/activity"
 	"gatewaylab/internal/registry"
+	"gatewaylab/internal/scope"
 )
 
 func TestInvokeRedactsActiveOAuthTokens(t *testing.T) {
@@ -99,5 +101,40 @@ func TestInvokeRedactsActiveOAuthTokens(t *testing.T) {
 		if (event.Status == "success" || event.Kind == "test") && !strings.Contains(detail, "[redacted]") {
 			t.Fatalf("redaction was not exercised for %s: %s", event.Kind, detail)
 		}
+	}
+}
+
+func TestInvokeAuditPreservesScopeRejectionCodes(t *testing.T) {
+	t.Setenv("GATEWAY_AUTH_FILE", "")
+	g, svcs, err := New(t.TempDir(), "http://localhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = g.Close() })
+	if err := svcs.Scope.SetScopeMode(true); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := g.Invoke(t.Context(), InvokeRequest{ToolID: "blocked"}); err == nil {
+		t.Fatal("invocation without a required scope token succeeded")
+	}
+	// MCP can record a scope error before Invoke is reached.
+	invalid := &scope.Error{Kind: scope.ErrForbidden, Code: "scope_invalid", Message: "internal credential diagnostics"}
+	g.RecordAgentTool("invoke_tool", "developer", time.Now(), fmt.Errorf("MCP scope resolution: %w", invalid))
+
+	page, err := svcs.Activity.Query(activity.Filter{Status: "error"})
+	want := map[string]string{"agent": "scope_invalid", "invoke": "scope_required"}
+	if err != nil || len(page.Items) != len(want) {
+		t.Fatalf("query denied activity: %+v, %v", page, err)
+	}
+	for _, event := range page.Items {
+		code, ok := want[event.Kind]
+		var detail struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal(event.Detail, &detail); err != nil || !ok || detail.Error != code {
+			t.Fatalf("%s audit error = %q, want %q (decode: %v)", event.Kind, detail.Error, code, err)
+		}
+		delete(want, event.Kind)
 	}
 }

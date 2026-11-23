@@ -180,7 +180,7 @@ func TestAuditQueryAuthorizationAndPagination(t *testing.T) {
 	})
 }
 
-func TestRequestBaselineNarrowsSignedAndSimulatedScopeWithGlobalOff(t *testing.T) {
+func TestObservationModeKeepsSignedToolsVisibleAndNarrowsSimulatedScope(t *testing.T) {
 	f := newActorFixture(t, false)
 	ctx := t.Context()
 	cwd := t.TempDir()
@@ -194,41 +194,39 @@ func TestRequestBaselineNarrowsSignedAndSimulatedScopeWithGlobalOff(t *testing.T
 	if f.svcs.Scope.IsEnforced() {
 		t.Fatal("fixture must have global enforcement off")
 	}
-	unscoped := decodeM1Response[apitypes.Catalog](t, f.call(t, "GET", "/api/catalog", "", ""), 200)
-	if len(unscoped.Tools) != 3 {
-		t.Fatalf("unscoped compatibility: %+v", unscoped)
+	unscoped := f.call(t, "GET", "/api/catalog", "", "")
+	wantTools := toolIDs(t, unscoped.Body.Bytes())
+	if unscoped.Code != 200 || len(wantTools) != 3 {
+		t.Fatalf("unscoped compatibility: HTTP %d %s", unscoped.Code, unscoped.Body)
 	}
-	query := "/api/catalog?sim_scope=" + repo.ID
-	simulated := decodeM1Response[apitypes.Catalog](t, f.call(t, "GET", query, "", ""), 200)
+	simulated := decodeM1Response[apitypes.Catalog](t, f.call(t, "GET", "/api/catalog?sim_scope="+repo.ID, "", ""), 200)
 	if len(simulated.Tools) != 1 || simulated.Tools[0].ID != "svc.observe" {
 		t.Fatalf("simulated baseline was not applied: %+v", simulated)
 	}
 
-	signed := func(method, path, op, body string, args map[string]any) *httptest.ResponseRecorder {
-		t.Helper()
-		claims := signMCPArgs(t, f.svcs.DataDir, "codex", cwd, false, op, args)
-		token, ok := claims[workspace.CurrentContextField()].(string)
-		if !ok {
-			t.Fatal("fixture did not produce a signed scope token")
-		}
-		req := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(body))
-		req.Header.Set("X-Gateway-Scope", token)
-		out := httptest.NewRecorder()
-		f.handler.ServeHTTP(out, req)
-		return out
-	}
-	verified := decodeM1Response[apitypes.Catalog](t, signed("GET", "/api/catalog", "catalog", "", nil), 200)
-	if len(verified.Tools) != 1 || verified.Tools[0].ID != "svc.observe" {
-		t.Fatalf("signed scope baseline was not applied: %+v", verified)
+	verified := signedM1Request(t, f, cwd, "GET", "/api/catalog", "catalog", nil)
+	if got := toolIDs(t, verified.Body.Bytes()); verified.Code != 200 || !slices.Equal(got, wantTools) {
+		t.Fatalf("signed observation reduced tool visibility: HTTP %d %v, want %v", verified.Code, got, wantTools)
 	}
 	args := map[string]any{"tool_id": "svc.deploy", "arguments": map[string]any{}}
-	deny := decodeM1Response[apitypes.Error](t, signed("POST", "/api/invoke", "invoke_tool", string(mustJSON(t, args)), args), 403)
-	if deny.Code != "policy_denied" {
-		t.Fatalf("signed invoke denial: %+v", deny)
+	decodeM1Response[apitypes.InvokeResult](t, signedM1Request(t, f, cwd, "POST", "/api/invoke", "invoke_tool", args), 200)
+
+	rule := decodeM1Response[apitypes.PolicyRule](t, f.call(t, "PUT", "/api/policies/rules", "", string(mustJSON(t, apitypes.PolicyRule{
+		Effect: "deny", Enabled: true, RepoKey: repo.ID, ServiceID: "svc", Access: "rw",
+	}))), 200)
+	deny := decodeM1Response[apitypes.Error](t, signedM1Request(t, f, cwd, "POST", "/api/invoke", "invoke_tool", args), 403)
+	if deny.Code != "policy_denied" || f.developerCalls.Load() != 1 {
+		t.Fatalf("repo-specific deny did not block the signed invoke: %+v", deny)
 	}
 	page, err := f.svcs.Activity.Query(activity.Filter{RepoID: repo.ID, Query: "svc.deploy", Decision: "deny"})
-	if err != nil || len(page.Items) != 1 || page.Items[0].RuleID != "scope:"+repo.ID {
+	if err != nil || len(page.Items) != 1 || page.Items[0].RuleID != "policy:"+rule.ID {
 		t.Fatalf("signed scope audit: %+v, %v", page, err)
+	}
+	var detail struct {
+		Scope apitypes.EventScope `json:"scope"`
+	}
+	if err := json.Unmarshal(page.Items[0].Detail, &detail); err != nil || detail.Scope.RepoID != repo.ID || detail.Scope.Status != "observed" {
+		t.Fatalf("signed scope metadata: %+v, %v", detail.Scope, err)
 	}
 
 	// Explicit deny also applies in the administrator's scope-bypass view.
@@ -237,6 +235,60 @@ func TestRequestBaselineNarrowsSignedAndSimulatedScopeWithGlobalOff(t *testing.T
 	if len(bypass.Tools) != 1 || bypass.Tools[0].ID != "svc.deploy" {
 		t.Fatalf("bypass suppressed explicit denials: %+v", bypass)
 	}
+}
+
+func TestUnboundSignedWorkspaceUsesObservationModeAndGlobalDeny(t *testing.T) {
+	f := newActorFixture(t, false)
+	cwd := t.TempDir()
+	catalog := func() []string {
+		t.Helper()
+		res := signedM1Request(t, f, cwd, "GET", "/api/catalog", "catalog", nil)
+		if res.Code != 200 {
+			t.Fatalf("signed catalog: HTTP %d %s", res.Code, res.Body)
+		}
+		return toolIDs(t, res.Body.Bytes())
+	}
+	if got := catalog(); !slices.Equal(got, []string{"svc.deploy", "svc.develop", "svc.observe"}) {
+		t.Fatalf("unbound workspace with valid signature: got %v, want all tools", got)
+	}
+	rule := decodeM1Response[apitypes.PolicyRule](t, f.call(t, "PUT", "/api/policies/rules", "",
+		`{"effect":"deny","enabled":true,"repo_key":"*","service_id":"svc","tool_ids":["svc.deploy"],"access":"*"}`), 200)
+	if got := catalog(); !slices.Equal(got, []string{"svc.develop", "svc.observe"}) {
+		t.Fatalf("unbound workspace after wildcard deny: got %v", got)
+	}
+	args := map[string]any{"tool_id": "svc.deploy", "arguments": map[string]any{}}
+	deny := decodeM1Response[apitypes.Error](t, signedM1Request(t, f, cwd, "POST", "/api/invoke", "invoke_tool", args), 403)
+	if deny.Code != "policy_denied" || f.developerCalls.Load() != 0 {
+		t.Fatalf("wildcard deny did not block the signed invoke: %+v", deny)
+	}
+	page, err := f.svcs.Activity.Query(activity.Filter{Decision: "deny"})
+	if err != nil || len(page.Items) != 1 || page.Items[0].RuleID != "policy:"+rule.ID || page.Items[0].RepoID != "" {
+		t.Fatalf("unbound workspace audit: %+v, %v", page, err)
+	}
+	var detail struct {
+		Scope apitypes.EventScope `json:"scope"`
+	}
+	if err := json.Unmarshal(page.Items[0].Detail, &detail); err != nil || detail.Scope.Status != "observed" {
+		t.Fatalf("unbound scope metadata: %+v, %v", detail.Scope, err)
+	}
+}
+
+func signedM1Request(t *testing.T, f *actorFixture, cwd, method, path, op string, args map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	claims := signMCPArgs(t, f.svcs.DataDir, "codex", cwd, false, op, args)
+	token, ok := claims[workspace.CurrentContextField()].(string)
+	if !ok {
+		t.Fatal("fixture did not produce a signed scope token")
+	}
+	var body string
+	if args != nil {
+		body = string(mustJSON(t, args))
+	}
+	req := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(body))
+	req.Header.Set("X-Gateway-Scope", token)
+	out := httptest.NewRecorder()
+	f.handler.ServeHTTP(out, req)
+	return out
 }
 
 func decodeM1Response[T any](t *testing.T, got *httptest.ResponseRecorder, status int) T {
