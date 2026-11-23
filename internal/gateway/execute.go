@@ -130,11 +130,7 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 		}
 		return result, fault.New(fault.Upstream, "下游工具调用失败", err)
 	}
-	if g.upstream != nil {
-		data = g.upstream.RedactResponse(data, s)
-	} else {
-		data = upstream.RedactResponseWithLookup(data, s, g.serverLookup(s))
-	}
+	data = g.upstream.RedactResponse(data, s)
 	if len(req.Fields) > 0 {
 		data = upstream.Project(data, req.Fields)
 	}

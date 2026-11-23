@@ -58,6 +58,7 @@ type Options struct {
 	OpenBrowser        func(string) error
 	PersistCredentials bool
 	LocalAdminToken    string
+	LookupAccessToken  func(string) string
 	CredentialBackend  secrets.Backend
 }
 
@@ -69,7 +70,7 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, Services, erro
 	if err != nil {
 		return nil, Services{}, err
 	}
-	policy, err := access.LoadPolicy(baseURL)
+	policy, err := access.LoadPolicy(baseURL, opts.LookupAccessToken)
 	if err != nil {
 		return nil, Services{}, err
 	}

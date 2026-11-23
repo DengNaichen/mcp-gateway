@@ -62,14 +62,15 @@ type maintenanceRecorder struct {
 
 func newMaintainer(g *Gateway) (*maintenance.Maintainer, error) {
 	return maintenance.New(maintenance.Options{
-		DB:            g.db,
-		Dir:           g.dir,
-		Catalog:       maintenanceCatalog{Service: g.registry, g: g},
-		Router:        maintenanceRouter{g: g},
-		Upstream:      maintenanceUpstream{Service: g.upstream, g: g},
-		Recorder:      maintenanceRecorder{Gateway: g, Service: g.activity},
-		Execution:     g.execution,
-		ImportOpenAPI: openapi.ImportOpenAPI,
+		DB:              g.db,
+		Dir:             g.dir,
+		Catalog:         maintenanceCatalog{Service: g.registry, g: g},
+		Router:          maintenanceRouter{g: g},
+		Upstream:        maintenanceUpstream{Service: g.upstream, g: g},
+		Recorder:        maintenanceRecorder{Gateway: g, Service: g.activity},
+		Execution:       g.execution,
+		ImportOpenAPI:   openapi.ImportOpenAPI,
+		ServerLookupEnv: g.lookupServerEnv,
 	})
 }
 func (c maintenanceCatalog) UpdateCatalog(serverID, fingerprint string, update func(registry.Registry) (registry.Registry, error), commit func(registry.Registry) error) error {

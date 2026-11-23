@@ -69,6 +69,7 @@ type Instance struct {
 type Options struct {
 	PersistCredentials bool
 	LocalAdminToken    string
+	LookupAccessToken  func(string) string
 }
 
 // Open opens the Gateway data in dataDir. baseURL is the externally visible
@@ -77,6 +78,7 @@ func Open(dataDir, baseURL string, opts Options) (*Instance, error) {
 	g, svcs, err := gateway.NewWithOptions(dataDir, baseURL, gateway.Options{
 		PersistCredentials: opts.PersistCredentials,
 		LocalAdminToken:    opts.LocalAdminToken,
+		LookupAccessToken:  opts.LookupAccessToken,
 	})
 	if err != nil {
 		return nil, err

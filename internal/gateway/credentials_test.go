@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"gatewaylab/internal/maintenance"
 	"gatewaylab/internal/model"
 	"gatewaylab/internal/registry"
 )
@@ -194,6 +196,7 @@ func TestModelEnvironmentOverrideIsNotPersisted(t *testing.T) {
 
 func TestServerHeadersCannotExpandGatewayProcessSecrets(t *testing.T) {
 	t.Setenv("GATEWAY_AUTH_FILE", "")
+	t.Setenv("GATEWAY_EXECUTION_MODE", "local")
 	for _, variable := range []string{"GATEWAY_ADMIN_TOKEN", "GATEWAY_MODEL_API_KEY", "GATEWAY_TOKEN", "gAtEwAy_mixed"} {
 		t.Setenv(variable, "private-gateway-process-value")
 	}
@@ -216,6 +219,7 @@ func TestServerHeadersCannotExpandGatewayProcessSecrets(t *testing.T) {
 			"X-Admin": "${GATEWAY_ADMIN_TOKEN}", "X-Model": "${GATEWAY_MODEL_API_KEY}",
 			"X-Auth": "${GATEWAY_AUTH_FILE}", "X-Token": "${GATEWAY_TOKEN}", "X-Mixed": "${gAtEwAy_mixed}",
 		},
+		Env: map[string]string{"ADMIN": "${GATEWAY_ADMIN_TOKEN}", "MODEL": "${GATEWAY_MODEL_API_KEY}"},
 	}
 	if err := g.SaveServer(server); err != nil {
 		t.Fatal(err)
@@ -269,4 +273,34 @@ func TestServerHeadersCannotExpandGatewayProcessSecrets(t *testing.T) {
 	if g.lookupServerEnv(server.ID, "M0_EXTERNAL_TOKEN") != "external-override" {
 		t.Fatal("ordinary process environment fallback failed")
 	}
+
+	t.Run("maintenance adapter", func(t *testing.T) {
+		if _, err := exec.LookPath("node"); err != nil {
+			t.Skip("Node.js is required for adapter tests")
+		}
+		dir := t.TempDir()
+		draft := tool
+		draft.Enabled = false
+		draft.Adapter = "fixture.mjs"
+		const script = `
+import fs from 'node:fs';
+const { headers, env } = JSON.parse(fs.readFileSync(0, 'utf8'));
+console.log(JSON.stringify({isolated:
+  Object.keys(headers).length === 5 && Object.keys(env).length === 2 &&
+  Object.values({...headers, ...env}).every(value => value === 'acceptance-test')
+}));
+`
+		if err := os.WriteFile(filepath.Join(dir, draft.Adapter), []byte(script), 0600); err != nil {
+			t.Fatal(err)
+		}
+		report := g.maintenance.EvaluateAcceptance(t.Context(), maintenance.MaintenanceRun{
+			ServerID: server.ID, Server: server, Before: []registry.Tool{draft}, Tools: []registry.Tool{draft},
+			AcceptanceInput: &maintenance.AcceptanceSuite{Contracts: []maintenance.ContractCase{{
+				Name: "synthetic credentials only", ToolID: draft.ID, Expected: []byte(`{"isolated":true}`),
+			}}},
+		}, dir)
+		if !report.Passed {
+			t.Fatalf("adapter acceptance did not receive only synthetic credentials: %+v", report)
+		}
+	})
 }

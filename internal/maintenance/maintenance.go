@@ -69,27 +69,28 @@ type MaintenanceRun struct {
 }
 
 type Maintainer struct {
-	db            *sql.DB
-	dir           string
-	catalog       Catalog
-	router        Router
-	upstream      Upstream
-	recorder      Recorder
-	importOpenAPI OpenAPIImporter
-	execution     sandbox.Policy
-	lookupEnv     func(string) string
-	mu            sync.Mutex
-	sources       map[string]MaintenanceSource
-	suites        map[string]AcceptanceSuite
-	runs          map[string]MaintenanceRun
-	ctx           context.Context
-	stop          context.CancelFunc
-	active        map[string]context.CancelFunc
-	wake          chan struct{}
-	done          chan struct{}
-	started       bool
-	closed        bool
-	command       string
+	db              *sql.DB
+	dir             string
+	catalog         Catalog
+	router          Router
+	upstream        Upstream
+	recorder        Recorder
+	importOpenAPI   OpenAPIImporter
+	execution       sandbox.Policy
+	lookupEnv       func(string) string
+	serverLookupEnv func(serverID, key string) string
+	mu              sync.Mutex
+	sources         map[string]MaintenanceSource
+	suites          map[string]AcceptanceSuite
+	runs            map[string]MaintenanceRun
+	ctx             context.Context
+	stop            context.CancelFunc
+	active          map[string]context.CancelFunc
+	wake            chan struct{}
+	done            chan struct{}
+	started         bool
+	closed          bool
+	command         string
 }
 
 func New(options Options) (*Maintainer, error) {
@@ -98,7 +99,32 @@ func New(options Options) (*Maintainer, error) {
 	if lookupEnv == nil {
 		lookupEnv = os.Getenv
 	}
-	m := &Maintainer{db: options.DB, dir: options.Dir, catalog: options.Catalog, router: options.Router, upstream: options.Upstream, recorder: options.Recorder, importOpenAPI: options.ImportOpenAPI, execution: options.Execution, lookupEnv: lookupEnv, sources: map[string]MaintenanceSource{}, suites: map[string]AcceptanceSuite{}, runs: map[string]MaintenanceRun{}, ctx: ctx, stop: cancel, active: map[string]context.CancelFunc{}, wake: make(chan struct{}, 1), done: make(chan struct{}), command: os.Getenv("GATEWAY_PI_COMMAND")}
+	serverLookupEnv := options.ServerLookupEnv
+	if serverLookupEnv == nil {
+		// Service expansion must not fall back to the webhook environment.
+		serverLookupEnv = func(string, string) string { return "" }
+	}
+	m := &Maintainer{
+		db:              options.DB,
+		dir:             options.Dir,
+		catalog:         options.Catalog,
+		router:          options.Router,
+		upstream:        options.Upstream,
+		recorder:        options.Recorder,
+		importOpenAPI:   options.ImportOpenAPI,
+		execution:       options.Execution,
+		lookupEnv:       lookupEnv,
+		serverLookupEnv: serverLookupEnv,
+		sources:         map[string]MaintenanceSource{},
+		suites:          map[string]AcceptanceSuite{},
+		runs:            map[string]MaintenanceRun{},
+		ctx:             ctx,
+		stop:            cancel,
+		active:          map[string]context.CancelFunc{},
+		wake:            make(chan struct{}, 1),
+		done:            make(chan struct{}),
+		command:         os.Getenv("GATEWAY_PI_COMMAND"),
+	}
 	if m.command == "" {
 		m.command = "pi"
 	}

@@ -347,7 +347,8 @@ func (m *Maintainer) runHTTPContract(ctx context.Context, target contractInvocat
 	var result any
 	var callErr error
 	if target.Tool.Adapter != "" {
-		result, callErr = sandbox.CallAdapterFileWithLookup(ctx, m.execution, target.Server, target.Tool, target.Arguments, filepath.Join(target.Dir, target.Tool.Adapter), m.lookupEnv)
+		lookup := func(key string) string { return m.serverLookupEnv(target.Server.ID, key) }
+		result, callErr = sandbox.CallAdapterFileWithLookup(ctx, m.execution, target.Server, target.Tool, target.Arguments, filepath.Join(target.Dir, target.Tool.Adapter), lookup)
 	} else {
 		result, callErr = m.upstream.CallHTTP(ctx, target.Server, target.Tool, target.Arguments)
 	}
