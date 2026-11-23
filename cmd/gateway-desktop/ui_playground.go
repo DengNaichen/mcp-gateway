@@ -174,10 +174,9 @@ func pgCountEligibleTools(
 	serversByID map[string]apitypes.Server,
 	effectiveActor string,
 ) (map[string]apitypes.Tool, int) {
-	simScope := activePlaygroundSimScope(st)
 	var simGrants []apitypes.ServiceGrant
-	if simScope != nil {
-		simGrants, _, _ = resolveEffectiveScopeRule(state.Scopes, simScope.RepoKey)
+	if st.simRepoKey != "" {
+		simGrants, _, _ = resolveEffectiveScopeRule(state.Scopes, st.simRepoKey)
 	}
 
 	eligibleCount := 0
@@ -197,7 +196,7 @@ func pgCountEligibleTools(
 		if !slices.Contains(t.Actors, "*") && !slices.Contains(t.Actors, effectiveActor) {
 			continue
 		}
-		if simScope != nil && !scopeGrantAllowsTool(simGrants, t) {
+		if st.simRepoKey != "" && !scopeGrantAllowsTool(simGrants, t) {
 			continue
 		}
 		eligibleCount++
@@ -288,9 +287,6 @@ func applyPlaygroundReplayScope(st *playgroundState, replay playgroundReplayInte
 }
 
 func activePlaygroundSimScope(st *playgroundState) *apitypes.SimScope {
-	if st.simRepoKey == "" {
-		return nil
-	}
 	return &apitypes.SimScope{
 		RepoKey: st.simRepoKey,
 	}
@@ -801,10 +797,11 @@ func (u *DesktopUI) fetchPlaygroundToolSchema(st *playgroundState, toolID, effec
 		return
 	}
 	st.loadingSchema = true
+	simScope := activePlaygroundSimScope(st)
 	u.RunAsync(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		tool, err := u.Client.ToolSchema(ctx, toolID, effectiveActor)
+		tool, err := u.Client.ToolSchemaScoped(ctx, toolID, effectiveActor, simScope)
 		if err != nil {
 			u.updateUI(func() { st.loadingSchema = false })
 			return err

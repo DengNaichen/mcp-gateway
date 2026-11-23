@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"gatewaylab/internal/access"
+	"gatewaylab/internal/apitypes"
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/gateway"
 	"gatewaylab/internal/registry"
@@ -201,6 +203,110 @@ func TestLocalModeRejectsNonLoopbackHost(t *testing.T) {
 	}
 }
 
+func TestLocalAdminTokenManagementAndScope(t *testing.T) {
+	t.Setenv("GATEWAY_AUTH_FILE", "")
+	const token = "local-admin-test-token"
+	instance, err := Open(t.TempDir(), "http://localhost", Options{LocalAdminToken: token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = instance.Close() })
+	handler := instance.Handler()
+	call := func(method, path, header, credential, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(body))
+		if header != "" {
+			req.Header.Set(header, credential)
+		}
+		out := httptest.NewRecorder()
+		handler.ServeHTTP(out, req)
+		return out
+	}
+
+	for _, credential := range []struct {
+		header, value string
+		authenticated bool
+	}{
+		{"", "", false},
+		{"X-Gateway-Admin-Token", "bad-token", false},
+		{"Authorization", token, false},
+		{"Authorization", "Basic " + token, false},
+		{"X-Gateway-Admin-Token", token, true},
+		{"Authorization", "Bearer " + token, true},
+	} {
+		who := call("GET", "/api/auth/me", credential.header, credential.value, "")
+		var auth apitypes.AuthMe
+		if who.Code != 200 || json.Unmarshal(who.Body.Bytes(), &auth) != nil ||
+			auth.Authenticated != credential.authenticated || auth.Shared || auth.SecurityMode != apitypes.SecurityModeLocalGuardrail {
+			t.Fatalf("unexpected local identity response: %d %s", who.Code, who.Body)
+		}
+		want := http.StatusForbidden
+		if credential.authenticated {
+			want = http.StatusOK
+		}
+		for _, ep := range []struct{ method, path, body string }{
+			{"PUT", "/api/servers", `{"id":"fixture","name":"Fixture","kind":"http","endpoint":"https://example.test","enabled":true}`},
+			{"PUT", "/api/scopes/mode", `{"enforce":false}`},
+			{"GET", "/api/bootstrap", ""},
+			{"HEAD", "/api/bootstrap", ""},
+			{"GET", "/%61pi/bootstrap", ""},
+		} {
+			got := call(ep.method, ep.path, credential.header, credential.value, ep.body)
+			if got.Code != want {
+				t.Fatalf("%s %s (authenticated=%v): got %d %s, want %d", ep.method, ep.path, credential.authenticated, got.Code, got.Body, want)
+			}
+		}
+	}
+	boot := call("GET", "/api/bootstrap", "X-Gateway-Admin-Token", token, "")
+	var bootstrap apitypes.Bootstrap
+	if err := json.Unmarshal(boot.Body.Bytes(), &bootstrap); err != nil || bootstrap.Access.SecurityMode != apitypes.SecurityModeLocalGuardrail {
+		t.Fatalf("bootstrap access info missing local security mode: %v %s", err, boot.Body)
+	}
+	for _, path := range []string{"/api/health", "/api/catalog"} {
+		if got := call("GET", path, "", "", ""); got.Code != 200 {
+			t.Fatalf("local call channel %s: %d %s", path, got.Code, got.Body)
+		}
+	}
+	if got := call("PUT", "/api/scopes/mode", "X-Gateway-Admin-Token", token, `{"enforce":true}`); got.Code != 200 {
+		t.Fatalf("enable enforcement: %d %s", got.Code, got.Body)
+	}
+	for _, credential := range []string{"", token} {
+		if got := call("POST", "/api/invoke", "X-Gateway-Admin-Token", credential, `{"tool_id":"missing","actor":"admin"}`); got.Code != 403 || !strings.Contains(got.Body.String(), "scope_required") {
+			t.Fatalf("missing scope: %d %s", got.Code, got.Body)
+		}
+	}
+	for _, ep := range []struct{ method, path, body string }{
+		{"POST", "/api/invoke", `{"tool_id":"missing","actor":"admin","sim_scope":{}}`},
+		{"GET", "/api/catalog?sim_scope=", ""},
+	} {
+		if got := call(ep.method, ep.path, "", "", ep.body); got.Code != 403 || !strings.Contains(got.Body.String(), "scope_invalid") {
+			t.Fatalf("local invocation caller simulated a scope: %d %s", got.Code, got.Body)
+		}
+	}
+	if got := call("GET", "/api/catalog?sim_scope=", "X-Gateway-Admin-Token", token, ""); got.Code != 200 {
+		t.Fatalf("explicit local admin full view: %d %s", got.Code, got.Body)
+	}
+	if got := call("GET", "/api/events", "X-Gateway-Admin-Token", token, ""); !strings.Contains(got.Body.String(), `"status":"bypass"`) {
+		t.Fatalf("full-view audit event missing: %d %s", got.Code, got.Body)
+	}
+}
+
+func TestLocalCompatibilityModeStillEnforcesScope(t *testing.T) {
+	t.Setenv("GATEWAY_AUTH_FILE", "")
+	g, svcs, _ := testGateway(t)
+	handler := Handler(g, svcs)
+	mode := httptest.NewRecorder()
+	handler.ServeHTTP(mode, httptest.NewRequest("PUT", "http://localhost/api/scopes/mode", strings.NewReader(`{"enforce":true}`)))
+	if mode.Code != 200 {
+		t.Fatalf("legacy management access: %d %s", mode.Code, mode.Body)
+	}
+	invoke := httptest.NewRecorder()
+	handler.ServeHTTP(invoke, httptest.NewRequest("POST", "http://localhost/api/invoke", strings.NewReader(`{"tool_id":"missing"}`)))
+	if invoke.Code != 403 || !strings.Contains(invoke.Body.String(), "scope_required") {
+		t.Fatalf("legacy local invoke without scope: %d %s", invoke.Code, invoke.Body)
+	}
+}
+
 func TestAccessMetadataDrivenRoutesAndMCPIdentity(t *testing.T) {
 	g, svcs := sharedGateway(t)
 	handler := Handler(g, svcs)
@@ -223,7 +329,7 @@ func TestAccessMetadataDrivenRoutesAndMCPIdentity(t *testing.T) {
 	if got := call("POST", "/api/auth/logout", ""); got.Code != 401 {
 		t.Fatalf("unauthenticated /api/auth/logout should be 401, got %d", got.Code)
 	}
-	if got := call("GET", "/api/auth/me", readerTestToken); got.Code != 200 || !strings.Contains(got.Body.String(), `"id":"reader"`) {
+	if got := call("GET", "/api/auth/me", readerTestToken); got.Code != 200 || !strings.Contains(got.Body.String(), `"id":"reader"`) || !strings.Contains(got.Body.String(), `"security_mode":"shared_boundary"`) {
 		t.Fatalf("non-admin /api/auth/me failed: %d %s", got.Code, got.Body)
 	}
 	if got := call("POST", "/api/auth/logout", readerTestToken); got.Code != 200 {

@@ -62,6 +62,14 @@ func WithToken(token string) Option {
 	}
 }
 
+// WithAdminToken configures local management authentication independently of
+// shared-mode bearer tokens and session cookies.
+func WithAdminToken(token string) Option {
+	return func(c *Client) {
+		c.adminToken = token
+	}
+}
+
 // WithTimeout overrides the underlying HTTP client timeout.
 func WithTimeout(d time.Duration) Option {
 	return func(c *Client) {
@@ -85,6 +93,7 @@ type Client struct {
 	baseURL    string
 	httpClient *http.Client
 	token      string
+	adminToken string
 }
 
 // New creates a Client targeting baseURL with an in-memory cookie jar
@@ -106,6 +115,13 @@ func New(baseURL string, opts ...Option) *Client {
 			opt(c)
 		}
 	}
+	if c.adminToken != "" {
+		// net/http forwards custom headers across redirects. Credentialed
+		// desktop requests target the gateway API directly.
+		hc := *c.httpClient
+		hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		c.httpClient = &hc
+	}
 	return c
 }
 
@@ -116,6 +132,9 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body io.Re
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	if c.adminToken != "" {
+		req.Header.Set("X-Gateway-Admin-Token", c.adminToken)
 	}
 	return req, nil
 }
@@ -428,9 +447,20 @@ func (c *Client) Catalog(ctx context.Context, actor string, includeDemo bool) (a
 }
 
 func (c *Client) ToolSchema(ctx context.Context, toolID, actor string) (apitypes.Tool, error) {
+	return c.ToolSchemaScoped(ctx, toolID, actor, nil)
+}
+
+func (c *Client) ToolSchemaScoped(ctx context.Context, toolID, actor string, simScope *apitypes.SimScope) (apitypes.Tool, error) {
 	path := "/tools/" + url.PathEscape(toolID) + "/schema"
+	q := url.Values{}
 	if actor != "" {
-		path += "?actor=" + url.QueryEscape(actor)
+		q.Set("actor", actor)
+	}
+	if simScope != nil {
+		q.Set("sim_scope", simScope.RepoKey)
+	}
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
 	}
 	var out apitypes.Tool
 	err := c.doJSON(ctx, http.MethodGet, path, nil, &out)

@@ -47,6 +47,7 @@ type Gateway struct {
 	storage             *store.Store
 	upstream            *upstream.Service
 	access              *access.Policy
+	localAdmin          *access.LocalAdminAuth
 	execution           sandbox.Policy
 	routing             routing.Options
 	maintenance         *maintenance.Maintainer
@@ -56,6 +57,7 @@ type Gateway struct {
 type Options struct {
 	OpenBrowser        func(string) error
 	PersistCredentials bool
+	LocalAdminToken    string
 	CredentialBackend  secrets.Backend
 }
 
@@ -99,6 +101,9 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, Services, erro
 		baseURL:    baseURL,
 		db:         db,
 		storage:    storage,
+	}
+	if policy == nil {
+		g.localAdmin = access.NewLocalAdminAuth(opts.LocalAdminToken)
 	}
 	g.credentials, err = openCredentialStore(dir, opts)
 	if err != nil {
@@ -207,7 +212,7 @@ func invalid(message string) error { return fault.New(fault.Invalid, message, ni
 
 func (g *Gateway) isAdminCaller(ctx context.Context) bool {
 	if g.access == nil {
-		return true
+		return g.localAdmin == nil || access.IsLocalAdmin(ctx)
 	}
 	p, ok := access.PrincipalFrom(ctx)
 	return ok && p.Admin

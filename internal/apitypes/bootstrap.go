@@ -50,10 +50,16 @@ type SetupStatus struct {
 	AgentLastRequest *Event                     `json:"agent_last_request"`
 }
 
+const (
+	SecurityModeSharedBoundary = "shared_boundary"
+	SecurityModeLocalGuardrail = "local_guardrail"
+)
+
 // AccessInfo describes how the caller reached the control plane.
 type AccessInfo struct {
-	Shared bool   `json:"shared"`
-	Actor  string `json:"actor"`
+	Shared       bool   `json:"shared"`
+	SecurityMode string `json:"security_mode"`
+	Actor        string `json:"actor"`
 }
 
 // PulseBucket aggregates gateway requests over a 15-minute window.
@@ -94,6 +100,7 @@ type Principal struct {
 type AuthMe struct {
 	Authenticated bool      `json:"authenticated"`
 	Shared        bool      `json:"shared"`
+	SecurityMode  string    `json:"security_mode"`
 	Principal     Principal `json:"principal"`
 }
 

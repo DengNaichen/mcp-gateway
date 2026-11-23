@@ -16,8 +16,8 @@ var apiRoutes = []route{
 	{Method: "POST", Path: "/api/auth/login", Summary: "Exchange an access token for a session cookie (shared mode)", Public: true, Request: apitypes.LoginRequest{}, Responses: ok(apitypes.LoginResult{})},
 	{Method: "POST", Path: "/api/auth/logout", Summary: "End the session", Authenticated: true, Responses: ok(apitypes.SignedOut{})},
 
-	{Method: "GET", Path: "/api/catalog", Summary: "Authorized services and tool summaries", Invocation: true, Query: []query{actorQuery, {"include_demo", "boolean", "Include demo services"}}, Responses: ok(apitypes.Catalog{})},
-	{Method: "GET", Path: "/api/tools/{id}/schema", Summary: "Full definition of one authorized tool", Invocation: true, Query: []query{actorQuery}, Responses: ok(apitypes.Tool{})},
+	{Method: "GET", Path: "/api/catalog", Summary: "Authorized services and tool summaries", Invocation: true, Query: []query{actorQuery, simScopeQuery, {"include_demo", "boolean", "Include demo services"}}, Responses: ok(apitypes.Catalog{})},
+	{Method: "GET", Path: "/api/tools/{id}/schema", Summary: "Full definition of one authorized tool", Invocation: true, Query: []query{actorQuery, simScopeQuery}, Responses: ok(apitypes.Tool{})},
 	{Method: "POST", Path: "/api/discover", Summary: "Route an intent to a small set of authorized tools", Invocation: true, Request: apitypes.DiscoverRequest{}, Responses: ok(oneOf{apitypes.DiscoverResult{}, apitypes.DiscoverSummaryResult{}})},
 	{Method: "POST", Path: "/api/invoke", Summary: "Invoke a registered tool", Invocation: true, Request: apitypes.InvokeRequest{}, Responses: ok(apitypes.InvokeResult{})},
 
@@ -83,6 +83,8 @@ type route struct {
 
 type query struct{ Name, Type, Description string }
 
+func (r route) requiresAdmin() bool { return !r.Public && !r.Invocation && !r.Authenticated }
+
 // oneOf documents a response whose shape depends on the request.
 type oneOf []any
 
@@ -93,5 +95,6 @@ type binary struct{ MediaType string }
 type rawBody struct{ MediaType string }
 
 var actorQuery = query{"actor", "string", "Simulated identity in local mode; ignored when the caller is authenticated"}
+var simScopeQuery = query{"sim_scope", "string", "Administrator simulation repository key. An explicitly empty value selects the full repository view."}
 
 func ok(body any) map[int]any { return map[int]any{200: body} }

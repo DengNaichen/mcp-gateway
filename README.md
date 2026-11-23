@@ -353,9 +353,11 @@ sqlite3 data/gateway.db 'SELECT time, kind, status, title FROM activity ORDER BY
 
 上表只列常用接口。完整契约（全部路由、请求/响应结构、错误格式、鉴权要求）见 [docs/api](docs/api/README.md) 下的 `openapi.json`，由契约测试守护。
 
-## 共享模式与访问控制
+## 安全模式与访问控制
 
-默认仅监听 loopback，无认证时 Developer / Observer 仍是本机模拟身份。非 loopback 监听必须配置 `GATEWAY_AUTH_FILE`，示例见 `examples/access.json`；配置每个主体的 ID、groups、服务/工具范围、是否允许写操作、管理权限，以及 `token_env` 或令牌的 SHA256（不能同时设置）。令牌至少 24 字节，建议随机生成。
+默认仅监听 loopback，Developer / Observer 是本机模拟身份。内嵌桌面网关使用进程内管理令牌保护管理 API，无界面后端可通过 `GATEWAY_ADMIN_TOKEN` 启用同一机制。两种部署的信任边界见 [安全模型](docs/security-model.md)。
+
+非 loopback 监听必须配置 `GATEWAY_AUTH_FILE`。见 [访问配置示例](examples/access.json)。为每个主体配置 ID、groups、服务和工具范围、写权限、管理权限，并在 `token_env` 与令牌 SHA256 中选一种。令牌至少 24 字节，建议随机生成。
 
 ```sh
 export GATEWAY_AUTH_FILE=/absolute/path/to/access.json

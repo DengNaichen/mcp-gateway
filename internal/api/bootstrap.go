@@ -32,7 +32,7 @@ func (g *server) registerBootstrap(mux *http.ServeMux) {
 			MCPURL:                g.baseURL + "/mcp",
 			Setup:                 wireSetup(setup),
 			Scopes:                wireScopeOverview(g.scope.ScopeOverview()),
-			Access:                apitypes.AccessInfo{Shared: g.access != nil, Actor: access.RequestActor(r.Context(), "")},
+			Access:                apitypes.AccessInfo{Shared: g.access != nil, SecurityMode: g.securityMode(), Actor: access.RequestActor(r.Context(), "")},
 		})
 	})
 }

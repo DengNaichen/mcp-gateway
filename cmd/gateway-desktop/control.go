@@ -68,6 +68,30 @@ func (d *desktopApp) startControlSocket() (func(), error) {
 }
 
 func (d *desktopApp) registerControlStatusRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /auth/login", func(w http.ResponseWriter, r *http.Request) {
+		_, _, app := d.controlSnapshot()
+		if app == nil || app.Client == nil {
+			writeControlJSON(w, http.StatusConflict, map[string]string{"error": "not ready"})
+			return
+		}
+		var in struct{ Token string }
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil {
+			writeControlJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid login request"})
+			return
+		}
+		// The opt-in automation socket exercises the usual shared-mode login.
+		// The API rejects this endpoint in local mode.
+		if _, err := app.Client.Login(r.Context(), in.Token); err != nil {
+			writeControlJSON(w, http.StatusForbidden, map[string]string{"error": "shared login failed"})
+			return
+		}
+		if err := app.RefreshSync(); err != nil {
+			writeControlJSON(w, http.StatusBadGateway, map[string]string{"error": "bootstrap after login failed"})
+			return
+		}
+		writeControlJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+
 	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
 		rt, win, uiApp := d.controlSnapshot()
 		resp := map[string]any{

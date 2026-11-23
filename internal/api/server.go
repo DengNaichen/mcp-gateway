@@ -21,6 +21,7 @@ type registryStore interface {
 type server struct {
 	gw                    *gateway.Gateway
 	access                *access.Policy
+	localAdmin            *access.LocalAdminAuth
 	activity              *activity.Service
 	maintenance           *maintenance.Maintainer
 	scope                 *scope.Service
@@ -37,6 +38,7 @@ func newServer(g *gateway.Gateway, svcs gateway.Services) *server {
 	return &server{
 		gw:                    g,
 		access:                svcs.Access,
+		localAdmin:            svcs.LocalAdmin,
 		activity:              svcs.Activity,
 		maintenance:           svcs.Maintenance,
 		scope:                 svcs.Scope,
@@ -64,12 +66,18 @@ type Instance struct {
 }
 
 // Options configures the backend host credential policy.
-type Options struct{ PersistCredentials bool }
+type Options struct {
+	PersistCredentials bool
+	LocalAdminToken    string
+}
 
 // Open opens the Gateway data in dataDir. baseURL is the externally visible
 // origin used to build MCP and OAuth callback URLs.
 func Open(dataDir, baseURL string, opts Options) (*Instance, error) {
-	g, svcs, err := gateway.NewWithOptions(dataDir, baseURL, gateway.Options{PersistCredentials: opts.PersistCredentials})
+	g, svcs, err := gateway.NewWithOptions(dataDir, baseURL, gateway.Options{
+		PersistCredentials: opts.PersistCredentials,
+		LocalAdminToken:    opts.LocalAdminToken,
+	})
 	if err != nil {
 		return nil, err
 	}

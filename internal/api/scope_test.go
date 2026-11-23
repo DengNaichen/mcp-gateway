@@ -694,7 +694,7 @@ func TestSharedModeRESTNonAdminGuardSimScopeAndHTTPAPIs(t *testing.T) {
 		t.Fatalf("bootstrap missing scopes overview: %d %s", recBoot.Code, recBoot.Body.String())
 	}
 
-	// 4. Non-admin writer WITHOUT X-Gateway-Scope MUST get 403 scope_required on ALL 4 invocation REST endpoints!
+	// 4. Both writers and administrators need an explicit scope on invocation routes.
 	for _, ep := range []struct {
 		method string
 		path   string
@@ -705,9 +705,11 @@ func TestSharedModeRESTNonAdminGuardSimScopeAndHTTPAPIs(t *testing.T) {
 		{"GET", "/api/catalog", nil},
 		{"GET", "/api/tools/service.read/schema", nil},
 	} {
-		rec := doReq(ep.method, ep.path, writerTestToken, "", ep.body)
-		if rec.Code != 403 || !strings.Contains(rec.Body.String(), "scope_required") {
-			t.Fatalf("non-admin %s %s bypassed enforce without X-Gateway-Scope: %d %s", ep.method, ep.path, rec.Code, rec.Body.String())
+		for _, token := range []string{writerTestToken, adminTestToken} {
+			rec := doReq(ep.method, ep.path, token, "", ep.body)
+			if rec.Code != 403 || !strings.Contains(rec.Body.String(), "scope_required") {
+				t.Fatalf("%s %s bypassed enforce without X-Gateway-Scope: %d %s", ep.method, ep.path, rec.Code, rec.Body.String())
+			}
 		}
 	}
 
@@ -763,6 +765,10 @@ func TestSharedModeRESTNonAdminGuardSimScopeAndHTTPAPIs(t *testing.T) {
 	}
 	if rec := doReq("POST", "/api/invoke", adminTestToken, "", map[string]any{"tool_id": "service.write", "arguments": map[string]any{}, "sim_scope": map[string]string{"repo_key": ""}}); rec.Code != 200 {
 		t.Fatalf("admin sim_scope full view failed: %d %s", rec.Code, rec.Body.String())
+	}
+	audit := doReq("GET", "/api/events", adminTestToken, "", nil)
+	if !strings.Contains(audit.Body.String(), `"status":"bypass"`) || !strings.Contains(audit.Body.String(), `"status":"simulated"`) {
+		t.Fatalf("invocation audit missing explicit scope statuses: %d %s", audit.Code, audit.Body.String())
 	}
 
 	// 8. Delete rule and repository via HTTP API.

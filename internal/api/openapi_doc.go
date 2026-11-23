@@ -37,9 +37,9 @@ func OpenAPIDocument() ([]byte, error) {
 			"title":   "MCP Gateway control plane API",
 			"version": "1",
 			"description": "The HTTP contract between the gateway backend and its control-plane clients (desktop app, web console). " +
-				"In local mode the backend listens on loopback only and requires no authentication. In shared mode every route " +
-				"except the public ones needs a bearer access token or the session cookie from /api/auth/login; routes that are " +
-				"not marked as invocation or authenticated routes additionally need an admin principal. Every error response has the Error body.",
+				"In local_guardrail mode the backend listens on loopback. Management routes require the local admin token when configured. " +
+				"In shared_boundary mode, protected routes require a bearer access token or the session cookie from /api/auth/login. " +
+				"Management routes require an admin principal. Every error response has the Error body.",
 		},
 		"paths": paths,
 		"components": map[string]any{
@@ -47,9 +47,10 @@ func OpenAPIDocument() ([]byte, error) {
 			"securitySchemes": map[string]any{
 				"bearerAuth":    map[string]any{"type": "http", "scheme": "bearer"},
 				"sessionCookie": map[string]any{"type": "apiKey", "in": "cookie", "name": "gateway_session"},
+				"localAdmin":    map[string]any{"type": "apiKey", "in": "header", "name": "X-Gateway-Admin-Token"},
 			},
 		},
-		"security": []any{map[string]any{"bearerAuth": []any{}}, map[string]any{"sessionCookie": []any{}}},
+		"security": []any{map[string]any{"bearerAuth": []any{}}, map[string]any{"sessionCookie": []any{}}, map[string]any{"localAdmin": []any{}}},
 	}
 	b, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
@@ -93,11 +94,15 @@ func applyOperationSecurity(op map[string]any, r route) {
 	case r.Public:
 		op["security"] = []any{}
 	case r.Invocation:
-		op["description"] = "Invocation route: open to any authenticated principal in shared mode. Results are limited to what the principal (or, in local mode, the simulated actor) may use."
+		op["description"] = "Invocation route. Shared mode requires an authenticated principal. When repository scope is enforced, callers need a signed scope token or an administrator's explicit sim_scope."
 	case r.Authenticated:
-		op["description"] = "Authenticated route: open to any authenticated principal in shared mode."
+		op["description"] = "Open to any authenticated principal in shared mode and to loopback requests in local mode."
 	default:
-		op["description"] = "Management route: requires an admin principal in shared mode."
+		op["description"] = "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode."
+	}
+	if r.Invocation || r.Authenticated {
+		// The empty alternative represents loopback requests in local mode.
+		op["security"] = []any{map[string]any{"bearerAuth": []any{}}, map[string]any{"sessionCookie": []any{}}, map[string]any{}}
 	}
 }
 

@@ -1,15 +1,18 @@
 import subprocess,os,json,time,pathlib,tempfile,sys,urllib.request,urllib.error
+from shared_auth_fixture import shared_auth_fixture
 ROOT=pathlib.Path(__file__).resolve().parents[4]
 os.chdir(ROOT)
 root=pathlib.Path(tempfile.mkdtemp(prefix='gateway-theme-'));sock=str(root/'control.sock')
 env=dict(os.environ,GATEWAY_CLIENT_CONFIG_HOME=str(root/'clients'),GATEWAY_DESKTOP_CONTROL=sock)
 for key in ['GATEWAY_AUTH_FILE','GATEWAY_PUBLIC_URL','GATEWAY_DEV_PUBLIC_URL']:env.pop(key,None)
+repo_matrix = '--repo-matrix' in sys.argv
+token = shared_auth_fixture(root, env) if repo_matrix else None
 app=next((ROOT/'build/dev').glob('*/MCP Gateway Dev.app'))/'Contents/MacOS/MCP Gateway Dev'
 p=subprocess.Popen([str(app),'-addr','127.0.0.1:0','-data',str(root/'data')],env=env,stdout=open(root/'runtime.log','w'),stderr=subprocess.STDOUT)
 def call(path,data=None):
  a=['curl','-fsS','--max-time','3','--unix-socket',sock,'-H','Content-Type: application/json']
- if data is not None:a+=['-d',json.dumps(data)]
- return json.loads(subprocess.check_output(a+['http://localhost'+path],stderr=subprocess.DEVNULL))
+ if data is not None:a+=['--data-binary','@-']
+ return json.loads(subprocess.check_output(a+['http://localhost'+path],input=json.dumps(data).encode() if data is not None else None,stderr=subprocess.DEVNULL))
 try:
  for _ in range(150):
   if p.poll() is not None:raise RuntimeError('app exited')
@@ -19,10 +22,10 @@ try:
   time.sleep(.1)
  else:raise RuntimeError('app did not start')
  # Optional representative matrix data, isolated in this run's disposable profile.
- if '--repo-matrix' in sys.argv:
+ if repo_matrix:
   base=call('/status')['ui_url']
   def put(path,data):
-   request=urllib.request.Request(base+'/api'+path,data=json.dumps(data).encode(),method='PUT',headers={'Content-Type':'application/json'})
+   request=urllib.request.Request(base+'/api'+path,data=json.dumps(data).encode(),method='PUT',headers={'Content-Type':'application/json','Authorization':'Bearer '+token})
    try:
     with urllib.request.urlopen(request,timeout=10) as response:return json.load(response)
    except urllib.error.HTTPError as error:raise RuntimeError(error.read().decode()) from error
@@ -35,8 +38,7 @@ try:
    if index==0:put('/scopes/rules',{'repo_key':repo['id'],'grants':[{'server_id':'github','access':'rw','tool_ids':['github.read','github.write']},{'server_id':'linear','access':'ro'}]})
    if index==2:put('/scopes/rules',{'repo_key':repo['id'],'grants':[]})
   put('/scopes/rules',{'repo_key':'*','grants':[{'server_id':'github','access':'ro'}]})
-  # The app polls bootstrap every four seconds; allow that real refresh path.
-  time.sleep(5)
+  call('/auth/login',{'token':token})
  for mode in ['light','dark']:
   call('/theme',{'source':mode})
   for view in ['overview','services','market','catalog','repos','playground','logs','settings','clients']:

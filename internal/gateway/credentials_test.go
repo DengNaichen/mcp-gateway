@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gatewaylab/internal/model"
@@ -188,5 +189,84 @@ func TestModelEnvironmentOverrideIsNotPersisted(t *testing.T) {
 	_, key = g.model.RuntimeConfig()
 	if key != "saved-model-key" {
 		t.Fatal("temporary environment replaced saved key")
+	}
+}
+
+func TestServerHeadersCannotExpandGatewayProcessSecrets(t *testing.T) {
+	t.Setenv("GATEWAY_AUTH_FILE", "")
+	for _, variable := range []string{"GATEWAY_ADMIN_TOKEN", "GATEWAY_MODEL_API_KEY", "GATEWAY_TOKEN", "gAtEwAy_mixed"} {
+		t.Setenv(variable, "private-gateway-process-value")
+	}
+	t.Setenv("M0_EXTERNAL_TOKEN", "external-override")
+	g, _, err := New(t.TempDir(), "http://localhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GATEWAY_AUTH_FILE", "private-gateway-process-value")
+	t.Cleanup(func() { _ = g.Close() })
+	headers := make(chan http.Header, 2)
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers <- r.Header.Clone()
+		respond(w, 200, map[string]bool{"ok": true})
+	}))
+	t.Cleanup(host.Close)
+	server := registry.Server{
+		ID: "fixture", Name: "Fixture", Kind: "http", Enabled: true, Endpoint: host.URL,
+		Headers: map[string]string{
+			"X-Admin": "${GATEWAY_ADMIN_TOKEN}", "X-Model": "${GATEWAY_MODEL_API_KEY}",
+			"X-Auth": "${GATEWAY_AUTH_FILE}", "X-Token": "${GATEWAY_TOKEN}", "X-Mixed": "${gAtEwAy_mixed}",
+		},
+	}
+	if err := g.SaveServer(server); err != nil {
+		t.Fatal(err)
+	}
+	tool := registry.Tool{
+		ID: "fixture.read", ServerID: server.ID, Name: "read", Description: "Read", Enabled: true, ReadOnly: true,
+		Actors: []string{"developer"}, InputSchema: map[string]any{"type": "object"}, Method: "GET", Path: "/",
+	}
+	if err := g.registry.SaveTool(tool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Invoke(t.Context(), InvokeRequest{ToolID: tool.ID}); err == nil ||
+		!strings.Contains(err.Error(), "gateway process environment is missing") ||
+		strings.Contains(err.Error(), "private-gateway-process-value") {
+		t.Fatalf("expected the invocation to reject unavailable credentials: %v", err)
+	}
+	select {
+	case <-headers:
+		t.Fatal("invocation sent a request with unavailable credentials")
+	default:
+	}
+	status, err := g.ServerCredentials(server.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range status {
+		if entry.Environment || entry.Configured {
+			t.Errorf("%s reports a blocked process variable as usable", entry.Name)
+		}
+	}
+	saved := map[string]string{}
+	for _, entry := range status {
+		saved[entry.Name] = "service-owned-value"
+	}
+	if err := g.SetServerCredentials(server.ID, saved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Invoke(t.Context(), InvokeRequest{ToolID: tool.ID}); err != nil {
+		t.Fatal(err)
+	}
+	got := <-headers
+	for header := range server.Headers {
+		if got.Get(header) != "service-owned-value" {
+			t.Errorf("%s did not use the explicit service credential", header)
+		}
+	}
+	if g.lookupServerSecretOnly(server.ID, "M0_EXTERNAL_TOKEN") != "" ||
+		g.lookupServerSecretOnly("another-service", "GATEWAY_ADMIN_TOKEN") != "" {
+		t.Fatal("credential-only lookup consulted process environment or another service")
+	}
+	if g.lookupServerEnv(server.ID, "M0_EXTERNAL_TOKEN") != "external-override" {
+		t.Fatal("ordinary process environment fallback failed")
 	}
 }

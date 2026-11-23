@@ -218,24 +218,22 @@ func (g *Service) ResolveRESTScope(ctx context.Context, r RESTRequest, op string
 		return WithRequestScope(ctx, resolved), nil
 	}
 
-	if !isAdmin {
-		if g.IsEnforced() {
-			return ctx, scopeProblem(ErrForbidden, "scope_required", "已启用仓库隔离拦截，非管理员请求必须提供有效的 X-Gateway-Scope 凭证")
-		}
-		return WithRequestScope(ctx, ResolvedRequestScope{
-			Mode: ModeCompatUnscoped,
-			Event: EventScope{
-				Status: "unscoped",
-			},
-		}), nil
-	}
-
 	if sim != nil {
 		resolved, err := g.EvaluateSimulatedScope(*sim)
 		if err != nil {
 			return ctx, err
 		}
 		return WithRequestScope(ctx, resolved), nil
+	}
+
+	if g.IsEnforced() {
+		return ctx, scopeProblem(ErrForbidden, "scope_required", "已启用仓库隔离拦截，请提供有效的 X-Gateway-Scope 凭证，管理员也可显式指定 sim_scope")
+	}
+	if !isAdmin {
+		return WithRequestScope(ctx, ResolvedRequestScope{
+			Mode:  ModeCompatUnscoped,
+			Event: EventScope{Status: "unscoped"},
+		}), nil
 	}
 
 	return WithRequestScope(ctx, ResolvedRequestScope{

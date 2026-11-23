@@ -28,14 +28,22 @@ func serverReferences(s registry.Server) []string {
 	return names
 }
 
+func serverProcessEnv(key string) string {
+	if strings.HasPrefix(strings.ToUpper(key), "GATEWAY_") {
+		return ""
+	}
+	return os.Getenv(key)
+}
+
+func (g *Gateway) lookupServerSecretOnly(id, key string) string {
+	return g.credentials.Get(credentialPrefix(id) + key)
+}
+
 func (g *Gateway) lookupServerEnv(id, key string) string {
-	if value := os.Getenv(key); value != "" {
+	if value := serverProcessEnv(key); value != "" {
 		return value
 	}
-	if value := g.credentials.Get(credentialPrefix(id) + key); value != "" {
-		return value
-	}
-	return ""
+	return g.lookupServerSecretOnly(id, key)
 }
 func (g *Gateway) serverLookup(s registry.Server) func(string) string {
 	return func(key string) string { return g.lookupServerEnv(s.ID, key) }
@@ -106,7 +114,9 @@ func (g *Gateway) ServerCredentials(id string) ([]CredentialStatus, error) {
 		}
 		out := []CredentialStatus{}
 		for _, name := range serverReferences(s) {
-			out = append(out, CredentialStatus{Name: name, Configured: g.lookupServerEnv(id, name) != "", Saved: g.credentials.Get(credentialPrefix(id)+name) != "", Environment: os.Getenv(name) != ""})
+			saved := g.lookupServerSecretOnly(id, name) != ""
+			environment := serverProcessEnv(name) != ""
+			out = append(out, CredentialStatus{Name: name, Configured: saved || environment, Saved: saved, Environment: environment})
 		}
 		return out, nil
 	}

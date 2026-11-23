@@ -379,6 +379,8 @@ func TestResponsesMatchSchema(t *testing.T) {
 		check("GET", path, path, nil)
 	}
 	check("GET", "/api/tools/ci.logs/schema", "/api/tools/{id}/schema", nil)
+	check("GET", "/api/tools/ci.logs/schema?sim_scope=", "/api/tools/{id}/schema", nil)
+	check("GET", "/api/catalog?sim_scope=", "/api/catalog", nil)
 	check("GET", "/api/maintenance/sources/ci/acceptance", "/api/maintenance/sources/{id}/acceptance", nil)
 	check("GET", "/api/maintenance/runs/missing", "/api/maintenance/runs/{id}", nil)
 	check("POST", "/api/servers/openapi", "/api/servers/openapi", apitypes.ImportOpenAPIRequest{Server: server})

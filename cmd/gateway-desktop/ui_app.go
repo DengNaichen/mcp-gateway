@@ -101,13 +101,14 @@ type DesktopUI struct {
 
 // NewDesktopUI constructs a DesktopUI wired to the given gatewayRuntime.
 func NewDesktopUI(rt *gatewayRuntime) *DesktopUI {
-	uiURL := ""
+	var uiURL, adminToken string
 	if rt != nil {
 		uiURL = rt.UIURL
+		adminToken = rt.AdminToken
 	}
 	d := &DesktopUI{
 		Runtime:      rt,
-		Client:       apiclient.New(uiURL),
+		Client:       apiclient.New(uiURL, apiclient.WithAdminToken(adminToken)),
 		ViewMode:     ViewOverview,
 		sessionState: sessionState{Loading: true},
 		scrollStates: make(map[ViewID]*ui.ScrollState),
