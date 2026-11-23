@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -220,6 +221,7 @@ func logsMatchesFilters(ev apitypes.Event, st *logsPageState) bool {
 		ev.ApprovalID,
 		ev.ServiceID,
 		ev.RepoID,
+		ev.SkillID,
 		string(ev.Detail),
 	}, " "))
 	return strings.Contains(haystack, q)
@@ -245,7 +247,46 @@ func logsRowKindLabel(ev apitypes.Event) string {
 }
 
 func logsHasAuditMeta(ev apitypes.Event) bool {
-	return ev.Protocol != "" || ev.Decision != "" || ev.RuleID != "" || ev.ServiceID != "" || ev.Action != "" || ev.ApprovalID != ""
+	return ev.Protocol != "" || ev.Decision != "" || ev.RuleID != "" || ev.ServiceID != "" || ev.Action != "" || ev.ApprovalID != "" || ev.SkillID != ""
+}
+
+// logsSkillTrust reads the trust level recorded with a declared skill_id
+// ("declared" today; "hook-verified" once a hook attests the skill).
+func logsSkillTrust(ev apitypes.Event) string {
+	if ev.SkillID == "" || len(ev.Detail) == 0 {
+		return ""
+	}
+	var d struct {
+		SkillTrust string `json:"skill_trust"`
+	}
+	if json.Unmarshal(ev.Detail, &d) != nil {
+		return ""
+	}
+	return strings.TrimSpace(d.SkillTrust)
+}
+
+// logsCLICommand summarizes a controlled CLI call as its gh subcommand.
+func logsCLICommand(ev apitypes.Event) string {
+	if ev.Protocol != "cli" {
+		return ""
+	}
+	action := ev.Action
+	if action == "" {
+		action = ev.Title
+	}
+	return cliCommandSummary(ev.ServiceID, action)
+}
+
+// renderLogsSkillTrust shows hook-verified skills as a quiet status and
+// self-declared ones as a neutral badge (declarative guardrail, not proof).
+func renderLogsSkillTrust(c *ui.Context, trust string) {
+	switch trust {
+	case "":
+	case "hook-verified":
+		SailQuietStatus(c, trust, SailSuccessInk, SailInkMuted)
+	default:
+		SailBadge(c, trust, ToneNeutral)
+	}
 }
 
 func renderLogsInspectorAuditCard(c *ui.Context, ev apitypes.Event) {
@@ -263,12 +304,23 @@ func renderLogsInspectorAuditCard(c *ui.Context, ev apitypes.Event) {
 			{"rule_id", ev.RuleID},
 			{"service_id", ev.ServiceID},
 			{"action", ev.Action},
+			{i18n.T("policy.audit-cli-command"), logsCLICommand(ev)},
 			{"approval_id", ev.ApprovalID},
+			{"skill_id", ev.SkillID},
 		}
 		for _, row := range rows {
 			if row.value != "" {
 				SailKeyValueRow(c, row.key, row.value, true)
 			}
+		}
+		if trust := logsSkillTrust(ev); trust != "" {
+			ui.Row(c).FillWidth().Padding(6, 0).Gap(12).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "skill_trust").Width(116).Shrink(0).FontSize(12).FontWeight(500).TextColor(SailInkMuted)
+				renderLogsSkillTrust(c, trust)
+				if trust == "declared" {
+					ui.Text(c, i18n.T("skills.trust-declared-hint")).FontSize(11.5).TextColor(SailInkFaint).SingleLine().MinWidth(0)
+				}
+			})
 		}
 	})
 }

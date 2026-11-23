@@ -402,5 +402,10 @@
   "ops.write-count-suffix": " (%d 写)",
   "ops.write-mcp-config": "仅写入 MCP 配置",
   "ops.write-tools": "写操作工具",
-  "ops.write-tools-count": "写工具 %d"
+  "ops.write-tools-count": "写工具 %d",
+  "ops.credential-keychain-managed": "已托管在钥匙串",
+  "ops.credential-env-ignored": "未托管（宿主机环境变量不生效）",
+  "ops.credentials-cli-note": "受控 CLI 仅读取网关凭据库（系统钥匙串）中的凭据，不读取宿主机环境变量",
+  "ops.cli-contract-locked": "受控 CLI 工具契约由网关生成并锁定，仅可在列表中启停。",
+  "ops.cli-subcommand": "CLI 子命令"
 }

@@ -398,6 +398,9 @@ func evaluateServiceReadiness(
 			i18n.T("readiness.cred.detail_missing"),
 			joined,
 		)
+		if s.Kind == "cli" {
+			detailMsg = i18n.T("readiness.cred.detail_missing_cli", joined)
+		}
 		if invFail != nil {
 			rowSummary = fmt.Sprintf(i18n.T("readiness.cred.missing_recent_fail"), joined, invFail.ToolID)
 			detailMsg = fmt.Sprintf(

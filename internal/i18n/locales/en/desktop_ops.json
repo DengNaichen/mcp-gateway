@@ -402,5 +402,10 @@
   "ops.write-count-suffix": " (%d write)",
   "ops.write-mcp-config": "Write MCP config only",
   "ops.write-tools": "Write tools",
-  "ops.write-tools-count": "%d write tools"
+  "ops.write-tools-count": "%d write tools",
+  "ops.credential-keychain-managed": "Stored in keychain",
+  "ops.credential-env-ignored": "Not stored (host environment ignored)",
+  "ops.credentials-cli-note": "Controlled CLIs read credentials only from the gateway store (system keychain), never from host environment variables",
+  "ops.cli-contract-locked": "Controlled CLI tool contracts are generated and locked by the gateway; only enablement can be changed.",
+  "ops.cli-subcommand": "CLI subcommand"
 }

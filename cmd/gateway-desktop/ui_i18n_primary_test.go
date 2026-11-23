@@ -358,3 +358,73 @@ func TestPrimaryCatalogEnglishHasNoCJK(t *testing.T) {
 		}
 	}
 }
+
+// TestControlledCLISurfacesRenderEnglish renders the M3 controlled CLI preset,
+// the CLI service detail and its keychain credential card in English.
+func TestControlledCLISurfacesRenderEnglish(t *testing.T) {
+	i18n.WithLang(i18n.LangEN, func() {
+		app := NewDesktopUI(&gatewayRuntime{UIURL: "http://127.0.0.1:1", Mode: modeAttached})
+		boot := apitypes.Bootstrap{MCPURL: "http://127.0.0.1:8788/mcp"}
+		boot.Registry.Servers = []apitypes.Server{ghTestServer()}
+		boot.Registry.Tools = ghTestTools()
+		app.State = &boot
+		app.Loading = false
+		app.applyServerCredentialsSnapshot(boot.Registry.Servers, map[string]apitypes.ServerCredentials{"gh": {
+			Persistent: true, Credentials: []apitypes.CredentialStatus{{Name: "GH_TOKEN", Environment: true}},
+		}})
+		st := app.servicesState()
+		assertEnglish := func(tester *ui.Tester, wants ...string) {
+			t.Helper()
+			for _, want := range wants {
+				if !tester.HasText(want) {
+					t.Fatalf("missing English text %q: %v", want, tester.Texts())
+				}
+			}
+			for _, text := range tester.Texts() {
+				if cjkTextRe.MatchString(text) {
+					t.Fatalf("untranslated text in English mode: %q", text)
+				}
+			}
+		}
+
+		st.add.open(0)
+		tester := ui.NewTester(func(c *ui.Context) {
+			defer app.enterHeadlessFrame()()
+			app.renderAddServiceModal(c, st)
+		}, 1200, 900)
+		assertEnglish(tester, "Use gh preset")
+		st.add.applyGHPreset()
+		tester.Frame()
+		assertEnglish(tester, "GitHub CLI (gh) controlled source", "Executable", "Expected SHA-256 (optional)", "Pin and register", "Other methods")
+		st.add.show = false
+
+		server := boot.Registry.Servers[0]
+		st.enterDetail(server.ID)
+		st.detailSubtab = 1
+		tester = ui.NewTester(func(c *ui.Context) {
+			defer app.enterHeadlessFrame()()
+			app.renderServiceDetail(c, st, server)
+		}, 1400, 1400)
+		assertEnglish(tester, "CLI", "SHA-256", "0123456789ab", "Not stored (host environment ignored)",
+			"Controlled CLIs read credentials only from the gateway store (system keychain), never from host environment variables")
+	})
+}
+
+func TestM3EnglishSamples(t *testing.T) {
+	i18n.WithLang(i18n.LangEN, func() {
+		for _, tc := range []struct{ key, want string }{
+			{"services.add.menu.gh_cli", "GitHub CLI (gh) controlled preset"},
+			{"skills.title", "Skill admission allowlist"},
+			{"skills.note", "Declarative guardrail (skill_trust = declared): checked only when a call explicitly declares a skill_id."},
+			{"policy.audit-cli-command", "CLI command"},
+			{"ops.credential-keychain-managed", "Stored in keychain"},
+		} {
+			if got := i18n.T(tc.key); got != tc.want {
+				t.Fatalf("%s = %q, want %q", tc.key, got, tc.want)
+			}
+		}
+		if got := i18n.T("services.cli.toast_registered", "0123456789ab"); got != "Controlled CLI registered; executable pinned (sha256:0123456789ab)" {
+			t.Fatalf("format template = %q", got)
+		}
+	})
+}

@@ -559,6 +559,12 @@ func ServerProtocolLabel(s apitypes.Server) string {
 }
 
 func ServerTargetText(s apitypes.Server) string {
+	if s.Kind == "cli" {
+		if cmd := strings.TrimSpace(s.Command); cmd != "" {
+			return cmd
+		}
+		return "—"
+	}
 	if s.Kind == "mcp" && s.Transport == "stdio" {
 		parts := make([]string, 0, 1+len(s.Args))
 		if s.Command != "" {

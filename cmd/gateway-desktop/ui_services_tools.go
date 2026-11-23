@@ -341,6 +341,9 @@ func (u *DesktopUI) renderServiceToolRow(
 				if !t.ReadOnly {
 					SailBadge(c, i18n.T("common.write_operation"), ToneWarning)
 				}
+				if u.State != nil && toolMatchesApproveRule(t, u.State.Policies.Rules) {
+					SailBadge(c, i18n.T("policy.needs-approval"), ToneWarning)
+				}
 			})
 			SailDescSummary(c, t.Description, i18n.T("services.tools.no_description"), 1)
 		})
@@ -355,6 +358,9 @@ func (u *DesktopUI) renderServiceToolRow(
 				if sw.Changed() {
 					u.toggleSingleToolWhitelist(st, server.ID, srvTools, t.ID, swVal)
 				}
+			}
+			if serverIsCLI(server) {
+				return // controlled CLI contracts are gateway-generated; only enablement is editable
 			}
 			if SailSmallButton(c.Key("tool-edit-"+t.ID), i18n.T("common.edit")).Clicked() {
 				st.toolEdit.open(t)

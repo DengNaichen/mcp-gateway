@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/egoist/mygo/ui"
+
 	"gatewaylab/internal/apitypes"
 )
 
@@ -163,5 +165,59 @@ func TestCatalogPaginateToolsAndNavigationIntents(t *testing.T) {
 	st.edit.reset(tool)
 	if st.edit.desc != "desc" {
 		t.Fatalf("reset did not restore tool desc: %q", st.edit.desc)
+	}
+}
+
+func TestToolMatchesApproveRule(t *testing.T) {
+	merge := apitypes.Tool{ID: "gh.pr.merge", ServerID: "gh"}
+	view := apitypes.Tool{ID: "gh.pr.view", ServerID: "gh", ReadOnly: true}
+	rules := []apitypes.PolicyRule{
+		{ID: "a", Effect: "approve", Enabled: true, RepoKey: "repo-1", ServiceID: "gh", Access: "rw"},
+		{ID: "b", Effect: "deny", Enabled: true, RepoKey: "*", ServiceID: "*", Access: "*"},
+	}
+	if !toolMatchesApproveRule(merge, rules) || toolMatchesApproveRule(view, rules) {
+		t.Fatal("rw approve rule must match writes only")
+	}
+	if toolMatchesApproveRule(merge, []apitypes.PolicyRule{{Effect: "approve", Enabled: false, ServiceID: "gh", Access: "*"}}) {
+		t.Fatal("disabled rules must be ignored")
+	}
+	if !toolMatchesApproveRule(view, []apitypes.PolicyRule{{Effect: "approve", Enabled: true, ServiceID: "*", ToolIDs: []string{"gh.pr.view"}, Access: "*"}}) {
+		t.Fatal("wildcard service + explicit tool must match")
+	}
+	if toolMatchesApproveRule(view, []apitypes.PolicyRule{{Effect: "approve", Enabled: true, ServiceID: "github", Access: "*"}}) {
+		t.Fatal("other services must not match")
+	}
+}
+
+func TestCatalogRendersControlledCLIToolsIsomorphically(t *testing.T) {
+	app := NewDesktopUI(&gatewayRuntime{UIURL: "http://127.0.0.1:1", Mode: modeAttached})
+	boot := apitypes.Bootstrap{MCPURL: "http://127.0.0.1:8788/mcp"}
+	boot.Registry.Servers = []apitypes.Server{ghTestServer()}
+	boot.Registry.Tools = ghTestTools()
+	boot.Policies.Rules = []apitypes.PolicyRule{{ID: "pol-merge", Effect: "approve", Enabled: true, RepoKey: "*", ServiceID: "gh", ToolIDs: []string{"gh.pr.merge"}, Access: "rw"}}
+	app.State = &boot
+	app.Loading = false
+	st := app.catalogState()
+	st.selectedToolID = "gh.pr.merge"
+	st.detailTab = 1
+	render := func() *ui.Tester {
+		return ui.NewTester(func(c *ui.Context) {
+			defer app.enterHeadlessFrame()()
+			app.renderCatalog(c)
+		}, 1500, 1400)
+	}
+	tester := render()
+	for _, want := range []string{"pr.view", "pr.list", "pr.merge", "需审批", "受控 CLI 工具契约由网关生成并锁定"} {
+		if !tester.HasText(want) {
+			t.Fatalf("catalog missing %q: %v", want, tester.Texts())
+		}
+	}
+	if tester.HasText("保存契约") {
+		t.Fatal("controlled CLI contracts must not be editable from the catalog")
+	}
+	st.detailTab = 0
+	tester = render()
+	if !tester.HasText("CLI 子命令") || !tester.HasText("gh pr merge") {
+		t.Fatalf("catalog overview must show the CLI subcommand: %v", tester.Texts())
 	}
 }

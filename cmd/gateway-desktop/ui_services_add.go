@@ -17,7 +17,7 @@ import (
 
 type serviceAddFormState struct {
 	show            bool
-	tab             int // 0=MCP Stdio, 1=MCP HTTP/SSE, 2=OpenAPI 导入, 3=粘贴 JSON
+	tab             int // 0=MCP Stdio, 1=MCP HTTP/SSE, 2=OpenAPI 导入, 3=粘贴 JSON, 4=受控 CLI（gh 预设）
 	busy            bool
 	errMsg          string
 	id              string
@@ -37,6 +37,9 @@ type serviceAddFormState struct {
 	openAPIOpsText  string
 	openAPIHeaders  string
 	pasteText       string
+	cliCommand      string
+	cliSHA          string
+	cliToken        string
 }
 
 type openAPIImportRequest struct {
@@ -60,6 +63,7 @@ func (s *serviceAddFormState) open(tab int) {
 	s.show = true
 	s.tab = tab
 	s.errMsg = ""
+	s.cliToken = ""
 	if s.argsText == "" {
 		s.argsText = "[]"
 	}
@@ -198,6 +202,12 @@ func (s *serviceAddFormState) applyGatewayServerPaste(raw map[string]any, kind s
 	}
 	s.description, _ = raw["description"].(string)
 	transport, _ := raw["transport"].(string)
+	if kind == "cli" {
+		s.cliCommand, _ = raw["command"].(string)
+		s.cliSHA, _ = raw["command_sha256"].(string)
+		s.tab = serviceAddTabCLI
+		return
+	}
 	if kind == "http" {
 		s.openAPIBaseURL, _ = raw["endpoint"].(string)
 		s.openAPIHeaders = marshalMapOrDefault(raw["headers"])
@@ -280,14 +290,27 @@ func (u *DesktopUI) renderAddServiceModal(c *ui.Context, st *servicesPageState) 
 			}
 		})
 
-		ui.Segmented(
-			c.Key("add-svc-tabs"),
-			&st.add.tab,
-			i18n.T("services.add.tab_stdio"),
-			i18n.T("services.add.tab_remote"),
-			i18n.T("services.add.tab_openapi"),
-			i18n.T("services.add.tab_paste"),
-		).FillEqually()
+		if st.add.tab == serviceAddTabCLI {
+			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
+					ui.Text(c, i18n.T("services.cli.preset_title")).FontSize(13.5).FontWeight(600).TextColor(SailInkStrong).SingleLine()
+					ui.Text(c, "CLI").FontSize(11.5).TextColor(SailInkFaint).SingleLine()
+				})
+				if SailSmallButton(c.Key("add-cli-back"), i18n.T("services.cli.other_methods")).Disabled(st.add.busy).Clicked() {
+					st.add.tab = 0
+					st.add.errMsg = ""
+				}
+			})
+		} else {
+			ui.Segmented(
+				c.Key("add-svc-tabs"),
+				&st.add.tab,
+				i18n.T("services.add.tab_stdio"),
+				i18n.T("services.add.tab_remote"),
+				i18n.T("services.add.tab_openapi"),
+				i18n.T("services.add.tab_paste"),
+			).FillEqually()
+		}
 
 		if st.add.errMsg != "" {
 			SailAlertBox(c, ToneDanger, i18n.T("services.add.error_title"), st.add.errMsg)
@@ -309,6 +332,8 @@ func renderAddServiceBody(c *ui.Context, add *serviceAddFormState) {
 		renderAddMCPRemoteFields(c, add)
 	case 2:
 		renderAddOpenAPIFields(c, add)
+	case serviceAddTabCLI:
+		renderAddCLIFields(c, add)
 	case 3:
 		ui.Column(c).FillWidth().Gap(6).Children(func() {
 			ui.Text(c, i18n.T("services.add.paste_label")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
@@ -323,6 +348,12 @@ func renderAddServiceBody(c *ui.Context, add *serviceAddFormState) {
 }
 
 func renderAddMCPStdioFields(c *ui.Context, add *serviceAddFormState) {
+	ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.SpaceBetween).Padding(8, 12).Radius(7).Background(SailBgSubtle).Children(func() {
+		ui.Text(c, i18n.T("services.cli.preset_hint")).FontSize(12).TextColor(SailInkMuted).SingleLine().MinWidth(0)
+		if SailSmallButton(c.Key("add-gh-preset"), i18n.T("services.cli.preset_button")).Shrink(0).Clicked() {
+			add.applyGHPreset()
+		}
+	})
 	renderAddCommonIdentityFields(c, add, "stdio")
 	ui.Row(c).FillWidth().Gap(12).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
@@ -492,6 +523,14 @@ func (u *DesktopUI) renderAddServiceFooter(c *ui.Context, st *servicesPageState)
 				}
 				if SailPrimaryButton(c.Key("add-submit-oapi"), lbl).Disabled(st.add.busy).Clicked() {
 					u.submitAddOpenAPIService(st)
+				}
+			case serviceAddTabCLI:
+				lbl := i18n.T("services.cli.register")
+				if st.add.busy {
+					lbl = i18n.T("services.cli.registering")
+				}
+				if SailPrimaryButton(c.Key("add-submit-cli"), lbl).Disabled(st.add.busy).Clicked() {
+					u.submitAddCLIService(st)
 				}
 			case 3:
 				if SailPrimaryButton(c.Key("add-parse-paste"), i18n.T("services.add.parse_into_form")).

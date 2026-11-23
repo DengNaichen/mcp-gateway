@@ -333,6 +333,14 @@ func renderLogsTimelineRow(c *ui.Context, st *logsPageState, p logsTimelineRowPr
 					FontSize(11.5).
 					TextColor(SailInkMuted).
 					SingleLine()
+				if ev.SkillID != "" {
+					ui.Text(c, "skill:"+ev.SkillID).
+						Font("monospace").
+						FontSize(11).
+						TextColor(SailInkFaint).
+						SingleLine().
+						MinWidth(0)
+				}
 				if ev.Decision == "deny" || ev.Decision == "approve" {
 					policyEffectBadge(c, ev.Decision)
 				} else if logsIsErrorStatus(ev.Status) {

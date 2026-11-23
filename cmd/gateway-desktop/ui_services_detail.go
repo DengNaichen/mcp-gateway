@@ -207,7 +207,10 @@ func (u *DesktopUI) renderServiceDetailSummaryCard(
 
 				ui.Column(c).MinWidth(180).MaxWidth(480).Gap(3).Children(func() {
 					lbl := i18n.T("services.field.endpoint")
-					if server.Kind == "mcp" && server.Transport == "stdio" {
+					switch {
+					case serverIsCLI(server):
+						lbl = i18n.T("services.cli.command_label")
+					case server.Kind == "mcp" && server.Transport == "stdio":
 						lbl = i18n.T("services.field.command")
 					}
 					ui.Text(c, lbl).FontSize(11.5).TextColor(SailInkMuted)
@@ -219,6 +222,9 @@ func (u *DesktopUI) renderServiceDetailSummaryCard(
 						}
 					})
 				})
+				if serverIsCLI(server) {
+					u.renderServiceCLIDigest(c, server)
+				}
 			})
 
 			renderServiceDetailMetrics(c, readiness, counts)
@@ -315,7 +321,22 @@ func (u *DesktopUI) renderServiceDetailSubtab(
 	srvTools []apitypes.Tool,
 	enabledCount int,
 ) {
-	if !server.Demo {
+	switch {
+	case serverIsCLI(server):
+		// Controlled CLI tools are generated and maintained by the gateway, so
+		// the health & maintenance tab does not apply.
+		if st.detailSubtab > 1 {
+			st.detailSubtab = 0
+		}
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+			ui.Segmented(
+				c.Key("detail-subtab-"+server.ID),
+				&st.detailSubtab,
+				fmt.Sprintf(i18n.T("services.tools.whitelist_tab"), len(srvTools)),
+				i18n.T("services.tabs.connection"),
+			)
+		})
+	case !server.Demo:
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 			ui.Segmented(
 				c.Key("detail-subtab-"+server.ID),
@@ -325,7 +346,7 @@ func (u *DesktopUI) renderServiceDetailSubtab(
 				i18n.T("services.tabs.health"),
 			)
 		})
-	} else {
+	default:
 		st.detailSubtab = 0
 	}
 
@@ -377,6 +398,10 @@ func (st *serviceConnFormState) buildServerFromConnForm(orig apitypes.Server) (a
 	out.RedactEmails = st.connRedactEmails
 	out.RedactFields = splitCommaList(st.connRedactFieldsText)
 
+	if serverIsCLI(out) {
+		// The pinned executable and GH_TOKEN reference are not editable here.
+		return out, nil
+	}
 	if out.Kind == "mcp" && out.Transport == "stdio" {
 		out.Command = strings.TrimSpace(st.connCommand)
 		out.WorkDir = strings.TrimSpace(st.connWorkDir)
@@ -456,7 +481,7 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 					FillWidth()
 			})
 		} else {
-			renderServiceConnectionForm(c, st, server)
+			u.renderServiceConnectionForm(c, st, server)
 		}
 
 		u.renderServiceConnectionFooter(c, st, server)
@@ -467,7 +492,7 @@ func (u *DesktopUI) renderServiceConnectionTab(c *ui.Context, st *servicesPageSt
 	}
 }
 
-func renderServiceConnectionForm(c *ui.Context, st *servicesPageState, server apitypes.Server) {
+func (u *DesktopUI) renderServiceConnectionForm(c *ui.Context, st *servicesPageState, server apitypes.Server) {
 	ui.Row(c).FillWidth().Gap(14).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(5).Children(func() {
 			ui.Text(c, i18n.T("services.field.display_name")).FontSize(12.5).FontWeight(600).TextColor(SailInkBody)
@@ -479,9 +504,12 @@ func renderServiceConnectionForm(c *ui.Context, st *servicesPageState, server ap
 		})
 	})
 
-	if server.Kind == "mcp" && server.Transport == "stdio" {
+	switch {
+	case serverIsCLI(server):
+		u.renderServiceConnectionCLIFields(c, server)
+	case server.Kind == "mcp" && server.Transport == "stdio":
 		renderServiceConnectionStdioFields(c, st, server.ID)
-	} else {
+	default:
 		renderServiceConnectionHTTPFields(c, st, server)
 	}
 

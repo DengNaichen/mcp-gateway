@@ -439,3 +439,63 @@ func TestLogsUnboundFilterAndOfflineFallback(t *testing.T) {
 		t.Fatalf("unbound filter must keep only RepoID==\"\" events: %v", tester.Texts())
 	}
 }
+
+func TestLogsCLIAndSkillAuditDisplay(t *testing.T) {
+	ev := apitypes.Event{
+		ID: "ev-cli-1", Kind: "invoke", Status: "success", Title: "gh.pr.view", Actor: "codex",
+		Protocol: "cli", ServiceID: "gh", Action: "gh.pr.view", Decision: "allow", RuleID: "scope:repo-1",
+		RepoID: "repo-1", SkillID: "release-notes",
+		Detail: json.RawMessage(`{"tool_id":"gh.pr.view","skill_trust":"declared"}`),
+	}
+	if got := logsCLICommand(ev); got != "gh pr view" {
+		t.Fatalf("logsCLICommand = %q", got)
+	}
+	if got := logsSkillTrust(ev); got != "declared" {
+		t.Fatalf("logsSkillTrust = %q", got)
+	}
+	if logsCLICommand(apitypes.Event{Protocol: "mcp", Action: "github.list"}) != "" {
+		t.Fatal("non-CLI events must not get a CLI command summary")
+	}
+	if logsSkillTrust(apitypes.Event{Detail: json.RawMessage(`{"skill_trust":"declared"}`)}) != "" {
+		t.Fatal("skill_trust without skill_id must be ignored")
+	}
+	if !logsHasAuditMeta(apitypes.Event{SkillID: "x"}) {
+		t.Fatal("skill_id alone is audit metadata")
+	}
+	if !logsMatchesFilters(ev, &logsPageState{protocolIdx: 3, query: "RELEASE-notes"}) {
+		t.Fatal("CLI filter + skill_id search must match")
+	}
+	if logsMatchesFilters(ev, &logsPageState{protocolIdx: 1}) {
+		t.Fatal("MCP filter must exclude CLI events")
+	}
+
+	tester := ui.NewTester(func(c *ui.Context) { renderLogsInspectorAuditCard(c, ev) }, 900, 500)
+	for _, want := range []string{"审计元信息", "cli", "gh.pr.view", "CLI 命令", "gh pr view", "skill_id", "release-notes", "skill_trust", "declared", "调用方自述，非认证"} {
+		if !tester.HasText(want) {
+			t.Fatalf("audit card missing %q: %v", want, tester.Texts())
+		}
+	}
+
+	verified := ev
+	verified.Detail = json.RawMessage(`{"skill_trust":"hook-verified"}`)
+	tester = ui.NewTester(func(c *ui.Context) { renderLogsInspectorAuditCard(c, verified) }, 900, 500)
+	if !tester.HasText("hook-verified") || tester.HasText("调用方自述，非认证") {
+		t.Fatal("hook-verified trust must render as a quiet status without the declared hint")
+	}
+
+	// Timeline row: protocol label plus a quiet skill marker.
+	app := NewDesktopUI(&gatewayRuntime{UIURL: "http://127.0.0.1:1", Mode: modeAttached})
+	boot := apitypes.Bootstrap{MCPURL: "http://127.0.0.1:8788/mcp", Events: []apitypes.Event{ev}}
+	boot.Registry.Servers = []apitypes.Server{{ID: "gh", Name: "GitHub CLI", Kind: "cli", Enabled: true}}
+	app.State = &boot
+	app.Loading = false
+	tester = ui.NewTester(func(c *ui.Context) {
+		defer app.enterHeadlessFrame()()
+		app.renderLogs(c)
+	}, 1400, 1000)
+	for _, want := range []string{"skill:release-notes", "gh.pr.view", "CLI"} {
+		if !tester.HasText(want) {
+			t.Fatalf("logs page missing %q: %v", want, tester.Texts())
+		}
+	}
+}
