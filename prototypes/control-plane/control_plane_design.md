@@ -148,3 +148,16 @@ macOS 更新等原生辅助窗口沿用内容区背景：标题栏透明，不�
    - **分组标题（`SailGroupHeader` / `.list-group-hdr`）**：无底色，组与组之间只保留标题上方一条细线 + 留白（首组紧贴工具栏，不画线），标题 `11.5px` 半粗中灰 + 等宽浅灰计数，上 `16px`（首组 `14px`）、下 `6px`；组内最后一行不画底线，标题与首行之间也不画线。上游服务分诊列表与仓库绑定左栏（`已绑定仓库` / `最近请求 · 未绑定`）共用。
    - **降噪**：列表内启用开关使用小号 `switch-quiet`，颜色沿用全局 accent 与其他页面一致；写操作数从琥珀 `写 ×N` 胶囊降为工具数旁的 `N 可写` 弱文本，避免与 `待验证` 琥珀语义撞色；不可调用服务的工具数以更浅灰呈现并提示「上次同步的工具数」。
    - **入口与导航**：`粘贴 MCP JSON / OpenAPI 导入` 收进 `添加上游服务` 分体按钮下拉（含 `从 MCP 市场添加`）；侧栏 `上游服务` 计数在存在需处理服务时显示红色需处理数，否则显示启用数。
+
+## 7. 零信任能力控制平面增量（M1–M3 原型基线）
+
+在既有 9 页内增量演进，**不新增一级侧栏菜单**。裁决顺序固定为 `身份上限 → 显式 Deny → 仓库基线（Allow） → 显式 Approve`；未命中任何 Deny / Approve 且基线放行即 `allow`。色彩降噪：`allow` / 只读 / 在线只用状态点 + 柔和灰字，暖色与红色仅留给 `RW`、`approve`（待审批）、`deny`（已拦截）与错误。
+
+| 交互面 | 页面 | 要点 |
+| --- | --- | --- |
+| 待处理审批横条 | 概览 | 仅存在 `pending` 审批单时出现（Linear Inbox 风格）：条数 + 最近一条 `actor / repo / service / action` + 剩余 TTL + `前往处理`，直达 `请求日志` 的 `decision=approve` 视图；清空后自动消失。 |
+| 基线授权 + 额外限制 | 仓库绑定（矩阵视图） | 矩阵即 `ScopeRule` 基线 Allow；下方「额外限制（Deny / Approve）」承载 `PolicyRule`：`effect`、`repo_key`、`service_id`、`tool_ids`、`access: * / ro / rw`、`actor`、`reason`（无 `Priority` / `Name` / `Protocol`）。`repo = *` 规则置顶并标注对无凭证 / 未绑定仓库同样生效；支持新增、启停、删除。 |
+| 统一审计账本 + 行内审批 | 请求日志 | 侧栏 `请求日志` 在有待审批时显示红色数字徽标；筛选：`protocol`（全部 / MCP / HTTP / CLI）、`decision`（全部 / allow / approve / deny）、仓库、服务、搜索。检视器展示协议、决策、`RuleID`、`ApprovalID`、命中链路与 CLI 脱敏输出；`approve` 且 `pending` 的事件在检视器顶部给出完整脱敏命令、申请来源、剩余 TTL（实时倒计时，耗尽转 `已过期`）、备注输入与 `批准` / `拒绝`，操作后同步递减侧栏与概览计数。日志页头提供「演示：清空 / 恢复待审批」切换。 |
+| 受控 CLI + Skill 白名单 | 上游服务 / 工具目录 | `Kind = CLI` 样例 `gh`：启用开关、`GH_TOKEN` 钥匙串托管、白名单子命令（`gh.pr.view` / `gh.pr.list` 只读，`gh.pr.merge` RW + `需审批`），工具目录与 MCP / HTTP 工具同构展示。服务列表下方「Skill 准入白名单」仅含允许清单：`skill_id`、仓库 / 服务范围、信任级别（`hook-verified` 安静状态点 / `declared` 中性徽标）、启用开关；不做 Skill 市场。 |
+| `sim_policy` 策略推演 | 路由沙盒 | 在 `sim_scope` 之外选 `仓库 / 动作（含 gh CLI）/ 模拟身份`，输出 `allow / approve / deny`、四段命中链路与 `trust: declared | authenticated` 提示。 |
+| 威胁模型信任模式 | 访问与路由 | `本地护栏模式（Local Guardrail）` ↔ `受控边界模式（Shared Boundary）` 可切换试看：本地模式下 `PolicyRule.Actor` 置灰并标注「本地模式对所有调用生效」，`trust = declared`；受控边界模式按认证身份匹配，`trust = authenticated`。 |
