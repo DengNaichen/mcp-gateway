@@ -91,6 +91,8 @@ func (g docGenerator) operation(r route) (map[string]any, error) {
 
 func applyOperationSecurity(op map[string]any, r route) {
 	switch {
+	case strings.HasPrefix(r.Path, "/api/approvals"):
+		op["description"] = "Approval management requires an admin principal in shared mode. Local mode requires the X-Gateway-Admin-Token header and a configured local admin token."
 	case r.Public:
 		op["security"] = []any{}
 	case r.Invocation:

@@ -250,7 +250,7 @@ func TestLegacyMigrationRetainsRegistryAndScopeData(t *testing.T) {
 		t.Fatalf("migration reordered data: %+v %v", got, err)
 	}
 	var version int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 9 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 10 {
 		t.Fatalf("version=%d, %v", version, err)
 	}
 	rules, err := ScopeRules[map[string]any](db.DB).List()

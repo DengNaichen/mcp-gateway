@@ -23,6 +23,10 @@ var apiRoutes = []route{
 		{"before", "string", "Cursor from the preceding page or an RFC3339Nano timestamp"},
 	}, Responses: ok(apitypes.EventPage{})},
 
+	{Method: "GET", Path: "/api/approvals", Summary: "List recent approvals, pending first", Query: []query{{"status", "string", "Approval status"}, {"limit", "integer", "Page size. Default 100, maximum 500"}}, Responses: ok([]apitypes.Approval{})},
+	{Method: "POST", Path: "/api/approvals/{id}/approve", Summary: "Approve a pending request for one execution", Request: apitypes.ApprovalDecisionRequest{}, Responses: ok(apitypes.Approval{})},
+	{Method: "POST", Path: "/api/approvals/{id}/deny", Summary: "Deny a pending request", Request: apitypes.ApprovalDecisionRequest{}, Responses: ok(apitypes.Approval{})},
+
 	{Method: "GET", Path: "/api/policies", Summary: "Policy rules and repository baseline enforcement", Responses: ok(apitypes.PolicyOverview{})},
 	{Method: "PUT", Path: "/api/policies/rules", Summary: "Create or update a deny or approval rule", Request: apitypes.PolicyRule{}, Responses: ok(apitypes.PolicyRule{})},
 	{Method: "DELETE", Path: "/api/policies/rules/{id}", Summary: "Delete a policy rule", Responses: ok(apitypes.Deleted{})},
@@ -35,7 +39,7 @@ var apiRoutes = []route{
 	{Method: "GET", Path: "/api/catalog", Summary: "Authorized services and tool summaries", Invocation: true, Query: []query{actorQuery, simScopeQuery, {"include_demo", "boolean", "Include demo services"}}, Responses: ok(apitypes.Catalog{})},
 	{Method: "GET", Path: "/api/tools/{id}/schema", Summary: "Full definition of one authorized tool", Invocation: true, Query: []query{actorQuery, simScopeQuery}, Responses: ok(apitypes.ToolSchema{})},
 	{Method: "POST", Path: "/api/discover", Summary: "Route an intent to a small set of authorized tools", Invocation: true, Request: apitypes.DiscoverRequest{}, Responses: ok(oneOf{apitypes.DiscoverResult{}, apitypes.DiscoverSummaryResult{}})},
-	{Method: "POST", Path: "/api/invoke", Summary: "Invoke a registered tool", Invocation: true, Request: apitypes.InvokeRequest{}, Responses: ok(apitypes.InvokeResult{})},
+	{Method: "POST", Path: "/api/invoke", Summary: "Invoke a registered tool", Invocation: true, Request: apitypes.InvokeRequest{}, Responses: map[int]any{200: apitypes.InvokeResult{}, 202: apitypes.InvokeResult{}}},
 
 	{Method: "PUT", Path: "/api/servers", Summary: "Create or replace a tool source", Request: apitypes.Server{}, Responses: ok(apitypes.Server{})},
 	{Method: "POST", Path: "/api/servers/openapi", Summary: "Register an HTTP source and the tools generated from its OpenAPI document", Request: apitypes.ImportOpenAPIRequest{}, Responses: ok(apitypes.ImportOpenAPIResult{})},

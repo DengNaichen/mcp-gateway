@@ -21,7 +21,18 @@ func (g *server) registerBootstrap(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
+		approvals := []apitypes.Approval{}
+		pending := 0
+		if g.approvalAdmin(r) {
+			rows, count, err := g.gw.Approvals(r.Context(), "", 50)
+			if err != nil {
+				fail(w, err)
+				return
+			}
+			approvals, pending = mapSlice(rows, wireApproval), count
+		}
 		respond(w, 200, apitypes.Bootstrap{
+			Approvals: approvals, PendingApprovals: pending,
 			Registry:              wireRegistry(g.registry.Snapshot()),
 			Settings:              apitypes.Settings(settings),
 			KeyConfigured:         key,

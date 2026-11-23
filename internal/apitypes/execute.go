@@ -54,18 +54,29 @@ type DiscoverSummaryResult struct {
 
 // InvokeRequest is sent to POST /api/invoke.
 type InvokeRequest struct {
-	ToolID    string         `json:"tool_id"`
-	Arguments map[string]any `json:"arguments"`
-	Fields    []string       `json:"fields,omitempty"`
-	Actor     string         `json:"actor,omitempty"`
-	SimScope  *SimScope      `json:"sim_scope,omitempty"`
+	ApprovalID string         `json:"approval_id,omitempty"`
+	ToolID     string         `json:"tool_id"`
+	Arguments  map[string]any `json:"arguments"`
+	Fields     []string       `json:"fields,omitempty"`
+	Actor      string         `json:"actor,omitempty"`
+	SimScope   *SimScope      `json:"sim_scope,omitempty"`
+}
+
+// ApprovalChallenge describes how to retry the invocation. ExpiresIn is in seconds.
+type ApprovalChallenge struct {
+	ApprovalID string `json:"approval_id"`
+	ExpiresIn  int    `json:"expires_in"`
+	Message    string `json:"message"`
+	Summary    string `json:"summary"`
 }
 
 // InvokeResult is returned by POST /api/invoke.
 type InvokeResult struct {
-	ID         string `json:"id"`
-	ToolID     string `json:"tool_id"`
-	Protocol   string `json:"protocol"`
-	Data       any    `json:"data"`
-	DurationMS int64  `json:"duration_ms"`
+	Status     string             `json:"status,omitempty"`
+	Approval   *ApprovalChallenge `json:"approval,omitempty"`
+	ID         string             `json:"id"`
+	ToolID     string             `json:"tool_id"`
+	Protocol   string             `json:"protocol"`
+	Data       any                `json:"data"`
+	DurationMS int64              `json:"duration_ms"`
 }

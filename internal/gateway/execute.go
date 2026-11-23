@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/scope"
 	"gatewaylab/internal/upstream"
+	"gatewaylab/internal/workspace"
 )
 
 func (g *Gateway) ImportMCP(ctx context.Context, id string) (int, error) {
@@ -79,6 +81,10 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	defer func() {
 		status := "success"
 		detail := map[string]any{"tool_id": req.ToolID, "fields": req.Fields, "scope": scopeEv}
+		if result.Approval != nil {
+			status = "pending"
+			audit.ApprovalID = result.Approval.ApprovalID
+		}
 		if retErr != nil {
 			status = "error"
 			detail["error"] = invokeAuditError(retErr)
@@ -103,22 +109,44 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	t.Enabled = t.Enabled && available
 	decision := g.authorize(ctx, t, req.Actor)
 	audit.Decision, audit.RuleID = decision.Effect, decision.RuleID
-	if decision.Effect == policy.EffectDeny || !available {
+	if j < 0 || (req.ApprovalID == "" && (decision.Effect == policy.EffectDeny || !available)) {
 		return result, fault.WithCode(fault.New(fault.Forbidden, "工具已禁用，或当前身份没有调用权限", nil), "policy_denied")
 	}
-	if decision.Effect == policy.EffectApprove {
+	needsApproval := decision.Effect == policy.EffectApprove || req.ApprovalID != ""
+	if needsApproval && g.localAdmin == nil && g.access == nil {
 		return result, fault.WithCode(fault.New(fault.Forbidden, "此调用需要审批，当前网关尚未启用审批", nil), "approval_required_not_enabled")
 	}
 	s := r.Servers[j]
 	if req.Arguments == nil {
 		req.Arguments = map[string]any{}
 	}
-	schema, err := registry.CompileSchema(t.InputSchema)
-	if err != nil {
-		return result, fault.New(fault.Internal, "工具 schema 无效", err)
+	var hash string
+	var err error
+	if needsApproval {
+		// Channel metadata is never upstream input or part of an approval.
+		req.Arguments = maps.Clone(req.Arguments)
+		maps.DeleteFunc(req.Arguments, func(key string, _ any) bool { return workspace.IsReservedContextField(key) })
+		hash, err = approvalHash(req, scopeEv, t, s.Kind)
+		if err != nil {
+			return result, err
+		}
 	}
-	if err := schema.Validate(req.Arguments); err != nil {
-		return result, fault.New(fault.Invalid, fmt.Sprintf("参数不符合工具 schema: %v", err), nil)
+	if req.ApprovalID != "" {
+		out, lease, err := g.retryApproval(ctx, req, t, hash, &audit)
+		if err != nil || out.Approval != nil {
+			return out, err
+		}
+		defer func() {
+			if err := g.storage.MarkConsumed(req.ApprovalID, lease, time.Now()); err != nil {
+				retErr = errors.Join(retErr, fmt.Errorf("finalize approval: %w", err))
+			}
+		}()
+	}
+	if err := validateInvokeArguments(t, req); err != nil {
+		return result, err
+	}
+	if needsApproval && req.ApprovalID == "" {
+		return g.requestApproval(ctx, req, t, s, hash, decision)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
@@ -173,4 +201,15 @@ func invokeAuditError(err error) string {
 		return se.Code
 	}
 	return "Tool call failed"
+}
+
+func validateInvokeArguments(t registry.Tool, req InvokeRequest) error {
+	schema, err := registry.CompileSchema(t.InputSchema)
+	if err != nil {
+		return fault.New(fault.Internal, "工具 schema 无效", err)
+	}
+	if err := schema.Validate(req.Arguments); err != nil {
+		return fault.New(fault.Invalid, fmt.Sprintf("参数不符合工具 schema: %v", err), nil)
+	}
+	return nil
 }

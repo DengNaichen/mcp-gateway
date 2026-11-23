@@ -206,5 +206,10 @@ CREATE INDEX IF NOT EXISTS scope_observations_by_last_seen ON scope_observations
 			return fmt.Errorf("migrate v9: %w", err)
 		}
 	}
+	if version < 10 {
+		if err := RunTx(db, migrateApprovalsV10); err != nil {
+			return fmt.Errorf("migrate v10: %w", err)
+		}
+	}
 	return nil
 }

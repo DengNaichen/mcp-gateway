@@ -122,6 +122,144 @@
         ],
         "type": "object"
       },
+      "Approval": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "approved_at": {
+            "type": "string"
+          },
+          "args_redacted": {
+            "type": "string"
+          },
+          "consumed_at": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "decided_at": {
+            "type": "string"
+          },
+          "decided_by": {
+            "type": "string"
+          },
+          "decision_note": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lease_expires_at": {
+            "type": "string"
+          },
+          "pending_expires_at": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "repo_id": {
+            "type": "string"
+          },
+          "repo_name": {
+            "type": "string"
+          },
+          "requester_session": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "service_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "actor",
+          "agent",
+          "approved_at",
+          "args_redacted",
+          "consumed_at",
+          "created_at",
+          "decided_at",
+          "decided_by",
+          "decision_note",
+          "expires_at",
+          "id",
+          "lease_expires_at",
+          "pending_expires_at",
+          "protocol",
+          "read_only",
+          "reason",
+          "repo_id",
+          "repo_name",
+          "requester_session",
+          "rule_id",
+          "service_id",
+          "status",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "ApprovalChallenge": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_id": {
+            "type": "string"
+          },
+          "expires_in": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approval_id",
+          "expires_in",
+          "message",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "ApprovalDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
       "AuthMe": {
         "additionalProperties": false,
         "properties": {
@@ -152,6 +290,15 @@
           "access": {
             "$ref": "#/components/schemas/AccessInfo"
           },
+          "approvals": {
+            "items": {
+              "$ref": "#/components/schemas/Approval"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "credentials_persistent": {
             "type": "boolean"
           },
@@ -169,6 +316,9 @@
           },
           "mcp_url": {
             "type": "string"
+          },
+          "pending_approvals": {
+            "type": "integer"
           },
           "policies": {
             "$ref": "#/components/schemas/PolicyOverview"
@@ -206,10 +356,12 @@
         },
         "required": [
           "access",
+          "approvals",
           "credentials_persistent",
           "events",
           "key_configured",
           "mcp_url",
+          "pending_approvals",
           "policies",
           "profiles",
           "registry",
@@ -1047,6 +1199,9 @@
           "actor": {
             "type": "string"
           },
+          "approval_id": {
+            "type": "string"
+          },
           "arguments": {
             "type": [
               "object",
@@ -1085,6 +1240,16 @@
       "InvokeResult": {
         "additionalProperties": false,
         "properties": {
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalChallenge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "data": {},
           "duration_ms": {
             "type": "integer"
@@ -1093,6 +1258,9 @@
             "type": "string"
           },
           "protocol": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           },
           "tool_id": {
@@ -3182,6 +3350,166 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/approvals": {
+      "get": {
+        "description": "Approval management requires an admin principal in shared mode. Local mode requires the X-Gateway-Admin-Token header and a configured local admin token.",
+        "operationId": "get_approvals",
+        "parameters": [
+          {
+            "description": "Approval status",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Page size. Default 100, maximum 500",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Approval"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List recent approvals, pending first",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/api/approvals/{id}/approve": {
+      "post": {
+        "description": "Approval management requires an admin principal in shared mode. Local mode requires the X-Gateway-Admin-Token header and a configured local admin token.",
+        "operationId": "post_approvals_by_id_approve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Approval"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Approve a pending request for one execution",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/api/approvals/{id}/deny": {
+      "post": {
+        "description": "Approval management requires an admin principal in shared mode. Local mode requires the X-Gateway-Admin-Token header and a configured local admin token.",
+        "operationId": "post_approvals_by_id_deny",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Approval"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Deny a pending request",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "operationId": "post_auth_login",
@@ -3715,6 +4043,16 @@
               }
             },
             "description": "OK"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvokeResult"
+                }
+              }
+            },
+            "description": "Accepted"
           },
           "default": {
             "content": {

@@ -59,9 +59,10 @@ const (
 )
 
 type ResolvedRequestScope struct {
-	Mode  EvalMode
-	Rule  ScopeRule
-	Event EventScope
+	RequesterSession string
+	Mode             EvalMode
+	Rule             ScopeRule
+	Event            EventScope
 }
 
 type requestScopeKey struct{}
@@ -143,6 +144,7 @@ func (g *Service) ResolveMCPToolCallScope(ctx context.Context, urlAgent, toolNam
 	if evalErr != nil {
 		return ctx, cleanArgs, evalErr
 	}
+	resolved.RequesterSession = claims.SID
 	g.recordHookSuccess(claims)
 	return WithRequestScope(ctx, resolved), cleanArgs, nil
 }
@@ -214,6 +216,7 @@ func (g *Service) ResolveRESTScope(ctx context.Context, r RESTRequest, op string
 		if err != nil {
 			return ctx, err
 		}
+		resolved.RequesterSession = claims.SID
 		g.recordHookSuccess(claims)
 		return WithRequestScope(ctx, resolved), nil
 	}
@@ -229,17 +232,21 @@ func (g *Service) ResolveRESTScope(ctx context.Context, r RESTRequest, op string
 	if g.IsEnforced() {
 		return ctx, scopeProblem(ErrForbidden, "scope_required", "已启用仓库隔离拦截，请提供有效的 X-Gateway-Scope 凭证，管理员也可显式指定 sim_scope")
 	}
+	agent := strings.ToLower(strings.TrimSpace(r.Agent))
+	if !workspace.IsKnownAgent(agent) {
+		agent = ""
+	}
 	if !isAdmin {
 		return WithRequestScope(ctx, ResolvedRequestScope{
 			Mode:  ModeCompatUnscoped,
-			Event: EventScope{Status: "unscoped"},
+			Event: EventScope{Status: "unscoped", Agent: agent},
 		}), nil
 	}
 
 	return WithRequestScope(ctx, ResolvedRequestScope{
 		Mode: ModeBypass,
 		Event: EventScope{
-			Status: "bypass",
+			Status: "bypass", Agent: agent,
 		},
 	}), nil
 }

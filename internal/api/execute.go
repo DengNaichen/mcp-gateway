@@ -43,6 +43,10 @@ func (g *server) registerExecute(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
+		if out.Approval != nil {
+			respond(w, 202, wireInvokeResult(out))
+			return
+		}
 		respond(w, 200, wireInvokeResult(out))
 	})
 }

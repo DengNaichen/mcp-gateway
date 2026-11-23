@@ -120,7 +120,7 @@ func domainDiscoverRequest(in apitypes.DiscoverRequest) gateway.DiscoverRequest 
 }
 
 func domainInvokeRequest(in apitypes.InvokeRequest) gateway.InvokeRequest {
-	return gateway.InvokeRequest{ToolID: in.ToolID, Arguments: in.Arguments, Fields: in.Fields, Actor: in.Actor}
+	return gateway.InvokeRequest{ApprovalID: in.ApprovalID, ToolID: in.ToolID, Arguments: in.Arguments, Fields: in.Fields, Actor: in.Actor}
 }
 
 func wireSelection(s gateway.Selection) apitypes.Selection {
@@ -152,7 +152,10 @@ func wireDiscoverSummary(r gateway.DiscoverResult) apitypes.DiscoverSummaryResul
 	}
 }
 
-func wireInvokeResult(r gateway.InvokeResult) apitypes.InvokeResult { return apitypes.InvokeResult(r) }
+func wireInvokeResult(r gateway.InvokeResult) apitypes.InvokeResult {
+	return apitypes.InvokeResult{ID: r.ID, ToolID: r.ToolID, Protocol: r.Protocol, Data: r.Data, DurationMS: r.DurationMS,
+		Status: r.Status, Approval: (*apitypes.ApprovalChallenge)(r.Approval)}
+}
 
 // --- model ---
 

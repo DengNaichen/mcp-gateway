@@ -92,6 +92,8 @@ type PulseBucket struct {
 // Bootstrap is returned by GET /api/bootstrap: everything the control plane
 // needs to render its first screen.
 type Bootstrap struct {
+	PendingApprovals      int            `json:"pending_approvals"`
+	Approvals             []Approval     `json:"approvals"`
 	Registry              Registry       `json:"registry"`
 	Settings              Settings       `json:"settings"`
 	KeyConfigured         bool           `json:"key_configured"`
