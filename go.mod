@@ -3,8 +3,8 @@ module gatewaylab
 go 1.27.4
 
 require (
-	github.com/ebitengine/purego v0.11.1
-	github.com/egoist/mygo v0.9.1
+	github.com/ebitengine/purego v0.11.3
+	github.com/egoist/mygo v0.10.0
 	github.com/gofrs/flock v0.13.2
 	github.com/google/uuid v1.6.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
