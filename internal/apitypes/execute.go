@@ -15,7 +15,8 @@ type DiscoverRequest struct {
 // Selection is a tool chosen by discovery together with the routing reason.
 type Selection struct {
 	Tool
-	Reason string `json:"reason"`
+	Reason        string `json:"reason"`
+	NeedsApproval bool   `json:"needs_approval,omitempty"`
 }
 
 // DiscoverResult is returned by POST /api/discover and POST /api/setup/model.

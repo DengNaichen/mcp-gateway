@@ -25,6 +25,25 @@ type Event struct {
 	Title      string          `json:"title"`
 	DurationMS int64           `json:"duration_ms"`
 	Detail     json.RawMessage `json:"detail,omitempty"`
+	RepoID     string          `json:"repo_id,omitempty"`
+	ServiceID  string          `json:"service_id,omitempty"`
+	Protocol   string          `json:"protocol,omitempty"`
+	Action     string          `json:"action,omitempty"`
+	Decision   string          `json:"decision,omitempty"`
+	RuleID     string          `json:"rule_id,omitempty"`
+	ApprovalID string          `json:"approval_id,omitempty"`
+	SkillID    string          `json:"skill_id,omitempty"`
+}
+
+type EventPage struct {
+	Items      []Event `json:"items"`
+	NextCursor string  `json:"next_cursor"`
+	HasMore    bool    `json:"has_more"`
+}
+
+type EventFilter struct {
+	Actor, RepoID, ServiceID, Protocol, Decision, Status, Query, Before string
+	Limit                                                               int
 }
 
 // ConnectionCheck is the latest connectivity check of a source or the model
@@ -84,6 +103,7 @@ type Bootstrap struct {
 	Setup                 SetupStatus    `json:"setup"`
 	Scopes                ScopeOverview  `json:"scopes"`
 	Access                AccessInfo     `json:"access"`
+	Policies              PolicyOverview `json:"policies"`
 }
 
 // Principal is an authenticated identity in shared mode.

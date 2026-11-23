@@ -33,7 +33,6 @@ CREATE TABLE IF NOT EXISTS tools (id TEXT PRIMARY KEY, server_id TEXT NOT NULL R
 CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), definition TEXT NOT NULL CHECK(json_valid(definition)));
 CREATE TABLE IF NOT EXISTS model_profiles (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
 CREATE TABLE IF NOT EXISTS activity (id TEXT PRIMARY KEY, time TEXT NOT NULL, kind TEXT NOT NULL, actor TEXT NOT NULL, status TEXT NOT NULL, title TEXT NOT NULL, duration_ms INTEGER NOT NULL, detail TEXT NOT NULL CHECK(json_valid(detail)));
-CREATE INDEX IF NOT EXISTS activity_by_time ON activity(time DESC);
 CREATE TABLE IF NOT EXISTS connection_checks (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, definition TEXT NOT NULL CHECK(json_valid(definition)));
 CREATE TABLE IF NOT EXISTS maintenance_sources (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
 CREATE TABLE IF NOT EXISTS maintenance_runs (id TEXT PRIMARY KEY, definition TEXT NOT NULL CHECK(json_valid(definition)));
@@ -199,6 +198,12 @@ CREATE INDEX IF NOT EXISTS scope_observations_by_last_seen ON scope_observations
 			return nil
 		}); err != nil {
 			return fmt.Errorf("migrate v8: %w", err)
+		}
+		version = 8
+	}
+	if version < 9 {
+		if err := RunTx(db, migrateActivityV9); err != nil {
+			return fmt.Errorf("migrate v9: %w", err)
 		}
 	}
 	return nil

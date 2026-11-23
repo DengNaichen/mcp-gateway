@@ -5,25 +5,32 @@ import (
 	"slices"
 
 	"gatewaylab/internal/fault"
+	"gatewaylab/internal/policy"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/routing"
 )
 
-func (g *Gateway) ToolSchema(ctx context.Context, id, actor string) (registry.Tool, error) {
+type ToolSchema struct {
+	registry.Tool
+	NeedsApproval bool `json:"needs_approval,omitempty"`
+}
+
+func (g *Gateway) ToolSchema(ctx context.Context, id, actor string) (ToolSchema, error) {
 	if err := g.scope.CheckExecutionScope(ctx); err != nil {
-		return registry.Tool{}, err
+		return ToolSchema{}, err
 	}
 	reg := g.registry.Snapshot()
 	i := slices.IndexFunc(reg.Tools, func(t registry.Tool) bool { return t.ID == id })
 	if i < 0 {
-		return registry.Tool{}, fault.New(fault.NotFound, "工具不存在", nil)
+		return ToolSchema{}, fault.New(fault.NotFound, "工具不存在", nil)
 	}
 	tool := reg.Tools[i]
 	server := slices.IndexFunc(reg.Servers, func(s registry.Server) bool { return s.ID == tool.ServerID && s.Enabled })
-	if server < 0 || !g.authorizedTool(ctx, tool, actor) {
-		return registry.Tool{}, fault.New(fault.Forbidden, "工具已禁用或没有访问权限", nil)
+	decision := g.authorize(ctx, tool, actor)
+	if server < 0 || decision.Effect == policy.EffectDeny {
+		return ToolSchema{}, fault.WithCode(fault.New(fault.Forbidden, "工具已禁用或没有访问权限", nil), "policy_denied")
 	}
-	return tool, nil
+	return ToolSchema{Tool: tool, NeedsApproval: decision.Effect == policy.EffectApprove}, nil
 }
 
 type CatalogServer struct {
@@ -46,8 +53,14 @@ func (g *Gateway) Catalog(ctx context.Context, actor string, includeDemo bool) C
 		}
 		count := 0
 		for _, tool := range reg.Tools {
-			if tool.ServerID == server.ID && g.authorizedTool(ctx, tool, actor) {
-				out.Tools = append(out.Tools, routing.Summarize(tool))
+			if tool.ServerID != server.ID {
+				continue
+			}
+			decision := g.authorize(ctx, tool, actor)
+			if decision.Effect != policy.EffectDeny {
+				capability := routing.Summarize(tool)
+				capability.NeedsApproval = decision.Effect == policy.EffectApprove
+				out.Tools = append(out.Tools, capability)
 				count++
 			}
 		}

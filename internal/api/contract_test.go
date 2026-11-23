@@ -128,6 +128,14 @@ func TestRouteTableMatchesMux(t *testing.T) {
 	}
 }
 
+func TestPolicyRoutesRequireAdmin(t *testing.T) {
+	for _, route := range apiRoutes {
+		if strings.HasPrefix(route.Path, "/api/policies") && (route.Invocation || route.Authenticated || route.Public) {
+			t.Errorf("%s %s must be an admin-only route", route.Method, route.Path)
+		}
+	}
+}
+
 func typeName(v any) string {
 	t := reflect.TypeOf(v)
 	prefix := ""

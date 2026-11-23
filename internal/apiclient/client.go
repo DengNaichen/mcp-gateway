@@ -446,11 +446,11 @@ func (c *Client) Catalog(ctx context.Context, actor string, includeDemo bool) (a
 	return out, err
 }
 
-func (c *Client) ToolSchema(ctx context.Context, toolID, actor string) (apitypes.Tool, error) {
+func (c *Client) ToolSchema(ctx context.Context, toolID, actor string) (apitypes.ToolSchema, error) {
 	return c.ToolSchemaScoped(ctx, toolID, actor, nil)
 }
 
-func (c *Client) ToolSchemaScoped(ctx context.Context, toolID, actor string, simScope *apitypes.SimScope) (apitypes.Tool, error) {
+func (c *Client) ToolSchemaScoped(ctx context.Context, toolID, actor string, simScope *apitypes.SimScope) (apitypes.ToolSchema, error) {
 	path := "/tools/" + url.PathEscape(toolID) + "/schema"
 	q := url.Values{}
 	if actor != "" {
@@ -462,7 +462,7 @@ func (c *Client) ToolSchemaScoped(ctx context.Context, toolID, actor string, sim
 	if enc := q.Encode(); enc != "" {
 		path += "?" + enc
 	}
-	var out apitypes.Tool
+	var out apitypes.ToolSchema
 	err := c.doJSON(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }

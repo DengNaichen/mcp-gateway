@@ -78,7 +78,7 @@ func (g *server) protectAccess(next http.Handler) http.Handler {
 				bearer, hasBearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 				if g.localAdmin.Authenticate(r.Header.Get("X-Gateway-Admin-Token")) || (hasBearer && g.localAdmin.Authenticate(bearer)) {
 					r = r.WithContext(access.WithLocalAdmin(r.Context()))
-				} else if rt, matched := apiRouteIndex.lookup(r); matched && rt.requiresAdmin() {
+				} else if rt, matched := apiRouteIndex.lookup(r); matched && rt.requiresLocalAdmin() {
 					fail(w, problem(403, "此操作需要有效的本机 Gateway 管理令牌", nil))
 					return
 				}

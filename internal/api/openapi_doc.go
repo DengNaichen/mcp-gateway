@@ -95,12 +95,14 @@ func applyOperationSecurity(op map[string]any, r route) {
 		op["security"] = []any{}
 	case r.Invocation:
 		op["description"] = "Invocation route. Shared mode requires an authenticated principal. When repository scope is enforced, callers need a signed scope token or an administrator's explicit sim_scope."
+	case r.Authenticated && r.LocalAdminOnly:
+		op["description"] = "Shared mode requires an authenticated principal. Non-admin principals can query their own activity. Local mode requires the local admin token when configured."
 	case r.Authenticated:
 		op["description"] = "Open to any authenticated principal in shared mode and to loopback requests in local mode."
 	default:
 		op["description"] = "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode."
 	}
-	if r.Invocation || r.Authenticated {
+	if (r.Invocation || r.Authenticated) && !r.LocalAdminOnly {
 		// The empty alternative represents loopback requests in local mode.
 		op["security"] = []any{map[string]any{"bearerAuth": []any{}}, map[string]any{"sessionCookie": []any{}}, map[string]any{}}
 	}

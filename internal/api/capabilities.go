@@ -39,7 +39,7 @@ func (g *server) registerCapabilities(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
-		respond(w, 200, wireTool(tool))
+		respond(w, 200, wireToolSchema(tool))
 	})
 }
 

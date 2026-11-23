@@ -7,12 +7,13 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 output = subprocess.check_output(
-    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault", "./internal/retry", "./internal/apitypes", "./internal/apiclient", "./internal/buildinfo", "./internal/i18n", "./internal/workspace", "./internal/clientconfig", "./internal/clientplugin", "./internal/clientplugin/github"],
+    ["go", "list", "-json", "./internal/registry", "./internal/store", "./internal/secrets", "./internal/activity", "./internal/openapi", "./internal/model", "./internal/scope", "./internal/policy", "./internal/routing", "./internal/upstream", "./internal/maintenance", "./internal/maintenance/sandbox", "./internal/access", "./internal/market", "./internal/demo", "./internal/procutil", "./internal/input", "./internal/jsonutil", "./internal/mcputil", "./internal/contracttest", "./internal/fault", "./internal/retry", "./internal/apitypes", "./internal/apiclient", "./internal/buildinfo", "./internal/i18n", "./internal/workspace", "./internal/clientconfig", "./internal/clientplugin", "./internal/clientplugin/github"],
     cwd=root, text=True,
 )
 allowed = {
     "gatewaylab/internal/registry": set(),
     "gatewaylab/internal/store": {"gatewaylab/internal/registry"},
+    "gatewaylab/internal/policy": set(),
     "gatewaylab/internal/routing": {"gatewaylab/internal/registry"},
     "gatewaylab/internal/upstream": {"gatewaylab/internal/registry", "gatewaylab/internal/procutil", "gatewaylab/internal/fault", "gatewaylab/internal/input", "gatewaylab/internal/jsonutil"},
 }
@@ -52,6 +53,7 @@ allowed.update({
     "gatewaylab/internal/clientplugin": {"gatewaylab/internal/buildinfo", "gatewaylab/internal/clientconfig", "gatewaylab/internal/i18n", "gatewaylab/internal/workspace", "gatewaylab/internal/clientplugin/github", "gatewaylab/plugins"},
     "gatewaylab/internal/clientplugin/github": set(),
 })
+stdlib = set(subprocess.check_output(["go", "list", "std"], cwd=root, text=True).splitlines())
 decoder = json.JSONDecoder()
 while output.strip():
     package, end = decoder.raw_decode(output.lstrip())
@@ -59,13 +61,16 @@ while output.strip():
     internal = {p for p in package.get("Deps", []) if p.startswith("gatewaylab/")}
     unexpected = internal - allowed[package["ImportPath"]]
     assert not unexpected, f'{package["ImportPath"]} depends on {sorted(unexpected)}'
-    if package["ImportPath"] == "gatewaylab/internal/routing":
+    if package["ImportPath"] in {"gatewaylab/internal/routing", "gatewaylab/internal/policy"}:
         forbidden = {"database/sql", "net/http", "os", "log/slog", "sync", "sync/atomic"}
-        assert not forbidden.intersection(package.get("Imports", [])), "routing must stay pure"
+        assert not forbidden.intersection(package.get("Imports", [])), f'{package["ImportPath"]} must stay pure'
+    if package["ImportPath"] == "gatewaylab/internal/policy":
+        external = set(package.get("Imports", [])) - stdlib
+        assert not external, f"policy imports non-standard packages {sorted(external)}"
     print(f'{package["ImportPath"]} -> {", ".join(sorted(internal)) or "no internal dependencies"}')
 
 # SQLite ownership stays in store as the remaining domains are extracted.
-for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "model", "scope", "routing", "upstream", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault", "apiclient", "buildinfo", "workspace", "clientconfig", "clientplugin", "clientplugin/github")
+for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "model", "scope", "policy", "routing", "upstream", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault", "apiclient", "buildinfo", "workspace", "clientconfig", "clientplugin", "clientplugin/github")
                    for p in (root / "internal" / name).glob("*.go")):
     if path.name.endswith("_test.go"):
         continue
@@ -73,7 +78,7 @@ for path in sorted(p for name in ("gateway", "secrets", "activity", "openapi", "
 print("PASS: foundation/policy/routing/upstream/maintenance dependency direction; SQL stays in store")
 
 # Domain errors carry classifications; only transport adapters choose HTTP status.
-for name in ("gateway", "openapi", "model", "scope", "routing", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault", "retry", "buildinfo", "workspace", "clientconfig", "clientplugin"):
+for name in ("gateway", "openapi", "model", "scope", "policy", "routing", "maintenance", "maintenance/sandbox", "access", "market", "demo", "input", "jsonutil", "mcputil", "procutil", "contracttest", "fault", "retry", "buildinfo", "workspace", "clientconfig", "clientplugin"):
     for path in (root / "internal" / name).glob("*.go"):
         if path.name.endswith("_test.go"):
             continue

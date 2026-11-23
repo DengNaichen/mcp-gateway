@@ -20,6 +20,7 @@ type Definitions[T any] struct {
 }
 
 func ModelProfiles[T any](db DBTX) Definitions[T] { return Definitions[T]{db, "model_profiles"} }
+func PolicyRules[T any](db DBTX) Definitions[T]   { return Definitions[T]{db, "policy_rules"} }
 func Repositories[T any](db DBTX) Definitions[T]  { return Definitions[T]{db, "repositories"} }
 func MaintenanceSources[T any](db DBTX) Definitions[T] {
 	return Definitions[T]{db, "maintenance_sources"}
@@ -220,6 +221,8 @@ func definitionLabels(table string) readLabels {
 	switch table {
 	case "model_profiles":
 		return readLabels{query: "query model profiles", scan: "read model profile", decode: "decode model profile"}
+	case "policy_rules":
+		return readLabels{query: "query policy rules", scan: "read policy rule", decode: "decode policy rule", iterate: "iterate policy rules"}
 	case "repositories":
 		return readLabels{query: "query repositories", decode: "decode repository"}
 	case "maintenance_sources":

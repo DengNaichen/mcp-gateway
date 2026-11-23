@@ -288,14 +288,12 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 	matchedRepo := matchConfiguredRepoByAnchors(repos, string(info.Kind), info.CommonDir, info.Root)
 	if matchedRepo != nil {
 		rule := resolvePrecedenceRule(rules, true, matchedRepo.ID)
-		mode := ModeCompatUnscoped
 		status := "observed"
 		if enforce {
-			mode = ModeEnforced
 			status = "verified"
 		}
 		return ResolvedRequestScope{
-			Mode: mode,
+			Mode: ModeEnforced,
 			Rule: rule,
 			Event: EventScope{
 				Agent:        claims.Agent,
@@ -315,12 +313,8 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 	g.recordObservation(info, claims.Agent, now)
 
 	rule := resolvePrecedenceRule(rules, false, "*")
-	mode := ModeCompatUnscoped
-	if enforce {
-		mode = ModeEnforced
-	}
 	return ResolvedRequestScope{
-		Mode: mode,
+		Mode: ModeEnforced,
 		Rule: rule,
 		Event: EventScope{
 			Agent:        claims.Agent,
@@ -405,21 +399,16 @@ func (g *Service) CheckExecutionScope(ctx context.Context) error {
 	return nil
 }
 
-func (g *Service) AllowsTool(ctx context.Context, t Tool) bool {
-	if HasInternalBypass(ctx) {
-		return true
-	}
+// ExecutionScope supplies the baseline for authorization. Transport callers
+// validate the scope credential before entering execution.
+func (g *Service) ExecutionScope(ctx context.Context) ResolvedRequestScope {
 	if sc, ok := RequestScopeFrom(ctx); ok {
-		switch sc.Mode {
-		case ModeBypass, ModeCompatUnscoped:
-			return true
-		case ModeEnforced:
-			return grantAllowsTool(sc.Rule, t)
-		default:
-			return false
-		}
+		return sc
 	}
-	return !g.IsEnforced()
+	if g.IsEnforced() {
+		return ResolvedRequestScope{Mode: ModeEnforced, Rule: ScopeRule{RepoKey: "*"}}
+	}
+	return ResolvedRequestScope{Mode: ModeCompatUnscoped}
 }
 
 func EventForContext(ctx context.Context) EventScope {

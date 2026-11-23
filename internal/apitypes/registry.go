@@ -20,7 +20,7 @@ type Server struct {
 	RedactEmails bool              `json:"redact_emails,omitempty"`
 }
 
-// Tool is a registered tool (PUT /api/tools, GET /api/tools/{id}/schema).
+// Tool is a registered tool (PUT /api/tools).
 type Tool struct {
 	ID           string         `json:"id"`
 	ServerID     string         `json:"server_id"`
@@ -38,6 +38,12 @@ type Tool struct {
 	Revision     string         `json:"revision,omitempty"`
 	HTTP         *HTTPMapping   `json:"http,omitempty"`
 	OutputSchema map[string]any `json:"output_schema,omitempty"`
+}
+
+// ToolSchema is the authorized tool returned by GET /api/tools/{id}/schema.
+type ToolSchema struct {
+	Tool
+	NeedsApproval bool `json:"needs_approval,omitempty"`
 }
 
 // HTTPMapping is the deterministic HTTP call contract of a tool imported from OpenAPI.
@@ -77,13 +83,14 @@ type EnableToolsRequest struct {
 
 // Capability is the compact tool summary used by the catalog and summary discovery.
 type Capability struct {
-	ID          string   `json:"id"`
-	ServerID    string   `json:"server_id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Tags        []string `json:"tags"`
-	ReadOnly    bool     `json:"read_only"`
-	Reason      string   `json:"reason,omitempty"`
+	ID            string   `json:"id"`
+	ServerID      string   `json:"server_id"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	Tags          []string `json:"tags"`
+	ReadOnly      bool     `json:"read_only"`
+	Reason        string   `json:"reason,omitempty"`
+	NeedsApproval bool     `json:"needs_approval,omitempty"`
 }
 
 type CatalogServer struct {

@@ -16,7 +16,8 @@ type DiscoverRequest struct {
 
 type Selection struct {
 	registry.Tool
-	Reason string `json:"reason"`
+	Reason        string `json:"reason"`
+	NeedsApproval bool   `json:"needs_approval,omitempty"`
 }
 
 type DiscoverResult struct {

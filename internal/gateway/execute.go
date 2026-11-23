@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"gatewaylab/internal/access"
+	"gatewaylab/internal/activity"
 	"gatewaylab/internal/fault"
 	"gatewaylab/internal/maintenance/sandbox"
+	"gatewaylab/internal/policy"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/scope"
 	"gatewaylab/internal/upstream"
@@ -73,14 +75,15 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	req.Actor = access.RequestActor(ctx, req.Actor)
 	started := time.Now()
 	scopeEv := scope.EventForContext(ctx)
+	audit := activity.AuditMeta{RepoID: scopeEv.RepoID, Action: req.ToolID}
 	defer func() {
 		status := "success"
 		detail := map[string]any{"tool_id": req.ToolID, "fields": req.Fields, "scope": scopeEv}
 		if retErr != nil {
 			status = "error"
-			detail["error"] = g.ErrorDetail(retErr)
+			detail["error"] = invokeAuditError(retErr)
 		}
-		g.activity.Record("invoke", req.Actor, status, req.ToolID, started, detail)
+		g.activity.RecordAudit("invoke", req.Actor, status, req.ToolID, started, audit, detail)
 	}()
 	if err := g.scope.CheckExecutionScope(ctx); err != nil {
 		return result, err
@@ -92,8 +95,19 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 	}
 	t := r.Tools[i]
 	j := slices.IndexFunc(r.Servers, func(s registry.Server) bool { return s.ID == t.ServerID })
-	if j < 0 || !r.Servers[j].Enabled || !g.authorizedTool(ctx, t, req.Actor) {
-		return result, fault.New(fault.Forbidden, "工具已禁用，或当前身份没有调用权限", nil)
+	audit.ServiceID = t.ServerID
+	available := j >= 0 && r.Servers[j].Enabled
+	if j >= 0 {
+		audit.Protocol = r.Servers[j].Kind
+	}
+	t.Enabled = t.Enabled && available
+	decision := g.authorize(ctx, t, req.Actor)
+	audit.Decision, audit.RuleID = decision.Effect, decision.RuleID
+	if decision.Effect == policy.EffectDeny || !available {
+		return result, fault.WithCode(fault.New(fault.Forbidden, "工具已禁用，或当前身份没有调用权限", nil), "policy_denied")
+	}
+	if decision.Effect == policy.EffectApprove {
+		return result, fault.WithCode(fault.New(fault.Forbidden, "此调用需要审批，当前网关尚未启用审批", nil), "approval_required_not_enabled")
 	}
 	s := r.Servers[j]
 	if req.Arguments == nil {
@@ -135,4 +149,24 @@ func (g *Gateway) Invoke(ctx context.Context, req InvokeRequest) (result InvokeR
 		data = upstream.Project(data, req.Fields)
 	}
 	return InvokeResult{ID: newID(), ToolID: t.ID, Protocol: s.Kind, Data: data, DurationMS: time.Since(started).Milliseconds()}, nil
+}
+
+// Invocation errors may contain raw downstream payloads or schema values.
+// The ledger only persists a stable error description.
+func invokeAuditError(err error) string {
+	var fe *fault.Error
+	if errors.As(err, &fe) {
+		if fe.Code != "" {
+			return fe.Code
+		}
+		switch fe.Kind {
+		case fault.Invalid:
+			return "Invalid tool arguments"
+		case fault.NotFound:
+			return "Tool not found"
+		case fault.Upstream:
+			return "Upstream tool call failed"
+		}
+	}
+	return "Tool call failed"
 }

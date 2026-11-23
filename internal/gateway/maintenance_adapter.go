@@ -38,7 +38,7 @@ func (g *Gateway) routingFingerprintForRegistryLocked(serverID string, reg regis
 		principals = g.access.Principals()
 	}
 	settings, key := g.model.RuntimeConfig()
-	return jsonutil.MustDigest([]any{routingProtocol, settings, key, other, principals, g.execution})
+	return jsonutil.MustDigest([]any{routingProtocol, settings, key, other, principals, g.execution, g.policyRules()})
 }
 
 // Focused port adapters keep maintenance independent of Gateway and its locks
@@ -87,11 +87,11 @@ func (r maintenanceRouter) RoutingFingerprint(id string) string {
 	return r.g.acceptanceRoutingFingerprint(id)
 }
 func (r maintenanceRouter) Discover(ctx context.Context, c maintenance.RoutingCase, reg registry.Registry) (maintenance.RoutingResult, error) {
-	ctx, err := r.g.access.AcceptanceActor(ctx, c.Actor)
+	ctx, err := r.g.access.WithDeclaredPrincipal(ctx, c.Actor)
 	if err != nil {
 		return maintenance.RoutingResult{}, err
 	}
-	result, err := r.g.discoverRegistry(scope.WithInternalBypass(ctx), DiscoverRequest{Intent: c.Intent, Context: c.Context, Actor: c.Actor}, reg, false)
+	result, err := r.g.discoverRegistry(scope.WithRequestScope(ctx, scope.ResolvedRequestScope{Mode: scope.ModeBypass, Event: scope.EventScope{Status: "internal"}}), DiscoverRequest{Intent: c.Intent, Context: c.Context, Actor: c.Actor}, reg, false)
 	out := maintenance.RoutingResult{Status: result.Status}
 	for _, tool := range result.Tools {
 		out.Tools = append(out.Tools, tool.ID)

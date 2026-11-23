@@ -240,7 +240,7 @@ func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult,
 	if err != nil {
 		return DiscoverResult{}, err
 	}
-	result, routeErr := g.Discover(scope.WithInternalBypass(ctx), DiscoverRequest{Intent: intent, Actor: "developer"})
+	result, routeErr := g.Discover(scope.WithRequestScope(ctx, scope.ResolvedRequestScope{Mode: scope.ModeBypass, Event: scope.EventScope{Status: "internal"}}), DiscoverRequest{Intent: intent, Actor: "developer"})
 	check := ConnectionCheck{Status: "success", Message: "Decisions 已响应，回答格式、概率和候选映射校验通过", CheckedAt: time.Now()}
 	if routeErr != nil {
 		check.Status = "error"
@@ -351,7 +351,7 @@ func (g *Gateway) ErrorDetail(err error) string {
 	message := err.Error()
 	_, key := g.model.RuntimeConfig()
 	secrets := append([]string{key}, g.upstream.TokenSecrets()...)
-	for _, s := range g.registry.Snapshot().Servers {
+	for _, s := range g.registry.Servers() {
 		for _, v := range s.Headers {
 			expanded := os.Expand(v, g.serverLookup(s))
 			secrets = append(secrets, expanded, strings.TrimPrefix(expanded, "Bearer "))
@@ -376,7 +376,11 @@ func (g *Gateway) RecordAgentTool(name, actor string, start time.Time, err error
 	detail := map[string]any{"method": "tools/call", "tool": name}
 	if err != nil {
 		status = "error"
-		detail["error"] = g.ErrorDetail(err)
+		if name == "invoke_tool" {
+			detail["error"] = invokeAuditError(err)
+		} else {
+			detail["error"] = g.ErrorDetail(err)
+		}
 	}
 	g.activity.Record("agent", actor, status, name, start, detail)
 }

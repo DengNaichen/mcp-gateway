@@ -87,6 +87,10 @@ func wireTool(t registry.Tool) apitypes.Tool {
 	}
 }
 
+func wireToolSchema(schema gateway.ToolSchema) apitypes.ToolSchema {
+	return apitypes.ToolSchema{Tool: wireTool(schema.Tool), NeedsApproval: schema.NeedsApproval}
+}
+
 func domainTool(t apitypes.Tool) registry.Tool {
 	return registry.Tool{
 		ID: t.ID, ServerID: t.ServerID, Name: t.Name, Description: t.Description, Tags: t.Tags,
@@ -120,7 +124,7 @@ func domainInvokeRequest(in apitypes.InvokeRequest) gateway.InvokeRequest {
 }
 
 func wireSelection(s gateway.Selection) apitypes.Selection {
-	return apitypes.Selection{Tool: wireTool(s.Tool), Reason: s.Reason}
+	return apitypes.Selection{Tool: wireTool(s.Tool), Reason: s.Reason, NeedsApproval: s.NeedsApproval}
 }
 
 func wireDiscoverResult(r gateway.DiscoverResult) apitypes.DiscoverResult {
@@ -137,6 +141,7 @@ func wireDiscoverSummary(r gateway.DiscoverResult) apitypes.DiscoverSummaryResul
 	for _, t := range r.Tools {
 		c := routing.Summarize(t.Tool)
 		c.Reason = t.Reason
+		c.NeedsApproval = t.NeedsApproval
 		tools = append(tools, wireCapability(c))
 	}
 	return apitypes.DiscoverSummaryResult{

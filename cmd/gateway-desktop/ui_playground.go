@@ -809,11 +809,10 @@ func (u *DesktopUI) fetchPlaygroundToolSchema(st *playgroundState, toolID, effec
 		u.updateUI(func() {
 			st.loadingSchema = false
 			if st.selectedTool != nil && st.selectedTool.ID == toolID {
-				reason := st.selectedTool.Reason
-				st.selectedTool.Tool = tool
-				st.selectedTool.Reason = reason
+				st.selectedTool.Tool = tool.Tool
+				st.selectedTool.NeedsApproval = tool.NeedsApproval
 				if strings.TrimSpace(st.argsText) == "" || strings.TrimSpace(st.argsText) == "{}" {
-					st.argsText = initialArgsForTool(tool)
+					st.argsText = initialArgsForTool(tool.Tool)
 				}
 			}
 		})

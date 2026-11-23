@@ -170,6 +170,9 @@
           "mcp_url": {
             "type": "string"
           },
+          "policies": {
+            "$ref": "#/components/schemas/PolicyOverview"
+          },
           "profiles": {
             "items": {
               "$ref": "#/components/schemas/ModelProfile"
@@ -207,6 +210,7 @@
           "events",
           "key_configured",
           "mcp_url",
+          "policies",
           "profiles",
           "registry",
           "scopes",
@@ -238,6 +242,9 @@
           },
           "name": {
             "type": "string"
+          },
+          "needs_approval": {
+            "type": "boolean"
           },
           "read_only": {
             "type": "boolean"
@@ -654,7 +661,16 @@
       "Event": {
         "additionalProperties": false,
         "properties": {
+          "action": {
+            "type": "string"
+          },
           "actor": {
+            "type": "string"
+          },
+          "approval_id": {
+            "type": "string"
+          },
+          "decision": {
             "type": "string"
           },
           "detail": {},
@@ -665,6 +681,21 @@
             "type": "string"
           },
           "kind": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "repo_id": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "service_id": {
+            "type": "string"
+          },
+          "skill_id": {
             "type": "string"
           },
           "status": {
@@ -686,6 +717,32 @@
           "status",
           "time",
           "title"
+        ],
+        "type": "object"
+      },
+      "EventPage": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "has_more",
+          "items",
+          "next_cursor"
         ],
         "type": "object"
       },
@@ -1705,6 +1762,157 @@
         ],
         "type": "object"
       },
+      "PolicyEvaluateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "repo_id": {
+            "type": "string"
+          },
+          "tool_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool_id"
+        ],
+        "type": "object"
+      },
+      "PolicyEvaluateResult": {
+        "additionalProperties": false,
+        "properties": {
+          "effect": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "trace": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyTraceStep"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "trust": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "effect",
+          "rule_id",
+          "trace",
+          "trust"
+        ],
+        "type": "object"
+      },
+      "PolicyOverview": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline_from": {
+            "type": "string"
+          },
+          "enforce": {
+            "type": "boolean"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyRule"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "baseline_from",
+          "enforce",
+          "rules"
+        ],
+        "type": "object"
+      },
+      "PolicyRule": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "repo_key": {
+            "type": "string"
+          },
+          "service_id": {
+            "type": "string"
+          },
+          "tool_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "access",
+          "effect",
+          "enabled",
+          "repo_key",
+          "service_id"
+        ],
+        "type": "object"
+      },
+      "PolicyTraceStep": {
+        "additionalProperties": false,
+        "properties": {
+          "effect": {
+            "type": "string"
+          },
+          "matched": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "matched",
+          "stage"
+        ],
+        "type": "object"
+      },
       "Principal": {
         "additionalProperties": false,
         "properties": {
@@ -2320,6 +2528,9 @@
           "name": {
             "type": "string"
           },
+          "needs_approval": {
+            "type": "boolean"
+          },
           "output_schema": {
             "type": [
               "object",
@@ -2828,6 +3039,102 @@
         ],
         "type": "object"
       },
+      "ToolSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "actors": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "adapter": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "example": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "http": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HTTPMapping"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "input_schema": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "needs_approval": {
+            "type": "boolean"
+          },
+          "output_schema": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "actors",
+          "description",
+          "enabled",
+          "id",
+          "input_schema",
+          "name",
+          "read_only",
+          "server_id",
+          "tags"
+        ],
+        "type": "object"
+      },
       "WebhookResult": {
         "additionalProperties": false,
         "properties": {
@@ -3223,6 +3530,112 @@
           }
         },
         "summary": "Recent activity",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/events/query": {
+      "get": {
+        "description": "Shared mode requires an authenticated principal. Non-admin principals can query their own activity. Local mode requires the local admin token when configured.",
+        "operationId": "get_events_query",
+        "parameters": [
+          {
+            "description": "Actor ID. Shared non-admin callers are restricted to their own ID",
+            "in": "query",
+            "name": "actor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Repository ID",
+            "in": "query",
+            "name": "repo_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service ID",
+            "in": "query",
+            "name": "service_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service protocol",
+            "in": "query",
+            "name": "protocol",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Policy effect",
+            "in": "query",
+            "name": "decision",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Event status",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Substring of title, action, or service ID",
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Page size. Default 100, maximum 500",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Cursor from the preceding page or an RFC3339Nano timestamp",
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Query audit activity with cursor pagination",
         "tags": [
           "events"
         ]
@@ -4136,6 +4549,164 @@
         ]
       }
     },
+    "/api/policies": {
+      "get": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "get_policies",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOverview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Policy rules and repository baseline enforcement",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/api/policies/evaluate": {
+      "post": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "post_policies_evaluate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyEvaluateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyEvaluateResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Simulate a policy decision without executing a tool or recording activity",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/api/policies/rules": {
+      "put": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "put_policies_rules",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyRule"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyRule"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create or update a deny or approval rule",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/api/policies/rules/{id}": {
+      "delete": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "delete_policies_rules_by_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete a policy rule",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
     "/api/scopes": {
       "get": {
         "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
@@ -5033,7 +5604,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Tool"
+                  "$ref": "#/components/schemas/ToolSchema"
                 }
               }
             },

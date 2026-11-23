@@ -27,6 +27,11 @@ func New(initial Registry, persist func(Registry) error) *Service {
 }
 func (s *Service) Snapshot() Registry { return Clone(*s.current.Load()) }
 
+// Servers snapshots service configuration without copying the tool schemas.
+func (s *Service) Servers() []Server {
+	return Clone(Registry{Servers: s.current.Load().Servers}).Servers
+}
+
 // Update also supports use cases whose callback persists multiple tables in one
 // transaction. UpdateWithCommit uses that transaction instead of the default repo.
 func (s *Service) Update(change func(Registry) (Registry, error)) error {

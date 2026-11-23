@@ -8,6 +8,7 @@ import (
 
 	"gatewaylab/internal/access"
 	"gatewaylab/internal/fault"
+	"gatewaylab/internal/policy"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/routing"
 	"gatewaylab/internal/scope"
@@ -43,7 +44,7 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, cat
 		return result, invalid("任务和上下文合计不能超过 24 KB")
 	}
 	s, key := g.model.RuntimeConfig()
-	servers, eligible := g.eligibleTools(ctx, catalog, req)
+	servers, eligible, approval := g.eligibleTools(ctx, catalog, req)
 	result = DiscoverResult{ID: newID(), Status: "no_match", Tools: []Selection{}, Eligible: len(eligible)}
 	if len(eligible) == 0 {
 		result.Summary = "当前身份下没有已启用的可用工具"
@@ -57,7 +58,7 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, cat
 	result.Servers = matched.Servers
 	result.PromptTokens, result.OutputTokens = matched.Usage.PromptTokens, matched.Usage.CompletionTokens
 	for _, selection := range matched.Tools {
-		result.Tools = append(result.Tools, Selection(selection))
+		result.Tools = append(result.Tools, Selection{Tool: selection.Tool, Reason: selection.Reason, NeedsApproval: approval[selection.ID]})
 	}
 	// As before, model identity is added only after a successful model decision.
 	if matched.Decided {
@@ -70,7 +71,7 @@ func (g *Gateway) discoverRegistry(ctx context.Context, req DiscoverRequest, cat
 	return result, nil
 }
 
-func (g *Gateway) eligibleTools(ctx context.Context, catalog registry.Registry, req DiscoverRequest) (map[string]registry.Server, []registry.Tool) {
+func (g *Gateway) eligibleTools(ctx context.Context, catalog registry.Registry, req DiscoverRequest) (map[string]registry.Server, []registry.Tool, map[string]bool) {
 	servers := map[string]registry.Server{}
 	for _, server := range catalog.Servers {
 		if server.Enabled && (!server.Demo || req.IncludeDemo) {
@@ -78,10 +79,18 @@ func (g *Gateway) eligibleTools(ctx context.Context, catalog registry.Registry, 
 		}
 	}
 	eligible := []registry.Tool{}
+	approval := map[string]bool{}
 	for _, t := range catalog.Tools {
-		if _, ok := servers[t.ServerID]; ok && g.authorizedTool(ctx, t, req.Actor) && (len(req.Services) == 0 || slices.Contains(req.Services, t.ServerID)) {
+		if _, ok := servers[t.ServerID]; !ok || len(req.Services) > 0 && !slices.Contains(req.Services, t.ServerID) {
+			continue
+		}
+		decision := g.authorize(ctx, t, req.Actor)
+		if decision.Effect != policy.EffectDeny {
 			eligible = append(eligible, t)
+			if decision.Effect == policy.EffectApprove {
+				approval[t.ID] = true
+			}
 		}
 	}
-	return servers, eligible
+	return servers, eligible, approval
 }

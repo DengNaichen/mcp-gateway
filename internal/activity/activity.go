@@ -21,10 +21,19 @@ type Event struct {
 	Title      string          `json:"title"`
 	DurationMS int64           `json:"duration_ms"`
 	Detail     json.RawMessage `json:"detail,omitempty"`
+	RepoID     string          `json:"repo_id,omitempty"`
+	ServiceID  string          `json:"service_id,omitempty"`
+	Protocol   string          `json:"protocol,omitempty"`
+	Action     string          `json:"action,omitempty"`
+	Decision   string          `json:"decision,omitempty"`
+	RuleID     string          `json:"rule_id,omitempty"`
+	ApprovalID string          `json:"approval_id,omitempty"`
+	SkillID    string          `json:"skill_id,omitempty"`
 }
 
 type Repository interface {
 	Recent(int) ([]store.ActivityRow, error)
+	Find(store.ActivityFilter) ([]store.ActivityRow, error)
 	Insert(store.ActivityRow) error
 	LatestAgent() (*store.ActivityRow, error)
 }
@@ -55,6 +64,7 @@ type Service struct {
 	events  []Event
 	history []pulseEntry
 	repo    Repository
+	redact  func(json.RawMessage) (json.RawMessage, error)
 }
 
 func eventFromRow(row store.ActivityRow) Event {
@@ -63,13 +73,13 @@ func eventFromRow(row store.ActivityRow) Event {
 	return ev
 }
 
-func New(repo Repository) (*Service, error) {
+func New(repo Repository, redact func(json.RawMessage) (json.RawMessage, error)) (*Service, error) {
 	rows, err := repo.Recent(pulseLoadLimit)
 	if err != nil {
 		return nil, err
 	}
 	cutoff := time.Now().Add(-pulseWindow - time.Duration(PulseBucketMinutes)*time.Minute)
-	s := &Service{repo: repo, events: make([]Event, 0, min(len(rows), recentEventLimit))}
+	s := &Service{repo: repo, redact: redact, events: make([]Event, 0, min(len(rows), recentEventLimit))}
 	for i, row := range rows {
 		if i < recentEventLimit {
 			s.events = append(s.events, eventFromRow(row))
@@ -134,16 +144,36 @@ func (s *Service) Pulse(now time.Time) []PulseBucket {
 }
 
 func (s *Service) Record(kind, actor, status, title string, started time.Time, detail any) {
+	s.RecordAudit(kind, actor, status, title, started, AuditMeta{}, detail)
+}
+
+// AuditMeta carries the request and decision associated with an activity row.
+type AuditMeta struct {
+	RepoID, ServiceID, Protocol, Action, Decision, RuleID string
+}
+
+func (s *Service) RecordAudit(kind, actor, status, title string, started time.Time, meta AuditMeta, detail any) {
 	b, err := json.Marshal(detail)
 	if err != nil {
 		slog.Error("encode activity", "error", err)
 		return
 	}
+	if s.redact != nil {
+		b, err = s.redact(b)
+		if err != nil {
+			slog.Error("redact activity detail", "error", err)
+			b = []byte("null")
+		}
+	}
+
 	if actor == "" {
 		actor = "developer"
 	}
-	now := time.Now()
-	e := Event{ID: uuid.NewString(), Time: now, Kind: kind, Actor: actor, Status: status, Title: title, DurationMS: time.Since(started).Milliseconds(), Detail: b}
+	now := time.Now().UTC()
+	e := Event{ID: uuid.NewString(), Time: now, Kind: kind, Actor: actor, Status: status, Title: title, DurationMS: time.Since(started).Milliseconds(), Detail: b,
+		RepoID: meta.RepoID, ServiceID: meta.ServiceID, Protocol: meta.Protocol,
+		Action: meta.Action, Decision: meta.Decision, RuleID: meta.RuleID,
+	}
 	cutoff := now.Add(-pulseWindow - time.Duration(PulseBucketMinutes)*time.Minute)
 	s.mu.Lock()
 	s.events = append([]Event{e}, s.events...)

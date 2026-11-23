@@ -11,13 +11,29 @@ var apiRoutes = []route{
 	{Method: "GET", Path: "/api/health", Summary: "Liveness and instance identity", Public: true, Responses: ok(apitypes.Health{})},
 	{Method: "GET", Path: "/api/bootstrap", Summary: "Everything the control plane needs for its first screen", Responses: ok(apitypes.Bootstrap{})},
 	{Method: "GET", Path: "/api/events", Summary: "Recent activity", Responses: ok([]apitypes.Event{})},
+	{Method: "GET", Path: "/api/events/query", Summary: "Query audit activity with cursor pagination", Authenticated: true, LocalAdminOnly: true, Query: []query{
+		{"actor", "string", "Actor ID. Shared non-admin callers are restricted to their own ID"},
+		{"repo_id", "string", "Repository ID"},
+		{"service_id", "string", "Service ID"},
+		{"protocol", "string", "Service protocol"},
+		{"decision", "string", "Policy effect"},
+		{"status", "string", "Event status"},
+		{"q", "string", "Substring of title, action, or service ID"},
+		{"limit", "integer", "Page size. Default 100, maximum 500"},
+		{"before", "string", "Cursor from the preceding page or an RFC3339Nano timestamp"},
+	}, Responses: ok(apitypes.EventPage{})},
+
+	{Method: "GET", Path: "/api/policies", Summary: "Policy rules and repository baseline enforcement", Responses: ok(apitypes.PolicyOverview{})},
+	{Method: "PUT", Path: "/api/policies/rules", Summary: "Create or update a deny or approval rule", Request: apitypes.PolicyRule{}, Responses: ok(apitypes.PolicyRule{})},
+	{Method: "DELETE", Path: "/api/policies/rules/{id}", Summary: "Delete a policy rule", Responses: ok(apitypes.Deleted{})},
+	{Method: "POST", Path: "/api/policies/evaluate", Summary: "Simulate a policy decision without executing a tool or recording activity", Request: apitypes.PolicyEvaluateRequest{}, Responses: ok(apitypes.PolicyEvaluateResult{})},
 
 	{Method: "GET", Path: "/api/auth/me", Summary: "The caller's identity", Authenticated: true, Responses: ok(apitypes.AuthMe{})},
 	{Method: "POST", Path: "/api/auth/login", Summary: "Exchange an access token for a session cookie (shared mode)", Public: true, Request: apitypes.LoginRequest{}, Responses: ok(apitypes.LoginResult{})},
 	{Method: "POST", Path: "/api/auth/logout", Summary: "End the session", Authenticated: true, Responses: ok(apitypes.SignedOut{})},
 
 	{Method: "GET", Path: "/api/catalog", Summary: "Authorized services and tool summaries", Invocation: true, Query: []query{actorQuery, simScopeQuery, {"include_demo", "boolean", "Include demo services"}}, Responses: ok(apitypes.Catalog{})},
-	{Method: "GET", Path: "/api/tools/{id}/schema", Summary: "Full definition of one authorized tool", Invocation: true, Query: []query{actorQuery, simScopeQuery}, Responses: ok(apitypes.Tool{})},
+	{Method: "GET", Path: "/api/tools/{id}/schema", Summary: "Full definition of one authorized tool", Invocation: true, Query: []query{actorQuery, simScopeQuery}, Responses: ok(apitypes.ToolSchema{})},
 	{Method: "POST", Path: "/api/discover", Summary: "Route an intent to a small set of authorized tools", Invocation: true, Request: apitypes.DiscoverRequest{}, Responses: ok(oneOf{apitypes.DiscoverResult{}, apitypes.DiscoverSummaryResult{}})},
 	{Method: "POST", Path: "/api/invoke", Summary: "Invoke a registered tool", Invocation: true, Request: apitypes.InvokeRequest{}, Responses: ok(apitypes.InvokeResult{})},
 
@@ -72,6 +88,8 @@ type route struct {
 	Public bool
 	// Authenticated routes are open to any authenticated principal (including non-admin) in shared mode.
 	Authenticated bool
+	// LocalAdminOnly also protects this route with the configured local admin token.
+	LocalAdminOnly bool
 	// Invocation routes are open to non-admin principals and honor repository
 	// scope (?agent= and X-Gateway-Scope).
 	Invocation bool
@@ -83,7 +101,8 @@ type route struct {
 
 type query struct{ Name, Type, Description string }
 
-func (r route) requiresAdmin() bool { return !r.Public && !r.Invocation && !r.Authenticated }
+func (r route) requiresAdmin() bool      { return !r.Public && !r.Invocation && !r.Authenticated }
+func (r route) requiresLocalAdmin() bool { return r.LocalAdminOnly || r.requiresAdmin() }
 
 // oneOf documents a response whose shape depends on the request.
 type oneOf []any

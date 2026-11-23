@@ -15,6 +15,9 @@ type blockedRepository struct {
 }
 
 func (r *blockedRepository) Recent(int) ([]store.ActivityRow, error) { return nil, nil }
+func (r *blockedRepository) Find(store.ActivityFilter) ([]store.ActivityRow, error) {
+	return nil, nil
+}
 func (r *blockedRepository) LatestAgent() (*store.ActivityRow, error) {
 	return nil, nil
 }
@@ -26,7 +29,7 @@ func (r *blockedRepository) Insert(store.ActivityRow) error {
 
 func TestRecordPublishesWithoutHoldingLockDuringDatabaseWrite(t *testing.T) {
 	repo := &blockedRepository{make(chan struct{}), make(chan struct{})}
-	s, err := New(repo)
+	s, err := New(repo, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +65,7 @@ func TestRecordRetentionAndReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	s, err := New(store.Activity(db.DB))
+	s, err := New(store.Activity(db.DB), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +83,7 @@ func TestRecordRetentionAndReload(t *testing.T) {
 		}
 		seen[e.ID] = true
 	}
-	reloaded, err := New(store.Activity(db.DB))
+	reloaded, err := New(store.Activity(db.DB), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,5 +109,37 @@ func TestRecordRetentionAndReload(t *testing.T) {
 	latest, err := reloaded.LatestAgent()
 	if err != nil || latest == nil || latest.Kind != "agent" || latest.Title != "discover" {
 		t.Fatalf("latest agent mismatch: %+v %v", latest, err)
+	}
+}
+
+func TestQueryCapsPageSizeAndContinuesPastRecentCache(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := store.Activity(db.DB)
+	now := time.Now()
+	for i := range 501 {
+		e := store.ActivityRow{ID: uuid.NewString(), Time: now.Add(time.Duration(i) * time.Nanosecond), Detail: []byte("null")}
+		if err := repo.Insert(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := New(repo, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.Query(Filter{})
+	if err != nil || len(first.Items) != 100 || !first.HasMore {
+		t.Fatalf("default page: items=%d, hasMore=%v, err=%v", len(first.Items), first.HasMore, err)
+	}
+	full, err := s.Query(Filter{Limit: 999})
+	if err != nil || len(full.Items) != 500 || !full.HasMore {
+		t.Fatalf("capped page: items=%d, hasMore=%v, err=%v", len(full.Items), full.HasMore, err)
+	}
+	last, err := s.Query(Filter{Before: full.NextCursor})
+	if err != nil || len(last.Items) != 1 || last.HasMore || !now.Equal(last.Items[0].Time) {
+		t.Fatalf("oldest row after cursor: %+v, %v", last, err)
 	}
 }
