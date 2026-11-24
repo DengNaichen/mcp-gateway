@@ -126,6 +126,44 @@ func TestApprovalBindingsAndAudit(t *testing.T) {
 		if err := f.svcs.Registry.SaveTool(tool); err != nil {
 			t.Fatal(err)
 		}
+		origMethod, origPath, origHTTP := tool.Method, tool.Path, tool.HTTP
+		tool.Method = "DELETE"
+		if err := f.svcs.Registry.SaveTool(tool); err != nil {
+			t.Fatal(err)
+		}
+		requireApprovalError(t, invoke(roots[0]), "approval_invalid")
+		tool.Method, tool.Path = origMethod, "/other"
+		if err := f.svcs.Registry.SaveTool(tool); err != nil {
+			t.Fatal(err)
+		}
+		requireApprovalError(t, invoke(roots[0]), "approval_invalid")
+		tool.Path, tool.HTTP = origPath, &registry.HTTPMapping{
+			Body:      true,
+			Responses: map[string]registry.HTTPResponse{"200": {MediaType: "application/json"}},
+		}
+		if err := f.svcs.Registry.SaveTool(tool); err != nil {
+			t.Fatal(err)
+		}
+		requireApprovalError(t, invoke(roots[0]), "approval_invalid")
+		tool.HTTP = origHTTP
+		if err := f.svcs.Registry.SaveTool(tool); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, srv := range reg.Servers {
+		if srv.ID != "svc" {
+			continue
+		}
+		origEndpoint := srv.Endpoint
+		srv.Endpoint = "http://127.0.0.1:1"
+		if err := f.svcs.Registry.SaveServer(srv); err != nil {
+			t.Fatal(err)
+		}
+		requireApprovalError(t, invoke(roots[0]), "approval_invalid")
+		srv.Endpoint = origEndpoint
+		if err := f.svcs.Registry.SaveServer(srv); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	if f.developerCalls.Load() != 0 {

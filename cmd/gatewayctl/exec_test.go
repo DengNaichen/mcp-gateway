@@ -138,6 +138,89 @@ func TestGatewayctlExecScopeOff(t *testing.T) {
 	}
 }
 
+func TestGatewayctlRESTCommandsSignScope(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv(buildinfo.EnvironmentKey("GATEWAY_DATA_DIR"), dataDir)
+	key, err := workspace.EnsureScopeKey(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type check struct {
+		args    []string
+		wantOp  string
+		toolID  string
+		hasBody bool
+	}
+	cases := []check{
+		{args: []string{"list"}, wantOp: "catalog"},
+		{args: []string{"search", "list", "issues"}, wantOp: "discover_tools", hasBody: true},
+		{args: []string{"schema", "svc.ping"}, wantOp: "get_tool_schema", toolID: "svc.ping"},
+		{args: []string{"-args", `{"q":"ok"}`, "call", "svc.ping"}, wantOp: "invoke_tool", hasBody: true},
+	}
+	var current check
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(400)
+			return
+		}
+		var wantHash string
+		ctxField := workspace.CurrentContextField()
+		switch {
+		case current.hasBody:
+			wantHash, _, _, err = workspace.CanonicalArgsHashJSON(raw, ctxField)
+		case current.toolID != "":
+			wantHash, err = workspace.CanonicalArgsHash(map[string]any{"tool_id": current.toolID}, ctxField)
+		default:
+			wantHash, err = workspace.CanonicalArgsHash(nil, ctxField)
+		}
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(400)
+			return
+		}
+		token := r.Header.Get("X-Gateway-Scope")
+		if _, err := workspace.VerifyToken(key, token, workspace.VerifyParams{
+			Channel: buildinfo.Current().Channel, URLAgent: "gatewayctl", AllowedOps: []string{current.wantOp}, ArgsHash: wantHash,
+		}, time.Now()); err != nil {
+			t.Errorf("%s invalid scope token: %v", current.wantOp, err)
+			w.WriteHeader(403)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer host.Close()
+
+	for _, tc := range cases {
+		current = tc
+		var out bytes.Buffer
+		if err := runWithArgs(append([]string{"-url", host.URL}, tc.args...), &out); err != nil {
+			t.Fatalf("%v failed: %v", tc.args, err)
+		}
+	}
+
+	unsignedHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Gateway-Scope"); got != "" {
+			t.Errorf("expected unsigned request, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer unsignedHost.Close()
+
+	var out bytes.Buffer
+	if err := runWithArgs([]string{"-url", unsignedHost.URL, "-scope", "off", "list"}, &out); err != nil {
+		t.Fatalf("-scope off list failed: %v", err)
+	}
+	t.Setenv(buildinfo.EnvironmentKey("GATEWAY_DATA_DIR"), t.TempDir())
+	out.Reset()
+	if err := runWithArgs([]string{"-url", unsignedHost.URL, "list"}, &out); err != nil {
+		t.Fatalf("missing scope.key fallback failed: %v", err)
+	}
+}
+
 func execGatewayctl(t *testing.T, args []string) ([]byte, string, int) {
 	t.Helper()
 	raw, err := json.Marshal(args)

@@ -116,8 +116,27 @@ func approvalHash(req InvokeRequest, ev scope.EventScope, t registry.Tool, s reg
 		}
 	}
 	parts := []string{req.Actor, ev.Agent, ev.RepoID, anchor, s.Kind, t.ServerID, t.ID, fmt.Sprintf("%x", sha256.Sum256(schema)), args}
-	if s.Kind == "cli" {
+	switch s.Kind {
+	case "cli":
 		parts = append(parts, s.CommandSHA256)
+	case "http":
+		def, err := json.Marshal(struct {
+			Endpoint string                `json:"endpoint"`
+			Method   string                `json:"method,omitempty"`
+			Path     string                `json:"path,omitempty"`
+			Adapter  string                `json:"adapter,omitempty"`
+			HTTP     *registry.HTTPMapping `json:"http,omitempty"`
+		}{
+			Endpoint: s.Endpoint,
+			Method:   t.Method,
+			Path:     t.Path,
+			Adapter:  t.Adapter,
+			HTTP:     t.HTTP,
+		})
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, fmt.Sprintf("%x", sha256.Sum256(def)))
 	}
 	if req.SkillID != "" {
 		parts = append(parts, req.SkillID)

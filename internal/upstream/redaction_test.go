@@ -41,7 +41,7 @@ func TestRedactionPreservesOrdinaryValuesAndMasksSensitiveKeys(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{
 		"field1-port3000": 3000,
 		"count": 1,
-		"mode": "production:3000/42/seven77",
+		"mode": "production:3000/42/[redacted]",
 		"note": "[redacted] [redacted] [redacted]",
 		"nested": [{"password":"[redacted]", "Token":"[redacted]", "client-secret":"[redacted]"}]
 	}`), &want); err != nil {

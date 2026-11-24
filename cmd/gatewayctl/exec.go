@@ -23,8 +23,16 @@ func runExec(args []string, opts gatewayCommandOptions, stdout io.Writer) error 
 	service := fs.String("service", "gh", "Controlled GitHub CLI source ID")
 	skill := fs.String("skill", "", "Declare a skill ID")
 	approval := fs.String("approval", "", "Retry with this approval ID")
-	scopeMode := fs.String("scope", "auto", "Sign a scope automatically or turn signing off")
-	agent := fs.String("agent", "gatewayctl", "Agent identity for scope signing")
+	defaultScope := opts.ScopeMode
+	if defaultScope == "" {
+		defaultScope = "auto"
+	}
+	defaultAgent := opts.Agent
+	if defaultAgent == "" {
+		defaultAgent = "gatewayctl"
+	}
+	scopeMode := fs.String("scope", defaultScope, "Sign a scope automatically or turn signing off")
+	agent := fs.String("agent", defaultAgent, "Agent identity for scope signing")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

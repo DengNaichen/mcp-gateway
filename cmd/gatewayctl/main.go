@@ -18,6 +18,7 @@ import (
 	"gatewaylab/internal/buildinfo"
 	"gatewaylab/internal/clientconfig"
 	"gatewaylab/internal/clientplugin"
+	"gatewaylab/internal/workspace"
 )
 
 func run() error {
@@ -34,6 +35,8 @@ func runWithArgs(rawArgs []string, stdout io.Writer) error {
 	contextText := fs.String("context", "", "Context for discovery")
 	summary := fs.Bool("summary", false, "Return capability summaries without schemas")
 	includeDemo := fs.Bool("demo", false, "Include built-in demo tools in discovery")
+	scopeMode := fs.String("scope", "auto", "Sign a scope automatically (auto) or turn signing off (off)")
+	agent := fs.String("agent", "gatewayctl", "Agent identity for scope signing")
 	if err := fs.Parse(rawArgs); err != nil {
 		return err
 	}
@@ -52,6 +55,8 @@ func runWithArgs(rawArgs []string, stdout io.Writer) error {
 		ContextText: *contextText,
 		Summary:     *summary,
 		IncludeDemo: *includeDemo,
+		ScopeMode:   *scopeMode,
+		Agent:       *agent,
 	}, stdout)
 }
 
@@ -63,10 +68,12 @@ type gatewayCommandOptions struct {
 	ContextText string
 	Summary     bool
 	IncludeDemo bool
+	ScopeMode   string
+	Agent       string
 }
 
 func runGatewayCommand(cmdArgs []string, opts gatewayCommandOptions, stdout io.Writer) error {
-	method, path := http.MethodGet, "/api/catalog?actor="+url.QueryEscape(opts.Actor)+"&include_demo="+fmt.Sprint(opts.IncludeDemo)
+	method, path, scopeOp, toolID := http.MethodGet, "/api/catalog?actor="+url.QueryEscape(opts.Actor)+"&include_demo="+fmt.Sprint(opts.IncludeDemo), "catalog", ""
 	var payload any
 	switch cmdArgs[0] {
 	case "exec":
@@ -76,13 +83,14 @@ func runGatewayCommand(cmdArgs []string, opts gatewayCommandOptions, stdout io.W
 		if len(cmdArgs) < 2 {
 			return fmt.Errorf("search requires an intent")
 		}
-		method, path = http.MethodPost, "/api/discover"
+		method, path, scopeOp = http.MethodPost, "/api/discover", "discover_tools"
 		payload = map[string]any{"intent": strings.Join(cmdArgs[1:], " "), "actor": opts.Actor, "context": opts.ContextText, "include_demo": opts.IncludeDemo, "summary_only": opts.Summary}
 	case "schema":
 		if len(cmdArgs) != 2 {
 			return fmt.Errorf("schema requires one tool id")
 		}
-		path = "/api/tools/" + url.PathEscape(cmdArgs[1]) + "/schema?actor=" + url.QueryEscape(opts.Actor)
+		toolID = cmdArgs[1]
+		path, scopeOp = "/api/tools/"+url.PathEscape(toolID)+"/schema?actor="+url.QueryEscape(opts.Actor), "get_tool_schema"
 	case "call":
 		if len(cmdArgs) != 2 {
 			return fmt.Errorf("call requires one tool id")
@@ -95,18 +103,26 @@ func runGatewayCommand(cmdArgs []string, opts gatewayCommandOptions, stdout io.W
 		if opts.Fields != "" {
 			projection = strings.Split(opts.Fields, ",")
 		}
-		method, path = http.MethodPost, "/api/invoke"
+		method, path, scopeOp = http.MethodPost, "/api/invoke", "invoke_tool"
 		payload = map[string]any{"tool_id": cmdArgs[1], "arguments": parsed, "actor": opts.Actor, "fields": projection}
 	default:
 		return fmt.Errorf("unknown command %q", cmdArgs[0])
 	}
-	var body io.Reader
+	var (
+		rawBody []byte
+		body    io.Reader
+	)
 	if payload != nil {
 		b, err := json.Marshal(payload)
 		if err != nil {
 			return fmt.Errorf("encode request: %w", err)
 		}
+		rawBody = b
 		body = bytes.NewReader(b)
+	}
+	scopeToken, err := signGatewayScope(opts.ScopeMode, opts.Agent, scopeOp, rawBody, toolID)
+	if err != nil {
+		return err
 	}
 	req, err := http.NewRequest(method, strings.TrimRight(opts.Endpoint, "/")+path, body)
 	if err != nil {
@@ -115,6 +131,9 @@ func runGatewayCommand(cmdArgs []string, opts gatewayCommandOptions, stdout io.W
 	req.Header.Set("Content-Type", "application/json")
 	if token := os.Getenv("GATEWAY_TOKEN"); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if scopeToken != "" {
+		req.Header.Set("X-Gateway-Scope", scopeToken)
 	}
 	resp, err := (&http.Client{Timeout: 190 * time.Second}).Do(req)
 	if err != nil {
@@ -132,6 +151,50 @@ func runGatewayCommand(cmdArgs []string, opts gatewayCommandOptions, stdout io.W
 		return fmt.Errorf("http %d: %s", resp.StatusCode, b)
 	}
 	return writePrettyRawJSON(stdout, b)
+}
+
+func signGatewayScope(mode, agent, op string, rawBody []byte, toolID string) (string, error) {
+	if mode == "" {
+		mode = "auto"
+	}
+	if agent == "" {
+		agent = "gatewayctl"
+	}
+	if !workspace.IsKnownAgent(agent) {
+		return "", fmt.Errorf("unknown scope agent %q", agent)
+	}
+	switch mode {
+	case "off":
+		return "", nil
+	case "auto":
+	default:
+		return "", errors.New("-scope must be auto or off")
+	}
+	key, err := workspace.LoadScopeKey("")
+	if errors.Is(err, workspace.ErrScopeKeyMissing) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read scope.key: %w", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("determine scope working directory: %w", err)
+	}
+	ctxField := workspace.CurrentContextField()
+	var hash string
+	switch {
+	case len(rawBody) > 0:
+		hash, _, _, err = workspace.CanonicalArgsHashJSON(rawBody, ctxField)
+	case op == "get_tool_schema" && toolID != "":
+		hash, err = workspace.CanonicalArgsHash(map[string]any{"tool_id": toolID}, ctxField)
+	default:
+		hash, err = workspace.CanonicalArgsHash(nil, ctxField)
+	}
+	if err != nil {
+		return "", fmt.Errorf("hash scope payload: %w", err)
+	}
+	return workspace.SignToken(key, workspace.Claims{Agent: agent, Cwd: cwd, Op: op, ArgsHash: hash})
 }
 
 func runPluginCommand(args []string, defaultURL string, stdout io.Writer) error {

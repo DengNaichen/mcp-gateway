@@ -17,7 +17,8 @@ func (u *Service) RedactResponse(data any, s Server) any {
 	if u == nil {
 		return RedactResponse(data, s)
 	}
-	return redact(data, s, appendServerSecrets(u.TokenSecrets(), s, u.serverLookup(s)), false)
+	referenced, literal := appendServerSecrets(u.TokenSecrets(), nil, s, u.serverLookup(s))
+	return redact(data, s, referenced, literal, false)
 }
 
 func RedactResponse(data any, s Server) any {
@@ -25,7 +26,8 @@ func RedactResponse(data any, s Server) any {
 }
 
 func RedactResponseWithLookup(data any, s Server, lookup func(string) string) any {
-	return redact(data, s, appendServerSecrets(nil, s, lookup), false)
+	referenced, literal := appendServerSecrets(nil, nil, s, lookup)
+	return redact(data, s, referenced, literal, false)
 }
 
 // RedactAuditDetail applies the shared redactor to the serialized detail so
@@ -37,45 +39,68 @@ func (u *Service) RedactAuditDetail(detail json.RawMessage, servers []Server, ex
 	if err := decoder.Decode(&value); err != nil {
 		return nil, err
 	}
-	secrets := append(u.TokenSecrets(), extraSecrets...)
+	referenced := append(u.TokenSecrets(), extraSecrets...)
+	var literal []string
 	for _, s := range servers {
-		secrets = appendServerSecrets(secrets, s, u.serverLookup(s))
+		referenced, literal = appendServerSecrets(referenced, literal, s, u.serverLookup(s))
 	}
-	return json.Marshal(redact(value, Server{}, secrets, true))
+	return json.Marshal(redact(value, Server{}, referenced, literal, true))
 }
 
-func appendServerSecrets(secrets []string, s Server, lookup func(string) string) []string {
+func appendServerSecrets(referenced, literal []string, s Server, lookup func(string) string) ([]string, []string) {
 	if lookup == nil {
 		lookup = os.Getenv
 	}
-	resolve := func(name string) string {
-		value := lookup(name)
-		secrets = append(secrets, value)
-		return value
-	}
 	for _, value := range s.Headers {
-		expanded := os.Expand(value, resolve)
-		secrets = append(secrets, expanded, strings.TrimPrefix(expanded, "Bearer "))
+		resolvedAny := false
+		expanded := os.Expand(value, func(name string) string {
+			v := lookup(name)
+			if v != "" {
+				resolvedAny = true
+				referenced = append(referenced, v)
+			}
+			return v
+		})
+		if resolvedAny {
+			referenced = append(referenced, expanded, strings.TrimPrefix(expanded, "Bearer "))
+		} else {
+			literal = append(literal, expanded, strings.TrimPrefix(expanded, "Bearer "))
+		}
 	}
 	// Environment literals often contain ordinary settings such as ports.
 	// Expand only to collect values referenced by the configuration.
 	for _, value := range s.Env {
-		os.Expand(value, resolve)
+		os.Expand(value, func(name string) string {
+			v := lookup(name)
+			if v != "" {
+				referenced = append(referenced, v)
+			}
+			return v
+		})
 	}
-	return secrets
+	return referenced, literal
 }
 
-func redact(data any, s Server, secrets []string, audit bool) any {
+func redact(data any, s Server, referencedSecrets, literalSecrets []string, audit bool) any {
 	const (
-		replacement              = "[redacted]"
-		minSecretSubstringLength = 8
+		replacement            = "[redacted]"
+		minLiteralSecretLength = 8
 	)
+	secrets := make([]string, 0, len(referencedSecrets)+len(literalSecrets))
+	for _, secret := range referencedSecrets {
+		if secret != "" {
+			secrets = append(secrets, secret)
+		}
+	}
+	for _, secret := range literalSecrets {
+		if len(secret) >= minLiteralSecretLength {
+			secrets = append(secrets, secret)
+		}
+	}
 	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
 	pairs := make([]string, 0, len(secrets)*2)
 	for _, secret := range secrets {
-		if len(secret) >= minSecretSubstringLength {
-			pairs = append(pairs, secret, replacement)
-		}
+		pairs = append(pairs, secret, replacement)
 	}
 	replace := strings.NewReplacer(pairs...)
 	var walk func(any, string) any
