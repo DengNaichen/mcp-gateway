@@ -250,7 +250,7 @@ func TestLegacyMigrationRetainsRegistryAndScopeData(t *testing.T) {
 		t.Fatalf("migration reordered data: %+v %v", got, err)
 	}
 	var version int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 8 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 11 {
 		t.Fatalf("version=%d, %v", version, err)
 	}
 	rules, err := ScopeRules[map[string]any](db.DB).List()
@@ -357,5 +357,48 @@ func TestRunTxAndErrNotFound(t *testing.T) {
 	got, err := Settings[map[string]string](db.DB).Load()
 	if err != nil || got["k"] != "v" {
 		t.Fatalf("committed write missing: %+v %v", got, err)
+	}
+}
+
+func TestActivityV9MigrationPreservesChronologyAndLegacyRows(t *testing.T) {
+	dir := t.TempDir()
+	raw, err := sql.Open("sqlite", filepath.Join(dir, "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`
+CREATE TABLE activity (id TEXT PRIMARY KEY, time TEXT NOT NULL, kind TEXT NOT NULL, actor TEXT NOT NULL, status TEXT NOT NULL, title TEXT NOT NULL, duration_ms INTEGER NOT NULL, detail TEXT NOT NULL CHECK(json_valid(detail)));
+CREATE INDEX activity_by_time ON activity(time DESC);
+INSERT INTO activity VALUES
+ ('a','2026-11-23T09:01:00Z','invoke','developer','success','legacy A',9,'{"preserved":true}'),
+ ('b','2026-11-23T17:01:00+08:00','invoke','developer','success','legacy B',10,'{}'),
+ ('c','2026-11-23T09:01:00.000000001Z','invoke','developer','success','legacy C',11,'{}'),
+ ('d','2026-11-23T17:00:59.999999999+08:00','invoke','developer','success','legacy D',12,'{}');
+PRAGMA user_version=8;
+`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := Activity(db.DB)
+	rows, err := repo.Find(ActivityFilter{Limit: 2})
+	if err != nil || len(rows) != 2 || rows[0].ID != "c" || rows[1].ID != "b" {
+		t.Fatalf("newest rows: %+v, %v", rows, err)
+	}
+	rows, err = repo.Find(ActivityFilter{Limit: 2, Before: &rows[1].Time, BeforeID: rows[1].ID})
+	if err != nil || len(rows) != 2 || rows[0].ID != "a" || rows[1].ID != "d" {
+		t.Fatalf("composite cursor failed to preserve rows with tied times: %+v, %v", rows, err)
+	}
+	legacy := rows[0]
+	if string(legacy.Detail) != `{"preserved":true}` || legacy.DurationMS != 9 ||
+		legacy.RepoID != "" || legacy.ServiceID != "" || legacy.Protocol != "" || legacy.Action != "" ||
+		legacy.Decision != "" || legacy.RuleID != "" || legacy.ApprovalID != "" || legacy.SkillID != "" {
+		t.Fatalf("legacy row changed: %+v", legacy)
 	}
 }

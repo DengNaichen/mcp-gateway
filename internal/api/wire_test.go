@@ -91,6 +91,7 @@ func TestWireTypesMirrorDomain(t *testing.T) {
 	}{
 		{registry.Server{}, apitypes.Server{}, nil},
 		{registry.Tool{}, apitypes.Tool{}, nil},
+		{gateway.ToolSchema{}, apitypes.ToolSchema{}, nil},
 		{registry.Registry{}, apitypes.Registry{}, nil},
 		{routing.Capability{}, apitypes.Capability{}, nil},
 		{gateway.Catalog{}, apitypes.Catalog{}, nil},

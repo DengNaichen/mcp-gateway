@@ -49,7 +49,21 @@ func (u *DesktopUI) loadServerCredentials(st *servicesPageState, id string) {
 	})
 }
 
-func credentialEntryStatus(entry apitypes.CredentialStatus, persistent bool) (label string, dotCol, txtCol ui.Color) {
+// credentialEntryStatus labels one credential. Controlled CLI sources only read
+// the gateway credential store, so their host environment is never a source.
+func credentialEntryStatus(entry apitypes.CredentialStatus, persistent, gatewayStoreOnly bool) (label string, dotCol, txtCol ui.Color) {
+	if gatewayStoreOnly {
+		switch {
+		case entry.Saved && !persistent:
+			return i18n.T("ops.credential-session-only"), SailWarningInk, SailInkMuted
+		case entry.Saved:
+			return i18n.T("ops.credential-keychain-managed"), SailSuccessInk, SailInkMuted
+		case entry.Environment:
+			return i18n.T("ops.credential-env-ignored"), SailDangerInk, SailDangerInk
+		default:
+			return i18n.T("client.state.not-configured"), SailDangerInk, SailDangerInk
+		}
+	}
 	switch {
 	case entry.Environment:
 		return i18n.T("ops.credential-from-env"), SailSuccessInk, SailInkMuted
@@ -90,7 +104,10 @@ func (u *DesktopUI) renderServerCredentials(c *ui.Context, st *servicesPageState
 	}
 	SailCard(c, func() {
 		subtitle := i18n.T("ops.credentials-ephemeral-note")
-		if st.credentialState.Persistent {
+		switch {
+		case serverIsCLI(server):
+			subtitle = i18n.T("ops.credentials-cli-note")
+		case st.credentialState.Persistent:
 			subtitle = i18n.T("ops.credentials-keychain-note")
 		}
 		SailCardTitle(c, i18n.T("ops.service-credentials"), subtitle, nil)
@@ -182,7 +199,7 @@ func (u *DesktopUI) renderOAuthCredentialRow(c *ui.Context, st *servicesPageStat
 }
 
 func (u *DesktopUI) renderCredentialRow(c *ui.Context, st *servicesPageState, server apitypes.Server, entry apitypes.CredentialStatus) {
-	status, dotCol, txtCol := credentialEntryStatus(entry, st.credentialState.Persistent)
+	status, dotCol, txtCol := credentialEntryStatus(entry, st.credentialState.Persistent, serverIsCLI(server))
 	ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, entry.Name).Font("monospace").FontSize(12).FontWeight(600).TextColor(SailInkStrong).Width(220).SingleLine()
 		value := st.credentialValues[entry.Name]

@@ -21,6 +21,7 @@ type ModelQueries interface {
 // routing single-service calls through Gateway as a service locator.
 type Services struct {
 	Access                *access.Policy
+	LocalAdmin            *access.LocalAdminAuth
 	Activity              *activity.Service
 	Maintenance           *maintenance.Maintainer
 	Scope                 *scope.Service
@@ -36,6 +37,7 @@ type Services struct {
 func (g *Gateway) services() Services {
 	return Services{
 		Access:                g.access,
+		LocalAdmin:            g.localAdmin,
 		Activity:              g.activity,
 		Maintenance:           g.maintenance,
 		Scope:                 g.scope,

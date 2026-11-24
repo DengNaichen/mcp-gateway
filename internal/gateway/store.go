@@ -22,6 +22,7 @@ import (
 	"gatewaylab/internal/maintenance/sandbox"
 	"gatewaylab/internal/market"
 	"gatewaylab/internal/model"
+	"gatewaylab/internal/policy"
 	"gatewaylab/internal/registry"
 	"gatewaylab/internal/routing"
 	"gatewaylab/internal/scope"
@@ -47,15 +48,19 @@ type Gateway struct {
 	storage             *store.Store
 	upstream            *upstream.Service
 	access              *access.Policy
+	localAdmin          *access.LocalAdminAuth
 	execution           sandbox.Policy
 	routing             routing.Options
 	maintenance         *maintenance.Maintainer
 	scope               *scope.Service
+	policies            policyState
 }
 
 type Options struct {
 	OpenBrowser        func(string) error
 	PersistCredentials bool
+	LocalAdminToken    string
+	LookupAccessToken  func(string) string
 	CredentialBackend  secrets.Backend
 }
 
@@ -67,7 +72,7 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, Services, erro
 	if err != nil {
 		return nil, Services{}, err
 	}
-	policy, err := access.LoadPolicy(baseURL)
+	accessPolicy, err := access.LoadPolicy(baseURL, opts.LookupAccessToken)
 	if err != nil {
 		return nil, Services{}, err
 	}
@@ -94,17 +99,20 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, Services, erro
 	g := &Gateway{
 		instanceID: uuid.NewString(),
 		execution:  execution,
-		access:     policy,
+		access:     accessPolicy,
 		dir:        dir,
 		baseURL:    baseURL,
 		db:         db,
 		storage:    storage,
 	}
+	if accessPolicy == nil {
+		g.localAdmin = access.NewLocalAdminAuth(opts.LocalAdminToken)
+	}
 	g.credentials, err = openCredentialStore(dir, opts)
 	if err != nil {
 		return nil, Services{}, err
 	}
-	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupServerEnv, OpenBrowser: opts.OpenBrowser, LoadOAuth: g.credentials.Get, SaveOAuth: func(key, value string) error {
+	g.upstream = upstream.New(upstream.Config{LookupEnv: g.lookupServerEnv, LookupSecret: g.lookupServerSecretOnly, OpenBrowser: opts.OpenBrowser, LoadOAuth: g.credentials.Get, SaveOAuth: func(key, value string) error {
 		return g.credentials.Update(map[string]string{key: value}, nil)
 	}})
 	if err := g.loadRegistry(); err != nil {
@@ -129,11 +137,15 @@ func NewWithOptions(dir, baseURL string, opts Options) (*Gateway, Services, erro
 	if err != nil {
 		return nil, Services{}, err
 	}
-	if err := g.loadEvents(); err != nil {
+	g.policies.rules, err = store.PolicyRules[policy.Rule](db).List()
+	if err != nil {
 		return nil, Services{}, err
 	}
 	g.model, err = model.New(db, g.credentials)
 	if err != nil {
+		return nil, Services{}, err
+	}
+	if err := g.loadEvents(); err != nil {
 		return nil, Services{}, err
 	}
 
@@ -168,9 +180,10 @@ func openCredentialStore(dir string, opts Options) (*secrets.Store, error) {
 func relocateDemoEndpoints(reg registry.Registry, baseURL string) registry.Registry {
 	for i := range reg.Servers {
 		if reg.Servers[i].Demo {
-			if reg.Servers[i].Kind == "mcp" {
+			switch reg.Servers[i].Kind {
+			case "mcp":
 				reg.Servers[i].Endpoint = baseURL + "/demo/mcp"
-			} else {
+			case "http":
 				reg.Servers[i].Endpoint = baseURL + "/demo/api"
 			}
 		}
@@ -199,7 +212,7 @@ func (g *Gateway) loadRegistry() error {
 }
 
 func (g *Gateway) loadEvents() (err error) {
-	g.activity, err = activity.New(store.Activity(g.db))
+	g.activity, err = activity.New(store.Activity(g.db), g.redactActivityDetail)
 	return err
 }
 
@@ -207,14 +220,10 @@ func invalid(message string) error { return fault.New(fault.Invalid, message, ni
 
 func (g *Gateway) isAdminCaller(ctx context.Context) bool {
 	if g.access == nil {
-		return true
+		return g.localAdmin == nil || access.IsLocalAdmin(ctx)
 	}
 	p, ok := access.PrincipalFrom(ctx)
 	return ok && p.Admin
-}
-
-func (g *Gateway) authorizedTool(ctx context.Context, t registry.Tool, actor string) bool {
-	return g.access.IdentityAllowsTool(ctx, t, actor) && g.scope.AllowsTool(ctx, t)
 }
 
 func newID() string { return fmt.Sprintf("%x", time.Now().UnixNano()) }

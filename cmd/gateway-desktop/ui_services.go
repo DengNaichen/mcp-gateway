@@ -26,6 +26,7 @@ type servicesPageState struct {
 	add      serviceAddFormState
 	toolEdit serviceToolEditState
 	httpTool serviceHTTPToolState
+	skills   *skillsAdmissionState
 
 	// Kept directly on servicesPageState because sibling credentials files
 	// construct &servicesPageState{credentialServerID: ...} and access these directly.
@@ -48,8 +49,11 @@ func (u *DesktopUI) servicesState() *servicesPageState {
 }
 
 func serviceProtocolTag(s apitypes.Server) string {
-	if s.Kind == "http" {
+	switch s.Kind {
+	case "http":
 		return "HTTP REST"
+	case "cli":
+		return "CLI"
 	}
 	switch strings.ToLower(strings.TrimSpace(s.Transport)) {
 	case "stdio":

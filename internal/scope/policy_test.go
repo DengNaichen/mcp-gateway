@@ -27,22 +27,6 @@ func TestRulePrecedenceReplacesWholeRule(t *testing.T) {
 		t.Fatal("missing default must deny with empty grants")
 	}
 }
-func TestGrantReadOnlyAndToolAllowlist(t *testing.T) {
-	rule := ScopeRule{Grants: []ServiceGrant{{ServerID: "svc", Access: "ro", ToolIDs: []string{"svc.read", "svc.write"}}}}
-	for _, tc := range []struct {
-		tool Tool
-		want bool
-	}{
-		{Tool{ID: "svc.read", ServerID: "svc", ReadOnly: true}, true},
-		{Tool{ID: "svc.write", ServerID: "svc", ReadOnly: false}, false},
-		{Tool{ID: "svc.other", ServerID: "svc", ReadOnly: true}, false},
-		{Tool{ID: "other.read", ServerID: "other", ReadOnly: true}, false},
-	} {
-		if got := grantAllowsTool(rule, tc.tool); got != tc.want {
-			t.Fatalf("%s allowed=%v", tc.tool.ID, got)
-		}
-	}
-}
 func TestAnchorMatchingDoesNotAuthorizeByRemoteOrPathPrefix(t *testing.T) {
 	repos := []Repository{{ID: "root", RootPaths: []string{"/projects"}, RemoteHint: "github.com/org/repo"}, {ID: "child", RootPaths: []string{"/projects/app"}}, {ID: "git", GitCommonDirs: []string{"/git/repo/.git"}}}
 	for _, tc := range []struct{ kind, common, root, want string }{

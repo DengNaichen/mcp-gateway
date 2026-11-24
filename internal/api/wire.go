@@ -87,6 +87,10 @@ func wireTool(t registry.Tool) apitypes.Tool {
 	}
 }
 
+func wireToolSchema(schema gateway.ToolSchema) apitypes.ToolSchema {
+	return apitypes.ToolSchema{Tool: wireTool(schema.Tool), NeedsApproval: schema.NeedsApproval}
+}
+
 func domainTool(t apitypes.Tool) registry.Tool {
 	return registry.Tool{
 		ID: t.ID, ServerID: t.ServerID, Name: t.Name, Description: t.Description, Tags: t.Tags,
@@ -116,11 +120,11 @@ func domainDiscoverRequest(in apitypes.DiscoverRequest) gateway.DiscoverRequest 
 }
 
 func domainInvokeRequest(in apitypes.InvokeRequest) gateway.InvokeRequest {
-	return gateway.InvokeRequest{ToolID: in.ToolID, Arguments: in.Arguments, Fields: in.Fields, Actor: in.Actor}
+	return gateway.InvokeRequest{SkillID: in.SkillID, ApprovalID: in.ApprovalID, ToolID: in.ToolID, Arguments: in.Arguments, Fields: in.Fields, Actor: in.Actor}
 }
 
 func wireSelection(s gateway.Selection) apitypes.Selection {
-	return apitypes.Selection{Tool: wireTool(s.Tool), Reason: s.Reason}
+	return apitypes.Selection{Tool: wireTool(s.Tool), Reason: s.Reason, NeedsApproval: s.NeedsApproval}
 }
 
 func wireDiscoverResult(r gateway.DiscoverResult) apitypes.DiscoverResult {
@@ -137,6 +141,7 @@ func wireDiscoverSummary(r gateway.DiscoverResult) apitypes.DiscoverSummaryResul
 	for _, t := range r.Tools {
 		c := routing.Summarize(t.Tool)
 		c.Reason = t.Reason
+		c.NeedsApproval = t.NeedsApproval
 		tools = append(tools, wireCapability(c))
 	}
 	return apitypes.DiscoverSummaryResult{
@@ -147,7 +152,10 @@ func wireDiscoverSummary(r gateway.DiscoverResult) apitypes.DiscoverSummaryResul
 	}
 }
 
-func wireInvokeResult(r gateway.InvokeResult) apitypes.InvokeResult { return apitypes.InvokeResult(r) }
+func wireInvokeResult(r gateway.InvokeResult) apitypes.InvokeResult {
+	return apitypes.InvokeResult{ID: r.ID, ToolID: r.ToolID, Protocol: r.Protocol, Data: r.Data, DurationMS: r.DurationMS,
+		Status: r.Status, Approval: (*apitypes.ApprovalChallenge)(r.Approval)}
+}
 
 // --- model ---
 

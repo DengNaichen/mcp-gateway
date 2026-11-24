@@ -25,6 +25,25 @@ type Event struct {
 	Title      string          `json:"title"`
 	DurationMS int64           `json:"duration_ms"`
 	Detail     json.RawMessage `json:"detail,omitempty"`
+	RepoID     string          `json:"repo_id,omitempty"`
+	ServiceID  string          `json:"service_id,omitempty"`
+	Protocol   string          `json:"protocol,omitempty"`
+	Action     string          `json:"action,omitempty"`
+	Decision   string          `json:"decision,omitempty"`
+	RuleID     string          `json:"rule_id,omitempty"`
+	ApprovalID string          `json:"approval_id,omitempty"`
+	SkillID    string          `json:"skill_id,omitempty"`
+}
+
+type EventPage struct {
+	Items      []Event `json:"items"`
+	NextCursor string  `json:"next_cursor"`
+	HasMore    bool    `json:"has_more"`
+}
+
+type EventFilter struct {
+	Actor, RepoID, ServiceID, Protocol, Decision, Status, Query, Before, Action, SkillID string
+	Limit                                                                                int
 }
 
 // ConnectionCheck is the latest connectivity check of a source or the model
@@ -50,10 +69,16 @@ type SetupStatus struct {
 	AgentLastRequest *Event                     `json:"agent_last_request"`
 }
 
+const (
+	SecurityModeSharedBoundary = "shared_boundary"
+	SecurityModeLocalGuardrail = "local_guardrail"
+)
+
 // AccessInfo describes how the caller reached the control plane.
 type AccessInfo struct {
-	Shared bool   `json:"shared"`
-	Actor  string `json:"actor"`
+	Shared       bool   `json:"shared"`
+	SecurityMode string `json:"security_mode"`
+	Actor        string `json:"actor"`
 }
 
 // PulseBucket aggregates gateway requests over a 15-minute window.
@@ -67,6 +92,9 @@ type PulseBucket struct {
 // Bootstrap is returned by GET /api/bootstrap: everything the control plane
 // needs to render its first screen.
 type Bootstrap struct {
+	Skills                []Skill        `json:"skills"`
+	PendingApprovals      int            `json:"pending_approvals"`
+	Approvals             []Approval     `json:"approvals"`
 	Registry              Registry       `json:"registry"`
 	Settings              Settings       `json:"settings"`
 	KeyConfigured         bool           `json:"key_configured"`
@@ -78,6 +106,7 @@ type Bootstrap struct {
 	Setup                 SetupStatus    `json:"setup"`
 	Scopes                ScopeOverview  `json:"scopes"`
 	Access                AccessInfo     `json:"access"`
+	Policies              PolicyOverview `json:"policies"`
 }
 
 // Principal is an authenticated identity in shared mode.
@@ -94,6 +123,7 @@ type Principal struct {
 type AuthMe struct {
 	Authenticated bool      `json:"authenticated"`
 	Shared        bool      `json:"shared"`
+	SecurityMode  string    `json:"security_mode"`
 	Principal     Principal `json:"principal"`
 }
 

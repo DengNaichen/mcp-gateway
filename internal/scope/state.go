@@ -32,6 +32,12 @@ func (g *Service) IsEnforced() bool {
 	return g.scope.Enforce
 }
 
+func (g *Service) HasRepository(id string) bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return slices.ContainsFunc(g.scope.Repositories, func(r Repository) bool { return r.ID == id })
+}
+
 func (g *Service) HookBinPath() string {
 	g.mu.RLock()
 	p := g.hookBinPath

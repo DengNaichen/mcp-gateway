@@ -21,7 +21,24 @@ func (g *server) registerBootstrap(mux *http.ServeMux) {
 			fail(w, err)
 			return
 		}
+		approvals := []apitypes.Approval{}
+		pending := 0
+		if g.approvalAdmin(r) {
+			rows, count, err := g.gw.Approvals(r.Context(), "", 50)
+			if err != nil {
+				fail(w, err)
+				return
+			}
+			approvals, pending = mapSlice(rows, wireApproval), count
+		}
+		skills, err := g.gw.Skills()
+		if err != nil {
+			fail(w, err)
+			return
+		}
 		respond(w, 200, apitypes.Bootstrap{
+			Skills:    mapSlice(skills, wireSkill),
+			Approvals: approvals, PendingApprovals: pending,
 			Registry:              wireRegistry(g.registry.Snapshot()),
 			Settings:              apitypes.Settings(settings),
 			KeyConfigured:         key,
@@ -32,7 +49,8 @@ func (g *server) registerBootstrap(mux *http.ServeMux) {
 			MCPURL:                g.baseURL + "/mcp",
 			Setup:                 wireSetup(setup),
 			Scopes:                wireScopeOverview(g.scope.ScopeOverview()),
-			Access:                apitypes.AccessInfo{Shared: g.access != nil, Actor: access.RequestActor(r.Context(), "")},
+			Policies:              wirePolicyOverview(g.gw.PolicyOverview()),
+			Access:                apitypes.AccessInfo{Shared: g.access != nil, SecurityMode: g.securityMode(), Actor: access.RequestActor(r.Context(), "")},
 		})
 	})
 }

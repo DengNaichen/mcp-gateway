@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -16,6 +17,31 @@ import (
 	"gatewaylab/internal/api"
 	"gatewaylab/internal/buildinfo"
 )
+
+const adminTokenEnv = "GATEWAY_ADMIN_TOKEN"
+
+func openGateway(dataDir, baseURL string) (*api.Instance, error) {
+	channelKey := buildinfo.EnvironmentKey(adminTokenEnv)
+	adminTokens := map[string]string{
+		adminTokenEnv: os.Getenv(adminTokenEnv),
+		channelKey:    os.Getenv(channelKey),
+	}
+	for key := range adminTokens {
+		if err := os.Unsetenv(key); err != nil {
+			return nil, fmt.Errorf("clear %s from process environment: %w", key, err)
+		}
+	}
+	return api.Open(dataDir, baseURL, api.Options{
+		LocalAdminToken: cmp.Or(adminTokens[channelKey], adminTokens[adminTokenEnv]),
+		// Shared access files may reference either consumed value via token_env.
+		LookupAccessToken: func(key string) string {
+			if token, consumed := adminTokens[key]; consumed {
+				return token
+			}
+			return os.Getenv(key)
+		},
+	})
+}
 
 func run() error {
 	defaultData := "data/" + buildinfo.Current().Channel
@@ -39,7 +65,7 @@ func run() error {
 	if public := os.Getenv(buildinfo.EnvironmentKey("GATEWAY_PUBLIC_URL")); public != "" {
 		base = public
 	}
-	g, err := api.Open(*data, base, api.Options{})
+	g, err := openGateway(*data, base)
 	if err != nil {
 		return fmt.Errorf("initialize gateway: %w", err)
 	}

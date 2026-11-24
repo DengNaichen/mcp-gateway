@@ -77,6 +77,8 @@ type reposPageState struct {
 	showDeleteConfirm     bool
 
 	drafts map[string]*ruleDraft // key: repoKey
+
+	policy *policyRulesState
 }
 
 func (u *DesktopUI) reposState() *reposPageState {
@@ -325,6 +327,7 @@ func (u *DesktopUI) renderRepos(c *ui.Context) {
 	ui.Segmented(c.Key("repos-view-mode"), &st.viewMode, i18n.T("ops.matrix-view"), i18n.T("ops.single-repo-detail")).AlignSelf(ui.Start).Label(i18n.T("ops.repo-view"))
 	if st.viewMode == 0 {
 		u.renderReposMatrix(c.Key("repos-matrix"), st, state)
+		u.renderPolicyRulesSection(c.Key("repos-policy"), st, state)
 		return
 	}
 

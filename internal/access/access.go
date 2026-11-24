@@ -49,7 +49,7 @@ type Policy struct {
 }
 type principalContextKey struct{}
 
-func LoadPolicy(baseURL string) (*Policy, error) {
+func LoadPolicy(baseURL string, lookupToken func(string) string) (*Policy, error) {
 	path := os.Getenv("GATEWAY_AUTH_FILE")
 	if path == "" {
 		u, err := url.Parse(baseURL)
@@ -57,6 +57,9 @@ func LoadPolicy(baseURL string) (*Policy, error) {
 			return nil, invalid("非本机监听必须配置 GATEWAY_AUTH_FILE")
 		}
 		return nil, nil
+	}
+	if lookupToken == nil {
+		lookupToken = os.Getenv
 	}
 	b, err := input.ReadFileBounded(path, 1<<20)
 	if err != nil {
@@ -93,7 +96,7 @@ func LoadPolicy(baseURL string) (*Policy, error) {
 			if !secrets.ValidEnvName(entry.TokenEnv) {
 				return nil, invalid("token_env 必须是环境变量名称")
 			}
-			token := os.Getenv(entry.TokenEnv)
+			token := lookupToken(entry.TokenEnv)
 			if len(token) < 24 {
 				return nil, invalid("访问令牌环境变量未配置或少于 24 字节：" + entry.TokenEnv)
 			}
@@ -169,7 +172,9 @@ func (p *Policy) IdentityAllowsTool(ctx context.Context, t registry.Tool, actor 
 	}
 	return p == nil && Allowed(t, actor)
 }
-func (p *Policy) AcceptanceActor(ctx context.Context, actor string) (context.Context, error) {
+
+// WithDeclaredPrincipal resolves a configured identity for administrative simulations.
+func (p *Policy) WithDeclaredPrincipal(ctx context.Context, actor string) (context.Context, error) {
 	if p == nil {
 		return ctx, nil
 	}
@@ -178,7 +183,7 @@ func (p *Policy) AcceptanceActor(ctx context.Context, actor string) (context.Con
 			return context.WithValue(ctx, principalContextKey{}, principal), nil
 		}
 	}
-	return ctx, invalid("共享模式的路由验收 actor 必须是已配置的身份 ID")
+	return ctx, invalid("共享模式的 actor 必须是已配置的身份 ID")
 }
 
 func ActorName(actor string) string {

@@ -105,7 +105,7 @@ func TestVerifiedScopePersistsRulesAndRejectsReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !s.AllowsTool(ctx, reg.Tools[0]) || s.AllowsTool(ctx, reg.Tools[1]) {
+	if resolved := s.ExecutionScope(ctx); resolved.Mode != ModeEnforced || len(resolved.Rule.Grants) != 1 || resolved.Rule.Grants[0].Access != "ro" {
 		t.Fatal("verified read-only policy not enforced")
 	}
 	ev := EventForContext(ctx)
@@ -182,7 +182,7 @@ PRAGMA user_version=7;`, string(repoRODef), string(repoGhostDef)); err != nil {
 		t.Fatalf("expected only '*' and 'repo-ro' after legacy cleanup, got %+v", ov.Rules)
 	}
 
-	callFor := func(agent, cwd, jti string) context.Context {
+	callFor := func(s *Service, agent, cwd, jti string) context.Context {
 		t.Helper()
 		args := map[string]any{"intent": "inspect"}
 		hash, err := workspace.CanonicalArgsHash(args, workspace.CurrentContextField())
@@ -207,23 +207,20 @@ PRAGMA user_version=7;`, string(repoRODef), string(repoGhostDef)); err != nil {
 	}
 
 	// 1. Legacy (repo-ro, codex)->rw must NOT override repo-ro's ro rule.
-	ctxRO := callFor("codex", repoRODir, "jti-1")
-	if !s.AllowsTool(ctxRO, reg.Tools[0]) {
-		t.Fatalf("expected repo-ro read tool to be allowed, event=%+v", EventForContext(ctxRO))
-	}
-	if s.AllowsTool(ctxRO, reg.Tools[1]) {
-		t.Fatal("legacy (repo-ro, codex) rw rule took ghost effect")
+	ctxRO := callFor(s, "codex", repoRODir, "jti-1")
+	if resolved := s.ExecutionScope(ctxRO); resolved.Mode != ModeEnforced || len(resolved.Rule.Grants) != 1 || resolved.Rule.Grants[0].Access != "ro" {
+		t.Fatalf("legacy per-agent rule replaced repo-ro: %+v", resolved)
 	}
 
 	// 2. Legacy (*, codex)->rw must NOT grant tools to unconfigured workspaces.
-	ctxUnbound := callFor("codex", unboundDir, "jti-2")
-	if s.AllowsTool(ctxUnbound, reg.Tools[0]) || s.AllowsTool(ctxUnbound, reg.Tools[1]) {
+	ctxUnbound := callFor(s, "codex", unboundDir, "jti-2")
+	if len(s.ExecutionScope(ctxUnbound).Rule.Grants) != 0 {
 		t.Fatal("legacy (*, codex) rw rule took ghost effect in unbound repo")
 	}
 
 	// 3. Legacy (repo-ghost, claude)->rw must NOT grant tools to repo-ghost.
-	ctxGhost := callFor("claude", repoGhostDir, "jti-3")
-	if s.AllowsTool(ctxGhost, reg.Tools[0]) || s.AllowsTool(ctxGhost, reg.Tools[1]) {
+	ctxGhost := callFor(s, "claude", repoGhostDir, "jti-3")
+	if len(s.ExecutionScope(ctxGhost).Rule.Grants) != 0 {
 		t.Fatal("legacy (repo-ghost, claude) rw rule took ghost effect")
 	}
 
@@ -243,8 +240,8 @@ PRAGMA user_version=7;`, string(repoRODef), string(repoGhostDef)); err != nil {
 	if len(s2.ScopeOverview().Rules) != 2 {
 		t.Fatalf("expected loadScopes to ignore/clean stale agent_key != '*' rule, got %+v", s2.ScopeOverview().Rules)
 	}
-	ctxGhost2 := callFor("claude", repoGhostDir, "jti-4")
-	if s2.AllowsTool(ctxGhost2, reg.Tools[0]) || s2.AllowsTool(ctxGhost2, reg.Tools[1]) {
+	ctxGhost2 := callFor(s2, "claude", repoGhostDir, "jti-4")
+	if len(s2.ExecutionScope(ctxGhost2).Rule.Grants) != 0 {
 		t.Fatal("stale JSON rule with agent_key != '*' took ghost effect after reload")
 	}
 }

@@ -262,10 +262,15 @@ func (m *Maintainer) checkContract(parent context.Context, r MaintenanceRun, dir
 	var result any
 	var callErr error
 	target := contractInvocation{Server: server, Tool: tool, Dir: dir, Arguments: arguments, Case: c}
-	if server.Kind == "mcp" {
+	switch server.Kind {
+	case "mcp":
 		result, callErr, err = m.runMCPContract(ctx, target)
-	} else {
+	case "http":
 		result, callErr, err = m.runHTTPContract(ctx, target)
+	case "cli":
+		return invalid("受控 CLI 工具由网关维护")
+	default:
+		return invalid("未知服务协议")
 	}
 	if err != nil {
 		return err
@@ -347,7 +352,8 @@ func (m *Maintainer) runHTTPContract(ctx context.Context, target contractInvocat
 	var result any
 	var callErr error
 	if target.Tool.Adapter != "" {
-		result, callErr = sandbox.CallAdapterFileWithLookup(ctx, m.execution, target.Server, target.Tool, target.Arguments, filepath.Join(target.Dir, target.Tool.Adapter), m.lookupEnv)
+		lookup := func(key string) string { return m.serverLookupEnv(target.Server.ID, key) }
+		result, callErr = sandbox.CallAdapterFileWithLookup(ctx, m.execution, target.Server, target.Tool, target.Arguments, filepath.Join(target.Dir, target.Tool.Adapter), lookup)
 	} else {
 		result, callErr = m.upstream.CallHTTP(ctx, target.Server, target.Tool, target.Arguments)
 	}

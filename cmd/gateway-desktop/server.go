@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,6 +45,7 @@ type gatewayRuntime struct {
 	UIURL      string
 	MCPURL     string
 	DataDir    string
+	AdminToken string `json:"-"`
 
 	shutdownOnce sync.Once
 	shutdownFn   func(context.Context) error
@@ -211,7 +214,13 @@ func startOrAttachGateway(ctx context.Context, addr, dataDir string) (*gatewayRu
 		baseURL = strings.TrimRight(public, "/")
 	}
 
-	g, err := api.Open(dataDir, baseURL, api.Options{PersistCredentials: true})
+	var random [32]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		_ = ln.Close()
+		return nil, nil, fmt.Errorf("generate local admin token: %w", err)
+	}
+	adminToken := hex.EncodeToString(random[:])
+	g, err := api.Open(dataDir, baseURL, api.Options{PersistCredentials: true, LocalAdminToken: adminToken})
 	if err != nil {
 		_ = ln.Close()
 		return nil, nil, fmt.Errorf("initialize gateway: %w", err)
@@ -268,6 +277,7 @@ func startOrAttachGateway(ctx context.Context, addr, dataDir string) (*gatewayRu
 		UIURL:      uiURL,
 		MCPURL:     baseURL + "/mcp",
 		DataDir:    dataDir,
+		AdminToken: adminToken,
 		shutdownFn: shutdownFn,
 	}, nil, nil
 }

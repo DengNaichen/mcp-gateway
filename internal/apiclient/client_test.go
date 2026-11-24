@@ -97,6 +97,31 @@ func TestBearerTokenAndSessionCookieJar(t *testing.T) {
 	}
 }
 
+func TestLocalAdminTokenIsSeparateAndStaysAtGateway(t *testing.T) {
+	redirected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("admin request followed an HTTP redirect")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(redirected.Close)
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Gateway-Admin-Token"); got != "local-admin-token" {
+			t.Error("missing local admin token")
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer shared-token" {
+			t.Error("local admin option rewrote bearer authorization")
+		}
+		http.Redirect(w, r, redirected.URL, http.StatusFound)
+	}))
+	t.Cleanup(gateway.Close)
+
+	client := New(gateway.URL, WithToken("shared-token"), WithAdminToken("local-admin-token"))
+	_, err := client.AuthMe(t.Context())
+	var redirect *APIError
+	if !errors.As(err, &redirect) || redirect.Status != http.StatusFound {
+		t.Fatalf("expected redirect response at original gateway, got %v", err)
+	}
+}
+
 func TestRateLimitAndErrorMetadata(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

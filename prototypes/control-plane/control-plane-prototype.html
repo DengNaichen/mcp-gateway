@@ -733,6 +733,53 @@
     .row-disabled .row-name, .row-disabled .row-summary { color: var(--ink-faint); }
     .nav-count.nav-count-err, .nav-item.active .nav-count.nav-count-err { color: var(--danger); font-weight: 600; }
 
+    /* ---- M1 零信任能力控制平面增量 ---- */
+    .nav-count.nav-count-pending, .nav-item.active .nav-count.nav-count-pending {
+      background: var(--danger); color: #fff; border-radius: 999px; min-width: 17px; height: 17px;
+      padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 600;
+    }
+    .inbox-bar {
+      display: flex; align-items: center; gap: 12px; padding: 9px 14px; min-height: 44px;
+      border: 1px solid var(--warning-border); background: var(--warning-bg); border-radius: 10px;
+    }
+    .inbox-bar .inbox-count { font-size: 12.5px; font-weight: 600; color: var(--warning); white-space: nowrap; }
+    .inbox-bar .inbox-sum { flex: 1; min-width: 0; font-size: 12px; color: var(--ink-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dec { font-size: 11.5px; font-family: var(--mono); color: var(--ink-muted); }
+    .dec-approve { color: var(--warning); font-weight: 600; }
+    .dec-deny { color: var(--danger); font-weight: 600; }
+    .proto-tag { font-size: 10.5px; font-family: var(--mono); color: var(--ink-muted); letter-spacing: .02em; }
+    .approval-panel { border: 1px solid var(--warning-border); background: var(--warning-bg); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .approval-panel.resolved { border-color: var(--divider); background: var(--bg-subtle); }
+    .approval-hdr { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--warning); }
+    .approval-panel.resolved .approval-hdr { color: var(--ink-strong); }
+    .cmd-block { background: var(--navy-bg); color: var(--navy-text); border: 1px solid var(--navy-border); border-radius: 8px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-all; max-height: 150px; overflow: auto; }
+    .chain-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--divider); font-size: 12.5px; }
+    .chain-row:last-child { border-bottom: none; }
+    .chain-name { width: 78px; color: var(--ink-muted); flex-shrink: 0; }
+    .chain-note { color: var(--ink-faint); font-size: 12px; margin-left: auto; text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sub-hdr { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 20px 10px; }
+    .sub-hdr h2 { font-size: 13px; font-weight: 600; color: var(--ink-strong); margin: 0; }
+    .rule-line { display: flex; align-items: center; gap: 12px; padding: 11px 20px; border-top: 1px solid var(--divider); }
+    .rule-line.off .rule-main { opacity: .5; }
+    .rule-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .rule-head { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; }
+    .rule-reason { font-size: 12px; color: var(--ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rule-field { font-size: 11.5px; font-family: var(--mono); color: var(--ink-muted); }
+    .rule-field.muted { opacity: .45; text-decoration: line-through; }
+    .chip { height: 24px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--divider); background: var(--bg-control); color: var(--ink-muted); font-size: 11.5px; font-family: var(--mono); cursor: pointer; }
+    .chip.active { border-color: var(--accent-border); background: var(--accent-soft); color: var(--accent); }
+    .form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; padding: 4px 20px 16px; }
+    .form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--ink-muted); }
+    .form-grid .span-3 { grid-column: span 3; }
+    .trust-opt { flex: 1; border: 1px solid var(--divider); border-radius: 10px; padding: 12px 14px; cursor: pointer; background: var(--bg-surface); display: flex; flex-direction: column; gap: 4px; text-align: left; }
+    .trust-opt.active { border-color: var(--accent-border); background: var(--accent-soft); }
+    .trust-opt .t { font-size: 13px; font-weight: 600; color: var(--ink-strong); display: flex; align-items: center; gap: 8px; }
+    .trust-opt .d { font-size: 12px; color: var(--ink-muted); line-height: 1.5; }
+    .decision-big { font-size: 15px; font-weight: 700; font-family: var(--mono); }
+    .decision-big.allow { color: var(--success); }
+    .decision-big.approve { color: var(--warning); }
+    .decision-big.deny { color: var(--danger); }
+
     /* Grids & Splits */
     .kpi-grid {
       display: grid;
@@ -1563,6 +1610,51 @@
         rawDescription: `Issue a partial or full refund for a settled Stripe charge via Billing REST API.\n\nArgs:\n  charge_id: Settled charge identifier\n  reason: Refund audit reason`
       },
       {
+        id: "gh.pr.view",
+        serverId: "gh",
+        name: "pr view",
+        server: "GitHub CLI (gh)",
+        rw: false,
+        enabled: true,
+        hits: 9,
+        actors: ["developer", "observer"],
+        tags: ["cli", "github"],
+        httpMapping: "",
+        schema: `{\n  "type": "object",\n  "properties": {\n    "number": { "type": "integer" },\n    "repo": { "type": "string" },\n    "json": { "type": "string" }\n  },\n  "required": ["number"]\n}`,
+        example: `{"number":482,"repo":"DengNaichen/mcp-gateway","json":"title,state,author"}`,
+        rawDescription: `查看 Pull Request 详情（白名单子命令 \`gh pr view\`）。\n- 输出经脱敏后返回，\`GH_TOKEN\` 由钥匙串注入子进程，不出现在参数与日志中。`
+      },
+      {
+        id: "gh.pr.list",
+        serverId: "gh",
+        name: "pr list",
+        server: "GitHub CLI (gh)",
+        rw: false,
+        enabled: true,
+        hits: 4,
+        actors: ["developer", "observer"],
+        tags: ["cli", "github"],
+        httpMapping: "",
+        schema: `{"type":"object","properties":{"repo":{"type":"string"},"state":{"type":"string"}}}`,
+        example: `{"repo":"DengNaichen/mcp-gateway","state":"open"}`,
+        rawDescription: `列出仓库 Pull Request（白名单子命令 \`gh pr list\`）。`
+      },
+      {
+        id: "gh.pr.merge",
+        serverId: "gh",
+        name: "pr merge",
+        server: "GitHub CLI (gh)",
+        rw: true,
+        enabled: true,
+        hits: 2,
+        actors: ["developer"],
+        tags: ["cli", "github", "write"],
+        httpMapping: "",
+        schema: `{\n  "type": "object",\n  "properties": {\n    "number": { "type": "integer" },\n    "repo": { "type": "string" },\n    "method": { "enum": ["squash", "merge", "rebase"] },\n    "delete_branch": { "type": "boolean" }\n  },\n  "required": ["number"]\n}`,
+        example: `{"number":482,"repo":"DengNaichen/mcp-gateway","method":"squash","delete_branch":true}`,
+        rawDescription: `合并 Pull Request（白名单子命令 \`gh pr merge\`）。\n**写操作：** 默认命中 \`repo=*\` Approve 规则，执行前需要人工批准。`
+      },
+      {
         id: "demo.inspect_order",
         serverId: "demo-orders",
         name: "inspect_order",
@@ -1773,6 +1865,29 @@
         lastInvokeFailure: null,
         toolStub: { total: 73, open: 48, rwOpen: 6 },
         desc: "Sentry issues, events, releases and performance traces."
+      },
+      {
+        id: "gh",
+        name: "GitHub CLI",
+        proto: "CLI · 白名单子命令",
+        kind: "cli",
+        enabled: true,
+        demo: false,
+        endpoint: "gh (/opt/homebrew/bin/gh)",
+        headers: {},
+        env: { GH_TOKEN: "${GH_TOKEN}" },
+        credentials: [
+          { name: "GH_TOKEN", configured: true, saved: true, environment: false }
+        ],
+        cliAllow: ["pr view", "pr list", "pr merge"],
+        lastCheck: {
+          status: "success",
+          checkedAt: "11-23 09:12:40",
+          stale: false,
+          message: "gh 2.62 可执行，GH_TOKEN 已由钥匙串托管。"
+        },
+        lastInvokeFailure: null,
+        desc: "受控 CLI：仅允许白名单子命令 pr view / pr list / pr merge，GH_TOKEN 由钥匙串托管并注入子进程。"
       },
       {
         id: "demo-orders",
@@ -2020,6 +2135,11 @@
         { id: "k8s.describe_pod_events", name: "describe_pod_events", rw: false, desc: "查询指定 namespace 下 Pod 的最近 Warning 事件" },
         { id: "k8s.get_pod_logs", name: "get_pod_logs", rw: false, desc: "检索容器最近日志尾行" }
       ],
+      gh: [
+        { id: "gh.pr.view", name: "pr view", rw: false, desc: "查看 Pull Request 详情" },
+        { id: "gh.pr.list", name: "pr list", rw: false, desc: "列出仓库 Pull Request" },
+        { id: "gh.pr.merge", name: "pr merge", rw: true, desc: "合并 Pull Request（需审批）" }
+      ],
       billing: [
         { id: "billing.list_invoices", name: "list_invoices", rw: false, desc: "查询客户账单列表" },
         { id: "billing.refund_charge", name: "refund_charge", rw: true, desc: "对已结算订单发起退款" }
@@ -2106,6 +2226,7 @@
         repo_key: "repo-gw",
         grants: [
           { server_id: "github", access: "rw", tool_ids: [] },
+          { server_id: "gh", access: "rw", tool_ids: [] },
           { server_id: "k8s", access: "ro", tool_ids: [] }
         ]
       },
@@ -2169,6 +2290,399 @@
       { id: "ev-104", kind: "invoke", method: "tools/call", metaTool: "invoke_tool", model: "—", status: "selected", title: "github.list_pull_requests", actor: "developer", ms: 168, time: "17:08:41", date: "2026-11-17", eligible: 1, tokens: "96 tok", tokensIn: 48, tokensOut: 48, scope: { agent: "claude", repo_id: "repo-gw", repo_name: "mcp-gateway", root: "/Users/dev/Developer/mcp-gateway", matched_rule: "repo-gw", status: "matched" }, tools: [{ id: "github.list_pull_requests", rw: false, reason: "直接调用已授权只读工具" }] },
       { id: "ev-105", kind: "discover", method: "tools/call", metaTool: "discover_tools", model: "gpt-6-luna", status: "selected", title: "查看 checkout 服务最近 50 行错误日志", actor: "developer", ms: 38, time: "17:04:19", date: "2026-11-17", eligible: 4, tokens: "118 tok", tokensIn: 88, tokensOut: 30, scope: { agent: "claude", repo_id: "repo-checkout", repo_name: "checkout-service", root: "/Users/dev/Developer/checkout-service", matched_rule: "repo-checkout", status: "matched" }, tools: [{ id: "k8s.get_pod_logs", rw: false, reason: "匹配容器日志检索工具" }] }
     ];
+
+    // ---- M1：零信任策略 / 审批 / 信任模式 ----
+    let trustMode = "local"; // local | shared
+    let logProtocolFilter = "all"; // all | mcp | http | cli
+    let logDecisionFilter = "all"; // all | allow | approve | deny
+    let logRepoFilter = "all";
+    let logServiceFilter = "all";
+    let policyFormOpen = false;
+    let policyDraft = { effect: "deny", repo_key: "*", service_id: "gh", tool_ids: [], access: "rw", actor: "*", reason: "" };
+    let policySim = { repo: "repo-gw", tool: "gh.pr.merge", actor: "developer" };
+    let approvalNotes = {};
+
+    let POLICY_RULES = [
+      { id: "pr-001", effect: "deny", repo_key: "*", service_id: "k8s", tool_ids: ["k8s.restart_deployment"], access: "rw", actor: "*", reason: "生产集群重启类写操作一律拦截", enabled: true },
+      { id: "pr-002", effect: "approve", repo_key: "*", service_id: "gh", tool_ids: ["gh.pr.merge"], access: "rw", actor: "*", reason: "合并 PR 需人工确认", enabled: true },
+      { id: "pr-003", effect: "approve", repo_key: "repo-checkout", service_id: "billing", tool_ids: ["billing.refund_charge"], access: "rw", actor: "developer", reason: "退款需财务值班确认", enabled: true },
+      { id: "pr-004", effect: "deny", repo_key: "repo-gw", service_id: "github", tool_ids: [], access: "rw", actor: "observer", reason: "observer 禁止写入仓库", enabled: false }
+    ];
+
+    let SKILLS = [
+      { id: "mcp-gateway", scope: "全部仓库 · 全部服务", trust: "hook-verified", enabled: true },
+      { id: "git-workflow", scope: "mcp-gateway · gh, github", trust: "hook-verified", enabled: true },
+      { id: "release", scope: "mcp-gateway · gh", trust: "declared", enabled: false },
+      { id: "vendor/community-skills/very-long-skill-identifier-for-layout-stress-test-v2.1.0-beta", scope: "checkout-service · 全部服务", trust: "declared", enabled: true }
+    ];
+
+    (function seedAuditLedger() {
+      const sc = (agent, id, name, rule) => ({ agent, repo_id: id, repo_name: name, root: id ? "/Users/dev/Developer/" + name : "/Users/dev/Developer/" + name, matched_rule: rule, status: id ? "matched" : "unconfigured" });
+      const longBody = "feat(zt): M1 控制平面原型升级\n\n## 变更\n- Overview 待处理审批横条\n- Repos 基线授权矩阵 + 额外限制\n- Logs 统一审计账本与行内审批\n\n> 请核对 **RW** 工具范围；`--admin` 将绕过分支保护。\n详细背景见 RFC-0042；详细背景见 RFC-0042；详细背景见 RFC-0042；详细背景见 RFC-0042；详细背景见 RFC-0042；详细背景见 RFC-0042；";
+      LOGS.unshift(
+        { id: "ev-109", kind: "invoke", protocol: "cli", method: "cli/exec", metaTool: "invoke_tool", model: "—", status: "selected", decision: "approve", title: "gh pr merge 117 --repo acme/checkout-service --squash", service: "gh", tool: "gh.pr.merge", rw: true, actor: "developer", ms: 0, time: "17:19:30", date: "2026-11-17", ruleId: "pr-002", approvalId: "apv-b20e94",
+          approval: { id: "apv-b20e94", state: "pending", ttl: 118, requester: { actor: "developer", agent: "codex", repo: "checkout-service" } },
+          cli: { command: "gh pr merge 117 --repo acme/checkout-service --squash --admin --delete-branch --subject \"" + longBody.slice(0, 40) + "\" --body \"" + longBody + "\"", env: "GH_TOKEN=●●●●●●●● (Keychain)", output: null },
+          scope: sc("codex", "repo-checkout", "checkout-service", "repo-checkout") },
+        { id: "ev-108", kind: "invoke", protocol: "cli", method: "cli/exec", metaTool: "invoke_tool", model: "—", status: "selected", decision: "approve", title: "gh pr merge 482 --repo DengNaichen/mcp-gateway --squash", service: "gh", tool: "gh.pr.merge", rw: true, actor: "developer", ms: 0, time: "17:18:52", date: "2026-11-17", ruleId: "pr-002", approvalId: "apv-7f3a21",
+          approval: { id: "apv-7f3a21", state: "pending", ttl: 272, requester: { actor: "developer", agent: "claude", repo: "mcp-gateway" } },
+          cli: { command: "gh pr merge 482 --repo DengNaichen/mcp-gateway --squash --delete-branch --subject \"feat(zt): M1 控制平面原型升级\" --body \"审批横条 / 基线授权矩阵 / sim_policy 推演；Closes #478\"", env: "GH_TOKEN=●●●●●●●● (Keychain)", output: null },
+          scope: sc("claude", "repo-gw", "mcp-gateway", "repo-gw") },
+        { id: "ev-107", kind: "invoke", protocol: "cli", method: "cli/exec", metaTool: "invoke_tool", model: "—", status: "selected", decision: "allow", title: "gh pr view 482 --json title,state,author", service: "gh", tool: "gh.pr.view", rw: false, actor: "developer", ms: 612, time: "17:17:05", date: "2026-11-17",
+          cli: { command: "gh pr view 482 --repo DengNaichen/mcp-gateway --json title,state,author", env: "GH_TOKEN=●●●●●●●● (Keychain)", exit: 0, output: "{\n  \"title\": \"feat(zt): M1 控制平面原型升级\",\n  \"state\": \"OPEN\",\n  \"author\": { \"login\": \"●●●●●●\" }\n}" },
+          scope: sc("claude", "repo-gw", "mcp-gateway", "repo-gw") },
+        { id: "ev-106", kind: "invoke", protocol: "http", method: "POST /v1/charges/refund", metaTool: "invoke_tool", model: "—", status: "error", decision: "deny", title: "billing.refund_charge", service: "billing", tool: "billing.refund_charge", rw: true, actor: "observer", ms: 3, time: "17:15:40", date: "2026-11-17", err: "403 identity_ceiling: observer 身份上限为只读，写操作被拦截",
+          chain: [{ name: "身份上限", state: "hit", note: "observer · 仅只读" }, { name: "显式 Deny", state: "skip" }, { name: "仓库基线", state: "skip" }, { name: "显式 Approve", state: "skip" }],
+          scope: sc("cursor", "repo-checkout", "checkout-service", "repo-checkout") },
+        { id: "ev-110", kind: "invoke", protocol: "cli", method: "cli/exec", metaTool: "invoke_tool", model: "—", status: "selected", decision: "approve", title: "gh pr merge 481 --repo DengNaichen/mcp-gateway --merge", service: "gh", tool: "gh.pr.merge", rw: true, actor: "developer", ms: 1480, time: "16:58:12", date: "2026-11-17", ruleId: "pr-002", approvalId: "apv-1c88d0",
+          approval: { id: "apv-1c88d0", state: "approved", ttl: 0, requester: { actor: "developer", agent: "claude", repo: "mcp-gateway" }, resolvedAt: "16:58:41", resolvedBy: "you", note: "CI 已绿，确认合并" },
+          cli: { command: "gh pr merge 481 --repo DengNaichen/mcp-gateway --merge", env: "GH_TOKEN=●●●●●●●● (Keychain)", exit: 0, output: "✓ Merged pull request DengNaichen/mcp-gateway#481" },
+          scope: sc("claude", "repo-gw", "mcp-gateway", "repo-gw") }
+      );
+      LOGS.forEach(l => {
+        l.protocol = l.protocol || "mcp";
+        l.decision = l.decision || (l.status === "error" ? "deny" : "allow");
+        if (!l.service) l.service = (l.tools && l.tools[0]) ? l.tools[0].id.split(".")[0] : (l.kind === "invoke" && l.title.includes(".") ? l.title.split(".")[0] : "");
+      });
+      const e103 = LOGS.find(l => l.id === "ev-103");
+      e103.err = "403 policy_denied: 命中显式 Deny pr-001（生产集群重启类写操作一律拦截）";
+      e103.ruleId = "pr-001";
+    })();
+
+    function pendingApprovals() { return LOGS.filter(l => l.approval && l.approval.state === "pending"); }
+    function fmtTtl(sec) { const t = Math.max(0, sec); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; }
+    function repoLabel(key) { return key === "*" ? "* 全部仓库" : ((REPOS.find(r => r.id === key) || {}).name || key); }
+    function serviceLabel(id) { return (SERVICES.find(x => x.id === id) || {}).name || id; }
+
+    function toolNeedsApproval(t) {
+      return POLICY_RULES.some(r => r.enabled && r.effect === "approve" && r.service_id === t.serverId && (!r.tool_ids.length || r.tool_ids.includes(t.id)));
+    }
+
+    function chainFor(ev) {
+      if (ev.chain) return ev.chain;
+      const skip = (n) => ({ name: n, state: "skip" });
+      const none = (n) => ({ name: n, state: "pass", note: "未命中" });
+      if (ev.decision === "deny") {
+        return [{ name: "身份上限", state: "pass" }, { name: "显式 Deny", state: "hit", note: ev.ruleId || "—" }, skip("仓库基线"), skip("显式 Approve")];
+      }
+      if (ev.decision === "approve") {
+        return [{ name: "身份上限", state: "pass" }, none("显式 Deny"), { name: "仓库基线", state: "pass", note: "Allow" }, { name: "显式 Approve", state: "hit", note: ev.ruleId || "—" }];
+      }
+      return [{ name: "身份上限", state: "pass" }, none("显式 Deny"), { name: "仓库基线", state: "pass", note: "Allow" }, none("显式 Approve")];
+    }
+
+    function policyRuleMatches(r, repoKey, tool, actor) {
+      if (!r.enabled) return false;
+      if (r.repo_key !== "*" && r.repo_key !== repoKey) return false;
+      if (r.service_id !== tool.serverId) return false;
+      if (r.tool_ids.length && !r.tool_ids.includes(tool.id)) return false;
+      if (r.access !== "*" && (r.access === "rw") !== !!tool.rw) return false;
+      if (trustMode === "shared" && r.actor !== "*" && r.actor !== actor) return false;
+      return true;
+    }
+
+    function simulatePolicy(repoKey, toolId, actor) {
+      const tool = TOOLS.find(t => t.id === toolId);
+      const trust = trustMode === "local" ? "declared" : "authenticated";
+      if (!tool) return { decision: "deny", stages: [], trust, ruleId: "" };
+      const stages = [];
+      const done = (decision, ruleId) => {
+        ["身份上限", "显式 Deny", "仓库基线", "显式 Approve"].forEach(n => { if (!stages.some(x => x.name === n)) stages.push({ name: n, state: "skip" }); });
+        return { decision, stages, trust, ruleId: ruleId || "", tool };
+      };
+      if (actor === "observer" && tool.rw) {
+        stages.push({ name: "身份上限", state: "hit", note: "observer · 仅只读", tone: "deny" });
+        return done("deny");
+      }
+      stages.push({ name: "身份上限", state: "pass", note: actor });
+      const deny = POLICY_RULES.find(r => r.effect === "deny" && policyRuleMatches(r, repoKey, tool, actor));
+      if (deny) { stages.push({ name: "显式 Deny", state: "hit", note: deny.id, tone: "deny" }); return done("deny", deny.id); }
+      stages.push({ name: "显式 Deny", state: "pass", note: "未命中" });
+      const base = findScopeRule(repoKey) || findScopeRule("*");
+      const g = base && base.grants.find(x => x.server_id === tool.serverId);
+      const inSubset = g && (!g.tool_ids || !g.tool_ids.length || g.tool_ids.includes(tool.id));
+      if (!g || !inSubset) { stages.push({ name: "仓库基线", state: "hit", note: "未授权该服务", tone: "deny" }); return done("deny"); }
+      if (tool.rw && g.access !== "rw") { stages.push({ name: "仓库基线", state: "hit", note: "基线仅 RO", tone: "deny" }); return done("deny"); }
+      stages.push({ name: "仓库基线", state: "pass", note: `Allow · ${g.access.toUpperCase()}` });
+      const apv = POLICY_RULES.find(r => r.effect === "approve" && policyRuleMatches(r, repoKey, tool, actor));
+      if (apv) { stages.push({ name: "显式 Approve", state: "hit", note: apv.id, tone: "approve" }); return done("approve", apv.id); }
+      stages.push({ name: "显式 Approve", state: "pass", note: "未命中" });
+      return done("allow");
+    }
+
+    function resolveApproval(id, verdict) {
+      const ev = LOGS.find(l => l.id === id);
+      if (!ev || !ev.approval || ev.approval.state !== "pending") return;
+      ev.approval.state = verdict;
+      ev.approval.resolvedAt = nowTimeStr();
+      ev.approval.resolvedBy = "you";
+      ev.approval.note = (approvalNotes[id] || "").trim();
+      if (verdict === "approved") { ev.cli = ev.cli || {}; ev.cli.exit = 0; ev.cli.output = "✓ 已执行（演示输出，已脱敏）"; ev.ms = 920; }
+      showToast(verdict === "approved" ? `已批准 ${ev.approval.id}` : `已拒绝 ${ev.approval.id}`);
+      render();
+    }
+
+    function openApprovals() {
+      const first = pendingApprovals()[0];
+      logProtocolFilter = "all"; logDecisionFilter = "approve"; logRepoFilter = "all"; logServiceFilter = "all"; logSearch = "";
+      if (first) selectedLogId = first.id;
+      switchPage("logs");
+    }
+    function resetLogFilters() {
+      logSearch = ""; logProtocolFilter = "all"; logDecisionFilter = "all"; logRepoFilter = "all"; logServiceFilter = "all";
+      render();
+    }
+    function demoApprovals(mode) {
+      const seeds = { "ev-109": 118, "ev-108": 272 };
+      Object.entries(seeds).forEach(([id, ttl]) => {
+        const ev = LOGS.find(l => l.id === id);
+        if (!ev) return;
+        if (mode === "clear") { ev.approval.state = "denied"; ev.approval.resolvedAt = nowTimeStr(); ev.approval.resolvedBy = "demo"; }
+        else { ev.approval = { id: ev.approval.id, state: "pending", ttl, requester: ev.approval.requester }; if (ev.cli) { ev.cli.output = null; ev.cli.exit = undefined; } }
+      });
+      render();
+    }
+    setInterval(() => {
+      let expired = false;
+      LOGS.forEach(l => {
+        const a = l.approval;
+        if (a && a.state === "pending") { a.ttl -= 1; if (a.ttl <= 0) { a.state = "expired"; expired = true; } }
+      });
+      document.querySelectorAll("[data-ttl]").forEach(el => {
+        const l = LOGS.find(x => x.id === el.dataset.ttl);
+        if (l && l.approval) el.textContent = fmtTtl(l.approval.ttl);
+      });
+      if (expired) render();
+    }, 1000);
+
+    function decisionBadge(ev) {
+      const a = ev.approval;
+      if (ev.decision === "deny") return `<span class="badge badge-err">deny · 已拦截</span>`;
+      if (ev.decision === "approve") {
+        const m = { pending: ["badge-warn", "approve · 待审批"], approved: ["badge-ok", "approve · 已批准"], denied: ["badge-neutral", "approve · 已拒绝"], expired: ["badge-neutral", "approve · 已过期"] }[a ? a.state : "pending"];
+        return `<span class="badge ${m[0]}">${m[1]}</span>`;
+      }
+      return `<span class="badge badge-ok">allow</span>`;
+    }
+
+    function renderApprovalPanel(ev) {
+      const a = ev.approval;
+      if (!a) return "";
+      const req = a.requester || {};
+      const cmd = ev.cli ? ev.cli.command : JSON.stringify(ev.args || {}, null, 2);
+      const source = `<div class="kv-row"><span class="kv-k">申请来源</span><span class="kv-v mono">${esc(req.actor || ev.actor)} / ${esc(req.agent || "—")} / ${esc(req.repo || "—")}</span></div>`;
+      if (a.state === "pending") {
+        return `
+          <div class="approval-panel">
+            <div class="approval-hdr"><span>待审批 · ${esc(a.id)}</span><span class="mono">剩余 <span data-ttl="${esc(ev.id)}">${fmtTtl(a.ttl)}</span></span></div>
+            ${source}
+            <div><div class="quiet-meta" style="margin-bottom:4px;">待执行命令（已脱敏）</div><div class="cmd-block">${esc(cmd)}</div>${ev.cli && ev.cli.env ? `<div class="quiet-meta mono" style="margin-top:4px;">${esc(ev.cli.env)}</div>` : ""}</div>
+            <textarea class="input-area" rows="2" placeholder="备注（可选）：记录批准或拒绝的依据" oninput="approvalNotes['${esc(ev.id)}']=this.value">${esc(approvalNotes[ev.id] || "")}</textarea>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+              <button class="btn btn-danger" type="button" onclick="resolveApproval('${esc(ev.id)}','denied')">拒绝</button>
+              <button class="btn btn-primary" type="button" onclick="resolveApproval('${esc(ev.id)}','approved')">批准</button>
+            </div>
+          </div>`;
+      }
+      const label = { approved: "已批准", denied: "已拒绝", expired: "已过期（TTL 耗尽，未执行）" }[a.state];
+      return `
+        <div class="approval-panel resolved">
+          <div class="approval-hdr"><span>${label} · ${esc(a.id)}</span><span class="quiet-meta mono">${esc(a.resolvedBy || "system")} · ${esc(a.resolvedAt || "—")}</span></div>
+          ${source}
+          ${a.note ? `<div class="kv-row"><span class="kv-k">备注</span><span class="kv-v">${esc(a.note)}</span></div>` : ""}
+        </div>`;
+    }
+
+    function renderAuditBlock(ev) {
+      const chain = chainFor(ev);
+      const stage = (c) => {
+        const dot = c.state === "hit" ? (ev.decision === "deny" || c.tone === "deny" ? "dot-err" : "dot-warn") : c.state === "pass" ? "dot-muted" : "dot-muted";
+        const color = c.state === "hit" ? (c.tone === "deny" || ev.decision === "deny" ? "var(--danger)" : "var(--warning)") : "var(--ink-body)";
+        return `<div class="chain-row"><span class="dot ${c.state === "skip" ? "dot-muted" : dot}" style="${c.state === "skip" ? "opacity:.35;" : ""}"></span><span class="chain-name" style="${c.state === "hit" ? `color:${color};font-weight:600;` : ""}">${esc(c.name)}</span><span class="chain-note mono">${c.state === "skip" ? "—" : esc(c.note || "")}</span></div>`;
+      };
+      return `
+        <div class="card-subtle" style="gap:2px;">
+          <div class="kv-row"><span class="kv-k">协议</span><span class="kv-v mono">${esc(ev.protocol.toUpperCase())}</span></div>
+          <div class="kv-row"><span class="kv-k">决策</span><span class="kv-v"><span class="dec dec-${esc(ev.decision)}">${esc(ev.decision)}</span></span></div>
+          <div class="kv-row"><span class="kv-k">服务 / 动作</span><span class="kv-v mono">${esc(ev.service || "—")} · ${esc(ev.tool || ev.title)}</span></div>
+          <div class="kv-row"><span class="kv-k">RuleID</span><span class="kv-v mono">${esc(ev.ruleId || "—")}</span></div>
+          <div class="kv-row"><span class="kv-k">ApprovalID</span><span class="kv-v mono">${esc(ev.approvalId || "—")}</span></div>
+        </div>
+        <div>
+          <div style="font-size:12.5px;font-weight:600;color:var(--ink-strong);margin-bottom:2px;">命中链路</div>
+          ${chain.map(stage).join("")}
+        </div>
+        ${ev.cli && ev.cli.output ? `<div class="code-navy"><div class="code-navy-hdr"><span>OUTPUT · 已脱敏${ev.cli.exit !== undefined ? ` · exit ${ev.cli.exit}` : ""}</span></div><pre>${esc(ev.cli.output)}</pre></div>` : ""}
+      `;
+    }
+
+    function renderApprovalBanner() {
+      const list = pendingApprovals();
+      if (!list.length) return "";
+      const ev = list[0];
+      const req = ev.approval.requester || {};
+      const sum = `${req.actor || ev.actor} / ${req.repo || "—"} / ${ev.service} / ${ev.tool}`;
+      return `
+        <div class="inbox-bar" role="status">
+          <span class="dot dot-warn"></span>
+          <span class="inbox-count">${list.length} 条待审批</span>
+          <span class="inbox-sum mono" title="${esc(sum)}">${esc(sum)}</span>
+          <span class="quiet-meta mono">剩余 ${fmtTtl(ev.approval.ttl)}</span>
+          <button class="btn btn-sm btn-primary" type="button" onclick="openApprovals()">前往处理</button>
+        </div>`;
+    }
+
+    // ---- Repos：额外限制 ----
+    function policyScopeText(r) {
+      const tools = r.tool_ids.length ? r.tool_ids.join(", ") : "该服务全部工具";
+      return `${esc(serviceLabel(r.service_id))} · <span class="mono">${esc(tools)}</span>`;
+    }
+    function addPolicyRule() {
+      const d = policyDraft;
+      if (!d.reason.trim()) { showToast("请填写 reason"); return; }
+      const n = POLICY_RULES.length + 1;
+      POLICY_RULES.push({ id: "pr-" + String(n).padStart(3, "0"), effect: d.effect, repo_key: d.repo_key, service_id: d.service_id, tool_ids: [...d.tool_ids], access: d.access, actor: trustMode === "local" ? "*" : d.actor, reason: d.reason.trim(), enabled: true });
+      policyFormOpen = false;
+      policyDraft = { ...policyDraft, tool_ids: [], reason: "" };
+      showToast("已新增额外限制");
+      render();
+    }
+    function renderPolicyRules() {
+      const rules = [...POLICY_RULES].sort((a, b) => (a.repo_key === "*" ? 0 : 1) - (b.repo_key === "*" ? 0 : 1));
+      const d = policyDraft;
+      const svcTools = (SERVICE_TOOLS[d.service_id] || []);
+      const local = trustMode === "local";
+      const rowHtml = rules.map(r => {
+        const global = r.repo_key === "*";
+        return `
+          <div class="rule-line ${r.enabled ? "" : "off"}">
+            <div class="rule-main">
+              <div class="rule-head">
+                <span class="badge ${r.effect === "deny" ? "badge-err" : "badge-warn"}">${r.effect === "deny" ? "Deny" : "Approve"}</span>
+                ${global ? `<span class="badge badge-info" title="repo=* 对所有仓库（含无凭证 / 未绑定仓库）生效">repo = *</span>` : `<span style="font-weight:600;color:var(--ink-strong);">${esc(repoLabel(r.repo_key))}</span>`}
+                <span style="color:var(--ink-body);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${policyScopeText(r)}</span>
+              </div>
+              <div class="rule-reason">${esc(r.reason)}</div>
+            </div>
+            <span class="rule-field ${local && r.actor !== "*" ? "muted" : ""}" title="${local ? "本地模式对所有调用生效，actor 不参与匹配" : "按认证身份匹配"}">actor:${esc(r.actor)}</span>
+            ${r.access === "rw" ? `<span class="badge badge-rw">RW</span>` : `<span class="rule-field">${esc(r.access)}</span>`}
+            <button class="switch switch-quiet ${r.enabled ? "on" : ""}" type="button" title="${r.enabled ? "已启用" : "已停用"}" onclick="togglePolicyRule('${esc(r.id)}')"></button>
+            <button class="btn btn-sm" type="button" onclick="deletePolicyRule('${esc(r.id)}')">删除</button>
+          </div>`;
+      }).join("");
+      const sel = (cur, opts, on) => `<select class="select-sm" style="width:100%;" onchange="${on}">${opts.map(([v, l]) => `<option value="${esc(v)}" ${cur === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+      return `
+        <div class="card-flush" style="margin-top:18px;">
+          <div class="sub-hdr">
+            <h2>额外限制（Deny / Approve）<span class="quiet-meta" style="font-weight:400;margin-left:8px;">${POLICY_RULES.filter(r => r.enabled).length}/${POLICY_RULES.length} 启用</span></h2>
+            <button class="btn btn-sm" type="button" onclick="policyFormOpen=!policyFormOpen;render();">${policyFormOpen ? "收起" : "+ 新增规则"}</button>
+          </div>
+          <div style="padding:0 20px 10px;"><div class="sail-alert info" style="padding:8px 12px;"><span><strong class="mono">repo = *</strong> 规则置顶：无凭证或未绑定仓库的调用同样受其约束，基线授权无法绕过。</span></div></div>
+          ${policyFormOpen ? `
+            <div class="form-grid" style="border-top:1px solid var(--divider);padding-top:14px;">
+              <label>effect${sel(d.effect, [["deny", "deny"], ["approve", "approve"]], "policyDraft.effect=this.value;render();")}</label>
+              <label>repo_key${sel(d.repo_key, [["*", "* 全部仓库"], ...REPOS.map(r => [r.id, r.name])], "policyDraft.repo_key=this.value;render();")}</label>
+              <label>service_id${sel(d.service_id, getRealServices().map(x => [x.id, x.name]), "policyDraft.service_id=this.value;policyDraft.tool_ids=[];render();")}</label>
+              <label>access${sel(d.access, [["*", "*"], ["ro", "ro"], ["rw", "rw"]], "policyDraft.access=this.value;render();")}</label>
+              <label style="${local ? "opacity:.5;" : ""}">actor${local ? `<select class="select-sm" style="width:100%;" disabled><option>*</option></select>` : sel(d.actor, [["*", "*"], ["developer", "developer"], ["observer", "observer"]], "policyDraft.actor=this.value;render();")}${local ? `<span style="color:var(--ink-faint);">本地模式对所有调用生效</span>` : ""}</label>
+              <label>reason<input class="search" style="width:100%;" placeholder="一句话说明原因" value="${esc(d.reason)}" oninput="policyDraft.reason=this.value" /></label>
+              <label class="span-3">tool_ids（留空 = 该服务全部工具）
+                <span style="display:flex;gap:6px;flex-wrap:wrap;">${svcTools.map(t => `<button type="button" class="chip ${d.tool_ids.includes(t.id) ? "active" : ""}" onclick="togglePolicyDraftTool('${esc(t.id)}')">${esc(t.id)}${t.rw ? " · RW" : ""}</button>`).join("") || `<span class="quiet-meta">该服务暂无工具</span>`}</span>
+              </label>
+              <div class="span-3" style="display:flex;justify-content:flex-end;gap:8px;">
+                <button class="btn" type="button" onclick="policyFormOpen=false;render();">取消</button>
+                <button class="btn btn-primary" type="button" onclick="addPolicyRule()">添加规则</button>
+              </div>
+            </div>` : ""}
+          ${rowHtml || `<div class="rule-line"><span class="quiet-meta">暂无额外限制，仅基线授权生效</span></div>`}
+        </div>`;
+    }
+    function togglePolicyRule(id) { const r = POLICY_RULES.find(x => x.id === id); if (r) { r.enabled = !r.enabled; render(); } }
+    function deletePolicyRule(id) { POLICY_RULES = POLICY_RULES.filter(x => x.id !== id); showToast("已删除规则 " + id); render(); }
+    function togglePolicyDraftTool(id) {
+      const t = policyDraft.tool_ids;
+      const i = t.indexOf(id);
+      if (i >= 0) t.splice(i, 1); else t.push(id);
+      render();
+    }
+
+    // ---- Services：Skill 准入白名单 ----
+    function toggleSkill(id) { const k = SKILLS.find(x => x.id === id); if (k) { k.enabled = !k.enabled; render(); } }
+    function renderSkillAllowlist() {
+      return `
+        <div class="card-flush">
+          <div class="sub-hdr" style="border-bottom:1px solid var(--divider);">
+            <h2>Skill 准入白名单<span class="quiet-meta" style="font-weight:400;margin-left:8px;">${SKILLS.filter(k => k.enabled).length}/${SKILLS.length} 启用</span></h2>
+            <span class="quiet-meta">仅允许清单 · 不在名单内的 Skill 默认拒绝</span>
+          </div>
+          ${SKILLS.map(k => `
+            <div class="hairline-row ${k.enabled ? "" : "row-disabled"}" style="cursor:default;">
+              <div class="row-main">
+                <div class="row-title-line"><span class="row-name" style="word-break:break-all;">${esc(k.id)}</span></div>
+                <div class="row-summary">${esc(k.scope)}</div>
+              </div>
+              <div class="row-right">
+                ${k.trust === "hook-verified" ? `<span class="quiet-meta"><span class="dot dot-ok"></span>hook-verified</span>` : `<span class="badge badge-neutral mono">declared</span>`}
+                <button class="switch switch-quiet ${k.enabled ? "on" : ""}" type="button" onclick="toggleSkill('${esc(k.id)}')"></button>
+              </div>
+            </div>`).join("")}
+        </div>`;
+    }
+
+    // ---- Playground：sim_policy ----
+    function renderSimPolicy() {
+      const tools = TOOLS.filter(t => !t.demo);
+      const sim = simulatePolicy(policySim.repo, policySim.tool, policySim.actor);
+      const stageHtml = sim.stages.map(c => {
+        const dot = c.state === "hit" ? (c.tone === "approve" ? "dot-warn" : "dot-err") : "dot-muted";
+        const col = c.state === "hit" ? (c.tone === "approve" ? "var(--warning)" : "var(--danger)") : "var(--ink-body)";
+        return `<div class="chain-row"><span class="dot ${dot}" style="${c.state === "skip" ? "opacity:.35;" : ""}"></span><span class="chain-name" style="${c.state === "hit" ? `color:${col};font-weight:600;` : ""}">${esc(c.name)}</span><span class="chain-note mono">${c.state === "skip" ? "—" : esc(c.note || "")}</span></div>`;
+      }).join("");
+      const opt = (cur, v, l) => `<option value="${esc(v)}" ${cur === v ? "selected" : ""}>${esc(l)}</option>`;
+      return `
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">策略推演 <span class="mono quiet-meta">sim_policy</span></h2>
+            <span class="quiet-meta"><span class="dot ${trustMode === "local" ? "dot-muted" : "dot-ok"}"></span>${trustMode === "local" ? "本地护栏模式" : "受控边界模式"}</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <select class="select-sm" onchange="policySim.repo=this.value;render();">
+              ${opt(policySim.repo, "*", "仓库：未绑定新仓库 (*)")}${REPOS.map(r => opt(policySim.repo, r.id, "仓库：" + r.name)).join("")}
+            </select>
+            <select class="select-sm" onchange="policySim.tool=this.value;render();">
+              ${getRealServices().map(sv => `<optgroup label="${esc(sv.name)}${sv.kind === "cli" ? " · CLI" : ""}">${tools.filter(t => t.serverId === sv.id).map(t => opt(policySim.tool, t.id, `${t.id}${t.rw ? " · RW" : ""}`)).join("")}</optgroup>`).join("")}
+            </select>
+            <select class="select-sm" onchange="policySim.actor=this.value;render();">
+              ${opt(policySim.actor, "developer", "身份：developer")}${opt(policySim.actor, "observer", "身份：observer")}
+            </select>
+          </div>
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;">
+            <span class="decision-big ${sim.decision}">${sim.decision}</span>
+            <span class="quiet-meta mono">trust: ${sim.trust}${sim.ruleId ? ` · ${esc(sim.ruleId)}` : ""}</span>
+          </div>
+          <div>${stageHtml}</div>
+          <div class="quiet-meta" style="line-height:1.5;">${sim.trust === "declared" ? "declared：身份由客户端自报，仅作护栏参考，不构成安全边界。" : "authenticated：身份来自受控边界认证，可作为授权依据。"}</div>
+        </div>`;
+    }
+
+    // ---- Settings：信任模式 ----
+    function setTrustMode(m) { trustMode = m; showToast(m === "local" ? "已切换为本地护栏模式" : "已切换为受控边界模式"); render(); }
+    function renderTrustMode() {
+      const opt = (k, title, desc) => `
+        <button class="trust-opt ${trustMode === k ? "active" : ""}" type="button" onclick="setTrustMode('${k}')">
+          <span class="t"><span class="dot ${trustMode === k ? "dot-ok" : "dot-muted"}"></span>${title}</span>
+          <span class="d">${desc}</span>
+        </button>`;
+      return `
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">运行模式</h2><span class="quiet-meta mono">trust: ${trustMode === "local" ? "declared" : "authenticated"}</span></div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            ${opt("local", "本地护栏模式（Local Guardrail）", "actor 由客户端自报，PolicyRule.Actor 置灰，规则对所有调用生效。")}
+            ${opt("shared", "受控边界模式（Shared Boundary）", "actor 来自认证身份，PolicyRule.Actor 按身份精确匹配。")}
+          </div>
+          <div class="quiet-meta">PolicyRule.Actor：${trustMode === "local" ? "已置灰 · 本地模式对所有调用生效" : "已启用 · 按认证身份生效"}</div>
+        </div>`;
+    }
 
     function esc(s) {
       return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -2367,7 +2881,12 @@
       }
 
       const logEl = document.getElementById("nav-logs-count");
-      if (logEl) logEl.textContent = LOGS.length > 0 ? String(LOGS.length) : "";
+      if (logEl) {
+        const pend = pendingApprovals().length;
+        logEl.textContent = pend > 0 ? String(pend) : (LOGS.length > 0 ? String(LOGS.length) : "");
+        logEl.classList.toggle("nav-count-pending", pend > 0);
+        logEl.title = pend > 0 ? `${pend} 条待审批` : "";
+      }
 
       const cliEl = document.getElementById("nav-clients-count");
       if (cliEl && typeof CLIENT_PLUGINS !== "undefined") cliEl.textContent = String(CLIENT_PLUGINS.length);
@@ -2636,7 +3155,7 @@
             <button class="btn btn-primary" type="button" onclick="openAddServiceModal('stdio')">${svgIcon("plus", 13.5)}<span>添加上游服务</span></button>
           </div>
         </div>
-
+\n        ${renderApprovalBanner()}\n
         <div class="kpi-grid">
           <div class="kpi-card">
             <div class="kpi-label">网关请求</div>
@@ -3139,7 +3658,7 @@
                 <div><div class="field-label-row"><span class="field-label">传输协议</span></div><input class="input-line mono" value="${esc(s.proto)}" disabled /></div>
               </div>
               <div><div class="field-label-row"><span class="field-label">命令 / URL</span></div><input class="input-line mono" value="${esc(s.endpoint)}" /></div>
-              <div><div class="field-label-row"><span class="field-label">${s.kind === "mcp_stdio" ? "环境变量 (JSON)" : "请求头 (JSON)"}</span></div><textarea class="input-area mono" rows="3">${esc(JSON.stringify(s.kind === "mcp_stdio" ? (s.env || {}) : (s.headers || {}), null, 2))}</textarea></div>
+              <div><div class="field-label-row"><span class="field-label">${s.kind === "mcp_stdio" || s.kind === "cli" ? "环境变量 (JSON)" : "请求头 (JSON)"}</span></div><textarea class="input-area mono" rows="3">${esc(JSON.stringify(s.kind === "mcp_stdio" ? (s.env || {}) : (s.headers || {}), null, 2))}</textarea></div>
               <div style="display:flex;justify-content:flex-end;gap:8px;">
                 <button class="btn" type="button" onclick="showToast('已重置表单')">重置</button>
                 <button class="btn" type="button" onclick="showToast('已保存连接配置')">仅保存</button>
@@ -3316,7 +3835,7 @@
             `).join("") : ""}
           </div>
         ` : ""}
-      `;
+        ${renderSkillAllowlist()}\n      `;
     }
 
     function renderCatalog() {
@@ -3433,6 +3952,7 @@
                       <span class="row-name">${esc(t.name)}</span>
                       <span class="row-sub">${esc(t.server)}</span>
                       ${t.rw ? `<span class="badge badge-rw">写操作</span>` : ""}
+                      ${toolNeedsApproval(t) ? `<span class="badge badge-warn" title="存在启用的 Approve 规则">需审批</span>` : ""}
                     </div>
                     <div class="row-summary">${esc(p.summary)}</div>
                   </div>
@@ -3452,6 +3972,7 @@
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                   <span class="quiet-meta"><span class="dot ${activeTool.enabled ? "dot-ok" : "dot-muted"}"></span>${activeTool.enabled ? "已开放" : "已关闭"}</span>
                   ${activeTool.rw ? `<span class="badge badge-rw">写操作</span>` : `<span class="quiet-meta">· 只读</span>`}
+                  ${toolNeedsApproval(activeTool) ? `<span class="badge badge-warn">需审批</span>` : ""}
                 </div>
                 <div style="display:flex;gap:6px;">
                   <button class="btn btn-sm" type="button" onclick="copyText('${esc(activeTool.id)}','已复制工具 ID')">复制 ID</button>
@@ -3819,6 +4340,7 @@
       const icons = {
         github: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.69-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.79 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>`,
         k8s: `<svg viewBox="0 0 24 24" fill="none" stroke="#326CE5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 20.2 7.2v9.6L12 21.5 3.8 16.8V7.2L12 2.5Z"/><circle cx="12" cy="12" r="2.6"/><path d="M12 5.2v4.2M12 14.6v4.2M6.1 8.6l3.6 2.1M14.3 13.3l3.6 2.1M17.9 8.6l-3.6 2.1M9.7 13.3l-3.6 2.1"/></svg>`,
+        gh: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>`,
         billing: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/><path d="M6.5 15h4"/></svg>`
       };
       if (icons[id]) {
@@ -3863,6 +4385,7 @@
 
 
       return `
+        <div class="quiet-meta" style="margin:0 0 8px;font-size:12px;font-weight:600;">基线授权 · 仓库 × 服务默认 Allow</div>
         ${OBSERVED_REPOS.length ? `
           <div class="card" style="padding:10px 16px;margin-bottom:14px;display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;">
             <div style="display:flex;align-items:center;gap:8px;min-width:0;font-size:12.5px;">
@@ -3926,7 +4449,7 @@
             </tbody>
           </table>
         </div>
-      `;
+        ${renderPolicyRules()}\n      `;
     }
 
     const MARKET_STORAGE_KEY = "mcp_gateway_proto_market_installed_v1";
@@ -4226,12 +4749,17 @@
     function renderLogs() {
       const errorTotal = LOGS.filter(l => l.status === "error").length;
       const filtered = LOGS.filter(l => {
-        if (logKindFilter !== "all" && l.kind !== logKindFilter) return false;
-        if (logStatusFilter !== "all" && l.status !== logStatusFilter) return false;
-        if (logSearch && !(l.title + " " + (l.err || "") + " " + (l.reason || "") + " " + JSON.stringify(l.scope || {})).toLowerCase().includes(logSearch.toLowerCase())) return false;
+        if (logProtocolFilter !== "all" && l.protocol !== logProtocolFilter) return false;
+        if (logDecisionFilter !== "all" && l.decision !== logDecisionFilter) return false;
+        if (logRepoFilter === "unbound" && l.scope && l.scope.repo_id) return false;
+        if (logRepoFilter !== "all" && logRepoFilter !== "unbound" && !(l.scope && l.scope.repo_id === logRepoFilter)) return false;
+        if (logServiceFilter !== "all" && l.service !== logServiceFilter) return false;
+        const hay = [l.title, l.err, l.reason, l.ruleId, l.approvalId, l.cli && l.cli.command, JSON.stringify(l.scope || {})].join(" ").toLowerCase();
+        if (logSearch && !hay.includes(logSearch.toLowerCase())) return false;
         return true;
       });
-      const hasFilter = logKindFilter !== "all" || logStatusFilter !== "all" || logSearch.trim() !== "";
+      const pendingTotal = pendingApprovals().length;
+      const hasFilter = logProtocolFilter !== "all" || logDecisionFilter !== "all" || logRepoFilter !== "all" || logServiceFilter !== "all" || logSearch.trim() !== "";
       const ev = filtered.find(l => l.id === selectedLogId) || filtered[0] || null;
       const sc = ev && ev.scope ? ev.scope : null;
       const canQuickBind = sc && sc.root && !sc.repo_id && !REPOS.some(r => r.root_paths.includes(sc.root) || r.name === sc.root.split("/").pop());
@@ -4242,7 +4770,9 @@
           <h1 class="section-title">请求日志</h1>
           <div style="display:flex;gap:10px;align-items:center;">
             <span class="quiet-meta"><span class="dot dot-ok"></span>4s 自动同步</span>
+            ${pendingTotal > 0 ? `<span class="badge badge-warn">待审批 ${pendingTotal}</span>` : ""}
             ${errorTotal > 0 ? `<span class="badge badge-err">错误 ${errorTotal}</span>` : ""}
+            <button class="btn btn-sm" type="button" title="演示：切换有单 / 清空" onclick="demoApprovals('${pendingTotal > 0 ? "clear" : "seed"}')">${pendingTotal > 0 ? "演示：清空待审批" : "演示：恢复待审批"}</button>
             <button class="btn btn-sm" type="button" onclick="refreshPrototypeState()">${svgIcon("refresh", 13)}<span>刷新</span></button>
           </div>
         </div>
@@ -4250,21 +4780,25 @@
         <div class="card" style="padding:14px 18px;">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <input class="search" style="width:220px;" placeholder="搜索意图、工具名或载荷…" value="${esc(logSearch)}" oninput="logSearch=this.value;render();" />
+              <input class="search" style="width:220px;" placeholder="搜索意图、命令、RuleID 或 ApprovalID…" value="${esc(logSearch)}" oninput="logSearch=this.value;render();" />
               <div class="segmented">
-                <button class="seg-btn ${logKindFilter==="all"?"active":""}" type="button" onclick="logKindFilter='all';render();">全部</button>
-                <button class="seg-btn ${logKindFilter==="discover"?"active":""}" type="button" onclick="logKindFilter='discover';render();">discover</button>
-                <button class="seg-btn ${logKindFilter==="invoke"?"active":""}" type="button" onclick="logKindFilter='invoke';render();">invoke</button>
+                ${[["all", "全部"], ["mcp", "MCP"], ["http", "HTTP"], ["cli", "CLI"]].map(([k, l]) => `<button class="seg-btn ${logProtocolFilter === k ? "active" : ""}" type="button" onclick="logProtocolFilter='${k}';render();">${l}</button>`).join("")}
               </div>
               <div class="segmented">
-                <button class="seg-btn ${logStatusFilter==="all"?"active":""}" type="button" onclick="logStatusFilter='all';render();">全部</button>
-                <button class="seg-btn ${logStatusFilter==="selected"?"active":""}" type="button" onclick="logStatusFilter='selected';render();">成功</button>
-                <button class="seg-btn ${logStatusFilter==="no_match"?"active":""}" type="button" onclick="logStatusFilter='no_match';render();">未命中</button>
-                <button class="seg-btn ${logStatusFilter==="error"?"active":""}" type="button" onclick="logStatusFilter='error';render();">错误</button>
+                ${[["all", "全部"], ["allow", "allow"], ["approve", "approve"], ["deny", "deny"]].map(([k, l]) => `<button class="seg-btn ${logDecisionFilter === k ? "active" : ""}" type="button" onclick="logDecisionFilter='${k}';render();">${l}${k === "approve" && pendingTotal > 0 ? ` <span class="seg-count seg-count-warn">${pendingTotal}</span>` : ""}</button>`).join("")}
               </div>
+              <select class="select-sm" onchange="logRepoFilter=this.value;render();">
+                <option value="all" ${logRepoFilter === "all" ? "selected" : ""}>仓库：全部</option>
+                ${REPOS.map(r => `<option value="${r.id}" ${logRepoFilter === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
+                <option value="unbound" ${logRepoFilter === "unbound" ? "selected" : ""}>未绑定</option>
+              </select>
+              <select class="select-sm" onchange="logServiceFilter=this.value;render();">
+                <option value="all" ${logServiceFilter === "all" ? "selected" : ""}>服务：全部</option>
+                ${getRealServices().map(sv => `<option value="${sv.id}" ${logServiceFilter === sv.id ? "selected" : ""}>${esc(sv.name)}</option>`).join("")}
+              </select>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
-              ${hasFilter ? `<button class="btn btn-sm" type="button" onclick="logSearch='';logKindFilter='all';logStatusFilter='all';render();">重置</button>` : ""}
+              ${hasFilter ? `<button class="btn btn-sm" type="button" onclick="resetLogFilters();">重置</button>` : ""}
               <span class="quiet-meta">${filtered.length} / ${LOGS.length}</span>
             </div>
           </div>
@@ -4273,7 +4807,7 @@
         ${LOGS.length === 0 ? `
           <div class="sail-empty"><div style="font-weight:600;color:var(--ink-strong);">暂无请求记录</div><button class="btn btn-sm" type="button" onclick="switchPage('playground')">前往路由沙盒</button></div>
         ` : filtered.length === 0 ? `
-          <div class="sail-empty"><div style="font-weight:600;color:var(--ink-strong);">无匹配日志</div><button class="btn btn-sm" type="button" onclick="logSearch='';logKindFilter='all';logStatusFilter='all';render();">清空筛选</button></div>
+          <div class="sail-empty"><div style="font-weight:600;color:var(--ink-strong);">无匹配日志</div><button class="btn btn-sm" type="button" onclick="resetLogFilters();">清空筛选</button></div>
         ` : `
           <div class="master-detail logs-layout">
             <div class="card-flush">
@@ -4283,19 +4817,21 @@
               </div>
               <div style="max-height:660px;overflow-y:auto;">
                 ${filtered.map(l => {
-                  const dotCls = l.status === "error" ? "dot-err" : l.status === "no_match" ? "dot-warn" : "dot-ok";
+                  const pend = l.approval && l.approval.state === "pending";
+                  const dotCls = l.decision === "deny" ? "dot-err" : l.decision === "approve" ? (pend ? "dot-warn" : "dot-muted") : l.status === "error" ? "dot-err" : l.status === "no_match" ? "dot-warn" : "dot-ok";
+                  const decTag = l.decision === "deny" ? `<span class="dec dec-deny">已拦截</span>` : l.decision === "approve" ? `<span class="dec ${pend ? "dec-approve" : ""}">${{ pending: "待审批", approved: "已批准", denied: "已拒绝", expired: "已过期" }[l.approval ? l.approval.state : "pending"]}</span>` : "";
                   return `
                     <div class="hairline-row ${ev && l.id === ev.id ? "selected" : ""}" onclick="selectedLogId='${l.id}';render();">
                       <div class="row-main">
                         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-                          <div style="display:flex;align-items:center;gap:6px;">
+                          <div style="display:flex;align-items:center;gap:8px;">
                             <span class="dot ${dotCls}"></span>
-                            <span class="quiet-meta mono" style="font-size:11.5px;">${esc(l.kind)}</span>
-                            ${l.status === "error" ? `<span class="badge badge-err">错误</span>` : ""}
+                            <span class="proto-tag">${esc(l.protocol.toUpperCase())}</span>
+                            ${decTag}
                           </div>
-                          <span class="quiet-meta mono" style="font-size:11.5px;">${l.ms} ms · ${esc(l.time)}</span>
+                          <span class="quiet-meta mono" style="font-size:11.5px;">${esc(l.time)}</span>
                         </div>
-                        <div class="row-name" style="${l.kind === "discover" ? "font-family:var(--sans);font-weight:500;" : ""}">${esc(l.title)}</div>
+                        <div class="row-name" style="${l.kind === "discover" ? "font-family:var(--sans);font-weight:500;" : ""}word-break:break-all;">${esc(l.title)}</div>
                       </div>
                     </div>
                   `;
@@ -4307,7 +4843,7 @@
               <div class="card">
                 <div class="card-header" style="flex-wrap:wrap;">
                   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                    <span class="badge ${ev.status==="error"?"badge-err":ev.status==="no_match"?"badge-warn":"badge-ok"}">${ev.status==="selected"?"已命中":ev.status==="error"?"失败":"未命中"}</span>
+                    ${ev.decision === "allow" && ev.status === "no_match" ? `<span class="badge badge-warn">未命中</span>` : decisionBadge(ev)}
                     <span class="quiet-meta mono">${esc(ev.kind)}</span>
                     <span class="quiet-meta mono" style="color:var(--ink-faint);">${esc(ev.id)}</span>
                   </div>
@@ -4318,7 +4854,9 @@
                   </div>
                 </div>
 
-                <div style="font-size:15.5px;font-weight:600;color:var(--ink-strong);">${esc(ev.title)}</div>
+                <div style="font-size:15.5px;font-weight:600;color:var(--ink-strong);word-break:break-all;">${esc(ev.title)}</div>
+                ${renderApprovalPanel(ev)}
+                ${renderAuditBlock(ev)}
 
                 <div class="metric-tiles">
                   <div class="metric-tile"><span class="metric-tile-k">耗时</span><span class="metric-tile-v mono">${ev.ms} ms</span><span class="metric-tile-sub">${esc(ev.method || "tools/call")}</span></div>
@@ -4513,7 +5051,7 @@
               ` : `
                 <div style="padding:18px 20px;font-size:12.5px;color:var(--ink-muted);">当前模拟作用域（sim_scope）开放 0 个候选工具，路由直接跳过模型调用。</div>
               `}
-            </div>
+            </div>\n            ${renderSimPolicy()}
           </div>
 
           <div class="card">
@@ -4805,6 +5343,8 @@
         <div class="section-header">
           <h1 class="section-title">访问与路由</h1>
         </div>
+
+        ${renderTrustMode()}
 
         <div class="card-flush">
           <div class="card-header" style="padding:16px 20px;border-bottom:1px solid var(--divider);flex-wrap:wrap;gap:12px;">

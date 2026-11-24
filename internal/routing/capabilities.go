@@ -9,13 +9,14 @@ type Tool = registry.Tool
 // Capability excludes schemas, adapter paths, credentials and policy internals.
 // The routing model only receives these summaries after authorization filtering.
 type Capability struct {
-	ID          string   `json:"id"`
-	ServerID    string   `json:"server_id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Tags        []string `json:"tags"`
-	ReadOnly    bool     `json:"read_only"`
-	Reason      string   `json:"reason,omitempty"`
+	ID            string   `json:"id"`
+	ServerID      string   `json:"server_id"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	Tags          []string `json:"tags"`
+	ReadOnly      bool     `json:"read_only"`
+	Reason        string   `json:"reason,omitempty"`
+	NeedsApproval bool     `json:"needs_approval,omitempty"`
 }
 
 func Summarize(t Tool) Capability {

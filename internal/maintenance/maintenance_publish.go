@@ -96,6 +96,13 @@ func buildPublishedCatalog(reg Registry, r *MaintenanceRun, opts publishOptions)
 	if i < 0 {
 		return Registry{}, domainError(ErrConflict, "服务已被移除", nil)
 	}
+	switch reg.Servers[i].Kind {
+	case "mcp", "http":
+	case "cli":
+		return Registry{}, invalid("受控 CLI 工具由网关维护")
+	default:
+		return Registry{}, invalid("未知服务协议")
+	}
 	if !opts.Rollback && opts.Approved {
 		r.Tools = slices.Clone(r.Tools)
 		for idx, tool := range r.Tools {

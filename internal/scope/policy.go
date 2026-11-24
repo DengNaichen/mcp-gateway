@@ -26,22 +26,6 @@ func resolvePrecedenceRule(rules []ScopeRule, matchedRepo bool, repoID string) S
 	return ScopeRule{RepoKey: "*", Grants: []ServiceGrant{}}
 }
 
-func grantAllowsTool(rule ScopeRule, t Tool) bool {
-	for _, gr := range rule.Grants {
-		if gr.ServerID != t.ServerID {
-			continue
-		}
-		if gr.Access == "ro" && !t.ReadOnly {
-			return false
-		}
-		if len(gr.ToolIDs) > 0 && !slices.Contains(gr.ToolIDs, t.ID) {
-			return false
-		}
-		return true
-	}
-	return false
-}
-
 // matchConfiguredRepoByAnchors matches a workspace strictly by local CommonDir
 // for Git repositories, or longest segment-boundary RootPath for non-Git
 // directories. An unbound Git repository never falls through to inherit a

@@ -52,7 +52,11 @@ func (s testServices) RedactResponse(v any, _ Server) any                    { r
 func (s testServices) ErrorDetail(err error) string                          { return err.Error() }
 func (s testServices) Record(string, string, string, string, time.Time, any) {}
 func testOptions(m *Maintainer) Options {
-	return Options{DB: m.db, Dir: m.dir, Catalog: m.catalog, Router: m.router, Upstream: m.upstream, Recorder: m.recorder, Execution: m.execution, ImportOpenAPI: m.importOpenAPI, LookupEnv: m.lookupEnv}
+	return Options{
+		DB: m.db, Dir: m.dir, Catalog: m.catalog, Router: m.router, Upstream: m.upstream,
+		Recorder: m.recorder, Execution: m.execution, ImportOpenAPI: m.importOpenAPI,
+		LookupEnv: m.lookupEnv, ServerLookupEnv: m.serverLookupEnv,
+	}
 }
 func testMaintainer(t *testing.T) *Maintainer {
 	t.Helper()

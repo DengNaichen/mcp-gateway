@@ -128,6 +128,15 @@ func TestRouteTableMatchesMux(t *testing.T) {
 	}
 }
 
+func TestPolicyApprovalAndSkillRoutesRequireAdmin(t *testing.T) {
+	for _, route := range apiRoutes {
+		if (strings.HasPrefix(route.Path, "/api/policies") || strings.HasPrefix(route.Path, "/api/approvals") ||
+			strings.HasPrefix(route.Path, "/api/skills")) && (!route.requiresAdmin() || !route.requiresLocalAdmin()) {
+			t.Errorf("%s %s must be an admin-only route", route.Method, route.Path)
+		}
+	}
+}
+
 func typeName(v any) string {
 	t := reflect.TypeOf(v)
 	prefix := ""
@@ -379,6 +388,8 @@ func TestResponsesMatchSchema(t *testing.T) {
 		check("GET", path, path, nil)
 	}
 	check("GET", "/api/tools/ci.logs/schema", "/api/tools/{id}/schema", nil)
+	check("GET", "/api/tools/ci.logs/schema?sim_scope=", "/api/tools/{id}/schema", nil)
+	check("GET", "/api/catalog?sim_scope=", "/api/catalog", nil)
 	check("GET", "/api/maintenance/sources/ci/acceptance", "/api/maintenance/sources/{id}/acceptance", nil)
 	check("GET", "/api/maintenance/runs/missing", "/api/maintenance/runs/{id}", nil)
 	check("POST", "/api/servers/openapi", "/api/servers/openapi", apitypes.ImportOpenAPIRequest{Server: server})

@@ -108,14 +108,156 @@
           "actor": {
             "type": "string"
           },
+          "security_mode": {
+            "type": "string"
+          },
           "shared": {
             "type": "boolean"
           }
         },
         "required": [
           "actor",
+          "security_mode",
           "shared"
         ],
+        "type": "object"
+      },
+      "Approval": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "approved_at": {
+            "type": "string"
+          },
+          "args_redacted": {
+            "type": "string"
+          },
+          "consumed_at": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "decided_at": {
+            "type": "string"
+          },
+          "decided_by": {
+            "type": "string"
+          },
+          "decision_note": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lease_expires_at": {
+            "type": "string"
+          },
+          "pending_expires_at": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "repo_id": {
+            "type": "string"
+          },
+          "repo_name": {
+            "type": "string"
+          },
+          "requester_session": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "service_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "actor",
+          "agent",
+          "approved_at",
+          "args_redacted",
+          "consumed_at",
+          "created_at",
+          "decided_at",
+          "decided_by",
+          "decision_note",
+          "expires_at",
+          "id",
+          "lease_expires_at",
+          "pending_expires_at",
+          "protocol",
+          "read_only",
+          "reason",
+          "repo_id",
+          "repo_name",
+          "requester_session",
+          "rule_id",
+          "service_id",
+          "status",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "ApprovalChallenge": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_id": {
+            "type": "string"
+          },
+          "expires_in": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approval_id",
+          "expires_in",
+          "message",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "ApprovalDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       },
       "AuthMe": {
@@ -127,6 +269,9 @@
           "principal": {
             "$ref": "#/components/schemas/Principal"
           },
+          "security_mode": {
+            "type": "string"
+          },
           "shared": {
             "type": "boolean"
           }
@@ -134,6 +279,7 @@
         "required": [
           "authenticated",
           "principal",
+          "security_mode",
           "shared"
         ],
         "type": "object"
@@ -143,6 +289,15 @@
         "properties": {
           "access": {
             "$ref": "#/components/schemas/AccessInfo"
+          },
+          "approvals": {
+            "items": {
+              "$ref": "#/components/schemas/Approval"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "credentials_persistent": {
             "type": "boolean"
@@ -161,6 +316,12 @@
           },
           "mcp_url": {
             "type": "string"
+          },
+          "pending_approvals": {
+            "type": "integer"
+          },
+          "policies": {
+            "$ref": "#/components/schemas/PolicyOverview"
           },
           "profiles": {
             "items": {
@@ -191,19 +352,74 @@
           },
           "setup": {
             "$ref": "#/components/schemas/SetupStatus"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/Skill"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
           "access",
+          "approvals",
           "credentials_persistent",
           "events",
           "key_configured",
           "mcp_url",
+          "pending_approvals",
+          "policies",
           "profiles",
           "registry",
           "scopes",
           "settings",
-          "setup"
+          "setup",
+          "skills"
+        ],
+        "type": "object"
+      },
+      "CLIExecRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "approval_id": {
+            "type": "string"
+          },
+          "argv": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "service_id": {
+            "type": "string"
+          },
+          "sim_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SimScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skill_id": {
+            "description": "Optional caller declaration checked against the skill allowlist.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "argv",
+          "service_id"
         ],
         "type": "object"
       },
@@ -230,6 +446,9 @@
           },
           "name": {
             "type": "string"
+          },
+          "needs_approval": {
+            "type": "boolean"
           },
           "read_only": {
             "type": "boolean"
@@ -646,7 +865,16 @@
       "Event": {
         "additionalProperties": false,
         "properties": {
+          "action": {
+            "type": "string"
+          },
           "actor": {
+            "type": "string"
+          },
+          "approval_id": {
+            "type": "string"
+          },
+          "decision": {
             "type": "string"
           },
           "detail": {},
@@ -657,6 +885,21 @@
             "type": "string"
           },
           "kind": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "repo_id": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "service_id": {
+            "type": "string"
+          },
+          "skill_id": {
             "type": "string"
           },
           "status": {
@@ -678,6 +921,32 @@
           "status",
           "time",
           "title"
+        ],
+        "type": "object"
+      },
+      "EventPage": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "has_more",
+          "items",
+          "next_cursor"
         ],
         "type": "object"
       },
@@ -982,6 +1251,9 @@
           "actor": {
             "type": "string"
           },
+          "approval_id": {
+            "type": "string"
+          },
           "arguments": {
             "type": [
               "object",
@@ -1007,6 +1279,10 @@
               }
             ]
           },
+          "skill_id": {
+            "description": "Optional caller declaration checked against the skill allowlist.",
+            "type": "string"
+          },
           "tool_id": {
             "type": "string"
           }
@@ -1020,6 +1296,16 @@
       "InvokeResult": {
         "additionalProperties": false,
         "properties": {
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalChallenge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "data": {},
           "duration_ms": {
             "type": "integer"
@@ -1028,6 +1314,9 @@
             "type": "string"
           },
           "protocol": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           },
           "tool_id": {
@@ -1697,6 +1986,157 @@
         ],
         "type": "object"
       },
+      "PolicyEvaluateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "repo_id": {
+            "type": "string"
+          },
+          "tool_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool_id"
+        ],
+        "type": "object"
+      },
+      "PolicyEvaluateResult": {
+        "additionalProperties": false,
+        "properties": {
+          "effect": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "trace": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyTraceStep"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "trust": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "effect",
+          "rule_id",
+          "trace",
+          "trust"
+        ],
+        "type": "object"
+      },
+      "PolicyOverview": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline_from": {
+            "type": "string"
+          },
+          "enforce": {
+            "type": "boolean"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyRule"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "baseline_from",
+          "enforce",
+          "rules"
+        ],
+        "type": "object"
+      },
+      "PolicyRule": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "repo_key": {
+            "type": "string"
+          },
+          "service_id": {
+            "type": "string"
+          },
+          "tool_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "access",
+          "effect",
+          "enabled",
+          "repo_key",
+          "service_id"
+        ],
+        "type": "object"
+      },
+      "PolicyTraceStep": {
+        "additionalProperties": false,
+        "properties": {
+          "effect": {
+            "type": "string"
+          },
+          "matched": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "matched",
+          "stage"
+        ],
+        "type": "object"
+      },
       "Principal": {
         "additionalProperties": false,
         "properties": {
@@ -2312,6 +2752,9 @@
           "name": {
             "type": "string"
           },
+          "needs_approval": {
+            "type": "boolean"
+          },
           "output_schema": {
             "type": [
               "object",
@@ -2372,6 +2815,9 @@
           "command": {
             "type": "string"
           },
+          "command_sha256": {
+            "type": "string"
+          },
           "demo": {
             "type": "boolean"
           },
@@ -2406,6 +2852,11 @@
             "type": "string"
           },
           "kind": {
+            "enum": [
+              "http",
+              "mcp",
+              "cli"
+            ],
             "type": "string"
           },
           "name": {
@@ -2652,6 +3103,49 @@
         ],
         "type": "object"
       },
+      "Skill": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_repos": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "allowed_services": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "allowed_repos",
+          "allowed_services",
+          "enabled",
+          "id",
+          "updated_at"
+        ],
+        "type": "object"
+      },
       "SourceProvenance": {
         "additionalProperties": false,
         "properties": {
@@ -2820,6 +3314,102 @@
         ],
         "type": "object"
       },
+      "ToolSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "actors": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "adapter": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "example": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "http": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HTTPMapping"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "input_schema": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "needs_approval": {
+            "type": "boolean"
+          },
+          "output_schema": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "actors",
+          "description",
+          "enabled",
+          "id",
+          "input_schema",
+          "name",
+          "read_only",
+          "server_id",
+          "tags"
+        ],
+        "type": "object"
+      },
       "WebhookResult": {
         "additionalProperties": false,
         "properties": {
@@ -2848,6 +3438,11 @@
         "scheme": "bearer",
         "type": "http"
       },
+      "localAdmin": {
+        "in": "header",
+        "name": "X-Gateway-Admin-Token",
+        "type": "apiKey"
+      },
       "sessionCookie": {
         "in": "cookie",
         "name": "gateway_session",
@@ -2856,12 +3451,172 @@
     }
   },
   "info": {
-    "description": "The HTTP contract between the gateway backend and its control-plane clients (desktop app, web console). In local mode the backend listens on loopback only and requires no authentication. In shared mode every route except the public ones needs a bearer access token or the session cookie from /api/auth/login; routes that are not marked as invocation or authenticated routes additionally need an admin principal. Every error response has the Error body.",
+    "description": "The HTTP contract between the gateway backend and its control-plane clients (desktop app, web console). In local_guardrail mode the backend listens on loopback. Management routes require the local admin token when configured. In shared_boundary mode, protected routes require a bearer access token or the session cookie from /api/auth/login. Management routes require an admin principal. Every error response has the Error body.",
     "title": "MCP Gateway control plane API",
     "version": "1"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/approvals": {
+      "get": {
+        "description": "Approval management requires an admin principal in shared mode. Local mode requires the X-Gateway-Admin-Token header and a configured local admin token.",
+        "operationId": "get_approvals",
+        "parameters": [
+          {
+            "description": "Approval status",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Page size. Default 100, maximum 500",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Approval"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List recent approvals, pending first",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/api/approvals/{id}/approve": {
+      "post": {
+        "description": "Approval management requires an admin principal in shared mode. Local mode requires the X-Gateway-Admin-Token header and a configured local admin token.",
+        "operationId": "post_approvals_by_id_approve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Approval"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Approve a pending request for one execution",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/api/approvals/{id}/deny": {
+      "post": {
+        "description": "Approval management requires an admin principal in shared mode. Local mode requires the X-Gateway-Admin-Token header and a configured local admin token.",
+        "operationId": "post_approvals_by_id_deny",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Approval"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Deny a pending request",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "operationId": "post_auth_login",
@@ -2906,7 +3661,7 @@
     },
     "/api/auth/logout": {
       "post": {
-        "description": "Authenticated route: open to any authenticated principal in shared mode.",
+        "description": "Open to any authenticated principal in shared mode and to loopback requests in local mode.",
         "operationId": "post_auth_logout",
         "responses": {
           "200": {
@@ -2930,6 +3685,15 @@
             "description": "Error"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          },
+          {}
+        ],
         "summary": "End the session",
         "tags": [
           "auth"
@@ -2938,7 +3702,7 @@
     },
     "/api/auth/me": {
       "get": {
-        "description": "Authenticated route: open to any authenticated principal in shared mode.",
+        "description": "Open to any authenticated principal in shared mode and to loopback requests in local mode.",
         "operationId": "get_auth_me",
         "responses": {
           "200": {
@@ -2962,6 +3726,15 @@
             "description": "Error"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          },
+          {}
+        ],
         "summary": "The caller's identity",
         "tags": [
           "auth"
@@ -2970,7 +3743,7 @@
     },
     "/api/bootstrap": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "get_bootstrap",
         "responses": {
           "200": {
@@ -3002,13 +3775,21 @@
     },
     "/api/catalog": {
       "get": {
-        "description": "Invocation route: open to any authenticated principal in shared mode. Results are limited to what the principal (or, in local mode, the simulated actor) may use.",
+        "description": "Invocation route. Shared mode requires an authenticated principal. When repository scope is enforced, callers need a signed scope token or an administrator's explicit sim_scope.",
         "operationId": "get_catalog",
         "parameters": [
           {
             "description": "Simulated identity in local mode; ignored when the caller is authenticated",
             "in": "query",
             "name": "actor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Administrator simulation repository key. An explicitly empty value selects the full repository view.",
+            "in": "query",
+            "name": "sim_scope",
             "schema": {
               "type": "string"
             }
@@ -3060,15 +3841,103 @@
             "description": "Error"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          },
+          {}
+        ],
         "summary": "Authorized services and tool summaries",
         "tags": [
           "catalog"
         ]
       }
     },
+    "/api/cli/exec": {
+      "post": {
+        "description": "Invocation route. Shared mode requires an authenticated principal. When repository scope is enforced, callers need a signed scope token or an administrator's explicit sim_scope.",
+        "operationId": "post_cli_exec",
+        "parameters": [
+          {
+            "description": "Agent key identifying the calling client",
+            "in": "query",
+            "name": "agent",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Signed repository scope token issued by the scope hook",
+            "in": "header",
+            "name": "X-Gateway-Scope",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CLIExecRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvokeResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvokeResult"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          },
+          {}
+        ],
+        "summary": "Invoke a controlled GitHub CLI tool",
+        "tags": [
+          "cli"
+        ]
+      }
+    },
     "/api/discover": {
       "post": {
-        "description": "Invocation route: open to any authenticated principal in shared mode. Results are limited to what the principal (or, in local mode, the simulated actor) may use.",
+        "description": "Invocation route. Shared mode requires an authenticated principal. When repository scope is enforced, callers need a signed scope token or an administrator's explicit sim_scope.",
         "operationId": "post_discover",
         "parameters": [
           {
@@ -3127,6 +3996,15 @@
             "description": "Error"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          },
+          {}
+        ],
         "summary": "Route an intent to a small set of authorized tools",
         "tags": [
           "discover"
@@ -3135,7 +4013,7 @@
     },
     "/api/events": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "get_events",
         "responses": {
           "200": {
@@ -3166,6 +4044,128 @@
           }
         },
         "summary": "Recent activity",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/events/query": {
+      "get": {
+        "description": "Shared mode requires an authenticated principal. Non-admin principals can query their own activity. Local mode requires the local admin token when configured.",
+        "operationId": "get_events_query",
+        "parameters": [
+          {
+            "description": "Actor ID. Shared non-admin callers are restricted to their own ID",
+            "in": "query",
+            "name": "actor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Repository ID",
+            "in": "query",
+            "name": "repo_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service ID",
+            "in": "query",
+            "name": "service_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service protocol",
+            "in": "query",
+            "name": "protocol",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact tool action",
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Declared skill ID",
+            "in": "query",
+            "name": "skill_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Policy effect",
+            "in": "query",
+            "name": "decision",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Event status",
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Substring of title, action, or service ID",
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Page size. Default 100, maximum 500",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Cursor from the preceding page or an RFC3339Nano timestamp",
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Query audit activity with cursor pagination",
         "tags": [
           "events"
         ]
@@ -3205,7 +4205,7 @@
     },
     "/api/invoke": {
       "post": {
-        "description": "Invocation route: open to any authenticated principal in shared mode. Results are limited to what the principal (or, in local mode, the simulated actor) may use.",
+        "description": "Invocation route. Shared mode requires an authenticated principal. When repository scope is enforced, callers need a signed scope token or an administrator's explicit sim_scope.",
         "operationId": "post_invoke",
         "parameters": [
           {
@@ -3246,6 +4246,16 @@
             },
             "description": "OK"
           },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvokeResult"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
           "default": {
             "content": {
               "application/json": {
@@ -3257,6 +4267,15 @@
             "description": "Error"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          },
+          {}
+        ],
         "summary": "Invoke a registered tool",
         "tags": [
           "invoke"
@@ -3265,7 +4284,7 @@
     },
     "/api/maintenance": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "get_maintenance",
         "responses": {
           "200": {
@@ -3297,7 +4316,7 @@
     },
     "/api/maintenance/runs/{id}": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "get_maintenance_runs_by_id",
         "parameters": [
           {
@@ -3339,7 +4358,7 @@
     },
     "/api/maintenance/runs/{id}/artifacts/{name}": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "get_maintenance_runs_by_id_artifacts_by_name",
         "parameters": [
           {
@@ -3389,7 +4408,7 @@
     },
     "/api/maintenance/runs/{id}/cancel": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "post_maintenance_runs_by_id_cancel",
         "parameters": [
           {
@@ -3431,7 +4450,7 @@
     },
     "/api/maintenance/runs/{id}/publish": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "post_maintenance_runs_by_id_publish",
         "parameters": [
           {
@@ -3473,7 +4492,7 @@
     },
     "/api/maintenance/runs/{id}/rollback": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "post_maintenance_runs_by_id_rollback",
         "parameters": [
           {
@@ -3515,7 +4534,7 @@
     },
     "/api/maintenance/sources": {
       "put": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "put_maintenance_sources",
         "requestBody": {
           "content": {
@@ -3557,7 +4576,7 @@
     },
     "/api/maintenance/sources/{id}/acceptance": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "get_maintenance_sources_by_id_acceptance",
         "parameters": [
           {
@@ -3597,7 +4616,7 @@
         ]
       },
       "put": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "put_maintenance_sources_by_id_acceptance",
         "parameters": [
           {
@@ -3649,7 +4668,7 @@
     },
     "/api/maintenance/sources/{id}/run": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "post_maintenance_sources_by_id_run",
         "parameters": [
           {
@@ -3769,7 +4788,7 @@
     },
     "/api/market": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "get_market",
         "parameters": [
           {
@@ -3811,7 +4830,7 @@
     },
     "/api/market/icon": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "get_market_icon",
         "parameters": [
           {
@@ -3862,7 +4881,7 @@
     },
     "/api/market/install": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "post_market_install",
         "requestBody": {
           "content": {
@@ -3904,7 +4923,7 @@
     },
     "/api/model-profiles": {
       "put": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "put_model_profiles",
         "requestBody": {
           "content": {
@@ -3946,7 +4965,7 @@
     },
     "/api/model-profiles/{id}": {
       "delete": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "delete_model_profiles_by_id",
         "parameters": [
           {
@@ -3988,7 +5007,7 @@
     },
     "/api/model-profiles/{id}/activate": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "post_model_profiles_by_id_activate",
         "parameters": [
           {
@@ -4030,7 +5049,7 @@
     },
     "/api/model/ping": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "post_model_ping",
         "requestBody": {
           "content": {
@@ -4070,9 +5089,167 @@
         ]
       }
     },
+    "/api/policies": {
+      "get": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "get_policies",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOverview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Policy rules and repository baseline enforcement",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/api/policies/evaluate": {
+      "post": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "post_policies_evaluate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyEvaluateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyEvaluateResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Simulate a policy decision without executing a tool or recording activity",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/api/policies/rules": {
+      "put": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "put_policies_rules",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyRule"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyRule"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create or update a deny or approval rule",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
+    "/api/policies/rules/{id}": {
+      "delete": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "delete_policies_rules_by_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete a policy rule",
+        "tags": [
+          "policies"
+        ]
+      }
+    },
     "/api/scopes": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "get_scopes",
         "responses": {
           "200": {
@@ -4104,7 +5281,7 @@
     },
     "/api/scopes/mode": {
       "put": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "put_scopes_mode",
         "requestBody": {
           "content": {
@@ -4146,7 +5323,7 @@
     },
     "/api/scopes/repositories": {
       "put": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "put_scopes_repositories",
         "requestBody": {
           "content": {
@@ -4188,7 +5365,7 @@
     },
     "/api/scopes/repositories/{id}": {
       "delete": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "delete_scopes_repositories_by_id",
         "parameters": [
           {
@@ -4230,7 +5407,7 @@
     },
     "/api/scopes/rules": {
       "delete": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "delete_scopes_rules",
         "parameters": [
           {
@@ -4270,7 +5447,7 @@
         ]
       },
       "put": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "put_scopes_rules",
         "requestBody": {
           "content": {
@@ -4312,7 +5489,7 @@
     },
     "/api/scopes/snippets": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "get_scopes_snippets",
         "parameters": [
           {
@@ -4354,7 +5531,7 @@
     },
     "/api/servers": {
       "put": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "put_servers",
         "requestBody": {
           "content": {
@@ -4396,7 +5573,7 @@
     },
     "/api/servers/openapi": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "post_servers_openapi",
         "requestBody": {
           "content": {
@@ -4438,7 +5615,7 @@
     },
     "/api/servers/{id}": {
       "delete": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "delete_servers_by_id",
         "parameters": [
           {
@@ -4480,7 +5657,7 @@
     },
     "/api/servers/{id}/credentials": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "get_servers_by_id_credentials",
         "parameters": [
           {
@@ -4520,7 +5697,7 @@
         ]
       },
       "put": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "put_servers_by_id_credentials",
         "parameters": [
           {
@@ -4572,7 +5749,7 @@
     },
     "/api/servers/{id}/oauth": {
       "delete": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "delete_servers_by_id_oauth",
         "parameters": [
           {
@@ -4614,7 +5791,7 @@
     },
     "/api/servers/{id}/sync": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "post_servers_by_id_sync",
         "parameters": [
           {
@@ -4656,7 +5833,7 @@
     },
     "/api/servers/{id}/tools": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "post_servers_by_id_tools",
         "parameters": [
           {
@@ -4708,7 +5885,7 @@
     },
     "/api/settings": {
       "put": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "put_settings",
         "requestBody": {
           "content": {
@@ -4750,7 +5927,7 @@
     },
     "/api/setup/model": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "post_setup_model",
         "requestBody": {
           "content": {
@@ -4792,7 +5969,7 @@
     },
     "/api/setup/source": {
       "post": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "post_setup_source",
         "requestBody": {
           "content": {
@@ -4844,7 +6021,7 @@
     },
     "/api/setup/status": {
       "get": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "get_setup_status",
         "responses": {
           "200": {
@@ -4874,9 +6051,129 @@
         ]
       }
     },
+    "/api/skills": {
+      "get": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "get_skills",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Skill"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List caller-declared skill admission rules",
+        "tags": [
+          "skills"
+        ]
+      },
+      "put": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "put_skills",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Skill"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Skill"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Save a caller-declared skill allowlist",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/api/skills/{id}": {
+      "delete": {
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
+        "operationId": "delete_skills_by_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deleted"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete a caller-declared skill allowlist",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
     "/api/tools": {
       "put": {
-        "description": "Management route: requires an admin principal in shared mode.",
+        "description": "Management route. Requires an admin principal in shared mode or the configured admin token (X-Gateway-Admin-Token or bearer) in local mode.",
         "operationId": "put_tools",
         "requestBody": {
           "content": {
@@ -4918,7 +6215,7 @@
     },
     "/api/tools/{id}/schema": {
       "get": {
-        "description": "Invocation route: open to any authenticated principal in shared mode. Results are limited to what the principal (or, in local mode, the simulated actor) may use.",
+        "description": "Invocation route. Shared mode requires an authenticated principal. When repository scope is enforced, callers need a signed scope token or an administrator's explicit sim_scope.",
         "operationId": "get_tools_by_id_schema",
         "parameters": [
           {
@@ -4933,6 +6230,14 @@
             "description": "Simulated identity in local mode; ignored when the caller is authenticated",
             "in": "query",
             "name": "actor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Administrator simulation repository key. An explicitly empty value selects the full repository view.",
+            "in": "query",
+            "name": "sim_scope",
             "schema": {
               "type": "string"
             }
@@ -4959,7 +6264,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Tool"
+                  "$ref": "#/components/schemas/ToolSchema"
                 }
               }
             },
@@ -4976,6 +6281,15 @@
             "description": "Error"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          },
+          {}
+        ],
         "summary": "Full definition of one authorized tool",
         "tags": [
           "tools"
@@ -4989,6 +6303,9 @@
     },
     {
       "sessionCookie": []
+    },
+    {
+      "localAdmin": []
     }
   ]
 }

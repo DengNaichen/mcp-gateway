@@ -14,6 +14,7 @@ import time
 import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from shared_auth_fixture import shared_auth_fixture
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 APP = next((ROOT / 'build/dev').glob('*/MCP Gateway Dev.app')) / 'Contents/MacOS/MCP Gateway Dev'
@@ -52,14 +53,15 @@ def control(path, payload=None):
     cmd = ['curl', '-fsS', '--max-time', '3', '--unix-socket', SOCKET,
            '-H', 'Content-Type: application/json']
     if payload is not None:
-        cmd += ['-d', json.dumps(payload)]
-    return json.loads(subprocess.check_output(cmd + ['http://localhost' + path], stderr=subprocess.DEVNULL))
+        cmd += ['--data-binary', '@-']
+    data = None if payload is None else json.dumps(payload).encode()
+    return json.loads(subprocess.check_output(cmd + ['http://localhost' + path], input=data, stderr=subprocess.DEVNULL))
 
 
 def api(base, path, payload=None, method=None):
     data = None if payload is None else json.dumps(payload).encode()
     request = urllib.request.Request(base + '/api' + path, data=data, method=method,
-                                     headers={'Content-Type': 'application/json'})
+                                     headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token})
     with urllib.request.urlopen(request, timeout=35) as response:
         raw = response.read()
     assert MODEL_SECRET.encode() not in raw and SERVICE_SECRET.encode() not in raw, 'secret in API response'
@@ -75,6 +77,7 @@ settings = {'base_url': mock_url + '/v1', 'model': 'gpt-6-luna', 'max_tools': 4,
 env = {k: v for k, v in os.environ.items() if not k.startswith('GATEWAY_')}
 env.update(GATEWAY_DESKTOP_CONTROL=SOCKET, GATEWAY_CREDENTIAL_STORE='keychain',
            GATEWAY_CLIENT_CONFIG_HOME=str(ARTIFACTS / 'clients'))
+token = shared_auth_fixture(ARTIFACTS, env)
 
 
 def start(index):
@@ -91,6 +94,7 @@ def start(index):
             if status.get('window_exists'):
                 channel = status['build']['channel']
                 account = hashlib.sha256((channel + '\x00' + str(DATA.resolve())).encode()).hexdigest()
+                control('/auth/login', {'token': token})
                 return status['ui_url']
         except (OSError, subprocess.SubprocessError):
             pass

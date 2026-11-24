@@ -15,7 +15,8 @@ type DiscoverRequest struct {
 // Selection is a tool chosen by discovery together with the routing reason.
 type Selection struct {
 	Tool
-	Reason string `json:"reason"`
+	Reason        string `json:"reason"`
+	NeedsApproval bool   `json:"needs_approval,omitempty"`
 }
 
 // DiscoverResult is returned by POST /api/discover and POST /api/setup/model.
@@ -53,18 +54,41 @@ type DiscoverSummaryResult struct {
 
 // InvokeRequest is sent to POST /api/invoke.
 type InvokeRequest struct {
-	ToolID    string         `json:"tool_id"`
-	Arguments map[string]any `json:"arguments"`
-	Fields    []string       `json:"fields,omitempty"`
-	Actor     string         `json:"actor,omitempty"`
-	SimScope  *SimScope      `json:"sim_scope,omitempty"`
+	SkillID    string         `json:"skill_id,omitempty"`
+	ApprovalID string         `json:"approval_id,omitempty"`
+	ToolID     string         `json:"tool_id"`
+	Arguments  map[string]any `json:"arguments"`
+	Fields     []string       `json:"fields,omitempty"`
+	Actor      string         `json:"actor,omitempty"`
+	SimScope   *SimScope      `json:"sim_scope,omitempty"`
+}
+
+// CLIExecRequest is sent to POST /api/cli/exec. Argv begins with the gh
+// subcommand. SkillID is a caller declaration subject to the skill allowlist.
+type CLIExecRequest struct {
+	ServiceID  string    `json:"service_id"`
+	Argv       []string  `json:"argv"`
+	SkillID    string    `json:"skill_id,omitempty"`
+	ApprovalID string    `json:"approval_id,omitempty"`
+	SimScope   *SimScope `json:"sim_scope,omitempty"`
+	Actor      string    `json:"actor,omitempty"`
+}
+
+// ApprovalChallenge describes how to retry the invocation. ExpiresIn is in seconds.
+type ApprovalChallenge struct {
+	ApprovalID string `json:"approval_id"`
+	ExpiresIn  int    `json:"expires_in"`
+	Message    string `json:"message"`
+	Summary    string `json:"summary"`
 }
 
 // InvokeResult is returned by POST /api/invoke.
 type InvokeResult struct {
-	ID         string `json:"id"`
-	ToolID     string `json:"tool_id"`
-	Protocol   string `json:"protocol"`
-	Data       any    `json:"data"`
-	DurationMS int64  `json:"duration_ms"`
+	Status     string             `json:"status,omitempty"`
+	Approval   *ApprovalChallenge `json:"approval,omitempty"`
+	ID         string             `json:"id"`
+	ToolID     string             `json:"tool_id"`
+	Protocol   string             `json:"protocol"`
+	Data       any                `json:"data"`
+	DurationMS int64              `json:"duration_ms"`
 }

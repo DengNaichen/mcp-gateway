@@ -16,7 +16,8 @@ type DiscoverRequest struct {
 
 type Selection struct {
 	registry.Tool
-	Reason string `json:"reason"`
+	Reason        string `json:"reason"`
+	NeedsApproval bool   `json:"needs_approval,omitempty"`
 }
 
 type DiscoverResult struct {
@@ -35,16 +36,28 @@ type DiscoverResult struct {
 }
 
 type InvokeRequest struct {
-	ToolID    string         `json:"tool_id" jsonschema:"Registered tool ID returned by discover_tools"`
-	Arguments map[string]any `json:"arguments" jsonschema:"Arguments conforming to the selected tool input_schema"`
-	Fields    []string       `json:"fields,omitempty" jsonschema:"Optional dot-separated response fields to retain; arrays are traversed automatically"`
-	Actor     string         `json:"actor,omitempty" jsonschema:"Local simulation only: developer or observer; ignored when authenticated"`
+	CLIServiceID string         `json:"-"`
+	SkillID      string         `json:"skill_id,omitempty"`
+	ApprovalID   string         `json:"approval_id,omitempty"`
+	ToolID       string         `json:"tool_id" jsonschema:"Registered tool ID returned by discover_tools"`
+	Arguments    map[string]any `json:"arguments" jsonschema:"Arguments conforming to the selected tool input_schema"`
+	Fields       []string       `json:"fields,omitempty" jsonschema:"Optional dot-separated response fields to retain; arrays are traversed automatically"`
+	Actor        string         `json:"actor,omitempty" jsonschema:"Local simulation only: developer or observer; ignored when authenticated"`
+}
+
+type ApprovalChallenge struct {
+	ApprovalID string `json:"approval_id"`
+	ExpiresIn  int    `json:"expires_in"`
+	Message    string `json:"message"`
+	Summary    string `json:"summary"`
 }
 
 type InvokeResult struct {
-	ID         string `json:"id"`
-	ToolID     string `json:"tool_id"`
-	Protocol   string `json:"protocol"`
-	Data       any    `json:"data"`
-	DurationMS int64  `json:"duration_ms"`
+	Status     string             `json:"status,omitempty"`
+	Approval   *ApprovalChallenge `json:"approval,omitempty"`
+	ID         string             `json:"id"`
+	ToolID     string             `json:"tool_id"`
+	Protocol   string             `json:"protocol"`
+	Data       any                `json:"data"`
+	DurationMS int64              `json:"duration_ms"`
 }

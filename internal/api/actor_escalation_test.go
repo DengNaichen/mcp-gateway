@@ -30,6 +30,11 @@ type actorFixture struct {
 
 func newActorFixture(t *testing.T, shared bool) *actorFixture {
 	t.Helper()
+	return newActorFixtureWithOptions(t, shared, gateway.Options{})
+}
+
+func newActorFixtureWithOptions(t *testing.T, shared bool, opts gateway.Options) *actorFixture {
+	t.Helper()
 	if shared {
 		t.Setenv("AUTH_ADMIN", adminTestToken)
 		t.Setenv("AUTH_OBSERVER", observerTestToken)
@@ -47,7 +52,7 @@ func newActorFixture(t *testing.T, shared bool) *actorFixture {
 	} else {
 		t.Setenv("GATEWAY_AUTH_FILE", "")
 	}
-	g, svcs, err := gateway.New(t.TempDir(), "http://localhost")
+	g, svcs, err := gateway.NewWithOptions(t.TempDir(), "http://localhost", opts)
 	if err != nil {
 		t.Fatal(err)
 	}

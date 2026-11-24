@@ -60,12 +60,28 @@ func (g *server) authenticateRequest(r *http.Request) (access.Principal, bool) {
 	return access.Principal{}, false
 }
 
+func (g *server) securityMode() string {
+	if g.access != nil {
+		return apitypes.SecurityModeSharedBoundary
+	}
+	return apitypes.SecurityModeLocalGuardrail
+}
+
 func (g *server) protectAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if g.access == nil {
 			if !checkLoopbackHost(r.Host) {
 				fail(w, problem(403, "本机模式不接受外部 Host，请配置认证后共享", nil))
 				return
+			}
+			if g.localAdmin != nil {
+				bearer, hasBearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+				if g.localAdmin.Authenticate(r.Header.Get("X-Gateway-Admin-Token")) || (hasBearer && g.localAdmin.Authenticate(bearer)) {
+					r = r.WithContext(access.WithLocalAdmin(r.Context()))
+				} else if rt, matched := apiRouteIndex.lookup(r); matched && rt.requiresLocalAdmin() {
+					fail(w, problem(403, "此操作需要有效的本机 Gateway 管理令牌", nil))
+					return
+				}
 			}
 			next.ServeHTTP(w, r)
 			return
@@ -85,7 +101,7 @@ func (g *server) protectAccess(next http.Handler) http.Handler {
 			fail(w, problem(401, "需要有效的 Gateway 访问令牌", nil))
 			return
 		}
-		allowNonAdmin := r.URL.Path == "/mcp" || (matched && (rt.Invocation || rt.Authenticated))
+		allowNonAdmin := r.URL.Path == "/mcp" || (matched && !rt.requiresAdmin())
 		if !principal.Admin && !allowNonAdmin {
 			fail(w, problem(403, "此操作需要管理身份", nil))
 			return
@@ -97,7 +113,13 @@ func (g *server) protectAccess(next http.Handler) http.Handler {
 func (g *server) registerAccess(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := access.PrincipalFrom(r.Context())
-		respond(w, 200, apitypes.AuthMe{Authenticated: ok, Shared: g.access != nil, Principal: wirePrincipal(principal)})
+		w.Header().Set("Cache-Control", "no-store")
+		respond(w, 200, apitypes.AuthMe{
+			Authenticated: ok || access.IsLocalAdmin(r.Context()),
+			Shared:        g.access != nil,
+			SecurityMode:  g.securityMode(),
+			Principal:     wirePrincipal(principal),
+		})
 	})
 	mux.HandleFunc("POST /api/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		if g.access == nil {

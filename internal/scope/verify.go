@@ -59,9 +59,10 @@ const (
 )
 
 type ResolvedRequestScope struct {
-	Mode  EvalMode
-	Rule  ScopeRule
-	Event EventScope
+	RequesterSession string
+	Mode             EvalMode
+	Rule             ScopeRule
+	Event            EventScope
 }
 
 type requestScopeKey struct{}
@@ -143,6 +144,7 @@ func (g *Service) ResolveMCPToolCallScope(ctx context.Context, urlAgent, toolNam
 	if evalErr != nil {
 		return ctx, cleanArgs, evalErr
 	}
+	resolved.RequesterSession = claims.SID
 	g.recordHookSuccess(claims)
 	return WithRequestScope(ctx, resolved), cleanArgs, nil
 }
@@ -214,20 +216,9 @@ func (g *Service) ResolveRESTScope(ctx context.Context, r RESTRequest, op string
 		if err != nil {
 			return ctx, err
 		}
+		resolved.RequesterSession = claims.SID
 		g.recordHookSuccess(claims)
 		return WithRequestScope(ctx, resolved), nil
-	}
-
-	if !isAdmin {
-		if g.IsEnforced() {
-			return ctx, scopeProblem(ErrForbidden, "scope_required", "已启用仓库隔离拦截，非管理员请求必须提供有效的 X-Gateway-Scope 凭证")
-		}
-		return WithRequestScope(ctx, ResolvedRequestScope{
-			Mode: ModeCompatUnscoped,
-			Event: EventScope{
-				Status: "unscoped",
-			},
-		}), nil
 	}
 
 	if sim != nil {
@@ -238,10 +229,24 @@ func (g *Service) ResolveRESTScope(ctx context.Context, r RESTRequest, op string
 		return WithRequestScope(ctx, resolved), nil
 	}
 
+	if g.IsEnforced() {
+		return ctx, scopeProblem(ErrForbidden, "scope_required", "已启用仓库隔离拦截，请提供有效的 X-Gateway-Scope 凭证，管理员也可显式指定 sim_scope")
+	}
+	agent := strings.ToLower(strings.TrimSpace(r.Agent))
+	if !workspace.IsKnownAgent(agent) {
+		agent = ""
+	}
+	if !isAdmin {
+		return WithRequestScope(ctx, ResolvedRequestScope{
+			Mode:  ModeCompatUnscoped,
+			Event: EventScope{Status: "unscoped", Agent: agent},
+		}), nil
+	}
+
 	return WithRequestScope(ctx, ResolvedRequestScope{
 		Mode: ModeBypass,
 		Event: EventScope{
-			Status: "bypass",
+			Status: "bypass", Agent: agent,
 		},
 	}), nil
 }
@@ -250,6 +255,8 @@ func restAllowedOps(op string) []string {
 	switch op {
 	case "discover_tools", "discover":
 		return []string{"discover_tools", "discover"}
+	case "cli_exec":
+		return []string{"cli_exec"}
 	case "invoke_tool", "invoke":
 		return []string{"invoke_tool", "invoke"}
 	case "get_tool_schema", "schema":
@@ -287,13 +294,16 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 	enforce = g.scope.Enforce
 	g.mu.RUnlock()
 
+	// A valid signature identifies the workspace in observation mode. Only
+	// enforcement or an explicit simulation restricts the baseline grants.
+	mode, status := ModeCompatUnscoped, "observed"
+	if enforce {
+		mode = ModeEnforced
+	}
 	matchedRepo := matchConfiguredRepoByAnchors(repos, string(info.Kind), info.CommonDir, info.Root)
 	if matchedRepo != nil {
 		rule := resolvePrecedenceRule(rules, true, matchedRepo.ID)
-		mode := ModeCompatUnscoped
-		status := "observed"
 		if enforce {
-			mode = ModeEnforced
 			status = "verified"
 		}
 		return ResolvedRequestScope{
@@ -317,9 +327,8 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 	g.recordObservation(info, claims.Agent, now)
 
 	rule := resolvePrecedenceRule(rules, false, "*")
-	mode := ModeCompatUnscoped
 	if enforce {
-		mode = ModeEnforced
+		status = "unconfigured"
 	}
 	return ResolvedRequestScope{
 		Mode: mode,
@@ -333,7 +342,7 @@ func (g *Service) evaluateVerifiedClaims(ctx context.Context, claims workspace.C
 			GitCommonDir: info.CommonDir,
 			RemoteHint:   info.RemoteHint,
 			MatchedRule:  rule.RepoKey,
-			Status:       "unconfigured",
+			Status:       status,
 		},
 	}, nil
 }
@@ -407,21 +416,16 @@ func (g *Service) CheckExecutionScope(ctx context.Context) error {
 	return nil
 }
 
-func (g *Service) AllowsTool(ctx context.Context, t Tool) bool {
-	if HasInternalBypass(ctx) {
-		return true
-	}
+// ExecutionScope supplies the baseline for authorization. Transport callers
+// validate the scope credential before entering execution.
+func (g *Service) ExecutionScope(ctx context.Context) ResolvedRequestScope {
 	if sc, ok := RequestScopeFrom(ctx); ok {
-		switch sc.Mode {
-		case ModeBypass, ModeCompatUnscoped:
-			return true
-		case ModeEnforced:
-			return grantAllowsTool(sc.Rule, t)
-		default:
-			return false
-		}
+		return sc
 	}
-	return !g.IsEnforced()
+	if g.IsEnforced() {
+		return ResolvedRequestScope{Mode: ModeEnforced, Rule: ScopeRule{RepoKey: "*"}}
+	}
+	return ResolvedRequestScope{Mode: ModeCompatUnscoped}
 }
 
 func EventForContext(ctx context.Context) EventScope {

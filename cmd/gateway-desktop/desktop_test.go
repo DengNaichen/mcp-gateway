@@ -16,7 +16,6 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"gatewaylab/internal/apiclient"
 	"gatewaylab/internal/apitypes"
 	"gatewaylab/internal/buildinfo"
 )
@@ -83,7 +82,8 @@ func TestMergePATHAndMarkers(t *testing.T) {
 }
 
 func TestStartAttachAndPortConflict(t *testing.T) {
-
+	t.Setenv("GATEWAY_AUTH_FILE", "")
+	t.Setenv("GATEWAY_CREDENTIAL_STORE", "memory")
 	ctx := context.Background()
 	owned, conflict, err := startOrAttachGateway(ctx, "127.0.0.1:0", t.TempDir())
 	if err != nil || conflict != nil {
@@ -123,9 +123,9 @@ func TestStartAttachAndPortConflict(t *testing.T) {
 		t.Fatal("owned gateway should remain healthy after attached client shuts down")
 	}
 
-	// Verify apiclient.Client against the live owned gateway.
-	client := apiclient.New(owned.UIURL)
-	boot, err := client.Bootstrap(ctx)
+	// Verify the DesktopUI client against the live owned gateway.
+	uiApp := NewDesktopUI(owned)
+	boot, err := uiApp.Client.Bootstrap(ctx)
 	if err != nil {
 		t.Fatalf("client.Bootstrap failed: %v", err)
 	}
@@ -134,7 +134,6 @@ func TestStartAttachAndPortConflict(t *testing.T) {
 	}
 
 	// Verify headless mygo/ui rendering across all navigation tabs.
-	uiApp := NewDesktopUI(owned)
 	uiApp.State = &boot
 	uiApp.Telemetry = ComputeGatewayTelemetry(boot)
 	uiApp.Loading = false

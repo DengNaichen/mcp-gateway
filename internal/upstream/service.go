@@ -8,21 +8,23 @@ import (
 )
 
 type Config struct {
-	LookupEnv   func(string, string) string
-	OpenBrowser func(string) error
-	LoadOAuth   func(string) string
-	SaveOAuth   func(string, string) error
+	LookupEnv    func(string, string) string
+	LookupSecret func(string, string) string
+	OpenBrowser  func(string) error
+	LoadOAuth    func(string) string
+	SaveOAuth    func(string, string) error
 }
 type Service struct {
-	lookupEnv   func(string, string) string
-	openBrowser func(string) error
-	loadOAuth   func(string) string
-	saveOAuth   func(string, string) error
-	sessionMu   sync.Mutex
-	sessions    map[string]stdioSession
-	oauthInitMu sync.Mutex
-	oauthMu     sync.RWMutex
-	oauthTokens map[string]oauth2.TokenSource
+	lookupEnv    func(string, string) string
+	lookupSecret func(string, string) string
+	openBrowser  func(string) error
+	loadOAuth    func(string) string
+	saveOAuth    func(string, string) error
+	sessionMu    sync.Mutex
+	sessions     map[string]stdioSession
+	oauthInitMu  sync.Mutex
+	oauthMu      sync.RWMutex
+	oauthTokens  map[string]oauth2.TokenSource
 }
 
 func New(config Config) *Service {
@@ -32,9 +34,17 @@ func New(config Config) *Service {
 	if config.OpenBrowser == nil {
 		config.OpenBrowser = defaultOpenBrowserURL
 	}
-	return &Service{lookupEnv: config.LookupEnv, openBrowser: config.OpenBrowser, loadOAuth: config.LoadOAuth, saveOAuth: config.SaveOAuth, sessions: map[string]stdioSession{}, oauthTokens: map[string]oauth2.TokenSource{}}
+	return &Service{lookupEnv: config.LookupEnv, lookupSecret: config.LookupSecret, openBrowser: config.OpenBrowser, loadOAuth: config.LoadOAuth, saveOAuth: config.SaveOAuth, sessions: map[string]stdioSession{}, oauthTokens: map[string]oauth2.TokenSource{}}
 }
 func (u *Service) serverLookup(s Server) func(string) string {
+	if s.Kind == "cli" {
+		return func(key string) string {
+			if u.lookupSecret == nil {
+				return ""
+			}
+			return u.lookupSecret(s.ID, key)
+		}
+	}
 	return func(key string) string { return u.lookupEnv(s.ID, key) }
 }
 

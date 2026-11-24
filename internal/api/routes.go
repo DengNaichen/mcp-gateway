@@ -11,15 +11,42 @@ var apiRoutes = []route{
 	{Method: "GET", Path: "/api/health", Summary: "Liveness and instance identity", Public: true, Responses: ok(apitypes.Health{})},
 	{Method: "GET", Path: "/api/bootstrap", Summary: "Everything the control plane needs for its first screen", Responses: ok(apitypes.Bootstrap{})},
 	{Method: "GET", Path: "/api/events", Summary: "Recent activity", Responses: ok([]apitypes.Event{})},
+	{Method: "GET", Path: "/api/events/query", Summary: "Query audit activity with cursor pagination", Authenticated: true, LocalAdminOnly: true, Query: []query{
+		{"actor", "string", "Actor ID. Shared non-admin callers are restricted to their own ID"},
+		{"repo_id", "string", "Repository ID"},
+		{"service_id", "string", "Service ID"},
+		{"protocol", "string", "Service protocol"},
+		{"action", "string", "Exact tool action"},
+		{"skill_id", "string", "Declared skill ID"},
+		{"decision", "string", "Policy effect"},
+		{"status", "string", "Event status"},
+		{"q", "string", "Substring of title, action, or service ID"},
+		{"limit", "integer", "Page size. Default 100, maximum 500"},
+		{"before", "string", "Cursor from the preceding page or an RFC3339Nano timestamp"},
+	}, Responses: ok(apitypes.EventPage{})},
+
+	{Method: "GET", Path: "/api/approvals", Summary: "List recent approvals, pending first", Query: []query{{"status", "string", "Approval status"}, {"limit", "integer", "Page size. Default 100, maximum 500"}}, Responses: ok([]apitypes.Approval{})},
+	{Method: "POST", Path: "/api/approvals/{id}/approve", Summary: "Approve a pending request for one execution", Request: apitypes.ApprovalDecisionRequest{}, Responses: ok(apitypes.Approval{})},
+	{Method: "POST", Path: "/api/approvals/{id}/deny", Summary: "Deny a pending request", Request: apitypes.ApprovalDecisionRequest{}, Responses: ok(apitypes.Approval{})},
+
+	{Method: "GET", Path: "/api/policies", Summary: "Policy rules and repository baseline enforcement", Responses: ok(apitypes.PolicyOverview{})},
+	{Method: "PUT", Path: "/api/policies/rules", Summary: "Create or update a deny or approval rule", Request: apitypes.PolicyRule{}, Responses: ok(apitypes.PolicyRule{})},
+	{Method: "DELETE", Path: "/api/policies/rules/{id}", Summary: "Delete a policy rule", Responses: ok(apitypes.Deleted{})},
+	{Method: "POST", Path: "/api/policies/evaluate", Summary: "Simulate a policy decision without executing a tool or recording activity", Request: apitypes.PolicyEvaluateRequest{}, Responses: ok(apitypes.PolicyEvaluateResult{})},
+
+	{Method: "GET", Path: "/api/skills", Summary: "List caller-declared skill admission rules", Responses: ok([]apitypes.Skill{})},
+	{Method: "PUT", Path: "/api/skills", Summary: "Save a caller-declared skill allowlist", Request: apitypes.Skill{}, Responses: ok(apitypes.Skill{})},
+	{Method: "DELETE", Path: "/api/skills/{id}", Summary: "Delete a caller-declared skill allowlist", Responses: ok(apitypes.Deleted{})},
 
 	{Method: "GET", Path: "/api/auth/me", Summary: "The caller's identity", Authenticated: true, Responses: ok(apitypes.AuthMe{})},
 	{Method: "POST", Path: "/api/auth/login", Summary: "Exchange an access token for a session cookie (shared mode)", Public: true, Request: apitypes.LoginRequest{}, Responses: ok(apitypes.LoginResult{})},
 	{Method: "POST", Path: "/api/auth/logout", Summary: "End the session", Authenticated: true, Responses: ok(apitypes.SignedOut{})},
 
-	{Method: "GET", Path: "/api/catalog", Summary: "Authorized services and tool summaries", Invocation: true, Query: []query{actorQuery, {"include_demo", "boolean", "Include demo services"}}, Responses: ok(apitypes.Catalog{})},
-	{Method: "GET", Path: "/api/tools/{id}/schema", Summary: "Full definition of one authorized tool", Invocation: true, Query: []query{actorQuery}, Responses: ok(apitypes.Tool{})},
+	{Method: "GET", Path: "/api/catalog", Summary: "Authorized services and tool summaries", Invocation: true, Query: []query{actorQuery, simScopeQuery, {"include_demo", "boolean", "Include demo services"}}, Responses: ok(apitypes.Catalog{})},
+	{Method: "GET", Path: "/api/tools/{id}/schema", Summary: "Full definition of one authorized tool", Invocation: true, Query: []query{actorQuery, simScopeQuery}, Responses: ok(apitypes.ToolSchema{})},
 	{Method: "POST", Path: "/api/discover", Summary: "Route an intent to a small set of authorized tools", Invocation: true, Request: apitypes.DiscoverRequest{}, Responses: ok(oneOf{apitypes.DiscoverResult{}, apitypes.DiscoverSummaryResult{}})},
-	{Method: "POST", Path: "/api/invoke", Summary: "Invoke a registered tool", Invocation: true, Request: apitypes.InvokeRequest{}, Responses: ok(apitypes.InvokeResult{})},
+	{Method: "POST", Path: "/api/invoke", Summary: "Invoke a registered tool", Invocation: true, Request: apitypes.InvokeRequest{}, Responses: map[int]any{200: apitypes.InvokeResult{}, 202: apitypes.InvokeResult{}}},
+	{Method: "POST", Path: "/api/cli/exec", Summary: "Invoke a controlled GitHub CLI tool", Invocation: true, Request: apitypes.CLIExecRequest{}, Responses: map[int]any{200: apitypes.InvokeResult{}, 202: apitypes.InvokeResult{}}},
 
 	{Method: "PUT", Path: "/api/servers", Summary: "Create or replace a tool source", Request: apitypes.Server{}, Responses: ok(apitypes.Server{})},
 	{Method: "POST", Path: "/api/servers/openapi", Summary: "Register an HTTP source and the tools generated from its OpenAPI document", Request: apitypes.ImportOpenAPIRequest{}, Responses: ok(apitypes.ImportOpenAPIResult{})},
@@ -72,6 +99,8 @@ type route struct {
 	Public bool
 	// Authenticated routes are open to any authenticated principal (including non-admin) in shared mode.
 	Authenticated bool
+	// LocalAdminOnly also protects this route with the configured local admin token.
+	LocalAdminOnly bool
 	// Invocation routes are open to non-admin principals and honor repository
 	// scope (?agent= and X-Gateway-Scope).
 	Invocation bool
@@ -83,6 +112,9 @@ type route struct {
 
 type query struct{ Name, Type, Description string }
 
+func (r route) requiresAdmin() bool      { return !r.Public && !r.Invocation && !r.Authenticated }
+func (r route) requiresLocalAdmin() bool { return r.LocalAdminOnly || r.requiresAdmin() }
+
 // oneOf documents a response whose shape depends on the request.
 type oneOf []any
 
@@ -93,5 +125,6 @@ type binary struct{ MediaType string }
 type rawBody struct{ MediaType string }
 
 var actorQuery = query{"actor", "string", "Simulated identity in local mode; ignored when the caller is authenticated"}
+var simScopeQuery = query{"sim_scope", "string", "Administrator simulation repository key. An explicitly empty value selects the full repository view."}
 
 func ok(body any) map[int]any { return map[int]any{200: body} }

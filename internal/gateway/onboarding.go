@@ -13,6 +13,7 @@ import (
 
 	"gatewaylab/internal/access"
 	"gatewaylab/internal/activity"
+	"gatewaylab/internal/cliexec"
 	"gatewaylab/internal/fault"
 	"gatewaylab/internal/jsonutil"
 	"gatewaylab/internal/model"
@@ -168,7 +169,8 @@ func (g *Gateway) Setup() (SetupStatus, error) {
 }
 
 func (g *Gateway) TestSource(ctx context.Context, s registry.Server) (check ConnectionCheck, retErr error) {
-	if err := g.SaveServer(s); err != nil {
+	s, err := g.SaveServerDefinition(s)
+	if err != nil {
 		return check, err
 	}
 	fingerprint, err := upstream.Fingerprint(s, g.serverLookup(s))
@@ -186,7 +188,8 @@ func (g *Gateway) TestSource(ctx context.Context, s registry.Server) (check Conn
 			retErr = errors.Join(retErr, err)
 		}
 	}()
-	if s.Kind == "mcp" {
+	switch s.Kind {
+	case "mcp":
 		count, err := g.ImportMCP(ctx, s.ID)
 		if err != nil {
 			return check, err
@@ -194,6 +197,19 @@ func (g *Gateway) TestSource(ctx context.Context, s registry.Server) (check Conn
 		check.Status, check.ToolCount = "success", count
 		check.Message = fmt.Sprintf("MCP 已连接，读取到 %d 个工具。请选择需要开放给 Agent 的工具。", count)
 		return check, nil
+	case "cli":
+		if err := cliexec.VerifyBinary(s); err != nil {
+			return check, err
+		}
+		if g.lookupServerSecretOnly(s.ID, "GH_TOKEN") == "" {
+			return check, cliexec.MissingCredential()
+		}
+		check.Status, check.ToolCount = "success", len(cliexec.Tools(s.ID))
+		check.Message = "已校验 GitHub CLI 和网关中保存的凭据"
+		return check, nil
+	case "http":
+	default:
+		return check, invalid("未知服务协议")
 	}
 	if err := upstream.CheckEnvironment(s, g.serverLookup(s)); err != nil {
 		return check, fault.New(fault.Invalid, "请求头引用的环境变量尚未设置", err)
@@ -209,6 +225,8 @@ func (g *Gateway) TestSource(ctx context.Context, s registry.Server) (check Conn
 }
 
 func (g *Gateway) EnableTools(id string, ids []string) error {
+	g.publicationConfigMu.Lock()
+	defer g.publicationConfigMu.Unlock()
 	return g.registry.Update(func(current registry.Registry) (registry.Registry, error) {
 		if !slices.ContainsFunc(current.Servers, func(s registry.Server) bool { return s.ID == id }) {
 			return registry.Registry{}, invalid("服务不存在")
@@ -240,7 +258,7 @@ func (g *Gateway) TestModel(ctx context.Context, intent string) (DiscoverResult,
 	if err != nil {
 		return DiscoverResult{}, err
 	}
-	result, routeErr := g.Discover(scope.WithInternalBypass(ctx), DiscoverRequest{Intent: intent, Actor: "developer"})
+	result, routeErr := g.Discover(scope.WithRequestScope(ctx, scope.ResolvedRequestScope{Mode: scope.ModeBypass, Event: scope.EventScope{Status: "internal"}}), DiscoverRequest{Intent: intent, Actor: "developer"})
 	check := ConnectionCheck{Status: "success", Message: "Decisions 已响应，回答格式、概率和候选映射校验通过", CheckedAt: time.Now()}
 	if routeErr != nil {
 		check.Status = "error"
@@ -351,7 +369,7 @@ func (g *Gateway) ErrorDetail(err error) string {
 	message := err.Error()
 	_, key := g.model.RuntimeConfig()
 	secrets := append([]string{key}, g.upstream.TokenSecrets()...)
-	for _, s := range g.registry.Snapshot().Servers {
+	for _, s := range g.registry.Servers() {
 		for _, v := range s.Headers {
 			expanded := os.Expand(v, g.serverLookup(s))
 			secrets = append(secrets, expanded, strings.TrimPrefix(expanded, "Bearer "))
@@ -376,7 +394,11 @@ func (g *Gateway) RecordAgentTool(name, actor string, start time.Time, err error
 	detail := map[string]any{"method": "tools/call", "tool": name}
 	if err != nil {
 		status = "error"
-		detail["error"] = g.ErrorDetail(err)
+		if name == "invoke_tool" {
+			detail["error"] = invokeAuditError(err)
+		} else {
+			detail["error"] = g.ErrorDetail(err)
+		}
 	}
 	g.activity.Record("agent", actor, status, name, start, detail)
 }

@@ -687,6 +687,9 @@ func (u *DesktopUI) renderCatalogToolRow(c *ui.Context, st *catalogPageState, p 
 				if !t.ReadOnly {
 					SailBadge(c, i18n.T("ops.write-access"), ToneWarning)
 				}
+				if u.State != nil && toolMatchesApproveRule(t, u.State.Policies.Rules) {
+					SailBadge(c, i18n.T("policy.needs-approval"), ToneWarning)
+				}
 			})
 
 			SailDescSummary(c, t.Description, i18n.T("ops.no-description"), p.maxDescLines).FillWidth()
@@ -855,7 +858,11 @@ func (u *DesktopUI) renderCatalogDetailPanel(
 
 		switch st.detailTab {
 		case 1:
-			u.renderCatalogEditTab(c, st, tool)
+			if serverIsCLI(srv) {
+				ui.Text(c, i18n.T("ops.cli-contract-locked")).FontSize(12.5).LineHeight(1.5).TextColor(SailInkMuted)
+			} else {
+				u.renderCatalogEditTab(c, st, tool)
+			}
 		case 2:
 			SailCodeBlock(c, "TOOL CONTRACT JSON", PrettyJSON(tool), func() {
 				u.Notify(i18n.T("ops.copied-contract-json"))
@@ -901,6 +908,9 @@ func (u *DesktopUI) renderCatalogOverviewTab(c *ui.Context, tool apitypes.Tool, 
 		SailKeyValueRow(c, i18n.T("ops.recent-hits"), i18n.T("ops.hits-count", hits), false)
 		if tool.Method != "" || tool.Path != "" {
 			SailKeyValueRow(c, i18n.T("ops.http-mapping"), strings.TrimSpace(tool.Method+" "+tool.Path), true)
+		}
+		if serverIsCLI(srv) {
+			SailKeyValueRow(c, i18n.T("ops.cli-subcommand"), cliCommandSummary(srv.ID, tool.ID), true)
 		}
 		if len(tool.Tags) > 0 {
 			var cleanTags []string

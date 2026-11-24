@@ -51,5 +51,8 @@ type Options struct {
 	Recorder      Recorder
 	Execution     sandbox.Policy
 	ImportOpenAPI OpenAPIImporter
-	LookupEnv     func(string) string
+	// LookupEnv resolves webhook secrets by their configured environment name.
+	LookupEnv func(string) string
+	// ServerLookupEnv resolves service Header and Env references by server ID.
+	ServerLookupEnv func(serverID, key string) string
 }

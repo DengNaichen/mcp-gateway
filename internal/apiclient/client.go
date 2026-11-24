@@ -62,6 +62,14 @@ func WithToken(token string) Option {
 	}
 }
 
+// WithAdminToken configures local management authentication independently of
+// shared-mode bearer tokens and session cookies.
+func WithAdminToken(token string) Option {
+	return func(c *Client) {
+		c.adminToken = token
+	}
+}
+
 // WithTimeout overrides the underlying HTTP client timeout.
 func WithTimeout(d time.Duration) Option {
 	return func(c *Client) {
@@ -85,6 +93,7 @@ type Client struct {
 	baseURL    string
 	httpClient *http.Client
 	token      string
+	adminToken string
 }
 
 // New creates a Client targeting baseURL with an in-memory cookie jar
@@ -106,6 +115,13 @@ func New(baseURL string, opts ...Option) *Client {
 			opt(c)
 		}
 	}
+	if c.adminToken != "" {
+		// net/http forwards custom headers across redirects. Credentialed
+		// desktop requests target the gateway API directly.
+		hc := *c.httpClient
+		hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		c.httpClient = &hc
+	}
 	return c
 }
 
@@ -116,6 +132,9 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body io.Re
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	if c.adminToken != "" {
+		req.Header.Set("X-Gateway-Admin-Token", c.adminToken)
 	}
 	return req, nil
 }
@@ -147,11 +166,22 @@ func parseAPIError(resp *http.Response, respBytes []byte) *APIError {
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, body any, out any) error {
+	return c.doJSONWithScope(ctx, method, path, body, out, nil)
+}
+
+func (c *Client) doJSONWithScope(ctx context.Context, method, path string, body any, out any, signScope func([]byte) (string, error)) error {
 	var bodyReader io.Reader
+	var scopeToken string
 	if body != nil {
 		raw, err := json.Marshal(body)
 		if err != nil {
 			return fmt.Errorf("encode request: %w", err)
+		}
+		if signScope != nil {
+			scopeToken, err = signScope(raw)
+			if err != nil {
+				return err
+			}
 		}
 		bodyReader = bytes.NewReader(raw)
 	}
@@ -161,6 +191,10 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+
+	if scopeToken != "" {
+		req.Header.Set("X-Gateway-Scope", scopeToken)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -427,12 +461,23 @@ func (c *Client) Catalog(ctx context.Context, actor string, includeDemo bool) (a
 	return out, err
 }
 
-func (c *Client) ToolSchema(ctx context.Context, toolID, actor string) (apitypes.Tool, error) {
+func (c *Client) ToolSchema(ctx context.Context, toolID, actor string) (apitypes.ToolSchema, error) {
+	return c.ToolSchemaScoped(ctx, toolID, actor, nil)
+}
+
+func (c *Client) ToolSchemaScoped(ctx context.Context, toolID, actor string, simScope *apitypes.SimScope) (apitypes.ToolSchema, error) {
 	path := "/tools/" + url.PathEscape(toolID) + "/schema"
+	q := url.Values{}
 	if actor != "" {
-		path += "?actor=" + url.QueryEscape(actor)
+		q.Set("actor", actor)
 	}
-	var out apitypes.Tool
+	if simScope != nil {
+		q.Set("sim_scope", simScope.RepoKey)
+	}
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	var out apitypes.ToolSchema
 	err := c.doJSON(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }

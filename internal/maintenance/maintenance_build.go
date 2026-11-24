@@ -38,6 +38,9 @@ func writeJSON(path string, v any) error {
 	return nil
 }
 func (m *Maintainer) documents(ctx context.Context, r *MaintenanceRun) ([]sourceDocument, error) {
+	if err := checkMaintenanceProtocol(r.Server, r.Source); err != nil {
+		return nil, err
+	}
 	docs, err := m.repositoryDocuments(ctx, r)
 	if err != nil {
 		return nil, err
@@ -77,7 +80,8 @@ func (m *Maintainer) documents(ctx context.Context, r *MaintenanceRun) ([]source
 		docs = append(docs, sourceDocument{u, string(b)})
 		total += len(b)
 	}
-	if r.Server.Kind == "mcp" {
+	switch r.Server.Kind {
+	case "mcp":
 		tools, release, err := m.upstream.NativeTools(ctx, r.Server)
 		if err != nil {
 			return nil, err
@@ -96,6 +100,9 @@ func (m *Maintainer) documents(ctx context.Context, r *MaintenanceRun) ([]source
 		}
 		docs = append(docs, sourceDocument{"native-tools.json", string(b)})
 		total += len(b)
+	case "http":
+	default:
+		return nil, invalid("此服务协议不支持维护")
 	}
 	if total > 8<<20 {
 		return nil, invalid("参考资料合计不能超过 8 MB")
@@ -313,10 +320,14 @@ func (m *Maintainer) validateBundle(ctx context.Context, r MaintenanceRun, dir s
 			return bundle, err
 		}
 	}
-	if r.Server.Kind == "mcp" {
+	switch r.Server.Kind {
+	case "mcp":
 		if err := m.verifyNativeMCPTools(ctx, r, bundle.Tools); err != nil {
 			return bundle, err
 		}
+	case "http":
+	default:
+		return bundle, invalid("此服务协议不支持维护")
 	}
 	return bundle, nil
 }
@@ -377,10 +388,14 @@ func (m *Maintainer) validateBundleTool(ctx context.Context, r MaintenanceRun, d
 		}
 		return true, nil
 	}
-	if r.Server.Kind == "http" {
+	switch r.Server.Kind {
+	case "http":
 		if !slices.Contains([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}, t.Method) || !strings.HasPrefix(t.Path, "/") || strings.ContainsAny(t.Path, "?#") || (t.HTTP == nil && strings.ContainsAny(t.Path, "{}")) || strings.Contains(t.Path, "..") || strings.HasPrefix(t.Path, "//") {
 			return false, invalid("HTTP 工具需要支持的方法和固定相对路径；动态路径请生成适配脚本")
 		}
+	case "mcp":
+	default:
+		return false, invalid("此服务协议不支持维护")
 	}
 	return false, nil
 }

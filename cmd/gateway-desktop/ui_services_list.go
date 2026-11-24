@@ -170,6 +170,7 @@ func (u *DesktopUI) renderServiceList(c *ui.Context, st *servicesPageState) {
 	if len(data.demoServers) > 0 {
 		u.renderDemoServicesCard(c, st, data.demoServers, data.toolsByServer)
 	}
+	u.renderSkillAllowlistSection(c, st)
 }
 
 func (u *DesktopUI) renderServiceListHeader(c *ui.Context, st *servicesPageState, data serviceListData) {
@@ -217,6 +218,10 @@ func (u *DesktopUI) renderServiceAddDropdown(c *ui.Context, st *servicesPageStat
 				}
 				if menu.Item(i18n.T("services.add.menu.openapi")).Chosen() {
 					st.add.open(2)
+				}
+				if menu.Item(i18n.T("services.add.menu.gh_cli")).Chosen() {
+					st.add.open(serviceAddTabCLI)
+					st.add.applyGHPreset()
 				}
 				if st.subtab == 0 && menu.Item(i18n.T("services.add.menu.market")).Chosen() {
 					st.subtab = 1
@@ -376,6 +381,9 @@ func (u *DesktopUI) renderServiceListRow(c *ui.Context, st *servicesPageState, i
 				SailStatusDot(c, readiness.DotColor)
 				ui.Text(c, s.Name).FontSize(13.5).FontWeight(600).TextColor(nameInk).SingleLine()
 				ui.Text(c, serviceProtocolTag(s)).FontSize(11.5).TextColor(SailInkFaint).SingleLine()
+				if serverIsCLI(s) && s.CommandSHA256 != "" {
+					ui.Text(c, "sha256:"+cliDigestShort(s.CommandSHA256)).Font("monospace").FontSize(11).TextColor(SailInkFaint).SingleLine().Tooltip(strings.ToLower(s.CommandSHA256))
+				}
 			})
 			ui.Row(c).Padding(0, 0, 0, 14.5).Gap(6).AlignItems(ui.Baseline).MinWidth(0).Children(func() {
 				renderServiceRowStatusLine(c, s, readiness, bodyInk)
@@ -488,6 +496,10 @@ func renderServiceRowStatusLine(c *ui.Context, s apitypes.Server, r serviceReadi
 		}
 		SailDescSummary(c, s.Description, ServerTargetText(s), 1).Grow(1).MinWidth(0)
 	default:
+		if serverIsCLI(s) {
+			ui.Text(c, ServerTargetText(s)).Font("monospace").FontSize(12).TextColor(bodyInk).SingleLine().TruncateMiddle().Grow(1).MinWidth(0).Tooltip(ServerTargetText(s))
+			return
+		}
 		SailDescSummary(c, s.Description, ServerTargetText(s), 1).Grow(1).MinWidth(0)
 	}
 }
